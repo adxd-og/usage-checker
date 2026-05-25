@@ -1,0 +1,15 @@
+// Copy this file to `signing.xcconfig` and fill in YOUR values.
+// `signing.xcconfig` is gitignored so your team ID never gets committed.
+
+// Your Apple Developer Team ID — find it in https://developer.apple.com/account → Membership Details
+DEVELOPMENT_TEAM = XXXXXXXXXX
+
+// For local development: "Apple Development"
+// For Notarized distribution: "Developer ID Application"
+CODE_SIGN_IDENTITY = Apple Development
+
+// Bundle ID — change to something unique (reverse-DNS):
+PRODUCT_BUNDLE_IDENTIFIER = com.example.usagetracker
+
+CODE_SIGN_STYLE = Manual
+ENABLE_HARDENED_RUNTIME = NO

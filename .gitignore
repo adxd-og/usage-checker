@@ -1,0 +1,54 @@
+# Build outputs
+build/
+DerivedData/
+
+# Generated Xcode project (we use xcodegen)
+*.xcodeproj/
+!UsageTracker.xcodeproj/project.pbxproj.example
+
+# Xcode user data
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.build/
+Packages/
+Package.resolved
+.swiftpm/
+
+# Signing — personal Team ID & identity (must NEVER be committed)
+signing.xcconfig
+local.xcconfig
+.env
+.env.local
+*.local.yml
+
+# Claude Code local settings (paths reveal username)
+.claude/
+.cursor/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Pre-built artifacts
+*.dmg
+*.app
+*.xcarchive
+*.pkg
+
+# Notarization staging
+notarization/
+*.zip
+
+# Asset generation scripts output
+/tmp/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo

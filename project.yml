@@ -1,0 +1,78 @@
+name: UsageTracker
+options:
+  bundleIdPrefix: com.usagetracker
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+configFiles:
+  Debug: signing.xcconfig
+  Release: signing.xcconfig
+
+packages:
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: 2.6.0
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    ENABLE_HARDENED_RUNTIME: NO
+    SWIFT_STRICT_CONCURRENCY: minimal
+
+targets:
+  UsageTracker:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: UsageTracker
+        excludes:
+          - "**/*.entitlements"
+      - path: UsageTrackerWidget/SharedWidgetData.swift
+    resources:
+      - path: UsageTracker/Resources
+    dependencies:
+      - target: UsageTrackerWidget
+      - package: Sparkle
+    settings:
+      base:
+        PRODUCT_NAME: UsageChecker
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
+        INFOPLIST_KEY_CFBundleDisplayName: "Usage Checker"
+        INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
+        INFOPLIST_KEY_SUFeedURL: "https://adxd-og.github.io/usage-checker/appcast.xml"
+        INFOPLIST_KEY_SUPublicEDKey: ""
+        INFOPLIST_KEY_SUEnableAutomaticChecks: YES
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        SWIFT_EMIT_LOC_STRINGS: NO
+        COMBINE_HIDPI_IMAGES: YES
+        DEAD_CODE_STRIPPING: YES
+
+  UsageTrackerWidget:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: UsageTrackerWidget
+        excludes:
+          - "**/*.entitlements"
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_NAME: UsageTrackerWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        INFOPLIST_FILE: UsageTrackerWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
+        SWIFT_EMIT_LOC_STRINGS: NO
+        SKIP_INSTALL: NO

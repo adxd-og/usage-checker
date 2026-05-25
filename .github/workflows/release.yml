@@ -1,0 +1,85 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Import Developer ID certificate
+        env:
+          DEVELOPER_ID_CERT_BASE64: ${{ secrets.DEVELOPER_ID_CERT_BASE64 }}
+          DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.DEVELOPER_ID_CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          CERT_PATH="$RUNNER_TEMP/cert.p12"
+          KEYCHAIN="$RUNNER_TEMP/build.keychain"
+          echo "$DEVELOPER_ID_CERT_BASE64" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$CERT_PATH" -P "$DEVELOPER_ID_CERT_PASSWORD" \
+              -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          security default-keychain -s "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+      - name: Generate signing.xcconfig
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          cat > signing.xcconfig <<EOF
+          DEVELOPMENT_TEAM = $APPLE_TEAM_ID
+          CODE_SIGN_IDENTITY = Developer ID Application
+          PRODUCT_BUNDLE_IDENTIFIER = com.usagetracker.app
+          CODE_SIGN_STYLE = Manual
+          ENABLE_HARDENED_RUNTIME = YES
+          OTHER_CODE_SIGN_FLAGS = --timestamp --options=runtime
+          EOF
+
+      - name: Build DMG
+        run: ./scripts/build_dmg.sh
+
+      - name: Notarize DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          set -euo pipefail
+          xcrun notarytool submit build/UsageTracker.dmg \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_ID_PASSWORD" \
+            --wait
+          xcrun stapler staple build/UsageTracker.dmg
+          xcrun stapler validate build/UsageTracker.dmg
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/UsageTracker.dmg
+          generate_release_notes: true
+          body: |
+            See [CHANGELOG.md](CHANGELOG.md) for changes.
+
+            ## Install
+            1. Download `UsageTracker.dmg`
+            2. Open it and drag the app to `~/Applications/` or `/Applications/`
+            3. Launch — macOS will ask once for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**
+
+            Requires macOS 14+ and [Claude Code](https://docs.anthropic.com/claude-code) signed in.
