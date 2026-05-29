@@ -39,7 +39,7 @@ struct InsightsView: View {
                     )
                     card(
                         title: "5h window observed peak",
-                        value: insights.fiveHourPeak.map { String(format: "%.0f%%", $0) } ?? "—",
+                        value: insights.fiveHourPeak.map { String(format: "%.0f%%", min(100, $0)) } ?? "—",
                         sub: "from snapshots"
                     )
                 }

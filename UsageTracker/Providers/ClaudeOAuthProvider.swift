@@ -105,6 +105,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             } catch {
                 return .errorState(message: error.localizedDescription, at: now)
             }
+        } catch HTTPClientError.rateLimited(let retryAfter) {
+            return .errorState(message: "Rate limited by usage API", at: now, retryAfter: retryAfter ?? 60)
         } catch {
             return .errorState(message: error.localizedDescription, at: now)
         }
@@ -140,11 +142,21 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
         let extra: ExtraUsage? = {
             guard let e = resp.extraUsage else { return nil }
+            let monthlyLimit = e.monthlyLimit ?? 0
+            let usedCredits = e.usedCredits ?? 0
+            // Normalize to 0–100 to match UsageBucket.utilization. Prefer the unambiguous
+            // used/limit ratio so the bar always agrees with the "$X / $Y" text beside it;
+            // fall back to the raw utilization field (a 0–1 fraction from the API).
+            let util: Double = {
+                if monthlyLimit > 0 { return min(100, usedCredits / monthlyLimit * 100) }
+                let u = e.utilization ?? 0
+                return u <= 1.0 ? u * 100 : u
+            }()
             return ExtraUsage(
                 isEnabled: e.isEnabled ?? false,
-                monthlyLimit: e.monthlyLimit ?? 0,
-                usedCredits: e.usedCredits ?? 0,
-                utilization: e.utilization ?? 0
+                monthlyLimit: monthlyLimit,
+                usedCredits: usedCredits,
+                utilization: util
             )
         }()
 
@@ -204,7 +216,7 @@ extension ServiceSnapshot {
         )
     }
 
-    static func errorState(message: String, at date: Date) -> ServiceSnapshot {
+    static func errorState(message: String, at date: Date, retryAfter: TimeInterval? = nil) -> ServiceSnapshot {
         ServiceSnapshot(
             id: "claude",
             displayName: "Claude",
@@ -216,7 +228,8 @@ extension ServiceSnapshot {
             weekCost: nil,
             state: .error,
             stateMessage: message,
-            fetchedAt: date
+            fetchedAt: date,
+            retryAfter: retryAfter
         )
     }
 }

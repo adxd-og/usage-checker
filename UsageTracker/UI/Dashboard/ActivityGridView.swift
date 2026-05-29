@@ -207,7 +207,7 @@ private struct GridCache: Sendable {
         let weekday = cal.component(.weekday, from: today) - 1
         let startOfThisWeek = cal.date(byAdding: .day, value: -weekday, to: today) ?? today
 
-        let costMap = Dictionary(uniqueKeysWithValues: dailies.map { ($0.day, $0.totalCost) })
+        let costMap = Dictionary(dailies.map { ($0.day, $0.totalCost) }, uniquingKeysWith: +)
 
         let dateFormatter: DateFormatter = {
             let f = DateFormatter()

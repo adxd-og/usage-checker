@@ -43,6 +43,8 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     let state: ServiceState
     let stateMessage: String?
     let fetchedAt: Date
+    /// After a 429, how many seconds to wait before polling again. nil = no backoff.
+    var retryAfter: TimeInterval? = nil
 
     var headlinePercent: Double {
         buckets.map(\.clampedPercent).max() ?? 0

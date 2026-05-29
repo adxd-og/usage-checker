@@ -1,6 +1,9 @@
 import Foundation
 
 struct CLITurn: Sendable {
+    /// The API message id (`msg_…`). Stable across the 3–4 duplicate log lines Claude
+    /// Code writes for one response, so it's the dedup key.
+    let id: String
     let timestamp: Date
     let model: String
     let inputTokens: Int
@@ -66,8 +69,9 @@ actor JSONLAggregator {
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
-    /// Tool calls within this window of each other count as the same billable turn.
-    private let turnCollapseWindow: TimeInterval = 10
+    /// Message ids already counted, so duplicate log lines (and re-scanned file tails)
+    /// never inflate cost.
+    private var seenMessageIDs: Set<String> = []
 
     private init() {
         self.rootURL = FileManager.default.homeDirectoryForCurrentUser
@@ -80,10 +84,13 @@ actor JSONLAggregator {
     func refresh() async {
         let newRaw = scanIncrementally()
         guard !newRaw.isEmpty || !initialized else { initialized = true; return }
-        let collapsed = collapseTurns(newRaw)
-        allTurns.append(contentsOf: collapsed)
+        // Each API response is logged multiple times with the same message id; count it once.
+        for turn in newRaw where seenMessageIDs.insert(turn.id).inserted {
+            allTurns.append(turn)
+        }
         if allTurns.count > 200_000 {
             allTurns.removeFirst(allTurns.count - 150_000)
+            seenMessageIDs = Set(allTurns.map(\.id))
         }
         initialized = true
     }
@@ -269,6 +276,7 @@ actor JSONLAggregator {
         guard let usage = message["usage"] as? [String: Any] else { return nil }
 
         let model = (message["model"] as? String) ?? "unknown"
+        let msgID = (message["id"] as? String) ?? ""
         let input = (usage["input_tokens"] as? Int) ?? 0
         let output = (usage["output_tokens"] as? Int) ?? 0
         let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
@@ -281,8 +289,14 @@ actor JSONLAggregator {
 
         let tsStr = (any["timestamp"] as? String) ?? ""
         let ts = isoFormatter.date(from: tsStr) ?? Date()
+        // Older logs may lack a message id — fall back to a content identity so exact
+        // duplicate lines still dedupe.
+        let id = msgID.isEmpty
+            ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)"
+            : msgID
 
         return CLITurn(
+            id: id,
             timestamp: ts,
             model: model,
             inputTokens: input,
@@ -292,37 +306,5 @@ actor JSONLAggregator {
             cacheCreate1hTokens: c1h,
             projectSlug: projectSlug
         )
-    }
-
-    /// Smart turn grouping (masorange fix): collapse multiple assistant entries that landed
-    /// within `turnCollapseWindow` AND target the same model/project, keeping the **max** token
-    /// counts in each field (each Claude entry repeats cumulative usage of the turn).
-    private func collapseTurns(_ raw: [CLITurn]) -> [CLITurn] {
-        guard !raw.isEmpty else { return [] }
-        let sorted = raw.sorted { $0.timestamp < $1.timestamp }
-        var result: [CLITurn] = []
-        var current = sorted[0]
-        for next in sorted.dropFirst() {
-            let sameTurn = next.model == current.model
-                && next.projectSlug == current.projectSlug
-                && next.timestamp.timeIntervalSince(current.timestamp) < turnCollapseWindow
-            if sameTurn {
-                current = CLITurn(
-                    timestamp: current.timestamp,
-                    model: current.model,
-                    inputTokens: max(current.inputTokens, next.inputTokens),
-                    outputTokens: max(current.outputTokens, next.outputTokens),
-                    cacheReadTokens: max(current.cacheReadTokens, next.cacheReadTokens),
-                    cacheCreate5mTokens: max(current.cacheCreate5mTokens, next.cacheCreate5mTokens),
-                    cacheCreate1hTokens: max(current.cacheCreate1hTokens, next.cacheCreate1hTokens),
-                    projectSlug: current.projectSlug
-                )
-            } else {
-                result.append(current)
-                current = next
-            }
-        }
-        result.append(current)
-        return result
     }
 }

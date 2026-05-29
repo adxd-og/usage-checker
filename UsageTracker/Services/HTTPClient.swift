@@ -2,6 +2,7 @@ import Foundation
 
 enum HTTPClientError: LocalizedError, Sendable {
     case badStatus(Int, body: String)
+    case rateLimited(retryAfter: TimeInterval?)
     case tooManyRetries
     case invalidResponse
     case decoding(String)
@@ -10,6 +11,9 @@ enum HTTPClientError: LocalizedError, Sendable {
         switch self {
         case .badStatus(let code, let body):
             return "HTTP \(code): \(body.prefix(200))"
+        case .rateLimited(let retryAfter):
+            if let s = retryAfter { return "Rate limited (retry after \(Int(s))s)" }
+            return "Rate limited"
         case .tooManyRetries:
             return "Too many retries"
         case .invalidResponse:
@@ -92,7 +96,12 @@ struct HTTPClient: Sendable {
             if (200..<300).contains(code) {
                 return data
             }
-            if (code == 429 || (500..<600).contains(code)) && attempt < maxRetries {
+            if code == 429 {
+                // Retrying a rate-limit only deepens it. Surface Retry-After and let the
+                // caller back off until it clears (the poll loop tries again later).
+                throw HTTPClientError.rateLimited(retryAfter: Self.retryAfterSeconds(http))
+            }
+            if (500..<600).contains(code) && attempt < maxRetries {
                 attempt += 1
                 try? await Task.sleep(nanoseconds: delay)
                 delay = min(delay * 2, 60_000_000_000)
@@ -101,6 +110,19 @@ struct HTTPClient: Sendable {
             let bodyStr = String(data: data, encoding: .utf8) ?? ""
             throw HTTPClientError.badStatus(code, body: bodyStr)
         }
+    }
+
+    /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds from now.
+    private static func retryAfterSeconds(_ resp: HTTPURLResponse) -> TimeInterval? {
+        guard let raw = resp.value(forHTTPHeaderField: "Retry-After")?
+            .trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
+        if let secs = TimeInterval(raw) { return max(0, secs) }
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "GMT")
+        fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+        if let date = fmt.date(from: raw) { return max(0, date.timeIntervalSinceNow) }
+        return nil
     }
 }
 

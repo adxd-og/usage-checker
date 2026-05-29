@@ -53,7 +53,7 @@ struct PopoverView: View {
     private func updatedText(now: Date) -> String {
         let t = state.snapshot.fetchedAt.timeIntervalSince1970
         if t < 1 { return "Never updated" }
-        let delta = now.timeIntervalSince(state.snapshot.fetchedAt)
+        let delta = max(0, now.timeIntervalSince(state.snapshot.fetchedAt))
         if delta < 5 { return "Just updated" }
         if delta < 60 { return "Updated \(Int(delta))s ago" }
         if delta < 3600 { return "Updated \(Int(delta / 60))m ago" }
