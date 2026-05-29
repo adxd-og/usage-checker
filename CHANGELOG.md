@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] — 2026-05-30
+
+### Fixed
+- Weekly-limit windows with very low usage (≤ 1%) no longer jump to 100%. The usage
+  API now reports percentages as 0–100 (a value of `1.0` means 1%); the app was still
+  multiplying values ≤ 1.0 by 100, which pinned low-usage windows like "Sonnet only"
+  at 100%. Percentages are now used as-is.
+
 ## [1.0.2] — 2026-05-29
 
 ### Fixed

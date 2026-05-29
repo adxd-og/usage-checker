@@ -22,9 +22,11 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         }
 
         var normalizedPercent: Double? {
-            let raw = utilization ?? usedPercentage
-            guard let v = raw else { return nil }
-            return v <= 1.0 ? v * 100.0 : v
+            // The usage API reports these as a PERCENT already (0–100): a value of 1.0
+            // means 1%, not 100%. This used to multiply values <= 1.0 by 100 (assuming a
+            // 0–1 fraction), which turned a genuine 1% into 100% on low-usage windows
+            // like "Sonnet only". Bounds are clamped downstream via clampedPercent.
+            utilization ?? usedPercentage
         }
     }
 
