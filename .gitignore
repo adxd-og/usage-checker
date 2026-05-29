@@ -21,6 +21,8 @@ Package.resolved
 # Signing — personal Team ID & identity (must NEVER be committed)
 signing.xcconfig
 local.xcconfig
+# Generated at build time from signing.xcconfig; contains the Team ID
+scripts/exportOptions.plist
 .env
 .env.local
 *.local.yml

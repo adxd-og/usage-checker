@@ -10,10 +10,10 @@
 #
 #   2. Generate an app-specific password:
 #      https://appleid.apple.com/account/manage → Sign-In and Security
-#      → App-Specific Passwords → Generate (label: "UsageTracker notarize")
+#      → App-Specific Passwords → Generate (label: "UsageChecker notarize")
 #
 #   3. Store credentials in Keychain once:
-#      xcrun notarytool store-credentials "UsageTracker-Notary" \
+#      xcrun notarytool store-credentials "UsageChecker-Notary" \
 #         --apple-id "you@example.com" \
 #         --team-id "XXXXXXXXXX" \
 #         --password "abcd-efgh-ijkl-mnop"
@@ -23,8 +23,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DMG_PATH="$ROOT/build/UsageTracker.dmg"
-KEYCHAIN_PROFILE="${NOTARY_PROFILE:-UsageTracker-Notary}"
+DMG_PATH="$ROOT/build/UsageChecker.dmg"
+KEYCHAIN_PROFILE="${NOTARY_PROFILE:-UsageChecker-Notary}"
 
 if [ ! -f "$DMG_PATH" ]; then
   echo "DMG not found at $DMG_PATH — run ./scripts/build_dmg.sh first"

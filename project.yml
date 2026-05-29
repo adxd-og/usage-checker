@@ -40,8 +40,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: UsageChecker
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.0.2"
+        CURRENT_PROJECT_VERSION: "3"
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
         INFOPLIST_KEY_CFBundleDisplayName: "Usage Checker"
@@ -49,7 +49,9 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_SUFeedURL: "https://adxd-og.github.io/usage-checker/appcast.xml"
         INFOPLIST_KEY_SUPublicEDKey: ""
-        INFOPLIST_KEY_SUEnableAutomaticChecks: YES
+        # Disabled until SUPublicEDKey + appcast.xml are configured.
+        # Re-enable in v1.1 when releasing notarized updates via Sparkle.
+        INFOPLIST_KEY_SUEnableAutomaticChecks: NO
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
@@ -70,8 +72,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "1.0.0"
-        CURRENT_PROJECT_VERSION: "1"
+        MARKETING_VERSION: "1.0.2"
+        CURRENT_PROJECT_VERSION: "3"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO

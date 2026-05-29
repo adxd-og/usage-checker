@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] — 2026-05-29
+
+### Fixed
+- New Claude models now label themselves correctly — the display name is derived
+  from the model ID (e.g. `claude-opus-4-8` → "Opus 4.8") instead of a hardcoded
+  list, so a freshly-released model no longer shows up as a generic "Opus".
+- Extra-usage credits bar was rendering at ~1% of its true fill (a 0–1 fraction
+  wasn't scaled to a percentage); it now matches the "$X / $Y" figure beside it.
+- CLI cost & token totals are now accurate: Claude Code logs each API response
+  several times, so usage is de-duplicated by message id and summed over distinct
+  responses (the old 10-second "max" grouping mixed and under-counted them).
+- Usage percentages no longer blank out on a transient network/API error — the
+  last known values stay visible (dimmed as stale) until the next good poll.
+- Rate-limit (HTTP 429) handling now honours `Retry-After` and stops retrying
+  within a poll cycle, so the app no longer contributes to its own rate limiting.
+- "5h window observed peak" can no longer display a value above 100%.
+- Activity heatmap no longer risks a crash on duplicate day entries.
+- Project names containing spaces are recovered correctly (e.g. "Orion Gate
+  mobile app" instead of "mobile / app").
+- Fixed a brief "Updated -1s ago" flicker in the popover header.
+
+## [1.0.1] — 2026-05-25
+
+### Fixed
+- App crash on launch caused by Swift 6 strict concurrency assertion in the
+  `DispatchSourceTimer` background callback. The refresh loop now runs in a
+  proper `Task.sleep` loop, fully isolated to the main actor.
+- Sparkle automatic update checks disabled at launch (they were dialling an
+  unconfigured appcast URL). The Settings → Updates → "Check for updates"
+  button is still present; auto-checks will be re-enabled in 1.1 alongside the
+  appcast and EdDSA key setup.
+
 ## [1.0.0] — 2026-05-25
 
 ### Added
