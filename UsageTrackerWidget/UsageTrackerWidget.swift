@@ -49,16 +49,7 @@ struct UsageTrackerWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: SharedWidgetStore.widgetKind, provider: UsageTimelineProvider()) { entry in
             UsageWidgetEntryView(entry: entry)
-                .containerBackground(for: .widget) {
-                    LinearGradient(
-                        colors: [
-                            Color(white: 0.10, opacity: 0.95),
-                            Color(white: 0.05, opacity: 0.95),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                }
+                .containerBackground(.regularMaterial, for: .widget)
         }
         .configurationDisplayName("Claude usage")
         .description("Track your Claude subscription limits at a glance.")
@@ -93,15 +84,15 @@ struct SmallWidgetView: View {
             VStack(spacing: 0) {
                 Text("5h")
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.65))
+                    .foregroundStyle(.secondary)
                 Text(snapshot.headlineLabel)
                     .font(.system(size: 36, weight: .bold, design: .rounded))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(.primary)
                     .monospacedDigit()
                 if let plan = snapshot.plan {
                     Text(plan)
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
@@ -111,26 +102,17 @@ struct SmallWidgetView: View {
         let p = (snapshot.fiveHourPercent ?? 0) / 100
         return Circle()
             .trim(from: 0, to: 1)
-            .stroke(Color.white.opacity(0.12), lineWidth: 10)
+            .stroke(.quaternary, lineWidth: 10)
             .overlay(
                 Circle()
                     .trim(from: 0, to: max(0.005, p))
                     .stroke(
-                        AngularGradient(
-                            colors: ringColors(percent: snapshot.fiveHourPercent ?? 0),
-                            center: .center
-                        ),
+                        statusColor(snapshot.fiveHourPercent ?? 0),
                         style: StrokeStyle(lineWidth: 10, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
             )
             .padding(8)
-    }
-
-    private func ringColors(percent: Double) -> [Color] {
-        if percent >= 90 { return [.red, .orange] }
-        if percent >= 70 { return [.orange, .yellow] }
-        return [.cyan, .blue]
     }
 }
 
@@ -143,15 +125,16 @@ struct MediumWidgetView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Image(systemName: "sparkles")
-                    .foregroundStyle(.cyan)
-                Text("Claude").font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                Text("Claude").font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
                 if let plan = snapshot.plan {
-                    Text(plan).font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                    Text(plan).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text("Updated \(WidgetTime.ago(snapshot.updatedAt))")
                     .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.5))
+                    .foregroundStyle(.tertiary)
             }
 
             row(label: "5h session", percent: snapshot.fiveHourPercent, resets: snapshot.fiveHourResetsAt)
@@ -163,16 +146,16 @@ struct MediumWidgetView: View {
     private func row(label: String, percent: Double?, resets: Date?) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white.opacity(0.8))
+                Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
                 Spacer()
                 if let p = percent {
                     Text("\(Int(p.rounded()))%")
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
                 if let r = resets, r < .distantFuture {
-                    Text(WidgetTime.until(r)).font(.system(size: 9)).foregroundStyle(.white.opacity(0.55))
+                    Text(WidgetTime.until(r)).font(.system(size: 9)).foregroundStyle(.tertiary)
                 }
             }
             ProgressBar(percent: percent ?? 0)
@@ -188,14 +171,16 @@ struct LargeWidgetView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "sparkles").foregroundStyle(.cyan)
-                Text("Claude").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                Image(systemName: "sparkles")
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
+                Text("Claude").font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
                 if let plan = snapshot.plan {
-                    Text(plan).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    Text(plan).font(.system(size: 12)).foregroundStyle(.secondary)
                 }
                 Spacer()
             }
-            Divider().opacity(0.2)
+            Divider()
 
             sectionTitle("Current session")
             row(label: "5-hour window", percent: snapshot.fiveHourPercent, resets: snapshot.fiveHourResetsAt)
@@ -210,7 +195,7 @@ struct LargeWidgetView: View {
             Spacer()
             Text("Updated \(WidgetTime.ago(snapshot.updatedAt))")
                 .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.4))
+                .foregroundStyle(.tertiary)
         }
         .padding(16)
     }
@@ -218,21 +203,21 @@ struct LargeWidgetView: View {
     private func sectionTitle(_ text: String) -> some View {
         Text(text.uppercased())
             .font(.system(size: 9, weight: .semibold))
-            .tracking(0.5)
-            .foregroundStyle(.white.opacity(0.5))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
             .padding(.top, 4)
     }
 
     private func row(label: String, percent: Double?, resets: Date?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(label).font(.system(size: 11)).foregroundStyle(.white.opacity(0.85))
+                Text(label).font(.system(size: 11)).foregroundStyle(.primary)
                 Spacer()
                 if let p = percent {
                     Text("\(Int(p.rounded()))%")
                         .font(.system(size: 11, weight: .semibold, design: .rounded))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.secondary)
                 }
             }
             ProgressBar(percent: percent ?? 0)
@@ -279,20 +264,32 @@ struct ProgressBar: View {
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: height / 2)
-                    .fill(Color.white.opacity(0.1))
-                RoundedRectangle(cornerRadius: height / 2)
-                    .fill(LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing))
+                Capsule(style: .continuous)
+                    .fill(.quaternary)
+                Capsule(style: .continuous)
+                    .fill(statusColor(percent))
                     .frame(width: geo.size.width * CGFloat(max(0, min(100, percent)) / 100))
             }
         }
         .frame(height: height)
     }
+}
 
-    private var colors: [Color] {
-        if percent >= 90 { return [.red, .orange] }
-        if percent >= 70 { return [.orange, .yellow] }
-        if percent >= 40 { return [.cyan, .blue] }
-        return [.green, .mint]
-    }
+/// Battery-style status color, mirrors the main app's usageStatusColor.
+func statusColor(_ percent: Double) -> Color {
+    if percent >= 90 { return .red }
+    if percent >= 70 { return .orange }
+    return .accentColor
+}
+
+#Preview("Large") {
+    LargeWidgetView(snapshot: .placeholder)
+        .frame(width: 338, height: 354)
+        .background(.regularMaterial)
+}
+
+#Preview("Small") {
+    SmallWidgetView(snapshot: .placeholder)
+        .frame(width: 158, height: 158)
+        .background(.regularMaterial)
 }

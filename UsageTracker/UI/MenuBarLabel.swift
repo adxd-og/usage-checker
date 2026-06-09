@@ -29,50 +29,39 @@ struct MenuBarLabel: View {
 private struct MiniServiceBar: View {
     let service: ServiceSnapshot
     let isStale: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var percent: Double { service.headlinePercent }
-
-    private var ringColor: Color {
-        if percent >= 90 { return .red }
-        if percent >= 70 { return .orange }
-        return .accentColor
-    }
-
+    private var barColor: Color { usageStatusColor(percent) }
     private var isCritical: Bool { percent >= 95 }
+    private var shouldPulse: Bool { isCritical && !reduceMotion }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: isCritical ? 0.05 : 0.5)) { ctx in
+        TimelineView(.animation(minimumInterval: shouldPulse ? 0.05 : 0.5)) { ctx in
+            // A gentle opacity pulse is the critical-state alert; no glow, and it
+            // stays still when Reduce Motion is on.
             let pulse: Double = {
-                guard isCritical else { return 1.0 }
+                guard shouldPulse else { return 1.0 }
                 let t = ctx.date.timeIntervalSince1970
                 return 0.55 + 0.45 * abs(sin(t * 2.5))
             }()
 
             HStack(spacing: 4) {
                 ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.primary.opacity(0.1))
+                    Capsule(style: .continuous)
+                        .fill(.quaternary)
                         .frame(width: 22, height: 8)
-                    Capsule()
-                        .fill(
-                            LinearGradient(
-                                colors: percent >= 70
-                                    ? [ringColor, ringColor.opacity(0.7)]
-                                    : [ringColor.opacity(0.9), .cyan.opacity(0.7)],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
+                    Capsule(style: .continuous)
+                        .fill(barColor)
                         .frame(width: max(2, 22 * percent / 100), height: 8)
-                        .shadow(color: isCritical ? .red.opacity(0.7 * pulse) : .clear, radius: isCritical ? 3 : 0)
                 }
-                .opacity(isCritical ? pulse : 1.0)
+                .opacity(pulse)
 
                 Text("\(Int(percent.rounded()))")
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .monospacedDigit()
-                    .foregroundStyle(isStale ? Color.secondary : ringColor)
-                    .opacity(isCritical ? pulse : 1.0)
+                    .foregroundStyle(isStale ? Color.secondary : barColor)
+                    .opacity(pulse)
             }
             .animation(.easeInOut(duration: 0.4), value: percent)
         }

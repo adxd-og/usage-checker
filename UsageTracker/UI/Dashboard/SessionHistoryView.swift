@@ -72,21 +72,21 @@ struct SessionHistoryView: View {
     private var table: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Day").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
+                Text("Day").font(.subheadline).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                Text("Turns").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
-                Text("Tokens").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).frame(width: 100, alignment: .trailing)
-                Text("Cost").font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                Text("Turns").font(.subheadline).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                Text("Tokens").font(.subheadline).foregroundStyle(.secondary).frame(width: 100, alignment: .trailing)
+                Text("Cost").font(.subheadline).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
             }
             .padding(.bottom, 6)
             ForEach(data.reversed()) { p in
                 HStack {
-                    Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(.system(size: 12))
+                    Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(.subheadline)
                         .frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text("\(p.turns)").font(.system(size: 12, design: .monospaced)).frame(width: 60, alignment: .trailing)
-                    Text(formatTokens(p.tokens)).font(.system(size: 12, design: .monospaced)).frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
-                    Text(String(format: "$%.2f", p.cost)).font(.system(size: 12, design: .monospaced)).frame(width: 80, alignment: .trailing)
+                    Text("\(p.turns)").font(.subheadline).monospacedDigit().frame(width: 60, alignment: .trailing)
+                    Text(formatTokens(p.tokens)).font(.subheadline).monospacedDigit().frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
+                    Text(String(format: "$%.2f", p.cost)).font(.subheadline).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }
                 .padding(.vertical, 3)
                 if p.id != data.first?.id { Divider().opacity(0.3) }

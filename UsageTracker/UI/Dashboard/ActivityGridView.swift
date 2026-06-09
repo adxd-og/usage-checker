@@ -78,17 +78,15 @@ struct ActivityGridView: View {
 
     private func statCard(label: String, value: Double, sub: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text(label).font(.subheadline).foregroundStyle(.secondary)
             Text(String(format: "$%.2f", value))
-                .font(.system(size: 20, weight: .semibold, design: .rounded))
+                .font(.title3.weight(.semibold))
                 .monospacedDigit()
             if let sub {
-                Text(sub).font(.system(size: 10)).foregroundStyle(.tertiary)
+                Text(sub).font(.caption).foregroundStyle(.tertiary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.08)))
+        .dashboardCard(padding: 12)
     }
 
     private func gridBlock(_ c: GridCache) -> some View {
@@ -111,9 +109,7 @@ struct ActivityGridView: View {
             }
             legend.padding(.top, 8)
         }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.05)))
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .dashboardCard(padding: 14)
     }
 
     private func monthLabels(_ c: GridCache, width: CGFloat) -> some View {
@@ -161,13 +157,13 @@ struct ActivityGridView: View {
 
     private var legend: some View {
         HStack(spacing: 6) {
-            Text("Less").font(.system(size: 10)).foregroundStyle(.secondary)
+            Text("Less").font(.caption).foregroundStyle(.secondary)
             ForEach(0..<5, id: \.self) { i in
                 RoundedRectangle(cornerRadius: 3)
                     .fill(color(for: Double(i) / 4.0))
                     .frame(width: cellSize, height: cellSize)
             }
-            Text("More").font(.system(size: 10)).foregroundStyle(.secondary)
+            Text("More").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

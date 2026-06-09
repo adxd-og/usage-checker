@@ -1,57 +1,75 @@
 import SwiftUI
 
+/// Flat, battery-style level indicator: quiet track, solid status-colored fill,
+/// no gradients or glows. An optional pace tick marks how much of the window has
+/// elapsed, so the fill reads against "even pace" at a glance.
 struct BarSegment: View {
     let percent: Double
-    var height: CGFloat = 8
+    var height: CGFloat = 6
     var showsLabel: Bool = false
+    /// 0...1 fraction of the rate-limit window already elapsed. nil hides the tick.
+    var pace: Double? = nil
 
     private var clamped: Double { max(0, min(100, percent)) }
-
-    private var gradient: LinearGradient {
-        let colors: [Color]
-        if clamped >= 90 {
-            colors = [Color.red.opacity(0.85), Color.orange]
-        } else if clamped >= 70 {
-            colors = [Color.orange, Color.yellow]
-        } else if clamped >= 40 {
-            colors = [Color.accentColor.opacity(0.9), Color.cyan.opacity(0.85)]
-        } else {
-            colors = [Color.green.opacity(0.85), Color.mint]
-        }
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
-    }
-
-    private var labelColor: Color {
-        if clamped >= 90 { return .red }
-        if clamped >= 70 { return .orange }
-        return .secondary
-    }
+    private var fill: Color { usageStatusColor(clamped) }
 
     var body: some View {
         HStack(spacing: 8) {
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: height / 2)
-                        .fill(Color.primary.opacity(0.08))
-                    RoundedRectangle(cornerRadius: height / 2)
-                        .fill(gradient)
+                    Capsule(style: .continuous)
+                        .fill(.quaternary)
+                    Capsule(style: .continuous)
+                        .fill(fill)
                         .frame(width: geo.size.width * CGFloat(clamped) / 100)
-                        .shadow(color: gradient.shadowColor.opacity(0.35), radius: 2, x: 0, y: 0.5)
+                    if let pace, pace > 0.02, pace < 0.98 {
+                        Capsule(style: .continuous)
+                            .fill(Color.primary.opacity(0.45))
+                            .frame(width: 2, height: height + 4)
+                            .offset(x: geo.size.width * CGFloat(pace) - 1)
+                    }
                 }
             }
             .frame(height: height)
+            .animation(.smooth(duration: 0.35), value: clamped)
 
             if showsLabel {
                 Text("\(Int(clamped.rounded()))%")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(.caption.weight(.semibold))
                     .monospacedDigit()
-                    .foregroundStyle(labelColor)
+                    .foregroundStyle(clamped >= 70 ? AnyShapeStyle(fill) : AnyShapeStyle(.secondary))
                     .frame(width: 36, alignment: .trailing)
             }
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(Int(clamped.rounded())) percent used")
     }
 }
 
-private extension LinearGradient {
-    var shadowColor: Color { .accentColor }
+/// Circular gauge for the headline "how close am I to a limit" number.
+struct UsageRing: View {
+    let percent: Double
+    var size: CGFloat = 52
+    var lineWidth: CGFloat = 5
+
+    private var clamped: Double { max(0, min(100, percent)) }
+    private var color: Color { usageStatusColor(clamped) }
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .stroke(.quaternary, lineWidth: lineWidth)
+            Circle()
+                .trim(from: 0, to: max(0.004, clamped / 100))
+                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(Int(clamped.rounded()))%")
+                .font(.system(size: size * 0.27, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+        }
+        .frame(width: size, height: size)
+        .animation(.smooth(duration: 0.35), value: clamped)
+        .accessibilityElement(children: .ignore)
+        .accessibilityValue("\(Int(clamped.rounded())) percent used")
+    }
 }

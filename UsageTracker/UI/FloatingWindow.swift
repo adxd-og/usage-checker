@@ -88,24 +88,18 @@ struct FloatingMiniView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(
-                        LinearGradient(colors: [.accentColor, .cyan.opacity(0.8)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                    )
-                    .frame(width: 18, height: 18)
-                    .overlay(Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white))
+            HStack(spacing: 6) {
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.system(size: 14))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
                 Text(claude?.plan ?? "Claude")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
                 Button(action: onClose) {
                     Image(systemName: "xmark")
                         .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.5))
+                        .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.borderless)
             }
@@ -119,12 +113,12 @@ struct FloatingMiniView: View {
         .padding(.vertical, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.black.opacity(0.55))
-                RoundedRectangle(cornerRadius: 12)
-                    .strokeBorder(.white.opacity(0.10), lineWidth: 1)
-            }
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(.regularMaterial)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(.separator.opacity(0.5), lineWidth: 0.5)
         )
         .padding(2)
     }
@@ -132,34 +126,18 @@ struct FloatingMiniView: View {
     private func row(label: String, bucket: UsageBucket?) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
-                Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.75))
+                Text(label)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
                 Spacer()
                 if let b = bucket {
                     Text("\(Int(b.clampedPercent.rounded()))%")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
+                        .font(.caption.weight(.semibold))
                         .monospacedDigit()
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.primary)
                 }
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(.white.opacity(0.1))
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(barGradient(percent: bucket?.clampedPercent ?? 0))
-                        .frame(width: geo.size.width * CGFloat((bucket?.clampedPercent ?? 0) / 100))
-                }
-            }
-            .frame(height: 6)
+            BarSegment(percent: bucket?.clampedPercent ?? 0, height: 5, showsLabel: false)
         }
-    }
-
-    private func barGradient(percent: Double) -> LinearGradient {
-        let colors: [Color]
-        if percent >= 90 { colors = [.red, .orange] }
-        else if percent >= 70 { colors = [.orange, .yellow] }
-        else if percent >= 40 { colors = [.cyan, .blue] }
-        else { colors = [.green, .mint] }
-        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
 }

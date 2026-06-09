@@ -59,18 +59,18 @@ struct InsightsView: View {
     private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("This week vs last week")
-                .font(.system(size: 11, weight: .medium))
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "$%.2f", wow.thisWeek))
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .font(.title2.weight(.semibold))
                     .monospacedDigit()
                 if let delta = wow.deltaPercent, wow.lastWeek > 0 {
                     HStack(spacing: 2) {
                         Image(systemName: delta >= 0 ? "arrow.up.right" : "arrow.down.right")
                             .font(.system(size: 10, weight: .bold))
                         Text("\(abs(Int(delta.rounded())))%")
-                            .font(.system(size: 12, weight: .semibold, design: .rounded))
+                            .font(.subheadline.weight(.semibold))
                             .monospacedDigit()
                     }
                     .foregroundStyle(delta >= 0 ? Color.orange : Color.green)
@@ -78,39 +78,35 @@ struct InsightsView: View {
             }
             HStack(spacing: 4) {
                 Text("Last week: " + String(format: "$%.2f", wow.lastWeek))
-                    .font(.system(size: 10))
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+        .dashboardCard()
     }
 
     private func card(title: String, value: String, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+            Text(title).font(.subheadline).foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                .font(.title2.weight(.semibold))
                 .lineLimit(2)
                 .truncationMode(.tail)
-            if let sub { Text(sub).font(.system(size: 10)).foregroundStyle(.tertiary) }
+            if let sub { Text(sub).font(.caption).foregroundStyle(.tertiary) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+        .dashboardCard()
     }
 
     private func projectsBlock(projects: [ProjectSummary]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("Projects · last 30 days")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.caption2.weight(.semibold))
                     .tracking(0.5)
                     .foregroundStyle(.secondary)
                 Spacer()
                 Text("\(projects.count) total")
-                    .font(.system(size: 10))
+                    .font(.caption)
                     .foregroundStyle(.tertiary)
             }
 
@@ -119,35 +115,28 @@ struct InsightsView: View {
                 projectRow(p, maxCost: maxCost)
             }
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.06)))
+        .dashboardCard()
     }
 
     private func projectRow(_ p: ProjectSummary, maxCost: Double) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(p.displayName)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
                 Text(String(format: "$%.2f", p.totalCost))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.subheadline.weight(.semibold))
                     .monospacedDigit()
             }
             HStack(spacing: 8) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(Color.secondary.opacity(0.15))
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.accentColor, .cyan.opacity(0.8)],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
+                        Capsule(style: .continuous)
+                            .fill(.quaternary)
+                        Capsule(style: .continuous)
+                            .fill(Color.accentColor)
                             .frame(width: geo.size.width * CGFloat(p.totalCost / max(maxCost, 0.01)))
                     }
                 }

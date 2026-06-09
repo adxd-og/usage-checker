@@ -17,22 +17,18 @@ struct OverviewView: View {
                 )
 
                 if case .active(let endsAt) = Announcements.weeklyBonus() {
-                    HStack(spacing: 10) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundStyle(.green)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text("Weekly limits are temporarily +50%")
-                                .font(.system(size: 12, weight: .semibold))
-                            Text("Bonus ends \(endsAt.formatted(date: .complete, time: .omitted))")
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                        }
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.green.opacity(0.12)))
-                    .padding(.horizontal, 24)
+                    banner(
+                        icon: "sparkles", tint: .green,
+                        title: "Weekly limits are temporarily +50%",
+                        subtitle: "Bonus ends \(endsAt.formatted(date: .complete, time: .omitted))"
+                    )
+                }
+                if case .active(let endsAt) = Announcements.fableIncluded() {
+                    banner(
+                        icon: "wand.and.stars", tint: .purple,
+                        title: "Fable 5 is included with your plan",
+                        subtitle: "From \(endsAt.formatted(date: .abbreviated, time: .omitted)) it will draw extra-usage credits"
+                    )
                 }
 
                 HStack(alignment: .top, spacing: 16) {
@@ -57,6 +53,25 @@ struct OverviewView: View {
         .background(Color(NSColor.windowBackgroundColor))
     }
 
+    private func banner(icon: String, tint: Color, title: String, subtitle: String) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .bannerCard(tint: tint)
+        .padding(.horizontal, 24)
+    }
+
     private func burnCard(title: String, burn: BurnRatePrediction?, bucketId: String) -> some View {
         let value: String = {
             guard let burn else { return "Not enough data" }
@@ -72,14 +87,15 @@ struct OverviewView: View {
             return claude.buckets.first(where: { $0.id == bucketId })?.clampedPercent ?? 0
         }()
 
-        return VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 16, weight: .semibold))
-            BarSegment(percent: percent, height: 6, showsLabel: true)
+        return HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.subheadline).foregroundStyle(.secondary)
+                Text(value).font(.body.weight(.semibold))
+            }
+            Spacer()
+            UsageRing(percent: percent, size: 48)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+        .dashboardCard(padding: 14)
     }
 
     private var todayCard: some View {
@@ -90,25 +106,23 @@ struct OverviewView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             Text("Today's CLI usage")
-                .font(.system(size: 12, weight: .medium))
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "$%.2f", cost))
-                    .font(.system(size: 18, weight: .semibold, design: .rounded))
+                    .font(.title3.weight(.semibold))
                     .monospacedDigit()
                 Text("·")
                     .foregroundStyle(.tertiary)
                 Text("\(turns) turn\(turns == 1 ? "" : "s")")
-                    .font(.system(size: 13))
+                    .font(.body)
                     .foregroundStyle(.secondary)
             }
             Text("\(formatTokens(tokens)) tokens")
-                .font(.system(size: 10))
+                .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.08)))
+        .dashboardCard(padding: 14)
     }
 
     private func formatTokens(_ n: Int) -> String {
@@ -119,30 +133,29 @@ struct OverviewView: View {
 
     private func bucketsBlock(claude: ServiceSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Usage windows")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.5)
+            Text("Usage windows".uppercased())
+                .font(.caption2.weight(.semibold))
+                .tracking(0.6)
                 .foregroundStyle(.secondary)
             ForEach(claude.buckets) { b in
                 HStack {
-                    Text(b.label).font(.system(size: 12, weight: .medium))
+                    Text(b.label).font(.subheadline.weight(.medium))
                     Spacer()
-                    Text("resets \(formatRelative(b.resetsAt))").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("resets \(formatRelative(b.resetsAt))").font(.caption).foregroundStyle(.secondary)
                 }
-                BarSegment(percent: b.clampedPercent, height: 10, showsLabel: true)
+                BarSegment(percent: b.clampedPercent, height: 8, showsLabel: true)
                     .padding(.bottom, 4)
             }
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.06)))
+        .dashboardCard()
     }
 
     private func cliBlock(cli: CLIBreakdown) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Claude Code CLI")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.5)
+                Text("Claude Code CLI".uppercased())
+                    .font(.caption2.weight(.semibold))
+                    .tracking(0.6)
                     .foregroundStyle(.secondary)
                 Spacer()
                 if dashboard.isLoadingCLI {
@@ -158,24 +171,24 @@ struct OverviewView: View {
                 Divider()
                 ForEach(cli.byModelToday.prefix(5), id: \.model) { entry in
                     HStack {
-                        Text(entry.model).font(.system(size: 11))
+                        Text(entry.model).font(.subheadline)
                         Spacer()
                         Text(String(format: "$%.2f", entry.cost))
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.subheadline)
+                            .monospacedDigit()
                             .foregroundStyle(.secondary)
                     }
                 }
             }
         }
-        .padding(16)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.secondary.opacity(0.06)))
+        .dashboardCard()
     }
 
     private func stat(label: String, value: String, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10)).foregroundStyle(.secondary)
-            Text(value).font(.system(size: 18, weight: .semibold, design: .rounded))
-            if let sub { Text(sub).font(.system(size: 10)).foregroundStyle(.tertiary) }
+            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
+            if let sub { Text(sub).font(.caption).foregroundStyle(.tertiary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

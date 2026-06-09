@@ -21,25 +21,15 @@ struct PopoverView: View {
     private var header: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
             HStack(spacing: 10) {
-                ZStack {
-                    Circle()
-                        .fill(
-                            LinearGradient(
-                                colors: [.accentColor, .cyan.opacity(0.8)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 26, height: 26)
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white)
-                }
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.system(size: 22, weight: .regular))
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Usage Checker")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.headline)
                     Text(updatedText(now: ctx.date))
-                        .font(.system(size: 10))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -98,10 +88,11 @@ struct PopoverView: View {
     private func noticeRow(icon: String, tint: Color, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.system(size: 10))
+                .font(.caption)
+                .symbolRenderingMode(.hierarchical)
                 .foregroundStyle(tint)
             Text(text)
-                .font(.system(size: 10))
+                .font(.caption)
                 .foregroundStyle(.secondary)
             Spacer()
         }
@@ -116,10 +107,11 @@ struct PopoverView: View {
                 Divider().opacity(0.5)
                 HStack(spacing: 6) {
                     Image(systemName: "flame.fill")
-                        .font(.system(size: 10))
+                        .font(.caption)
+                        .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.orange)
                     Text(hint)
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
@@ -172,7 +164,7 @@ struct PopoverView: View {
                     NSApp.terminate(nil)
                 } label: {
                     Text("Quit")
-                        .font(.system(size: 11))
+                        .font(.subheadline)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -252,10 +244,10 @@ private struct ServiceSection: View {
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(service.displayName)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.subheadline.weight(.semibold))
                 if let plan = service.plan {
                     Text(plan)
-                        .font(.system(size: 10))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -276,7 +268,7 @@ private struct ServiceSection: View {
             }
         }()
         return Text(text)
-            .font(.system(size: 9, weight: .semibold))
+            .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(color)
@@ -286,8 +278,8 @@ private struct ServiceSection: View {
     private func bucketsBlock(title: String, buckets: [UsageBucket]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .tracking(0.5)
+                .font(.caption2.weight(.semibold))
+                .tracking(0.6)
                 .foregroundStyle(.secondary)
                 .padding(.top, 2)
             ForEach(buckets) { bucket in
@@ -300,20 +292,40 @@ private struct ServiceSection: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(bucket.label)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                 Spacer()
                 if bucket.resetsAt < Date.distantFuture {
                     Text("resets \(formatReset(bucket.resetsAt))")
-                        .font(.system(size: 10))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 } else if bucket.clampedPercent == 0 {
                     Text(emptyHint(for: bucket))
-                        .font(.system(size: 10))
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            BarSegment(percent: bucket.clampedPercent, height: 8, showsLabel: true)
+            BarSegment(
+                percent: bucket.clampedPercent,
+                height: 7,
+                showsLabel: true,
+                pace: paceFraction(for: bucket)
+            )
         }
+    }
+
+    /// Fraction of the bucket's rate-limit window already elapsed (0...1), so the
+    /// pace tick can show whether usage runs ahead of or behind "even pace".
+    private func paceFraction(for bucket: UsageBucket) -> Double? {
+        guard bucket.resetsAt < .distantFuture else { return nil }
+        let duration: TimeInterval
+        switch bucket.kind {
+        case .session: duration = 5 * 3600
+        case .weekly, .modelSpecific: duration = 7 * 24 * 3600
+        case .other: return nil
+        }
+        let remaining = bucket.resetsAt.timeIntervalSinceNow
+        guard remaining > 0, remaining <= duration else { return nil }
+        return 1 - remaining / duration
     }
 
     private func emptyHint(for bucket: UsageBucket) -> String {
@@ -329,10 +341,11 @@ private struct ServiceSection: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Extra usage credits")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.subheadline.weight(.medium))
                 Spacer()
                 Text(String(format: "$%.2f / $%.0f", extra.usedCredits, extra.monthlyLimit))
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.subheadline)
+                    .monospacedDigit()
                     .foregroundStyle(.secondary)
             }
             BarSegment(percent: extra.utilization, height: 6, showsLabel: false)
@@ -343,10 +356,11 @@ private struct ServiceSection: View {
     private func weekCostBlock(_ amount: Double) -> some View {
         HStack {
             Text("Last 7 days")
-                .font(.system(size: 11, weight: .medium))
+                .font(.subheadline.weight(.medium))
             Spacer()
             Text(String(format: "$%.2f", amount))
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.subheadline.weight(.medium))
+                .monospacedDigit()
                 .foregroundStyle(.primary)
         }
         .padding(.top, 2)
@@ -361,4 +375,28 @@ private struct ServiceSection: View {
         f.unitsStyle = .abbreviated
         return f.string(from: delta).map { "in \($0)" } ?? "—"
     }
+}
+
+#Preview("Service section") {
+    ServiceSection(service: ServiceSnapshot(
+        id: "claude",
+        displayName: "Claude",
+        icon: "sparkles",
+        plan: "Max 20x",
+        accountLabel: nil,
+        buckets: [
+            UsageBucket(id: "five_hour", label: "Current session", utilization: 34, resetsAt: Date().addingTimeInterval(2 * 3600), kind: .session),
+            UsageBucket(id: "seven_day", label: "All models", utilization: 76, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .weekly),
+            UsageBucket(id: "seven_day_opus", label: "Opus only", utilization: 12, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
+            UsageBucket(id: "seven_day_fable", label: "Fable only", utilization: 93, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
+            UsageBucket(id: "seven_day_sonnet", label: "Sonnet only", utilization: 0, resetsAt: .distantFuture, kind: .modelSpecific),
+        ],
+        extraUsage: ExtraUsage(isEnabled: true, monthlyLimit: 50, usedCredits: 12.5, utilization: 25),
+        weekCost: 41.37,
+        state: .ok,
+        stateMessage: nil,
+        fetchedAt: Date()
+    ))
+    .padding(16)
+    .frame(width: 360)
 }

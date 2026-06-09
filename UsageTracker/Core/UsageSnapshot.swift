@@ -15,6 +15,25 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     let kind: BucketKind
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
+
+    /// Total length of this rate-limit window, inferred from its id/kind.
+    /// nil when the length can't be inferred (unknown future window types).
+    var windowDuration: TimeInterval? {
+        if id == "five_hour" || kind == .session { return 5 * 3600 }
+        if id.hasPrefix("seven_day") || kind == .weekly || kind == .modelSpecific { return 7 * 24 * 3600 }
+        return nil
+    }
+
+    /// Fraction of the window already elapsed (0...1), derived from resetsAt.
+    /// Lets the UI show usage against "even pace": 60% used at 90% elapsed is fine,
+    /// 60% used at 20% elapsed is trouble. nil when reset time or length is unknown,
+    /// or when the remaining time exceeds the inferred length (inference was wrong).
+    func elapsedFraction(now: Date = Date()) -> Double? {
+        guard resetsAt < .distantFuture, let duration = windowDuration else { return nil }
+        let remaining = resetsAt.timeIntervalSince(now)
+        guard remaining > 0, remaining <= duration else { return nil }
+        return 1 - remaining / duration
+    }
 }
 
 struct ExtraUsage: Equatable, Sendable, Codable {
