@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-06-10
+
 ### Changed
+- **Apple-native redesign across the app.** Flat battery-style bars (solid status
+  color, no gradients or glows), semantic system typography, System-Settings-style
+  cards with continuous corners, system-material backgrounds for the floating
+  window and desktop widget (the widget finally looks right in light mode), and
+  Reduce Motion is honored by the menu-bar critical pulse.
 - **Popover answers "am I OK?" at a glance.** The header is now a hero status:
   a ring gauge of the most-constrained window, a plain-words verdict ("On track",
   "Running hot", "Almost at the limit"), which window binds, and when it resets.
@@ -27,8 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ⌘Q quit; exact reset times on hover over "resets in …".
 - VoiceOver labels for the menu bar pill, usage bars, ring gauges and floating
   window rows.
-
-## [1.1.0] — 2026-06-10
 
 ### Added
 - **Claude Fable 5 support.** The new model is recognized everywhere: correct
