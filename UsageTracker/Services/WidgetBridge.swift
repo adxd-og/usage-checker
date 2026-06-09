@@ -11,9 +11,9 @@ enum WidgetBridge {
             fiveHourResetsAt: bucketReset(snapshot, "five_hour"),
             sevenDayPercent: bucket(snapshot, "seven_day"),
             sevenDayResetsAt: bucketReset(snapshot, "seven_day"),
-            opusPercent: bucket(snapshot, "seven_day_opus"),
-            sonnetPercent: bucket(snapshot, "seven_day_sonnet"),
-            claudeDesignPercent: bucket(snapshot, "seven_day_omelette"),
+            modelBuckets: snapshot.buckets
+                .filter { $0.kind == .modelSpecific }
+                .map { WidgetBucket(id: $0.id, label: $0.label, percent: $0.utilization) },
             plan: snapshot.plan,
             updatedAt: snapshot.fetchedAt
         )

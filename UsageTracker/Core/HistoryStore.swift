@@ -14,6 +14,9 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     let coworkWeeklyPercent: Double?
     let extraCreditsUsed: Double?
     let plan: String?
+    /// Every bucket's utilization keyed by bucket id. Optional because records written
+    /// by older builds don't have it; those fall back to the fixed fields above.
+    let bucketPercents: [String: Double]?
 
     init(from snapshot: ServiceSnapshot, at date: Date = Date()) {
         self.id = UUID()
@@ -33,6 +36,23 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
         self.claudeDesignWeeklyPercent = bucket("seven_day_omelette")?.utilization
         self.coworkWeeklyPercent = bucket("seven_day_cowork")?.utilization
         self.extraCreditsUsed = snapshot.extraUsage?.usedCredits
+        self.bucketPercents = Dictionary(
+            snapshot.buckets.map { ($0.id, $0.utilization) },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    func percent(for bucketId: String) -> Double? {
+        if let p = bucketPercents?[bucketId] { return p }
+        switch bucketId {
+        case "five_hour": return fiveHourPercent
+        case "seven_day": return sevenDayPercent
+        case "seven_day_opus": return opusWeeklyPercent
+        case "seven_day_sonnet": return sonnetWeeklyPercent
+        case "seven_day_omelette": return claudeDesignWeeklyPercent
+        case "seven_day_cowork": return coworkWeeklyPercent
+        default: return nil
+        }
     }
 }
 

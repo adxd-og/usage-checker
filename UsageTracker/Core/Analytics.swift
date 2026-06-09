@@ -20,15 +20,7 @@ enum Analytics {
         let relevant = records
             .filter { $0.timestamp >= cutoff }
             .compactMap { rec -> (Date, Double)? in
-                let value: Double?
-                switch bucketId {
-                case "five_hour": value = rec.fiveHourPercent
-                case "seven_day": value = rec.sevenDayPercent
-                case "seven_day_opus": value = rec.opusWeeklyPercent
-                case "seven_day_sonnet": value = rec.sonnetWeeklyPercent
-                default: value = nil
-                }
-                guard let v = value else { return nil }
+                guard let v = rec.percent(for: bucketId) else { return nil }
                 return (rec.timestamp, v)
             }
 

@@ -202,9 +202,10 @@ struct LargeWidgetView: View {
 
             sectionTitle("Weekly limits")
             row(label: "All models", percent: snapshot.sevenDayPercent, resets: snapshot.sevenDayResetsAt)
-            if let p = snapshot.opusPercent { row(label: "Opus only", percent: p, resets: nil) }
-            if let p = snapshot.sonnetPercent { row(label: "Sonnet only", percent: p, resets: nil) }
-            if let p = snapshot.claudeDesignPercent { row(label: "Claude Design", percent: p, resets: nil) }
+            // The large widget fits ~4 extra rows below the fixed ones.
+            ForEach(snapshot.weeklyModelBuckets.prefix(4)) { bucket in
+                row(label: bucket.label, percent: bucket.percent, resets: nil)
+            }
 
             Spacer()
             Text("Updated \(WidgetTime.ago(snapshot.updatedAt))")

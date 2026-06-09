@@ -66,16 +66,16 @@ struct PopoverView: View {
     private var content: some View {
         Divider().opacity(0.5)
         if case .active(let endsAt) = Announcements.weeklyBonus() {
-            HStack(spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.green)
-                Text("Weekly limits +50% until \(endsAt.formatted(date: .abbreviated, time: .omitted))")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal, 4)
+            noticeRow(
+                icon: "sparkles", tint: .green,
+                text: "Weekly limits +50% until \(endsAt.formatted(date: .abbreviated, time: .omitted))"
+            )
+        }
+        if case .active(let endsAt) = Announcements.fableIncluded() {
+            noticeRow(
+                icon: "wand.and.stars", tint: .purple,
+                text: "Fable 5 included until \(endsAt.formatted(date: .abbreviated, time: .omitted)) — then uses extra credits"
+            )
         }
         if state.snapshot.services.isEmpty {
             HStack {
@@ -93,6 +93,19 @@ struct PopoverView: View {
                 }
             }
         }
+    }
+
+    private func noticeRow(icon: String, tint: Color, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+                .foregroundStyle(tint)
+            Text(text)
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Footer
@@ -304,14 +317,12 @@ private struct ServiceSection: View {
     }
 
     private func emptyHint(for bucket: UsageBucket) -> String {
-        switch bucket.id {
-        case "seven_day_opus":    return "You haven't used Opus yet"
-        case "seven_day_sonnet":  return "You haven't used Sonnet yet"
-        case "seven_day_omelette": return "You haven't used Claude Design yet"
-        case "seven_day_cowork":  return "You haven't used Cowork yet"
-        case "seven_day_oauth_apps": return "No OAuth apps yet"
-        default: return ""
-        }
+        if bucket.id == "seven_day_oauth_apps" { return "No OAuth apps yet" }
+        guard bucket.kind == .modelSpecific else { return "" }
+        // "Opus only" → "You haven't used Opus yet"; works for any bucket label.
+        var name = bucket.label
+        if name.hasSuffix(" only") { name.removeLast(" only".count) }
+        return "You haven't used \(name) yet"
     }
 
     private func extraBlock(_ extra: ExtraUsage) -> some View {

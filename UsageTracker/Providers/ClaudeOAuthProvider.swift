@@ -1,13 +1,10 @@
 import Foundation
 
 private struct OAuthUsageResponse: Decodable, Sendable {
-    let fiveHour: WindowDTO?
-    let sevenDay: WindowDTO?
-    let sevenDayOpus: WindowDTO?
-    let sevenDaySonnet: WindowDTO?
-    let sevenDayOmelette: WindowDTO?      // "Claude Design" weekly
-    let sevenDayCowork: WindowDTO?         // Cowork weekly
-    let sevenDayOauthApps: WindowDTO?      // OAuth apps weekly
+    /// Every rate-limit window in the payload, keyed by its JSON field name. Decoded
+    /// dynamically so a window added server-side (a new model family, a new product
+    /// surface) shows up in the app without a code change.
+    let windows: [String: WindowDTO]
     let extraUsage: ExtraDTO?
 
     struct WindowDTO: Decodable, Sendable {
@@ -44,15 +41,28 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         }
     }
 
-    enum CodingKeys: String, CodingKey {
-        case fiveHour = "five_hour"
-        case sevenDay = "seven_day"
-        case sevenDayOpus = "seven_day_opus"
-        case sevenDaySonnet = "seven_day_sonnet"
-        case sevenDayOmelette = "seven_day_omelette"
-        case sevenDayCowork = "seven_day_cowork"
-        case sevenDayOauthApps = "seven_day_oauth_apps"
-        case extraUsage = "extra_usage"
+    private struct AnyKey: CodingKey {
+        let stringValue: String
+        let intValue: Int? = nil
+        init?(stringValue: String) { self.stringValue = stringValue }
+        init?(intValue: Int) { nil }
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: AnyKey.self)
+        var windows: [String: WindowDTO] = [:]
+        for key in c.allKeys where key.stringValue != "extra_usage" {
+            // `extra_usage` also carries a `utilization` field, hence the by-name skip
+            // above; anything else that decodes as a window object and reports a percent
+            // is treated as one.
+            guard let dto = try? c.decode(WindowDTO.self, forKey: key),
+                  dto.normalizedPercent != nil else { continue }
+            windows[key.stringValue] = dto
+        }
+        self.windows = windows
+        self.extraUsage = AnyKey(stringValue: "extra_usage").flatMap {
+            try? c.decodeIfPresent(ExtraDTO.self, forKey: $0)
+        }
     }
 }
 
@@ -118,29 +128,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             rateLimitTier: creds.claudeAiOauth.rateLimitTier
         )
 
-        var buckets: [UsageBucket] = []
-
-        if let b = bucket(id: "five_hour",  label: "Current session", from: resp.fiveHour,  kind: .session) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day",  label: "All models",      from: resp.sevenDay,  kind: .weekly) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day_opus",   label: "Opus only",     from: resp.sevenDayOpus,   kind: .modelSpecific) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day_sonnet", label: "Sonnet only",   from: resp.sevenDaySonnet, kind: .modelSpecific) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day_omelette", label: "Claude Design", from: resp.sevenDayOmelette, kind: .modelSpecific) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day_cowork",   label: "Cowork",        from: resp.sevenDayCowork,   kind: .modelSpecific) {
-            buckets.append(b)
-        }
-        if let b = bucket(id: "seven_day_oauth_apps", label: "OAuth apps",  from: resp.sevenDayOauthApps, kind: .modelSpecific) {
-            buckets.append(b)
-        }
+        let buckets = Self.buckets(from: resp.windows)
 
         let extra: ExtraUsage? = {
             guard let e = resp.extraUsage else { return nil }
@@ -177,11 +165,65 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         )
     }
 
-    private func bucket(id: String, label: String, from dto: OAuthUsageResponse.WindowDTO?, kind: BucketKind) -> UsageBucket? {
-        guard let dto else { return nil }
-        guard let p = dto.normalizedPercent else { return nil }
-        let resets = dto.resetsAt ?? Date.distantFuture
-        return UsageBucket(id: id, label: label, utilization: p, resetsAt: resets, kind: kind)
+    /// Display metadata for the windows we know about; also fixes their order in the UI.
+    private static let knownWindows: [(id: String, label: String, kind: BucketKind)] = [
+        ("five_hour", "Current session", .session),
+        ("seven_day", "All models", .weekly),
+        ("seven_day_opus", "Opus only", .modelSpecific),
+        ("seven_day_sonnet", "Sonnet only", .modelSpecific),
+        ("seven_day_fable", "Fable only", .modelSpecific),
+        ("seven_day_omelette", "Claude Design", .modelSpecific),
+        ("seven_day_cowork", "Cowork", .modelSpecific),
+        ("seven_day_oauth_apps", "OAuth apps", .modelSpecific),
+    ]
+
+    private static func buckets(from windows: [String: OAuthUsageResponse.WindowDTO]) -> [UsageBucket] {
+        var remaining = windows
+        var buckets: [UsageBucket] = []
+
+        for known in knownWindows {
+            guard let dto = remaining.removeValue(forKey: known.id),
+                  let p = dto.normalizedPercent else { continue }
+            buckets.append(UsageBucket(
+                id: known.id,
+                label: known.label,
+                utilization: p,
+                resetsAt: dto.resetsAt ?? .distantFuture,
+                kind: known.kind
+            ))
+        }
+
+        // Windows this build doesn't know by name (a new model's weekly cap, a new
+        // surface) still get shown, with a label derived from the key.
+        for (key, dto) in remaining.sorted(by: { $0.key < $1.key }) {
+            guard let p = dto.normalizedPercent else { continue }
+            buckets.append(UsageBucket(
+                id: key,
+                label: autoLabel(for: key),
+                utilization: p,
+                resetsAt: dto.resetsAt ?? .distantFuture,
+                kind: autoKind(for: key)
+            ))
+        }
+        return buckets
+    }
+
+    /// "seven_day_fable" → "Fable only", "seven_day_code_review" → "Code Review".
+    private static func autoLabel(for key: String) -> String {
+        var stem = key
+        let weeklyPrefix = "seven_day_"
+        let isWeeklySub = stem.hasPrefix(weeklyPrefix)
+        if isWeeklySub { stem.removeFirst(weeklyPrefix.count) }
+        let words = stem.split(separator: "_").map { String($0).capitalized }
+        if isWeeklySub && words.count == 1 { return "\(words[0]) only" }
+        return words.joined(separator: " ")
+    }
+
+    private static func autoKind(for key: String) -> BucketKind {
+        if key.hasPrefix("seven_day_") { return .modelSpecific }
+        if key.contains("day") || key.contains("week") { return .weekly }
+        if key.contains("hour") || key.contains("session") { return .session }
+        return .other
     }
 
     private func fetchUsage(token: String) async throws -> OAuthUsageResponse {

@@ -14,6 +14,18 @@ enum Announcements {
         }
         return .inactive
     }
+
+    /// Fable 5 is included in Pro/Max/Team/Enterprise at no extra cost only through
+    /// 22 June 2026; from 23 June it draws extra-usage credits instead.
+    static let fableIncludedStart: Date = ISO8601DateFormatter().date(from: "2026-06-09T00:00:00Z")!
+    static let fableIncludedEnd: Date = ISO8601DateFormatter().date(from: "2026-06-22T23:59:59Z")!
+
+    static func fableIncluded(at now: Date = Date()) -> WeeklyBonus {
+        if now >= fableIncludedStart && now <= fableIncludedEnd {
+            return .active(endsAt: fableIncludedEnd)
+        }
+        return .inactive
+    }
 }
 
 enum WeeklyBonus: Equatable, Sendable {

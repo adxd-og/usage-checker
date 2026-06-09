@@ -1,5 +1,12 @@
 import Foundation
 
+/// One model-specific weekly window ("Opus only", "Fable only", …) as shown by the widget.
+struct WidgetBucket: Codable, Equatable, Sendable, Identifiable {
+    let id: String
+    let label: String
+    let percent: Double
+}
+
 /// Shared between the main app (writer) and the widget extension (reader).
 /// Stored in the App Group container so both processes can access it.
 struct WidgetSnapshot: Codable, Equatable, Sendable {
@@ -7,28 +14,29 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     let fiveHourResetsAt: Date?
     let sevenDayPercent: Double?
     let sevenDayResetsAt: Date?
-    let opusPercent: Double?
-    let sonnetPercent: Double?
-    let claudeDesignPercent: Double?
+    /// Optional because a snapshot file written by an older build doesn't have it.
+    let modelBuckets: [WidgetBucket]?
     let plan: String?
     let updatedAt: Date
+
+    var weeklyModelBuckets: [WidgetBucket] { modelBuckets ?? [] }
 
     static let placeholder = WidgetSnapshot(
         fiveHourPercent: 42,
         fiveHourResetsAt: Date().addingTimeInterval(2 * 3600 + 17 * 60),
         sevenDayPercent: 18,
         sevenDayResetsAt: Date().addingTimeInterval(2 * 24 * 3600 + 22 * 3600),
-        opusPercent: 12,
-        sonnetPercent: 0,
-        claudeDesignPercent: 0,
+        modelBuckets: [
+            WidgetBucket(id: "seven_day_fable", label: "Fable only", percent: 24),
+            WidgetBucket(id: "seven_day_opus", label: "Opus only", percent: 12),
+        ],
         plan: "Max 5x",
         updatedAt: Date()
     )
 
     var headlinePercent: Double {
-        [fiveHourPercent, sevenDayPercent, opusPercent, sonnetPercent, claudeDesignPercent]
-            .compactMap { $0 }
-            .max() ?? 0
+        let fixed = [fiveHourPercent, sevenDayPercent].compactMap { $0 }
+        return (fixed + weeklyModelBuckets.map(\.percent)).max() ?? 0
     }
 
     var headlineLabel: String {

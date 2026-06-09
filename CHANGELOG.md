@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-06-10
+
+### Added
+- **Claude Fable 5 support.** The new model is recognized everywhere: correct
+  "Fable 5" labels in the CLI breakdown (was showing the raw `claude-fable-5` id)
+  and accurate cost accounting at its real rates ($10/$50 per MTok, including the
+  `[1m]` long-context variant at standard pricing). Mythos 5 is covered too.
+- **Future-proof limit windows.** Rate-limit windows are now decoded dynamically
+  from the usage API instead of a fixed list — when Anthropic ships a new weekly
+  window (e.g. a "Fable only" cap), it appears in the popover, history, burn-rate
+  analytics and the large desktop widget without an app update.
+- Future-proof model names: any new `claude-<family>-<version>` id labels itself
+  correctly (e.g. a hypothetical `claude-zephyr-6-1` → "Zephyr 6.1").
+- Time-bound banner: "Fable 5 included until Jun 22 — then uses extra credits"
+  (auto-hides after June 22, 2026).
+
+### Fixed
+- **Opus CLI costs were 3× too high.** Opus 4.6–4.8 are billed at $5/$25 per MTok,
+  but the app still used the old Opus 4/4.1 rates ($15/$75). The deprecated Opus
+  4 / 4.1 keep their historical $15/$75 rates for old log entries.
+- Dated model ids (e.g. `claude-haiku-4-5-20251001`) now match their exact pricing
+  table entry instead of relying on the family fallback.
+
 ## [1.0.3] — 2026-05-30
 
 ### Fixed
