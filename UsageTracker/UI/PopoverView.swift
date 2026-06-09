@@ -503,3 +503,32 @@ private func formatReset(_ date: Date) -> String {
     f.unitsStyle = .abbreviated
     return f.string(from: delta).map { "in \($0)" } ?? "—"
 }
+
+#Preview("Service section") {
+    ServiceSection(
+        service: ServiceSnapshot(
+            id: "claude",
+            displayName: "Claude",
+            icon: "sparkles",
+            plan: "Max 20x",
+            accountLabel: nil,
+            buckets: [
+                UsageBucket(id: "five_hour", label: "Current session", utilization: 34, resetsAt: Date().addingTimeInterval(2 * 3600), kind: .session),
+                UsageBucket(id: "seven_day", label: "All models", utilization: 76, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .weekly),
+                UsageBucket(id: "seven_day_opus", label: "Opus only", utilization: 12, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
+                UsageBucket(id: "seven_day_fable", label: "Fable only", utilization: 93, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
+                UsageBucket(id: "seven_day_sonnet", label: "Sonnet only", utilization: 0, resetsAt: .distantFuture, kind: .modelSpecific),
+                UsageBucket(id: "seven_day_cowork", label: "Cowork", utilization: 0, resetsAt: .distantFuture, kind: .modelSpecific),
+            ],
+            extraUsage: ExtraUsage(isEnabled: true, monthlyLimit: 50, usedCredits: 12.5, utilization: 25),
+            weekCost: 41.37,
+            state: .ok,
+            stateMessage: nil,
+            fetchedAt: Date()
+        ),
+        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false),
+        showsHeader: true
+    )
+    .padding(16)
+    .frame(width: 360)
+}

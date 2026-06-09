@@ -143,7 +143,8 @@ struct OverviewView: View {
                     Spacer()
                     Text("resets \(formatRelative(b.resetsAt))").font(.caption).foregroundStyle(.secondary)
                 }
-                BarSegment(percent: b.clampedPercent, height: 8, showsLabel: true)
+                BarSegment(percent: b.clampedPercent, height: 8, showsLabel: true,
+                           pace: b.elapsedFraction())
                     .padding(.bottom, 4)
             }
         }

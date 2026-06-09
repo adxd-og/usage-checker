@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Popover answers "am I OK?" at a glance.** The header is now a hero status:
+  a ring gauge of the most-constrained window, a plain-words verdict ("On track",
+  "Running hot", "Almost at the limit"), which window binds, and when it resets.
+- **Burn-rate moved next to the session bar** and now gives a verdict instead of
+  a raw number: "At this pace, limit in ~1h 20m" when you'll hit the wall before
+  the reset, or "you won't hit the limit before reset" when you're safe.
+- **Pace tick on every usage bar** (popover, dashboard, floating window): a small
+  marker shows how much of the window has elapsed, so 60% used reads as fine late
+  in the window and as trouble early in it.
+- Untouched weekly windows are folded behind a "N unused windows" disclosure in
+  the popover instead of stacking zero-percent bars.
+- Floating mini window's second row now shows the most-constrained weekly window
+  (e.g. "Opus only") instead of always "7-day".
+- When a refresh fails, the popover shows "Can't refresh — showing data from
+  HH:MM" (hover for the error) instead of silently dimming.
+- Keyboard shortcuts in the popover: ⌘D dashboard, ⌘R refresh, ⌘, settings,
+  ⌘Q quit; exact reset times on hover over "resets in …".
+- VoiceOver labels for the menu bar pill, usage bars, ring gauges and floating
+  window rows.
+
 ## [1.1.0] — 2026-06-10
 
 ### Added

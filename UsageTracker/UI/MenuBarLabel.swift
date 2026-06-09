@@ -64,6 +64,8 @@ private struct MiniServiceBar: View {
                     .opacity(pulse)
             }
             .animation(.easeInOut(duration: 0.4), value: percent)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(service.displayName) usage \(Int(percent.rounded())) percent")
         }
     }
 }
