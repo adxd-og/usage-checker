@@ -16,28 +16,81 @@ struct PopoverView: View {
         .frame(width: 360)
     }
 
-    // MARK: - Header
+    // MARK: - Hero header
+
+    /// The most-constrained window across all services — the one that answers
+    /// "can I keep working right now?". Ties resolve to the first in API order
+    /// (the 5-hour session), so an all-zero account leads with the session.
+    private var heroBucket: UsageBucket? {
+        let buckets = state.snapshot.services.flatMap(\.buckets)
+        return buckets.enumerated().max { a, b in
+            if a.element.clampedPercent != b.element.clampedPercent {
+                return a.element.clampedPercent < b.element.clampedPercent
+            }
+            return a.offset > b.offset
+        }?.element
+    }
 
     private var header: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            HStack(spacing: 10) {
-                Image(systemName: "gauge.with.dots.needle.67percent")
-                    .font(.system(size: 22, weight: .regular))
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Usage Checker")
-                        .font(.headline)
-                    Text(updatedText(now: ctx.date))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                if let hero = heroBucket {
+                    UsageRing(percent: hero.clampedPercent, size: 52)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(statusPhrase(hero.clampedPercent))
+                            .font(.headline)
+                        Text(heroDetail(hero))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .help(hero.resetsAt < .distantFuture
+                                  ? "Resets \(hero.resetsAt.formatted(date: .abbreviated, time: .shortened))"
+                                  : "")
+                        Text(metaLine(now: ctx.date))
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                } else {
+                    Image(systemName: "gauge.with.dots.needle.67percent")
+                        .font(.system(size: 22, weight: .regular))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Usage Checker")
+                            .font(.headline)
+                        Text(updatedText(now: ctx.date))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if state.isLoading {
                     ProgressView().controlSize(.small)
                 }
             }
+            .accessibilityElement(children: .combine)
         }
+    }
+
+    private func statusPhrase(_ percent: Double) -> String {
+        if percent >= 90 { return "Almost at the limit" }
+        if percent >= 70 { return "Running hot" }
+        if percent >= 50 { return "On track" }
+        return "Plenty of headroom"
+    }
+
+    private func heroDetail(_ hero: UsageBucket) -> String {
+        if hero.resetsAt < .distantFuture {
+            return "\(hero.label) · resets \(formatReset(hero.resetsAt))"
+        }
+        return hero.label
+    }
+
+    private func metaLine(now: Date) -> String {
+        let updated = updatedText(now: now)
+        if let plan = state.snapshot.services.compactMap(\.plan).first {
+            return "\(plan) · \(updated)"
+        }
+        return updated
     }
 
     private func updatedText(now: Date) -> String {
@@ -55,6 +108,13 @@ struct PopoverView: View {
     @ViewBuilder
     private var content: some View {
         Divider().opacity(0.5)
+        if state.snapshot.isStale && state.snapshot.hasAnyData {
+            noticeRow(
+                icon: "wifi.exclamationmark", tint: .orange,
+                text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+            )
+            .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
+        }
         if case .active(let endsAt) = Announcements.weeklyBonus() {
             noticeRow(
                 icon: "sparkles", tint: .green,
@@ -79,7 +139,11 @@ struct PopoverView: View {
         } else {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(state.snapshot.services) { service in
-                    ServiceSection(service: service)
+                    ServiceSection(
+                        service: service,
+                        burn: service.id == "claude" ? dashboard.burnFiveHour : nil,
+                        showsHeader: service.state != .ok || state.snapshot.services.count > 1
+                    )
                 }
             }
         }
@@ -103,19 +167,6 @@ struct PopoverView: View {
 
     private var footer: some View {
         VStack(spacing: 10) {
-            if let hint = burnHint {
-                Divider().opacity(0.5)
-                HStack(spacing: 6) {
-                    Image(systemName: "flame.fill")
-                        .font(.caption)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.orange)
-                    Text(hint)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                }
-            }
             Divider().opacity(0.5)
             HStack(spacing: 8) {
                 GlassGroup(spacing: 6) {
@@ -128,6 +179,8 @@ struct PopoverView: View {
                                 .labelStyle(.titleAndIcon)
                         }
                         .glassButtonStyle()
+                        .keyboardShortcut("d", modifiers: .command)
+                        .help("Open dashboard (⌘D)")
 
                         Button {
                             FloatingWindowController.shared.toggle()
@@ -146,7 +199,8 @@ struct PopoverView: View {
                             Image(systemName: "gearshape")
                         }
                         .glassButtonStyle()
-                        .help("Settings")
+                        .keyboardShortcut(",", modifiers: .command)
+                        .help("Settings (⌘,)")
 
                         Button {
                             state.refreshNow()
@@ -154,7 +208,8 @@ struct PopoverView: View {
                             Image(systemName: "arrow.clockwise")
                         }
                         .glassButtonStyle()
-                        .help("Refresh now")
+                        .keyboardShortcut("r", modifiers: .command)
+                        .help("Refresh now (⌘R)")
                     }
                 }
 
@@ -168,30 +223,20 @@ struct PopoverView: View {
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
+                .keyboardShortcut("q", modifiers: .command)
             }
         }
     }
-
-    private var burnHint: String? {
-        guard let burn = dashboard.burnFiveHour,
-              let secs = burn.secondsToLimit else { return nil }
-        return "5h window: hit limit in ~\(formatBurn(secs))"
-    }
-
-    private func formatBurn(_ secs: TimeInterval) -> String {
-        let h = Int(secs / 3600)
-        let m = Int((secs.truncatingRemainder(dividingBy: 3600)) / 60)
-        if h > 24 {
-            let d = h / 24
-            return "\(d)d"
-        }
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
-    }
 }
+
+// MARK: - Per-service section
 
 private struct ServiceSection: View {
     let service: ServiceSnapshot
+    let burn: BurnRatePrediction?
+    let showsHeader: Bool
+
+    @State private var showUnusedWindows = false
 
     private var sessionBuckets: [UsageBucket] {
         service.buckets.filter { $0.kind == .session }
@@ -201,17 +246,29 @@ private struct ServiceSection: View {
         service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific }
     }
 
+    /// Untouched model-specific windows are noise most of the day — fold them
+    /// behind a disclosure row. "All models" stays visible even at zero.
+    private var visibleWeekly: [UsageBucket] {
+        weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" }
+    }
+
+    private var unusedWeekly: [UsageBucket] {
+        weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            sectionHeader
+            if showsHeader {
+                sectionHeader
+            }
 
             switch service.state {
             case .ok:
                 if !sessionBuckets.isEmpty {
-                    bucketsBlock(title: "Current session", buckets: sessionBuckets)
+                    sessionBlock
                 }
                 if !weeklyBuckets.isEmpty {
-                    bucketsBlock(title: "Weekly limits", buckets: weeklyBuckets)
+                    weeklyBlock
                 }
                 if let extra = service.extraUsage, extra.isEnabled {
                     extraBlock(extra)
@@ -275,17 +332,95 @@ private struct ServiceSection: View {
             .liquidGlass(in: Capsule(), tint: color)
     }
 
-    private func bucketsBlock(title: String, buckets: [UsageBucket]) -> some View {
+    // MARK: Session
+
+    private var sessionBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title.uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
-                .padding(.top, 2)
-            ForEach(buckets) { bucket in
+            blockTitle("Current session")
+            ForEach(sessionBuckets) { bucket in
                 bucketRow(bucket)
             }
+            if let verdict = burnVerdict {
+                HStack(spacing: 6) {
+                    Image(systemName: verdict.willHit ? "flame.fill" : "checkmark.circle")
+                        .font(.caption)
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundStyle(verdict.willHit ? Color.orange : Color.secondary)
+                    Text(verdict.text)
+                        .font(.caption)
+                        .foregroundStyle(verdict.willHit ? Color.primary : Color.secondary)
+                    Spacer()
+                }
+            }
         }
+    }
+
+    /// Answers the question the burn rate is actually for: will I hit the limit
+    /// before the window resets, or can I keep going at this pace?
+    private var burnVerdict: (willHit: Bool, text: String)? {
+        guard let burn, !burn.isStale,
+              let secs = burn.secondsToLimit,
+              let bucket = sessionBuckets.first(where: { $0.id == burn.bucketId })
+        else { return nil }
+        if bucket.resetsAt < .distantFuture, secs >= bucket.resetsAt.timeIntervalSinceNow {
+            return (false, "At this pace you won't hit the limit before reset")
+        }
+        return (true, "At this pace, limit in ~\(formatBurn(secs))")
+    }
+
+    private func formatBurn(_ secs: TimeInterval) -> String {
+        let h = Int(secs / 3600)
+        let m = Int((secs.truncatingRemainder(dividingBy: 3600)) / 60)
+        if h > 24 { return "\(h / 24)d" }
+        if h > 0 { return "\(h)h \(m)m" }
+        return "\(m)m"
+    }
+
+    // MARK: Weekly
+
+    private var weeklyBlock: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            blockTitle("Weekly limits")
+            ForEach(visibleWeekly) { bucket in
+                bucketRow(bucket)
+            }
+            // A toggle row costs as much space as a single bucket row, so only
+            // fold when there are at least two untouched windows.
+            if unusedWeekly.count == 1, let only = unusedWeekly.first {
+                bucketRow(only)
+            } else if unusedWeekly.count > 1 {
+                Button {
+                    withAnimation(.smooth(duration: 0.2)) { showUnusedWindows.toggle() }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 8, weight: .bold))
+                            .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
+                        Text(showUnusedWindows
+                             ? "Hide unused windows"
+                             : "\(unusedWeekly.count) unused windows")
+                            .font(.caption)
+                    }
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 22)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if showUnusedWindows {
+                    ForEach(unusedWeekly) { bucket in
+                        bucketRow(bucket)
+                    }
+                }
+            }
+        }
+    }
+
+    private func blockTitle(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.caption2.weight(.semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+            .padding(.top, 2)
     }
 
     private func bucketRow(_ bucket: UsageBucket) -> some View {
@@ -298,34 +433,22 @@ private struct ServiceSection: View {
                     Text("resets \(formatReset(bucket.resetsAt))")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .help("Resets \(bucket.resetsAt.formatted(date: .abbreviated, time: .shortened))")
                 } else if bucket.clampedPercent == 0 {
                     Text(emptyHint(for: bucket))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            BarSegment(
-                percent: bucket.clampedPercent,
-                height: 7,
-                showsLabel: true,
-                pace: paceFraction(for: bucket)
-            )
+            if let pace = bucket.elapsedFraction() {
+                BarSegment(percent: bucket.clampedPercent, height: 7, showsLabel: true, pace: pace)
+                    .help("\(Int((pace * 100).rounded()))% of this window has elapsed — the tick marks even pace")
+            } else {
+                BarSegment(percent: bucket.clampedPercent, height: 7, showsLabel: true)
+            }
         }
-    }
-
-    /// Fraction of the bucket's rate-limit window already elapsed (0...1), so the
-    /// pace tick can show whether usage runs ahead of or behind "even pace".
-    private func paceFraction(for bucket: UsageBucket) -> Double? {
-        guard bucket.resetsAt < .distantFuture else { return nil }
-        let duration: TimeInterval
-        switch bucket.kind {
-        case .session: duration = 5 * 3600
-        case .weekly, .modelSpecific: duration = 7 * 24 * 3600
-        case .other: return nil
-        }
-        let remaining = bucket.resetsAt.timeIntervalSinceNow
-        guard remaining > 0, remaining <= duration else { return nil }
-        return 1 - remaining / duration
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(bucket.label), \(Int(bucket.clampedPercent.rounded())) percent used")
     }
 
     private func emptyHint(for bucket: UsageBucket) -> String {
@@ -351,6 +474,8 @@ private struct ServiceSection: View {
             BarSegment(percent: extra.utilization, height: 6, showsLabel: false)
         }
         .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Extra usage credits, \(String(format: "$%.2f of $%.0f", extra.usedCredits, extra.monthlyLimit)) used")
     }
 
     private func weekCostBlock(_ amount: Double) -> some View {
@@ -365,38 +490,16 @@ private struct ServiceSection: View {
         }
         .padding(.top, 2)
     }
-
-    private func formatReset(_ date: Date) -> String {
-        let delta = date.timeIntervalSinceNow
-        if delta <= 0 { return "now" }
-        let f = DateComponentsFormatter()
-        f.allowedUnits = [.day, .hour, .minute]
-        f.maximumUnitCount = 2
-        f.unitsStyle = .abbreviated
-        return f.string(from: delta).map { "in \($0)" } ?? "—"
-    }
 }
 
-#Preview("Service section") {
-    ServiceSection(service: ServiceSnapshot(
-        id: "claude",
-        displayName: "Claude",
-        icon: "sparkles",
-        plan: "Max 20x",
-        accountLabel: nil,
-        buckets: [
-            UsageBucket(id: "five_hour", label: "Current session", utilization: 34, resetsAt: Date().addingTimeInterval(2 * 3600), kind: .session),
-            UsageBucket(id: "seven_day", label: "All models", utilization: 76, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .weekly),
-            UsageBucket(id: "seven_day_opus", label: "Opus only", utilization: 12, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
-            UsageBucket(id: "seven_day_fable", label: "Fable only", utilization: 93, resetsAt: Date().addingTimeInterval(3 * 24 * 3600), kind: .modelSpecific),
-            UsageBucket(id: "seven_day_sonnet", label: "Sonnet only", utilization: 0, resetsAt: .distantFuture, kind: .modelSpecific),
-        ],
-        extraUsage: ExtraUsage(isEnabled: true, monthlyLimit: 50, usedCredits: 12.5, utilization: 25),
-        weekCost: 41.37,
-        state: .ok,
-        stateMessage: nil,
-        fetchedAt: Date()
-    ))
-    .padding(16)
-    .frame(width: 360)
+// MARK: - Shared formatting
+
+private func formatReset(_ date: Date) -> String {
+    let delta = date.timeIntervalSinceNow
+    if delta <= 0 { return "now" }
+    let f = DateComponentsFormatter()
+    f.allowedUnits = [.day, .hour, .minute]
+    f.maximumUnitCount = 2
+    f.unitsStyle = .abbreviated
+    return f.string(from: delta).map { "in \($0)" } ?? "—"
 }

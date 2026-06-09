@@ -82,8 +82,17 @@ struct FloatingMiniView: View {
         claude?.buckets.first(where: { $0.id == "five_hour" })
     }
 
-    private var sevenDay: UsageBucket? {
-        claude?.buckets.first(where: { $0.id == "seven_day" })
+    /// The most-constrained weekly window — with per-model caps, "All models" at 12%
+    /// is useless information when "Opus only" sits at 80%. Ties keep API order,
+    /// so an untouched account still shows "All models".
+    private var topWeekly: UsageBucket? {
+        let weekly = claude?.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } ?? []
+        return weekly.enumerated().max { a, b in
+            if a.element.clampedPercent != b.element.clampedPercent {
+                return a.element.clampedPercent < b.element.clampedPercent
+            }
+            return a.offset > b.offset
+        }?.element
     }
 
     var body: some View {
@@ -105,7 +114,7 @@ struct FloatingMiniView: View {
             }
 
             row(label: "5-hour", bucket: fiveHour)
-            row(label: "7-day", bucket: sevenDay)
+            row(label: topWeekly?.label ?? "7-day", bucket: topWeekly)
 
             Spacer()
         }
@@ -137,7 +146,10 @@ struct FloatingMiniView: View {
                         .foregroundStyle(.primary)
                 }
             }
-            BarSegment(percent: bucket?.clampedPercent ?? 0, height: 5, showsLabel: false)
+            BarSegment(percent: bucket?.clampedPercent ?? 0, height: 5, showsLabel: false,
+                       pace: bucket?.elapsedFraction())
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(label), \(Int((bucket?.clampedPercent ?? 0).rounded())) percent used")
     }
 }
