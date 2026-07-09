@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **No more keychain permission prompt every ~8 hours.** Claude Code re-creates its
+  keychain item on every token refresh, which reset the ACL and re-triggered the
+  macOS prompt. The app now caches credentials in its own keychain item (reading
+  your own item never prompts), refreshes the access token itself, and only probes
+  Claude Code's item silently in the background (plus the `~/.claude/.credentials.json`
+  file as a prompt-free source). The interactive prompt remains only for first
+  launch / re-login, and is rate-limited to once per hour.
+
 ## [1.1.0] — 2026-06-10
 
 ### Changed

@@ -87,34 +87,30 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
     func fetch() async -> ServiceSnapshot {
         let now = Date()
-        let creds: ClaudeCredentials
+        let oauth: ClaudeCredentials.OAuth
         do {
-            creds = try ClaudeKeychainReader.read()
+            oauth = try await resolveCredentials(now: now)
         } catch {
             return .notSignedIn(message: error.localizedDescription, at: now)
         }
 
-        var accessToken = creds.claudeAiOauth.accessToken
-        let expiresAt = creds.claudeAiOauth.expiresAt
-        let nowMs = now.timeIntervalSince1970 * 1000
-
-        if nowMs > expiresAt - 5 * 60 * 1000, let refresh = creds.claudeAiOauth.refreshToken {
-            if let refreshed = try? await refresher.refresh(refreshToken: refresh, userAgent: Self.userAgent) {
-                accessToken = refreshed.accessToken
-            }
-        }
-
         let resp: OAuthUsageResponse
         do {
-            resp = try await fetchUsage(token: accessToken)
+            resp = try await fetchUsage(token: oauth.accessToken)
         } catch HTTPClientError.badStatus(401, _) {
-            guard let refreshToken = creds.claudeAiOauth.refreshToken else {
+            guard let refreshToken = oauth.refreshToken else {
+                ClaudeCredentialsCache.clear()
                 return .errorState(message: "Unauthorized and no refresh token", at: now)
             }
             do {
                 let refreshed = try await refresher.refresh(refreshToken: refreshToken, userAgent: Self.userAgent)
-                resp = try await fetchUsage(token: refreshed.accessToken)
+                let merged = Self.merged(oauth, with: refreshed, at: now)
+                ClaudeCredentialsCache.save(merged)
+                resp = try await fetchUsage(token: merged.accessToken)
             } catch {
+                // Both the token and its refresh are dead — drop the cache so the next
+                // poll re-bootstraps from Claude Code's sources.
+                ClaudeCredentialsCache.clear()
                 return .errorState(message: error.localizedDescription, at: now)
             }
         } catch HTTPClientError.rateLimited(let retryAfter) {
@@ -124,8 +120,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         }
 
         let tier = SubscriptionTier(
-            rawSubscriptionType: creds.claudeAiOauth.subscriptionType,
-            rateLimitTier: creds.claudeAiOauth.rateLimitTier
+            rawSubscriptionType: oauth.subscriptionType,
+            rateLimitTier: oauth.rateLimitTier
         )
 
         let buckets = Self.buckets(from: resp.windows)
@@ -162,6 +158,71 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             state: .ok,
             stateMessage: nil,
             fetchedAt: now
+        )
+    }
+
+    // MARK: - Credentials
+
+    /// Resolves OAuth credentials prompt-lessly wherever possible.
+    ///
+    /// Claude Code re-creates its keychain item on every token refresh (~8h), resetting the
+    /// ACL — so a plain read used to re-prompt the user that often. Order here: our own
+    /// cache → silent probe of Claude Code's item (picks up re-logins for free while the
+    /// ACL lasts) → the credentials file → interactive read (may prompt, cooldown-limited).
+    /// Expired tokens are refreshed by us and cached, so we stay off Claude Code's item.
+    private func resolveCredentials(now: Date) async throws -> ClaudeCredentials.OAuth {
+        var best = ClaudeCredentialsCache.load()?.claudeAiOauth
+
+        if let probed = try? ClaudeKeychainReader.readNonInteractive().claudeAiOauth,
+           probed.expiresAt > (best?.expiresAt ?? 0) {
+            best = probed
+            ClaudeCredentialsCache.save(probed)
+        }
+        if best == nil, let file = ClaudeKeychainReader.readFromFile()?.claudeAiOauth {
+            best = file
+            ClaudeCredentialsCache.save(file)
+        }
+        if best == nil {
+            best = try interactiveRead(now: now)
+        }
+        guard var oauth = best else { throw ClaudeKeychainError.notFound }
+
+        let nowMs = now.timeIntervalSince1970 * 1000
+        if nowMs > oauth.expiresAt - 5 * 60 * 1000, let refreshToken = oauth.refreshToken {
+            if let refreshed = try? await refresher.refresh(refreshToken: refreshToken, userAgent: Self.userAgent) {
+                oauth = Self.merged(oauth, with: refreshed, at: now)
+                ClaudeCredentialsCache.save(oauth)
+            }
+        }
+        return oauth
+    }
+
+    /// Interactive keychain read — the only path that can show the permission prompt.
+    /// Rate-limited so background polling can't turn a Deny into a prompt storm.
+    private func interactiveRead(now: Date) throws -> ClaudeCredentials.OAuth {
+        let cooldownKey = "claudeKeychainPromptAt"
+        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        guard now.timeIntervalSince1970 - last >= 3600 else {
+            throw ClaudeKeychainError.interactionRequired
+        }
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: cooldownKey)
+        let oauth = try ClaudeKeychainReader.read().claudeAiOauth
+        ClaudeCredentialsCache.save(oauth)
+        return oauth
+    }
+
+    private static func merged(
+        _ oauth: ClaudeCredentials.OAuth,
+        with refreshed: OAuthTokenResponse,
+        at now: Date
+    ) -> ClaudeCredentials.OAuth {
+        ClaudeCredentials.OAuth(
+            accessToken: refreshed.accessToken,
+            refreshToken: refreshed.refreshToken ?? oauth.refreshToken,
+            expiresAt: now.timeIntervalSince1970 * 1000 + Double(refreshed.expiresIn ?? 3600) * 1000,
+            scopes: oauth.scopes,
+            subscriptionType: oauth.subscriptionType,
+            rateLimitTier: oauth.rateLimitTier
         )
     }
 
