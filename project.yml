@@ -40,8 +40,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: UsageChecker
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: "6"
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
         INFOPLIST_KEY_CFBundleDisplayName: "Usage Checker"
@@ -72,8 +72,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "5"
+        MARKETING_VERSION: "1.1.1"
+        CURRENT_PROJECT_VERSION: "6"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO

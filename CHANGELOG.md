@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] — 2026-07-10
+
 ### Fixed
 - **No more keychain permission prompt every ~8 hours.** Claude Code re-creates its
   keychain item on every token refresh, which reset the ACL and re-triggered the
