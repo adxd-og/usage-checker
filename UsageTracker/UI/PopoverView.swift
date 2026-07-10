@@ -537,13 +537,20 @@ private struct ServiceSection: View {
         return "You haven't used \(name) yet"
     }
 
+    /// Enterprise/Team accounts know this as their spend limit; subscription
+    /// accounts as extra-usage credits. Same API field either way.
+    private var extraUsageLabel: String {
+        let plan = service.plan ?? ""
+        return plan.contains("Enterprise") || plan.contains("Team") ? "Spend limit" : "Extra usage credits"
+    }
+
     private func extraBlock(_ extra: ExtraUsage) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Extra usage credits")
+                Text(extraUsageLabel)
                     .font(.subheadline.weight(.medium))
                 Spacer()
-                Text(String(format: "$%.2f / $%.0f", extra.usedCredits, extra.monthlyLimit))
+                Text("\(Self.money(extra.usedCredits)) / \(Self.money(extra.monthlyLimit, decimals: 0))")
                     .font(.subheadline)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -552,7 +559,7 @@ private struct ServiceSection: View {
         }
         .padding(.top, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Extra usage credits, \(String(format: "$%.2f of $%.0f", extra.usedCredits, extra.monthlyLimit)) used")
+        .accessibilityLabel("\(extraUsageLabel), \(Self.money(extra.usedCredits)) of \(Self.money(extra.monthlyLimit, decimals: 0)) used")
     }
 
     private func weekCostBlock(_ amount: Double) -> some View {
@@ -560,12 +567,17 @@ private struct ServiceSection: View {
             Text("Last 7 days")
                 .font(.subheadline.weight(.medium))
             Spacer()
-            Text(String(format: "$%.2f", amount))
+            Text(Self.money(amount))
                 .font(.subheadline.weight(.medium))
                 .monospacedDigit()
                 .foregroundStyle(.primary)
         }
         .padding(.top, 2)
+    }
+
+    /// "$1,564.20" — grouped thousands so Enterprise-scale figures stay readable.
+    private static func money(_ value: Double, decimals: Int = 2) -> String {
+        value.formatted(.currency(code: "USD").precision(.fractionLength(decimals)))
     }
 }
 

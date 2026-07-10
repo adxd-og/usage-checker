@@ -128,8 +128,11 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
         let extra: ExtraUsage? = {
             guard let e = resp.extraUsage else { return nil }
-            let monthlyLimit = e.monthlyLimit ?? 0
-            let usedCredits = e.usedCredits ?? 0
+            // The API reports these in CENTS: an Enterprise account showing
+            // "$156.40 of $200.00" in Claude's own UI arrives here as
+            // used_credits=15640, monthly_limit=20000.
+            let monthlyLimit = (e.monthlyLimit ?? 0) / 100
+            let usedCredits = (e.usedCredits ?? 0) / 100
             // Normalize to 0–100 to match UsageBucket.utilization. Prefer the unambiguous
             // used/limit ratio so the bar always agrees with the "$X / $Y" text beside it;
             // fall back to the raw utilization field (a 0–1 fraction from the API).
