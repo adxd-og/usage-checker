@@ -278,7 +278,11 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         let weeklyPrefix = "seven_day_"
         let isWeeklySub = stem.hasPrefix(weeklyPrefix)
         if isWeeklySub { stem.removeFirst(weeklyPrefix.count) }
-        let words = stem.split(separator: "_").map { String($0).capitalized }
+        let words = stem.split(separator: "_").map { word -> String in
+            // Anthropic's internal codenames shouldn't leak into the UI:
+            // "omelette" is Claude Design (e.g. "seven_day_omelette_promotional").
+            word == "omelette" ? "Claude Design" : String(word).capitalized
+        }
         if isWeeklySub && words.count == 1 { return "\(words[0]) only" }
         return words.joined(separator: " ")
     }

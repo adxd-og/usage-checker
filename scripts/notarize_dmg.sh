@@ -44,6 +44,13 @@ if [ ! -f "$DMG_PATH" ]; then
 fi
 log "DMG: $DMG_PATH ($(du -h "$DMG_PATH" | cut -f1 | tr -d ' ')), profile: $KEYCHAIN_PROFILE"
 
+# A corrupted DMG makes notarytool hang silently at upload (it fails an internal
+# "disk image potentiality test" visible only with --verbose) — catch it here.
+phase "DMG integrity check"
+hdiutil verify "$DMG_PATH" > /dev/null 2>&1 \
+  || { log "    DMG is corrupted (hdiutil verify failed) — rebuild with ./scripts/build_dmg.sh"; exit 1; }
+phase_done
+
 phase "network preflight (Apple reachability)"
 curl -sS --max-time 10 -o /dev/null https://appstoreconnect.apple.com \
   || { log "    Apple is unreachable — check the connection and retry"; exit 1; }

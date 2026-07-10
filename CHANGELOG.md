@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] — 2026-07-11
+
+### Added
+- **Pay-as-you-go mode.** Accounts without session/weekly windows (Enterprise
+  API billing) now get a "$X" menu-bar pill with the local 7-day CLI spend, and
+  an optional weekly budget (Settings → Account) that turns spend into a
+  percentage — bars, the hero header and 80/95% notifications work off it.
+
+### Fixed
+- **Spend limit was shown 100× too large.** The usage API reports extra-usage
+  credits in cents; an Enterprise limit of "$156.40 of $200" displayed as
+  "$15640.00 / $20000". Now shown correctly, with grouped thousands.
+- The block is labeled "Spend limit" on Enterprise/Team plans (matching
+  Claude's own UI) and "Extra usage credits" on subscription plans.
+- Windows named with Anthropic's internal codename now display properly:
+  "Omelette Promotional" → "Claude Design Promotional".
+
 ## [1.4.0] — 2026-07-10
 
 ### Added
