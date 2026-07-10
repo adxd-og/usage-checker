@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] — 2026-07-10
+
+### Added
+- **Codex CLI cost accounting.** The Codex section in the popover now shows
+  "Last 7 days $X", computed locally from `~/.codex/sessions` logs: per-turn
+  token deltas are attributed to the model in use and priced at API rates
+  (cached input bills at the cache-read rate; OpenAI doesn't bill cache writes).
+- **Live model pricing from models.dev.** Claude and OpenAI rates (61 models)
+  load from the public models.dev dataset — refreshed daily, cached on disk —
+  so a newly launched model prices correctly without an app update. The
+  hand-verified built-in table remains the offline fallback.
+
+### Notes
+- Antigravity/Gemini expose only quota percentages locally (no token logs),
+  so dollar accounting isn't possible for them.
+
 ## [1.3.0] — 2026-07-10
 
 ### Added
