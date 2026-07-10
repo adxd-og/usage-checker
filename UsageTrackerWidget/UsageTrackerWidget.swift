@@ -1,113 +1,233 @@
-import WidgetKit
+import AppIntents
 import SwiftUI
+import WidgetKit
 
-// MARK: - Timeline
+// MARK: - Provider selection intent
 
-struct UsageEntry: TimelineEntry {
+enum ProviderChoice: String, AppEnum {
+    case claude
+    case codex
+    case gemini
+    case antigravity
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Provider"
+    static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
+        .claude: "Claude",
+        .codex: "Codex (OpenAI)",
+        .gemini: "Gemini",
+        .antigravity: "Antigravity",
+    ]
+
+    var fallbackName: String {
+        switch self {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .gemini: return "Gemini"
+        case .antigravity: return "Antigravity"
+        }
+    }
+
+    var fallbackIcon: String {
+        switch self {
+        case .claude: return "sparkles"
+        case .codex: return "chevron.left.forwardslash.chevron.right"
+        case .gemini: return "diamond"
+        case .antigravity: return "circle.grid.cross"
+        }
+    }
+}
+
+struct SelectProviderIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "Provider"
+    static let description = IntentDescription("Choose which provider this widget tracks.")
+
+    @Parameter(title: "Provider", default: .claude)
+    var provider: ProviderChoice
+}
+
+// MARK: - Timelines
+
+struct ProviderEntry: TimelineEntry {
+    let date: Date
+    let provider: ProviderChoice
+    let service: WidgetService?
+    let updatedAt: Date
+}
+
+private func timelineEntries<E>(now: Date, make: (Date) -> E) -> Timeline<E> {
+    // Emit a few entries spaced 1 minute apart so "Updated Xm ago" text refreshes
+    // even if the main app hasn't fetched new data yet; then ask for a new timeline
+    // (the app's reloadAllTimelines() also triggers one whenever it polls).
+    let entries = (0..<6).map { make(now.addingTimeInterval(Double($0) * 60)) }
+    return Timeline(entries: entries, policy: .after(now.addingTimeInterval(6 * 60)))
+}
+
+struct ProviderTimelineProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> ProviderEntry {
+        let snap = WidgetSnapshot.placeholder
+        return ProviderEntry(date: Date(), provider: .claude, service: snap.service(id: "claude"), updatedAt: snap.updatedAt)
+    }
+
+    func snapshot(for configuration: SelectProviderIntent, in context: Context) async -> ProviderEntry {
+        entry(for: configuration.provider, at: Date())
+    }
+
+    func timeline(for configuration: SelectProviderIntent, in context: Context) async -> Timeline<ProviderEntry> {
+        timelineEntries(now: Date()) { entry(for: configuration.provider, at: $0) }
+    }
+
+    private func entry(for provider: ProviderChoice, at date: Date) -> ProviderEntry {
+        let snap = SharedWidgetStore.read() ?? .placeholder
+        return ProviderEntry(
+            date: date,
+            provider: provider,
+            service: snap.service(id: provider.rawValue),
+            updatedAt: snap.updatedAt
+        )
+    }
+}
+
+struct AllProvidersEntry: TimelineEntry {
     let date: Date
     let snapshot: WidgetSnapshot
-    let isPlaceholder: Bool
 }
 
-struct UsageTimelineProvider: TimelineProvider {
-    func placeholder(in context: Context) -> UsageEntry {
-        UsageEntry(date: Date(), snapshot: .placeholder, isPlaceholder: true)
+struct AllProvidersTimelineProvider: TimelineProvider {
+    func placeholder(in context: Context) -> AllProvidersEntry {
+        AllProvidersEntry(date: Date(), snapshot: .placeholder)
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (UsageEntry) -> Void) {
-        let snap = SharedWidgetStore.read() ?? .placeholder
-        completion(UsageEntry(date: Date(), snapshot: snap, isPlaceholder: false))
+    func getSnapshot(in context: Context, completion: @escaping (AllProvidersEntry) -> Void) {
+        completion(AllProvidersEntry(date: Date(), snapshot: SharedWidgetStore.read() ?? .placeholder))
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<UsageEntry>) -> Void) {
-        let now = Date()
+    func getTimeline(in context: Context, completion: @escaping (Timeline<AllProvidersEntry>) -> Void) {
         let snap = SharedWidgetStore.read() ?? .placeholder
-        // Emit a few entries spaced 1 minute apart so the "Updated Xm ago" text refreshes
-        // even if the main app hasn't fetched new data yet. Each carries the same snapshot.
-        var entries: [UsageEntry] = []
-        for offset in 0..<6 {
-            let date = now.addingTimeInterval(Double(offset) * 60)
-            entries.append(UsageEntry(date: date, snapshot: snap, isPlaceholder: false))
-        }
-        // After 6 minutes ask WidgetKit to fetch a new timeline (which will read the shared
-        // file again — main app's reloadAllTimelines() also triggers this whenever it polls).
-        let next = now.addingTimeInterval(6 * 60)
-        completion(Timeline(entries: entries, policy: .after(next)))
+        completion(timelineEntries(now: Date()) { AllProvidersEntry(date: $0, snapshot: snap) })
     }
 }
 
-// MARK: - Widget definition
+// MARK: - Widget definitions
 
 @main
 struct UsageTrackerWidgetBundle: WidgetBundle {
     var body: some Widget {
-        UsageTrackerWidget()
+        ProviderWidget()
+        AllProvidersWidget()
     }
 }
 
-struct UsageTrackerWidget: Widget {
+/// Per-provider widget (the original kind, so existing placements keep working —
+/// they default to Claude, which is exactly what they showed before).
+struct ProviderWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: SharedWidgetStore.widgetKind, provider: UsageTimelineProvider()) { entry in
-            UsageWidgetEntryView(entry: entry)
+        AppIntentConfiguration(
+            kind: SharedWidgetStore.providerWidgetKind,
+            intent: SelectProviderIntent.self,
+            provider: ProviderTimelineProvider()
+        ) { entry in
+            ProviderWidgetEntryView(entry: entry)
                 .containerBackground(.regularMaterial, for: .widget)
         }
-        .configurationDisplayName("Claude usage")
-        .description("Track your Claude subscription limits at a glance.")
+        .configurationDisplayName("Provider usage")
+        .description("Limits for one provider — right-click the widget to pick which.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge])
     }
 }
 
-// MARK: - Entry view
+/// Overview widget: every connected provider at a glance.
+struct AllProvidersWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(
+            kind: SharedWidgetStore.allProvidersWidgetKind,
+            provider: AllProvidersTimelineProvider()
+        ) { entry in
+            AllProvidersWidgetView(snapshot: entry.snapshot)
+                .containerBackground(.regularMaterial, for: .widget)
+        }
+        .configurationDisplayName("All providers")
+        .description("Every connected provider's limits at a glance.")
+        .supportedFamilies([.systemLarge])
+    }
+}
 
-struct UsageWidgetEntryView: View {
+// MARK: - Per-provider entry view
+
+struct ProviderWidgetEntryView: View {
     @Environment(\.widgetFamily) private var family
-    let entry: UsageEntry
+    let entry: ProviderEntry
 
     var body: some View {
-        switch family {
-        case .systemSmall: SmallWidgetView(snapshot: entry.snapshot)
-        case .systemMedium: MediumWidgetView(snapshot: entry.snapshot)
-        case .systemLarge: LargeWidgetView(snapshot: entry.snapshot)
-        default: SmallWidgetView(snapshot: entry.snapshot)
+        if let service = entry.service {
+            switch family {
+            case .systemSmall: SmallProviderView(service: service)
+            case .systemMedium: MediumProviderView(service: service, updatedAt: entry.updatedAt)
+            case .systemLarge: LargeProviderView(service: service, updatedAt: entry.updatedAt)
+            default: SmallProviderView(service: service)
+            }
+        } else {
+            NoDataView(provider: entry.provider)
+        }
+    }
+}
+
+/// Shown when the selected provider has published no usage (signed out / not running).
+struct NoDataView: View {
+    let provider: ProviderChoice
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: provider.fallbackIcon)
+                .font(.system(size: 22, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.secondary)
+            Text(provider.fallbackName)
+                .font(.system(size: 12, weight: .semibold))
+            Text("No data")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
         }
     }
 }
 
 // MARK: - Small (158×158)
 
-struct SmallWidgetView: View {
-    let snapshot: WidgetSnapshot
+struct SmallProviderView: View {
+    let service: WidgetService
 
     var body: some View {
         ZStack {
             ringBar
             VStack(spacing: 0) {
-                Text("5h")
+                Text(service.name)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
-                Text(snapshot.headlineLabel)
-                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .lineLimit(1)
+                Text("\(Int((service.headlineBucket?.percent ?? 0).rounded()))%")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .monospacedDigit()
-                if let plan = snapshot.plan {
-                    Text(plan)
-                        .font(.system(size: 9, weight: .medium))
+                if let label = service.headlineBucket?.label {
+                    Text(label)
+                        .font(.system(size: 8, weight: .medium))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                 }
             }
+            .padding(.horizontal, 22)
         }
     }
 
     private var ringBar: some View {
-        let p = (snapshot.fiveHourPercent ?? 0) / 100
+        let percent = service.headlineBucket?.percent ?? 0
         return Circle()
             .trim(from: 0, to: 1)
             .stroke(.quaternary, lineWidth: 10)
             .overlay(
                 Circle()
-                    .trim(from: 0, to: max(0.005, p))
+                    .trim(from: 0, to: max(0.005, percent / 100))
                     .stroke(
-                        statusColor(snapshot.fiveHourPercent ?? 0),
+                        statusColor(percent),
                         style: StrokeStyle(lineWidth: 10, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
@@ -118,80 +238,75 @@ struct SmallWidgetView: View {
 
 // MARK: - Medium (338×158)
 
-struct MediumWidgetView: View {
-    let snapshot: WidgetSnapshot
+struct MediumProviderView: View {
+    let service: WidgetService
+    let updatedAt: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
-                Text("Claude").font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
-                if let plan = snapshot.plan {
-                    Text(plan).font(.system(size: 11)).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Text("Updated \(WidgetTime.ago(snapshot.updatedAt))")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+            ServiceHeader(service: service, updatedAt: updatedAt)
+            ForEach(displayBuckets) { bucket in
+                WidgetBucketRow(bucket: bucket)
             }
-
-            row(label: "5h session", percent: snapshot.fiveHourPercent, resets: snapshot.fiveHourResetsAt)
-            row(label: "7d weekly", percent: snapshot.sevenDayPercent, resets: snapshot.sevenDayResetsAt)
         }
         .padding(14)
     }
 
-    private func row(label: String, percent: Double?, resets: Date?) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                Spacer()
-                if let p = percent {
-                    Text("\(Int(p.rounded()))%")
-                        .font(.system(size: 12, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.primary)
-                }
-                if let r = resets, r < .distantFuture {
-                    Text(WidgetTime.until(r)).font(.system(size: 9)).foregroundStyle(.tertiary)
-                }
-            }
-            ProgressBar(percent: percent ?? 0)
-        }
+    /// Two rows fit: the session window plus the busiest other window.
+    private var displayBuckets: [WidgetBucket] {
+        var rows: [WidgetBucket] = []
+        if let session = service.sessionBuckets.first { rows.append(session) }
+        rows.append(contentsOf: service.nonSessionBuckets
+            .sorted { $0.percent > $1.percent }
+            .prefix(2 - rows.count))
+        return rows
     }
 }
 
-// MARK: - Large (338×354)
+// MARK: - Large per-provider (338×354)
 
-struct LargeWidgetView: View {
+struct LargeProviderView: View {
+    let service: WidgetService
+    let updatedAt: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            ServiceHeader(service: service, updatedAt: nil)
+            Divider()
+            ForEach(service.sessionBuckets.prefix(2)) { bucket in
+                WidgetBucketRow(bucket: bucket)
+            }
+            ForEach(service.nonSessionBuckets.prefix(5)) { bucket in
+                WidgetBucketRow(bucket: bucket)
+            }
+            Spacer()
+            Text("Updated \(WidgetTime.ago(updatedAt))")
+                .font(.system(size: 9))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(16)
+    }
+}
+
+// MARK: - All providers (large)
+
+struct AllProvidersWidgetView: View {
     let snapshot: WidgetSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: "sparkles")
-                    .symbolRenderingMode(.hierarchical)
-                    .foregroundStyle(.tint)
-                Text("Claude").font(.system(size: 14, weight: .semibold)).foregroundStyle(.primary)
-                if let plan = snapshot.plan {
-                    Text(plan).font(.system(size: 12)).foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(snapshot.services.prefix(4)) { service in
+                VStack(alignment: .leading, spacing: 6) {
+                    ServiceHeader(service: service, updatedAt: nil)
+                    // The worst two windows tell the story; details live in the app.
+                    ForEach(topBuckets(of: service)) { bucket in
+                        WidgetBucketRow(bucket: bucket, compact: true)
+                    }
                 }
-                Spacer()
+                if service.id != snapshot.services.prefix(4).last?.id {
+                    Divider()
+                }
             }
-            Divider()
-
-            sectionTitle("Current session")
-            row(label: "5-hour window", percent: snapshot.fiveHourPercent, resets: snapshot.fiveHourResetsAt)
-
-            sectionTitle("Weekly limits")
-            row(label: "All models", percent: snapshot.sevenDayPercent, resets: snapshot.sevenDayResetsAt)
-            // The large widget fits ~4 extra rows below the fixed ones.
-            ForEach(snapshot.weeklyModelBuckets.prefix(4)) { bucket in
-                row(label: bucket.label, percent: bucket.percent, resets: nil)
-            }
-
             Spacer()
             Text("Updated \(WidgetTime.ago(snapshot.updatedAt))")
                 .font(.system(size: 9))
@@ -200,27 +315,70 @@ struct LargeWidgetView: View {
         .padding(16)
     }
 
-    private func sectionTitle(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.system(size: 9, weight: .semibold))
-            .tracking(0.6)
-            .foregroundStyle(.secondary)
-            .padding(.top, 4)
+    private func topBuckets(of service: WidgetService) -> [WidgetBucket] {
+        var rows: [WidgetBucket] = []
+        if let session = service.sessionBuckets.first { rows.append(session) }
+        rows.append(contentsOf: service.nonSessionBuckets
+            .sorted { $0.percent > $1.percent }
+            .prefix(2 - rows.count))
+        return rows
     }
+}
 
-    private func row(label: String, percent: Double?, resets: Date?) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
+// MARK: - Shared pieces
+
+struct ServiceHeader: View {
+    let service: WidgetService
+    let updatedAt: Date?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: service.icon)
+                .font(.system(size: 12, weight: .medium))
+                .symbolRenderingMode(.hierarchical)
+                .foregroundStyle(.tint)
+            Text(service.name)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+            if let plan = service.plan {
+                Text(plan)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer()
+            if let updatedAt {
+                Text("Updated \(WidgetTime.ago(updatedAt))")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+    }
+}
+
+struct WidgetBucketRow: View {
+    let bucket: WidgetBucket
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: compact ? 2 : 4) {
             HStack {
-                Text(label).font(.system(size: 11)).foregroundStyle(.primary)
+                Text(bucket.label)
+                    .font(.system(size: compact ? 10 : 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
                 Spacer()
-                if let p = percent {
-                    Text("\(Int(p.rounded()))%")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(.secondary)
+                Text("\(Int(bucket.percent.rounded()))%")
+                    .font(.system(size: compact ? 11 : 12, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.primary)
+                if let resets = bucket.resetsAt {
+                    Text(WidgetTime.until(resets))
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
                 }
             }
-            ProgressBar(percent: percent ?? 0)
+            ProgressBar(percent: bucket.percent, height: compact ? 5 : 6)
         }
     }
 }
@@ -282,14 +440,14 @@ func statusColor(_ percent: Double) -> Color {
     return .accentColor
 }
 
-#Preview("Large") {
-    LargeWidgetView(snapshot: .placeholder)
+#Preview("All providers") {
+    AllProvidersWidgetView(snapshot: .placeholder)
         .frame(width: 338, height: 354)
         .background(.regularMaterial)
 }
 
 #Preview("Small") {
-    SmallWidgetView(snapshot: .placeholder)
+    SmallProviderView(service: WidgetSnapshot.placeholder.services[0])
         .frame(width: 158, height: 158)
         .background(.regularMaterial)
 }

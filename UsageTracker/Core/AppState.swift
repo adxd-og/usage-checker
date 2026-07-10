@@ -75,11 +75,13 @@ final class AppState: ObservableObject {
         }
 
         UsageNotifier.shared.evaluate(snapshot: next)
+        if next.hasAnyData {
+            WidgetBridge.publish(next.services, at: next.fetchedAt)
+        }
         if let claude = next.services.first(where: { $0.id == "claude" }), claude.state == .ok {
             await HistoryStore.shared.append(snapshot: claude)
             await DashboardState.shared.refreshHistory()
             await DashboardState.shared.refreshDerived()
-            WidgetBridge.publish(claude)
         }
         NotificationCenter.default.post(name: .snapshotUpdated, object: nil)
     }
