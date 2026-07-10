@@ -30,6 +30,9 @@ final class SettingsStore: ObservableObject {
     @AppStorage("geminiProviderEnabled") var geminiProviderEnabled: Bool = GeminiProvider.isGeminiSignedIn
     // Defaults to on when Antigravity (app or CLI) is installed on this machine.
     @AppStorage("antigravityProviderEnabled") var antigravityProviderEnabled: Bool = AntigravityProvider.isAntigravityInstalled
+    // Pay-as-you-go accounts: weekly $ budget the local CLI spend is measured
+    // against (0 = no budget set). Only used when the account has no rate windows.
+    @AppStorage("claudeWeeklyBudgetUSD") var claudeWeeklyBudgetUSD: Double = 0
     @AppStorage("notificationsEnabled") var notificationsEnabled: Bool = true
     @AppStorage("threshold80") var threshold80: Int = 80
     @AppStorage("threshold95") var threshold95: Int = 95

@@ -228,6 +228,22 @@ struct SettingsView: View {
             } header: {
                 Text("Admin API (Enterprise)")
             }
+
+            Section {
+                HStack {
+                    Text("Weekly budget")
+                    Spacer()
+                    TextField("0", value: $settings.claudeWeeklyBudgetUSD, format: .currency(code: "USD").precision(.fractionLength(0)))
+                        .frame(width: 100)
+                        .multilineTextAlignment(.trailing)
+                        .onSubmit { AppState.shared.refreshNow() }
+                }
+                Text("For pay-as-you-go accounts without session limits: local CLI spend is measured against this budget — bars, thresholds and notifications work off the percentage. Set to $0 to just show the dollar figure.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Pay-as-you-go budget")
+            }
         }
         .formStyle(.grouped)
     }

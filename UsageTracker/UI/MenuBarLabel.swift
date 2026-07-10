@@ -4,7 +4,8 @@ struct MenuBarLabel: View {
     let snapshot: UsageSnapshot
 
     private var displayServices: [ServiceSnapshot] {
-        snapshot.services.filter { !$0.buckets.isEmpty }
+        // A service earns a pill with rate windows OR (pay-as-you-go) a $ figure.
+        snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
     }
 
     var body: some View {
@@ -15,7 +16,11 @@ struct MenuBarLabel: View {
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(displayServices) { service in
-                    MiniServiceBar(service: service, isStale: snapshot.isStale)
+                    if service.buckets.isEmpty, let cost = service.weekCost {
+                        MiniCostPill(service: service, weekCost: cost, isStale: snapshot.isStale)
+                    } else {
+                        MiniServiceBar(service: service, isStale: snapshot.isStale)
+                    }
                 }
             }
         }
@@ -23,6 +28,21 @@ struct MenuBarLabel: View {
         .frame(height: 18)
         .opacity(snapshot.isStale ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.45), value: snapshot.headlinePercent)
+    }
+}
+
+/// Pay-as-you-go pill: no rate windows to show, so the 7-day local spend is the number.
+private struct MiniCostPill: View {
+    let service: ServiceSnapshot
+    let weekCost: Double
+    let isStale: Bool
+
+    var body: some View {
+        Text(weekCost < 100 ? String(format: "$%.1f", weekCost) : "$\(Int(weekCost.rounded()))")
+            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(isStale ? Color.secondary : Color.primary)
+            .accessibilityLabel("\(service.displayName) spend \(Int(weekCost.rounded())) dollars this week")
     }
 }
 
