@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.0] — 2026-07-10
+
+### Added
+- **Multi-provider desktop widgets.** The widget is now provider-configurable:
+  right-click → Edit Widget → Provider to pick Claude, Codex, Gemini, or
+  Antigravity — add several small widgets side by side, one per provider.
+  A new **"All providers"** large widget shows every connected provider's
+  session window and busiest limits at a glance. Existing widget placements
+  keep working (they default to Claude).
+
+### Removed
+- The expired promo banners (+50% weekly limits; Fable 5 inclusion) and the
+  announcements mechanism behind them.
+
 ## [1.2.0] — 2026-07-10
 
 ### Added
