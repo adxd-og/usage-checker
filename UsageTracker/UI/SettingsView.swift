@@ -79,6 +79,13 @@ struct SettingsView: View {
                 Text("Reads daily model quotas using the Gemini CLI's Google sign-in. API-key and Vertex AI auth don't expose quotas.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Show Antigravity usage", isOn: $settings.antigravityProviderEnabled)
+                    .onChange(of: settings.antigravityProviderEnabled) { _, _ in
+                        AppState.shared.refreshNow()
+                    }
+                Text("Reads model-pool quotas from a running Antigravity app, `agy` CLI, or IDE. The Gemini-CLI replacement for personal Google accounts.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Updates") {

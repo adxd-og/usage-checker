@@ -48,7 +48,8 @@ final class AppState: ObservableObject {
             betaHeader: beta,
             preferAdmin: preferAdmin,
             codexEnabled: SettingsStore.shared.codexProviderEnabled,
-            geminiEnabled: SettingsStore.shared.geminiProviderEnabled
+            geminiEnabled: SettingsStore.shared.geminiProviderEnabled,
+            antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled
         )
 
         // A failed or empty poll (network blip, transient API error) must not wipe the

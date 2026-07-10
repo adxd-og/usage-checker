@@ -28,6 +28,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("codexProviderEnabled") var codexProviderEnabled: Bool = CodexProvider.isCodexInstalled
     // Defaults to on once the Gemini CLI has OAuth credentials on this machine.
     @AppStorage("geminiProviderEnabled") var geminiProviderEnabled: Bool = GeminiProvider.isGeminiSignedIn
+    // Defaults to on when Antigravity (app or CLI) is installed on this machine.
+    @AppStorage("antigravityProviderEnabled") var antigravityProviderEnabled: Bool = AntigravityProvider.isAntigravityInstalled
     @AppStorage("notificationsEnabled") var notificationsEnabled: Bool = true
     @AppStorage("threshold80") var threshold80: Int = 80
     @AppStorage("threshold95") var threshold95: Int = 95
