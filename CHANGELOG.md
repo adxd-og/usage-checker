@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-07-10
+
+### Added
+- **Multi-provider usage tracking.** Alongside Claude, the widget can now show:
+  - **Codex (OpenAI)** — session and weekly limits from the local Codex CLI
+    (requires ChatGPT sign-in; API-key auth doesn't expose limits).
+  - **Antigravity** — "Gemini models" and "Claude & GPT models" pool quotas
+    (weekly + 5-hour) read from a running Antigravity app, `agy` CLI, or IDE.
+    This is the Gemini-quota path for personal Google accounts after the
+    June 2026 Gemini CLI OAuth shutdown.
+  - **Gemini CLI** — daily Pro / Flash / Flash Lite quotas, for accounts the
+    OAuth shutdown didn't affect.
+  Each provider has a toggle in Settings → General → Providers, enabled
+  automatically when the corresponding tool is detected on the machine.
+  Provider fetching is powered by CodexBarCore from
+  [steipete/CodexBar](https://github.com/steipete/CodexBar) (MIT).
+
+### Changed
+- The state badge in the popover ("Sign in", "Not running") is now a button:
+  clicking it explains what's wrong and offers the exact sign-in command with
+  a Copy button, or launches Antigravity directly.
+
 ## [1.1.1] — 2026-07-10
 
 ### Fixed
