@@ -237,6 +237,7 @@ private struct ServiceSection: View {
     let showsHeader: Bool
 
     @State private var showUnusedWindows = false
+    @State private var showsStateHelp = false
 
     private var sessionBuckets: [UsageBucket] {
         service.buckets.filter { $0.kind == .session }
@@ -319,17 +320,105 @@ private struct ServiceSection: View {
         let (text, color): (String, Color) = {
             switch service.state {
             case .notSignedIn: return ("Sign in", .orange)
-            case .notRunning: return ("Idle", .secondary)
+            case .notRunning: return ("Not running", .secondary)
             case .error: return ("Error", .red)
             case .ok: return ("OK", .green)
             }
         }()
-        return Text(text)
+        let label = Text(text)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .foregroundStyle(color)
             .liquidGlass(in: Capsule(), tint: color)
+
+        // The capsule reads as a button, so it must act like one: clicking walks
+        // the user through fixing the state instead of doing nothing.
+        return Group {
+            if let help = stateHelp {
+                Button {
+                    showsStateHelp.toggle()
+                } label: {
+                    label
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) {
+                    stateHelpContent(help)
+                }
+            } else {
+                label
+            }
+        }
+    }
+
+    private struct StateHelp {
+        let message: String
+        var command: String?
+        var appPath: String?
+    }
+
+    /// Per-service recovery instructions behind the state badge.
+    private var stateHelp: StateHelp? {
+        switch (service.id, service.state) {
+        case ("claude", .notSignedIn):
+            return StateHelp(
+                message: "Sign into Claude Code in a terminal, then the widget picks it up on the next refresh.",
+                command: "claude login"
+            )
+        case ("codex", .notSignedIn):
+            return StateHelp(
+                message: "Codex reports limits only for ChatGPT sign-in (API-key auth doesn't expose them).",
+                command: "codex logout && codex login"
+            )
+        case ("gemini", .notSignedIn):
+            return StateHelp(
+                message: "Sign into the Gemini CLI with your Google account, then refresh.",
+                command: "gemini"
+            )
+        case ("antigravity", _) where service.state != .ok:
+            let installed = FileManager.default.fileExists(atPath: "/Applications/Antigravity.app")
+            return StateHelp(
+                message: "Antigravity shares quotas only while the app, `agy` CLI, or IDE is running.",
+                command: installed ? nil : "agy",
+                appPath: installed ? "/Applications/Antigravity.app" : nil
+            )
+        default:
+            return nil
+        }
+    }
+
+    private func stateHelpContent(_ help: StateHelp) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(help.message)
+                .font(.callout)
+                .fixedSize(horizontal: false, vertical: true)
+            if let command = help.command {
+                HStack(spacing: 8) {
+                    Text(command)
+                        .font(.system(.caption, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+                    Button("Copy") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(command, forType: .string)
+                    }
+                    .controlSize(.small)
+                }
+            }
+            if let appPath = help.appPath {
+                Button("Open Antigravity") {
+                    NSWorkspace.shared.openApplication(
+                        at: URL(fileURLWithPath: appPath),
+                        configuration: NSWorkspace.OpenConfiguration()
+                    )
+                    showsStateHelp = false
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(14)
+        .frame(width: 280, alignment: .leading)
     }
 
     // MARK: Session

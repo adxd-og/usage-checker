@@ -46,9 +46,13 @@ actor AntigravityProvider: UsageProvider {
             let usage = try status.toUsageSnapshot()
             return Self.snapshot(from: usage, status: status, at: now)
         } catch {
-            // Antigravity not running (the local language server is only reachable
-            // while the app/CLI/IDE is up) — stay quiet rather than shouting.
+            // The local language server is only reachable while the app/CLI/IDE is
+            // up, so "not running" is the normal quiet state, not a sign-in problem.
             NSLog("[UT] Antigravity fetch failed: %@", String(describing: error))
+            let isNotRunning: Bool = {
+                if case AntigravityStatusProbeError.notRunning = error { return true }
+                return false
+            }()
             return ServiceSnapshot(
                 id: serviceID,
                 displayName: "Antigravity",
@@ -58,8 +62,10 @@ actor AntigravityProvider: UsageProvider {
                 buckets: [],
                 extraUsage: nil,
                 weekCost: nil,
-                state: .notSignedIn,
-                stateMessage: "Antigravity isn't running (\(error.localizedDescription))",
+                state: isNotRunning ? .notRunning : .error,
+                stateMessage: isNotRunning
+                    ? "Antigravity isn't running"
+                    : error.localizedDescription,
                 fetchedAt: now
             )
         }
