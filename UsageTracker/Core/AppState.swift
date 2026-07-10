@@ -46,7 +46,8 @@ final class AppState: ObservableObject {
         let next = await coordinator.snapshot(
             adminKey: admin,
             betaHeader: beta,
-            preferAdmin: preferAdmin
+            preferAdmin: preferAdmin,
+            codexEnabled: SettingsStore.shared.codexProviderEnabled
         )
 
         // A failed or empty poll (network blip, transient API error) must not wipe the

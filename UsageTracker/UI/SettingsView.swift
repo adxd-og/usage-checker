@@ -64,6 +64,16 @@ struct SettingsView: View {
                     }
             }
 
+            Section("Providers") {
+                Toggle("Show Codex (OpenAI) usage", isOn: $settings.codexProviderEnabled)
+                    .onChange(of: settings.codexProviderEnabled) { _, _ in
+                        AppState.shared.refreshNow()
+                    }
+                Text("Reads session and weekly limits from the local Codex CLI. Requires being signed in (`codex login`).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: Binding(
                     get: { Updater.shared.automaticallyChecksForUpdates },

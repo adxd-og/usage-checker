@@ -24,6 +24,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("autoLaunch") var autoLaunch: Bool = false
     @AppStorage("anthropicBetaHeader") var anthropicBetaHeader: String = "oauth-2025-04-20"
     @AppStorage("preferAdminWhenAvailable") var preferAdminWhenAvailable: Bool = false
+    // Defaults to on when the Codex CLI has been signed into on this machine.
+    @AppStorage("codexProviderEnabled") var codexProviderEnabled: Bool = CodexProvider.isCodexInstalled
     @AppStorage("notificationsEnabled") var notificationsEnabled: Bool = true
     @AppStorage("threshold80") var threshold80: Int = 80
     @AppStorage("threshold95") var threshold95: Int = 95
