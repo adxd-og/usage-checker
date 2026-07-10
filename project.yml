@@ -14,6 +14,13 @@ packages:
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.6.0
+  # CodexBar's UI-free core (MIT, Peter Steinberger) — multi-strategy provider
+  # fetchers + models.dev pricing. Pinned to the v0.41.0 commit: 0.x APIs break
+  # without notice, and a tag pin is impossible anyway (their graph contains a
+  # branch-based dependency, which SPM forbids under stable-version consumers).
+  CodexBar:
+    url: https://github.com/steipete/CodexBar
+    revision: a83a83fa4131bfbfbb62a1a8fc565fcb597ba173
 
 settings:
   base:
@@ -37,6 +44,8 @@ targets:
     dependencies:
       - target: UsageTrackerWidget
       - package: Sparkle
+      - package: CodexBar
+        product: CodexBarCore
     settings:
       base:
         PRODUCT_NAME: UsageChecker
