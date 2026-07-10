@@ -16,21 +16,6 @@ struct OverviewView: View {
                     subtitle: claude?.plan ?? "—"
                 )
 
-                if case .active(let endsAt) = Announcements.weeklyBonus() {
-                    banner(
-                        icon: "sparkles", tint: .green,
-                        title: "Weekly limits are temporarily +50%",
-                        subtitle: "Bonus ends \(endsAt.formatted(date: .complete, time: .omitted))"
-                    )
-                }
-                if case .active(let endsAt) = Announcements.fableIncluded() {
-                    banner(
-                        icon: "wand.and.stars", tint: .purple,
-                        title: "Fable 5 is included with your plan",
-                        subtitle: "From \(endsAt.formatted(date: .abbreviated, time: .omitted)) it will draw extra-usage credits"
-                    )
-                }
-
                 HStack(alignment: .top, spacing: 16) {
                     burnCard(title: "5-hour burn rate", burn: dashboard.burnFiveHour, bucketId: "five_hour")
                     todayCard
@@ -51,25 +36,6 @@ struct OverviewView: View {
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
-    }
-
-    private func banner(icon: String, tint: Color, title: String, subtitle: String) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.system(size: 14, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .bannerCard(tint: tint)
-        .padding(.horizontal, 24)
     }
 
     private func burnCard(title: String, burn: BurnRatePrediction?, bucketId: String) -> some View {

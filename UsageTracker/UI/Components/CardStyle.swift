@@ -17,16 +17,6 @@ extension View {
             )
     }
 
-    /// Tinted informational banner (announcements, promos).
-    func bannerCard(tint: Color) -> some View {
-        self
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(tint.opacity(0.12))
-            )
-    }
 }
 
 /// Battery-style status color for a usage percentage: calm while comfortable,

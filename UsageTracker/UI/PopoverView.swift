@@ -115,18 +115,6 @@ struct PopoverView: View {
             )
             .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
         }
-        if case .active(let endsAt) = Announcements.weeklyBonus() {
-            noticeRow(
-                icon: "sparkles", tint: .green,
-                text: "Weekly limits +50% until \(endsAt.formatted(date: .abbreviated, time: .omitted))"
-            )
-        }
-        if case .active(let endsAt) = Announcements.fableIncluded() {
-            noticeRow(
-                icon: "wand.and.stars", tint: .purple,
-                text: "Fable 5 included until \(endsAt.formatted(date: .abbreviated, time: .omitted)) — then uses extra credits"
-            )
-        }
         if state.snapshot.services.isEmpty {
             HStack {
                 ProgressView().controlSize(.small)
