@@ -42,7 +42,9 @@ actor CodexProvider: UsageProvider {
     private func fetchFresh(now: Date) async -> ServiceSnapshot {
         do {
             let usage = try await CodexBarCore.UsageFetcher().loadLatestUsage()
-            return Self.snapshot(from: usage, at: now)
+            let localCost = await CodexUsageAggregator.shared.costs(now: now)
+            NSLog("[UT] Codex local cost: today $%.2f, 7d $%.2f", localCost.today, localCost.week)
+            return Self.snapshot(from: usage, weekCost: localCost.week, at: now)
         } catch {
             // No Codex CLI, signed out, or RPC failure — present as signed-out rather
             // than an error so an enabled-but-unused provider stays quiet in the UI.
@@ -63,7 +65,11 @@ actor CodexProvider: UsageProvider {
         }
     }
 
-    private static func snapshot(from usage: CodexBarCore.UsageSnapshot, at now: Date) -> ServiceSnapshot {
+    private static func snapshot(
+        from usage: CodexBarCore.UsageSnapshot,
+        weekCost: Double,
+        at now: Date
+    ) -> ServiceSnapshot {
         var buckets: [UsageBucket] = []
         if let b = bucket(from: usage.primary, id: "codex_session") { buckets.append(b) }
         if let b = bucket(from: usage.secondary, id: "codex_weekly") { buckets.append(b) }
@@ -89,7 +95,7 @@ actor CodexProvider: UsageProvider {
             accountLabel: identity?.accountEmail,
             buckets: buckets,
             extraUsage: nil,
-            weekCost: nil,
+            weekCost: weekCost > 0 ? weekCost : nil,
             state: .ok,
             stateMessage: nil,
             fetchedAt: now

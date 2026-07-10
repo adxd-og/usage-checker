@@ -47,6 +47,24 @@ enum ModelPricing {
         return dynamicTable[normalized]
     }
 
+    /// models.dev lookup with progressive fallback for ids that carry variant
+    /// suffixes ("gpt-5.6-luna" → "gpt-5.6" → "gpt-5"). No family/static fallback:
+    /// callers that get nil should skip pricing rather than guess a wrong family.
+    static func dynamicLookup(for model: String) -> ModelPrice? {
+        var candidate = normalize(model)
+        for _ in 0..<4 {
+            if let price = dynamicPrice(for: candidate) { return price }
+            if let dash = candidate.lastIndex(of: "-") {
+                candidate = String(candidate[..<dash])
+            } else if let dot = candidate.lastIndex(of: ".") {
+                candidate = String(candidate[..<dot])
+            } else {
+                break
+            }
+        }
+        return nil
+    }
+
     static func price(for model: String) -> ModelPrice {
         let normalized = normalize(model)
         if let live = dynamicPrice(for: normalized) { return live }

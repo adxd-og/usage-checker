@@ -9,6 +9,8 @@ import Foundation
 enum ModelsDevPricing {
     private static let apiURL = URL(string: "https://models.dev/api.json")!
     private static let maxCacheAge: TimeInterval = 24 * 3600
+    /// anthropic prices the Claude CLI accounting; openai prices the Codex CLI accounting.
+    private static let providers = ["anthropic", "openai"]
 
     /// In-memory guard so the periodic poll only re-checks once per day.
     nonisolated(unsafe) private static var lastAttemptAt: Date = .distantPast
@@ -23,7 +25,9 @@ enum ModelsDevPricing {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("UsageTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("models-dev-pricing.json")
+        // v2: anthropic + openai. The name bump forces a refetch over a v1
+        // (anthropic-only) cache that could otherwise linger for a day.
+        return dir.appendingPathComponent("models-dev-pricing-v2.json")
     }
 
     /// Called on every poll; cheap no-op unless a day has passed since the last check.
@@ -66,30 +70,34 @@ enum ModelsDevPricing {
         guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)
         }
-        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let anthropic = root["anthropic"] as? [String: Any],
-              let models = anthropic["models"] as? [String: Any]
-        else { throw URLError(.cannotParseResponse) }
+        guard let root = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
 
         var prices: [String: ModelPrice] = [:]
-        for (id, value) in models {
-            guard let model = value as? [String: Any],
-                  let cost = model["cost"] as? [String: Any],
-                  let input = doubleValue(cost["input"]),
-                  let output = doubleValue(cost["output"])
-            else { continue }
-            // models.dev reports the 5-minute cache-write rate; Anthropic prices the
-            // 1-hour tier at a stable 1.6× of it. Missing cache rates fall back to
-            // Anthropic's standard ratios (read = 0.1×, write = 1.25× of input).
-            let cacheRead = doubleValue(cost["cache_read"]) ?? input * 0.1
-            let cacheWrite5m = doubleValue(cost["cache_write"]) ?? input * 1.25
-            prices[ModelPricing.normalize(id)] = ModelPrice(
-                inputPerM: input,
-                outputPerM: output,
-                cacheReadPerM: cacheRead,
-                cacheCreate5mPerM: cacheWrite5m,
-                cacheCreate1hPerM: cacheWrite5m * 1.6
-            )
+        for provider in providers {
+            guard let providerDict = root[provider] as? [String: Any],
+                  let models = providerDict["models"] as? [String: Any] else { continue }
+            for (id, value) in models {
+                guard let model = value as? [String: Any],
+                      let cost = model["cost"] as? [String: Any],
+                      let input = doubleValue(cost["input"]),
+                      let output = doubleValue(cost["output"])
+                else { continue }
+                let cacheRead = doubleValue(cost["cache_read"]) ?? input * 0.1
+                // models.dev reports the 5-minute cache-write rate. Anthropic always
+                // sends one (and prices the 1-hour tier at a stable 1.6× of it); a
+                // provider without cache_write (OpenAI) doesn't bill cache writes.
+                let cacheWrite5m = doubleValue(cost["cache_write"])
+                    ?? (provider == "anthropic" ? input * 1.25 : 0)
+                prices[ModelPricing.normalize(id)] = ModelPrice(
+                    inputPerM: input,
+                    outputPerM: output,
+                    cacheReadPerM: cacheRead,
+                    cacheCreate5mPerM: cacheWrite5m,
+                    cacheCreate1hPerM: cacheWrite5m * 1.6
+                )
+            }
         }
         guard !prices.isEmpty else { throw URLError(.cannotParseResponse) }
         return prices
