@@ -40,6 +40,9 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // Cheap daily no-op: keeps CLI cost rates current from models.dev.
+        await ModelsDevPricing.refreshIfStale()
+
         let admin = KeychainStore.loadAdminKey()
         let beta = SettingsStore.shared.anthropicBetaHeader
         let preferAdmin = SettingsStore.shared.preferAdminWhenAvailable

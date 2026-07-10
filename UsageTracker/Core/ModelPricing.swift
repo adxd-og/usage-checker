@@ -1,6 +1,6 @@
 import Foundation
 
-struct ModelPrice: Sendable {
+struct ModelPrice: Sendable, Codable {
     let inputPerM: Double
     let outputPerM: Double
     let cacheReadPerM: Double
@@ -27,8 +27,29 @@ enum ModelPricing {
 
     static let fallback = ModelPrice(inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheCreate5mPerM: 3.75, cacheCreate1hPerM: 6)
 
+    // MARK: Dynamic pricing (models.dev)
+
+    /// Rates loaded from models.dev (see `ModelsDevPricing`). Preferred over the
+    /// hardcoded table so a freshly launched model prices correctly with no code
+    /// change; the static table remains the offline fallback. Keys are normalized.
+    nonisolated(unsafe) private static var dynamicTable: [String: ModelPrice] = [:]
+    private static let dynamicLock = NSLock()
+
+    static func updateDynamic(_ prices: [String: ModelPrice]) {
+        dynamicLock.lock()
+        defer { dynamicLock.unlock() }
+        dynamicTable = prices
+    }
+
+    private static func dynamicPrice(for normalized: String) -> ModelPrice? {
+        dynamicLock.lock()
+        defer { dynamicLock.unlock() }
+        return dynamicTable[normalized]
+    }
+
     static func price(for model: String) -> ModelPrice {
         let normalized = normalize(model)
+        if let live = dynamicPrice(for: normalized) { return live }
         if let exact = table[normalized] { return exact }
         // Newest family member as the price fallback: deprecated models that priced
         // differently (Opus 4 / 4.1) are pinned in the table by their exact ids above.
