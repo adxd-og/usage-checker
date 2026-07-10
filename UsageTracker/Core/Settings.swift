@@ -26,6 +26,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("preferAdminWhenAvailable") var preferAdminWhenAvailable: Bool = false
     // Defaults to on when the Codex CLI has been signed into on this machine.
     @AppStorage("codexProviderEnabled") var codexProviderEnabled: Bool = CodexProvider.isCodexInstalled
+    // Defaults to on once the Gemini CLI has OAuth credentials on this machine.
+    @AppStorage("geminiProviderEnabled") var geminiProviderEnabled: Bool = GeminiProvider.isGeminiSignedIn
     @AppStorage("notificationsEnabled") var notificationsEnabled: Bool = true
     @AppStorage("threshold80") var threshold80: Int = 80
     @AppStorage("threshold95") var threshold95: Int = 95

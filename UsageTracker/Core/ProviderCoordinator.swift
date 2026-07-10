@@ -5,7 +5,8 @@ actor ProviderCoordinator {
         adminKey: String?,
         betaHeader: String,
         preferAdmin: Bool,
-        codexEnabled: Bool
+        codexEnabled: Bool,
+        geminiEnabled: Bool
     ) async -> UsageSnapshot {
         let now = Date()
 
@@ -14,6 +15,10 @@ actor ProviderCoordinator {
             guard codexEnabled else { return nil }
             return await CodexProvider.shared.fetch()
         }()
+        async let geminiSnap: ServiceSnapshot? = {
+            guard geminiEnabled else { return nil }
+            return await GeminiProvider.shared.fetch()
+        }()
         async let adminSnap: ServiceSnapshot? = {
             guard let key = adminKey, !key.isEmpty else { return nil }
             return await AnthropicAdminProvider(adminKey: key).fetch()
@@ -21,6 +26,7 @@ actor ProviderCoordinator {
 
         let claude = await claudeSnap
         let codex = await codexSnap
+        let gemini = await geminiSnap
         let admin = await adminSnap
 
         var services: [ServiceSnapshot] = []
@@ -32,6 +38,7 @@ actor ProviderCoordinator {
             if let a = admin { services.append(a) }
         }
         if let c = codex { services.append(c) }
+        if let g = gemini { services.append(g) }
 
         let firstError = services.compactMap(\.stateMessage).first { _ in true }
 
