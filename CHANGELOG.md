@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.2] — 2026-07-11
+
+### Changed
+- **Quieter menu bar with several providers.** When more than one provider is
+  shown, the pills drop their numbers and keep just the colored bars; a lone
+  provider still shows its percent. (The number is that provider's hottest
+  real window — session, weekly or spend limit; promo pools don't count.)
+
 ## [1.7.1] — 2026-07-11
 
 ### Added
