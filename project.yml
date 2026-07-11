@@ -69,8 +69,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Omelette
-        MARKETING_VERSION: "1.7.6"
-        CURRENT_PROJECT_VERSION: "19"
+        MARKETING_VERSION: "1.7.7"
+        CURRENT_PROJECT_VERSION: "20"
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: NO
@@ -90,8 +90,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "1.7.6"
-        CURRENT_PROJECT_VERSION: "19"
+        MARKETING_VERSION: "1.7.7"
+        CURRENT_PROJECT_VERSION: "20"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO

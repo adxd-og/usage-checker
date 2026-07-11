@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.7] — 2026-07-11
+
+### Changed
+- **The popover header shows the app icon** (with several providers) instead
+  of a generic gauge symbol.
+- **The menu bar tooltip covers every provider** — it was hardcoded to Claude;
+  now each provider with data gets its own block, plus the $ figure for
+  pay-as-you-go.
+
 ## [1.7.6] — 2026-07-11
 
 ### Changed

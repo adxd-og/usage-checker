@@ -77,10 +77,12 @@ struct PopoverView: View {
                             .foregroundStyle(.tertiary)
                     }
                 } else {
-                    Image(systemName: "gauge.with.dots.needle.67percent")
-                        .font(.system(size: 22, weight: .regular))
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(.tint)
+                    // The real app icon, not a drawn stand-in — matches the
+                    // welcome tour and tracks icon updates for free.
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .interpolation(.high)
+                        .frame(width: 34, height: 34)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Omelette")
                             .font(.headline)

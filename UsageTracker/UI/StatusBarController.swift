@@ -81,17 +81,27 @@ final class StatusBarController {
 
     private func updateTooltip() {
         let snap = AppState.shared.snapshot
-        guard let claude = snap.services.first(where: { $0.id == "claude" }) else {
+        // Every provider with data gets a block — the tooltip used to be
+        // hardcoded to Claude and stayed silent about the rest.
+        let services = snap.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
+        guard !services.isEmpty else {
             statusItem.button?.toolTip = "Omelette — loading…"
             return
         }
         var lines: [String] = []
-        if let plan = claude.plan { lines.append("Claude — \(plan)") }
-        for b in claude.buckets where b.clampedPercent > 0 || b.id == "five_hour" || b.id == "seven_day" {
-            lines.append("\(b.label): \(Int(b.clampedPercent.rounded()))%")
+        for service in services {
+            if !lines.isEmpty { lines.append("") }
+            lines.append(service.plan ?? service.displayName)
+            for b in service.buckets where b.clampedPercent > 0 || b.kind == .session || b.id == "seven_day" {
+                lines.append("  \(b.label): \(Int(b.clampedPercent.rounded()))%")
+            }
+            if let cost = service.weekCost {
+                lines.append(String(format: "  Last 7 days: $%.2f", cost))
+            }
         }
         let updated = snap.fetchedAt
         if updated.timeIntervalSince1970 > 1 {
+            lines.append("")
             lines.append("Updated \(formatAgo(updated))")
         }
         statusItem.button?.toolTip = lines.joined(separator: "\n")
