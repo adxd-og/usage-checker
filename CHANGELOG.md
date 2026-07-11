@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.6.1] — 2026-07-11
+
+### Fixed
+- **Smooth migration from Usage Checker.** The credential cache heals itself
+  after the app rename: no stray permission dialogs for the app's own cache,
+  and the first successful fetch re-owns it. The one legitimate dialog left is
+  the familiar "access Claude Code-credentials" — click Always Allow once.
+- **A failing provider keeps its last-good data on screen.** A transient error
+  (e.g. a rate-limited usage endpoint) used to replace the provider's bars with
+  a bare "Error" tile; now the numbers stay and the badge says what's wrong.
+- Codex free-plan windows span ~30 days and are now labeled "Monthly", not
+  "Weekly".
+
 ## [1.6.0] — 2026-07-11
 
 ### Changed
