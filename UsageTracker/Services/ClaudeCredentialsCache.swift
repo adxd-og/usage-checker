@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 
 /// App-owned keychain cache for Claude OAuth credentials.
@@ -14,12 +15,20 @@ enum ClaudeCredentialsCache {
 
     static func load() -> ClaudeCredentials? {
         var item: AnyObject?
+        // Strictly non-interactive: after the app binary is renamed (Usage Checker →
+        // Omelette) the old item's ACL doesn't trust the new binary, and a plain read
+        // would throw a pointless permission dialog for our OWN cache. Fail silently
+        // instead — the bootstrap chain re-acquires credentials and save() below
+        // replaces the stale item with one the new binary owns.
+        let context = LAContext()
+        context.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
+            kSecUseAuthenticationContext as String: context,
         ]
         guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
               let data = item as? Data,
@@ -48,13 +57,27 @@ enum ClaudeCredentialsCache {
         ]
         let update: [String: Any] = [kSecValueData as String: data]
         let status = SecItemUpdate(base as CFDictionary, update as CFDictionary)
-        if status == errSecItemNotFound {
-            var add = base
-            add[kSecValueData as String] = data
-            add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-            add[kSecAttrSynchronizable as String] = false
-            SecItemAdd(add as CFDictionary, nil)
+        switch status {
+        case errSecSuccess:
+            break
+        case errSecItemNotFound:
+            addFresh(base: base, data: data)
+        case errSecAuthFailed, errSecInteractionNotAllowed:
+            // The item belongs to a previous binary (pre-rename install) and its ACL
+            // doesn't trust us. Replace it with one we own — self-healing migration.
+            SecItemDelete(base as CFDictionary)
+            addFresh(base: base, data: data)
+        default:
+            break
         }
+    }
+
+    private static func addFresh(base: [String: Any], data: Data) {
+        var add = base
+        add[kSecValueData as String] = data
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        add[kSecAttrSynchronizable as String] = false
+        SecItemAdd(add as CFDictionary, nil)
     }
 
     static func clear() {
