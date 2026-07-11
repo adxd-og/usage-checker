@@ -11,7 +11,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    # macos-26: default Xcode 26.x (Swift 6.2) — the CodexBar pin needs
+    # swift-tools 6.2, which macos-15's default Xcode 16.4 (Swift 6.1) lacks.
+    runs-on: macos-26
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +72,9 @@ jobs:
           xcrun stapler validate build/Omelette.dmg
 
       - name: Upload to GitHub Release
+        # Tag pushes only — a workflow_dispatch run is a build/notarize dry-run
+        # and must not touch (or overwrite the notes of) any release.
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: build/Omelette.dmg
@@ -78,8 +83,8 @@ jobs:
             See [CHANGELOG.md](CHANGELOG.md) for changes.
 
             ## Install
-            1. Download `UsageTracker.dmg`
-            2. Open it and drag the app to `~/Applications/` or `/Applications/`
+            1. Download `Omelette.dmg`
+            2. Open it and drag `Omelette.app` to `~/Applications/` or `/Applications/`
             3. Launch — macOS will ask once for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**
 
             Requires macOS 14+ and [Claude Code](https://docs.anthropic.com/claude-code) signed in.
