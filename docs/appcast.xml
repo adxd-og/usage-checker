@@ -6,6 +6,26 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.7</title>
+      <pubDate>Sat, 11 Jul 2026 20:03:10 +0300</pubDate>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>1.7.7</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>The popover header shows the app icon</b> (with several providers) instead of a generic gauge symbol.</li>
+<li><b>The menu bar tooltip covers every provider</b> — it was hardcoded to Claude; now each provider with data gets its own block, plus the $ figure for pay-as-you-go.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.7">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.7/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="72bt428TehMev1DhGt/qQHwu2HNnzAZlCQMM7NKs4+kAZ73Fhhwt4L0qG8s1MskHgQVDbnjg+O1Mdxo3iTunDw=="
+        length="14621677"/>
+    </item>
+    <item>
       <title>Omelette v1.7.6</title>
       <pubDate>Sat, 11 Jul 2026 19:50:24 +0300</pubDate>
       <sparkle:version>19</sparkle:version>
