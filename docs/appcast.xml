@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.6</title>
+      <pubDate>Sat, 11 Jul 2026 19:50:24 +0300</pubDate>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>1.7.6</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>The Dashboard now says "Claude data only".</b> Its charts are built from Claude usage history and Claude Code session logs; the sidebar badge makes that honest instead of implying every provider is included.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.6">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.6/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="Sxe6McCKLD9PGs/lmM4RfOZ0beRznGCAFJASSycgcx+pFEgaVgBJjt33v3e82rBoDJk2wdqWpO6i6tqCIrtJDA=="
+        length="14633934"/>
+    </item>
+    <item>
       <title>Omelette v1.7.5</title>
       <pubDate>Sat, 11 Jul 2026 19:35:20 +0300</pubDate>
       <sparkle:version>18</sparkle:version>
