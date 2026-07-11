@@ -6,6 +6,19 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.2</title>
+      <pubDate>Sat, 11 Jul 2026 18:55:10 +0300</pubDate>
+      <sparkle:version>15</sparkle:version>
+      <sparkle:shortVersionString>1.7.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/adxd-og/usage-checker/releases/tag/v1.7.2</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.2/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="bQCFoyF9PL+16KDuiadh4LVBQe8H+G8JdAXcQp13KtdZprPSIsfAxYcUamSymY1qvrkc945C1ysjb8DihvaJCw=="
+        length="14587893"/>
+    </item>
+    <item>
       <title>Omelette v1.7.1</title>
       <pubDate>Sat, 11 Jul 2026 18:33:13 +0300</pubDate>
       <sparkle:version>14</sparkle:version>
