@@ -1,5 +1,7 @@
 # Omelette 🍳
 
+![Omelette — AI usage at a glance](docs/banner.png)
+
 A native macOS menu bar widget that tracks your **AI coding limits** in real time — Claude session and weekly windows, Codex (OpenAI) limits, Antigravity/Gemini quotas, Enterprise spend limits, and local $ cost accounting. Built in SwiftUI with Liquid Glass styling for macOS 26 Tahoe.
 
 > **Why "Omelette"?** While reverse-engineering the usage API we found that

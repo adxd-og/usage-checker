@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] — 2026-07-11
+
+### Changed
+- **A face to match the name: new app icon.** A sunny-side-up egg whose yolk
+  wears a progress ring — cut to Apple's 824/1024 icon grid at every size.
+  Generated with Gemini (Antigravity), masked and sliced locally; the source
+  artwork lives in `Design/`.
+- **README hero banner** in the style of Dalí's "The Persistence of Memory":
+  melting fried-egg gauges over bare branches — usage limits melt away too.
+
 ## [1.6.1] — 2026-07-11
 
 ### Fixed
