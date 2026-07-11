@@ -6,13 +6,13 @@ struct UsageTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        Window("Usage Checker", id: "dashboard") {
+        Window("Omelette", id: "dashboard") {
             DashboardWindow(appState: AppState.shared)
         }
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .appInfo) {
-                Button("About Usage Checker") {
+                Button("About Omelette") {
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
             }
@@ -95,7 +95,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "Welcome to Usage Checker"
+        window.title = "Welcome to Omelette"
         window.identifier = NSUserInterfaceItemIdentifier("onboarding")
         window.isReleasedWhenClosed = false
         window.center()

@@ -115,7 +115,7 @@ final class UsageNotifier {
                 body = "No Claude Code activity yesterday."
             }
             await MainActor.run {
-                self.fire(title: "Usage Checker — daily summary", body: body)
+                self.fire(title: "Omelette — daily summary", body: body)
             }
         }
     }

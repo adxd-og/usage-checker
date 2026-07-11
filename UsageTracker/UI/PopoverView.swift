@@ -74,7 +74,7 @@ struct PopoverView: View {
                         .symbolRenderingMode(.hierarchical)
                         .foregroundStyle(.tint)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("Usage Checker")
+                        Text("Omelette")
                             .font(.headline)
                         Text(updatedText(now: ctx.date))
                             .font(.caption)

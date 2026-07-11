@@ -48,12 +48,12 @@ targets:
         product: CodexBarCore
     settings:
       base:
-        PRODUCT_NAME: UsageChecker
-        MARKETING_VERSION: "1.5.0"
-        CURRENT_PROJECT_VERSION: "10"
+        PRODUCT_NAME: Omelette
+        MARKETING_VERSION: "1.6.0"
+        CURRENT_PROJECT_VERSION: "11"
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
-        INFOPLIST_KEY_CFBundleDisplayName: "Usage Checker"
+        INFOPLIST_KEY_CFBundleDisplayName: "Omelette"
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
         INFOPLIST_KEY_SUFeedURL: "https://adxd-og.github.io/usage-checker/appcast.xml"
@@ -81,8 +81,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "1.5.0"
-        CURRENT_PROJECT_VERSION: "10"
+        MARKETING_VERSION: "1.6.0"
+        CURRENT_PROJECT_VERSION: "11"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO

@@ -23,7 +23,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DMG_PATH="$ROOT/build/UsageChecker.dmg"
+DMG_PATH="$ROOT/build/Omelette.dmg"
 KEYCHAIN_PROFILE="${NOTARY_PROFILE:-UsageChecker-Notary}"
 
 STEP="startup"

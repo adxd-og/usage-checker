@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_NAME="UsageTracker"           # internal Xcode project / scheme name
-PRODUCT_NAME="UsageChecker"            # user-facing app name (from project.yml PRODUCT_NAME)
+PRODUCT_NAME="Omelette"                # user-facing app name (from project.yml PRODUCT_NAME)
 SCHEME="UsageTracker"
 CONFIG="Release"
 BUILD_DIR="$ROOT/build"

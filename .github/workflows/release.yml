@@ -61,18 +61,18 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          xcrun notarytool submit build/UsageTracker.dmg \
+          xcrun notarytool submit build/Omelette.dmg \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --wait
-          xcrun stapler staple build/UsageTracker.dmg
-          xcrun stapler validate build/UsageTracker.dmg
+          xcrun stapler staple build/Omelette.dmg
+          xcrun stapler validate build/Omelette.dmg
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/UsageTracker.dmg
+          files: build/Omelette.dmg
           generate_release_notes: true
           body: |
             See [CHANGELOG.md](CHANGELOG.md) for changes.

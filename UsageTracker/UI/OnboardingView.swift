@@ -90,9 +90,9 @@ struct OnboardingView: View {
                     .font(.system(size: 30, weight: .semibold))
                     .foregroundStyle(.white)
             }
-            Text("Welcome to Usage Checker")
+            Text("Welcome to Omelette")
                 .font(.title2.weight(.semibold))
-            Text("A menu bar widget that watches your Claude AI subscription usage in real time, so you never get surprised by hitting your 5-hour or weekly limit mid-task.")
+            Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Antigravity — so you never get surprised by hitting a limit mid-task.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)

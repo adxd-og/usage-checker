@@ -1,11 +1,24 @@
 # Changelog
 
-All notable changes to Usage Checker will be documented in this file.
+All notable changes to Omelette (formerly Usage Checker) will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [1.6.0] — 2026-07-11
+
+### Changed
+- **Usage Checker is now Omelette 🍳** — named after Anthropic's internal
+  codename for Claude Design that we found in their usage API. The app file is
+  now `Omelette.app` (delete the old `UsageChecker.app` when upgrading);
+  settings, history, keychain access and widgets carry over automatically.
+- **Promotional quota pools no longer drive the headline.** A free promo
+  window at 91% was winning the hero header, menu-bar percent and widget ring
+  while the real constraint (the Enterprise spend limit at 78%) sat below.
+  Promo windows keep their row but are informational; the spend limit now
+  competes for the headline and fires 80/95% threshold notifications.
 
 ## [1.5.0] — 2026-07-11
 

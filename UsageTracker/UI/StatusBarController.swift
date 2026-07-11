@@ -82,7 +82,7 @@ final class StatusBarController {
     private func updateTooltip() {
         let snap = AppState.shared.snapshot
         guard let claude = snap.services.first(where: { $0.id == "claude" }) else {
-            statusItem.button?.toolTip = "Usage Checker — loading…"
+            statusItem.button?.toolTip = "Omelette — loading…"
             return
         }
         var lines: [String] = []

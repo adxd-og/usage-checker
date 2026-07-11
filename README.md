@@ -1,6 +1,11 @@
-# Usage Checker
+# Omelette 🍳
 
 A native macOS menu bar widget that tracks your **AI coding limits** in real time — Claude session and weekly windows, Codex (OpenAI) limits, Antigravity/Gemini quotas, Enterprise spend limits, and local $ cost accounting. Built in SwiftUI with Liquid Glass styling for macOS 26 Tahoe.
+
+> **Why "Omelette"?** While reverse-engineering the usage API we found that
+> Anthropic's internal codename for Claude Design is `omelette` (the weekly
+> window arrives as `seven_day_omelette`). The name was too good to leave
+> buried in a JSON key.
 
 ![Screenshot](docs/screenshot.png)
 
@@ -51,8 +56,10 @@ The widget:
 
 ## Install
 
-1. Download the latest `UsageChecker.dmg` from [Releases](../../releases)
-2. Open the DMG and drag `UsageChecker.app` to `~/Applications/` (or `/Applications/`)
+1. Download the latest `Omelette.dmg` from [Releases](../../releases)
+2. Open the DMG and drag `Omelette.app` to `~/Applications/` (or `/Applications/`).
+   Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first —
+   settings, history and widgets carry over automatically
 3. Launch it. macOS will ask once for permission to read the `Claude Code-credentials` Keychain item — click **Always Allow**
 4. The icon appears in your menu bar; click it to see usage
 
@@ -83,7 +90,8 @@ brew install xcodegen
 
 `/api/oauth/usage` is an **undocumented** endpoint that the official Claude Code CLI uses internally. Anthropic may change or remove it at any time. If that happens, this widget will gracefully show "Error" until it's updated.
 
-Usage Checker is **not** affiliated with or endorsed by Anthropic.
+Omelette is **not** affiliated with or endorsed by Anthropic — the name is an
+affectionate nod to a codename in their API, nothing more.
 
 ## License
 

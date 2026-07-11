@@ -283,7 +283,7 @@ struct SettingsView: View {
                     settings.dailySummaryEnabled = true
                     settings.dailySummaryHour = 9
                 }
-                Button("Quit Usage Checker", role: .destructive) {
+                Button("Quit Omelette", role: .destructive) {
                     NSApp.terminate(nil)
                 }
             } header: {
