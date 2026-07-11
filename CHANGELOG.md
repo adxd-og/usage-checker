@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.3] — 2026-07-11
+
+### Added
+- **Settings → Account → "Request keychain access now".** Shows the macOS
+  dialog for the Claude Code-credentials item immediately, skipping the
+  hourly retry limit — the cure for a fresh install stuck on errors until
+  the next automatic prompt.
+
 ## [1.7.2] — 2026-07-11
 
 ### Changed

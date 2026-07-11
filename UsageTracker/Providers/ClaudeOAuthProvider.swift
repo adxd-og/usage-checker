@@ -200,18 +200,30 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         return oauth
     }
 
+    /// UserDefaults key holding the last interactive keychain attempt timestamp.
+    private static let promptCooldownKey = "claudeKeychainPromptAt"
+
     /// Interactive keychain read — the only path that can show the permission prompt.
     /// Rate-limited so background polling can't turn a Deny into a prompt storm.
     private func interactiveRead(now: Date) throws -> ClaudeCredentials.OAuth {
-        let cooldownKey = "claudeKeychainPromptAt"
-        let last = UserDefaults.standard.double(forKey: cooldownKey)
+        let last = UserDefaults.standard.double(forKey: Self.promptCooldownKey)
         guard now.timeIntervalSince1970 - last >= 3600 else {
             throw ClaudeKeychainError.interactionRequired
         }
-        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: cooldownKey)
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: Self.promptCooldownKey)
         let oauth = try ClaudeKeychainReader.read().claudeAiOauth
         ClaudeCredentialsCache.save(oauth)
         return oauth
+    }
+
+    /// User-initiated keychain read (the Settings button): skips the hourly
+    /// prompt cooldown, may show the macOS permission dialog right away, and
+    /// re-arms the cooldown either way so background polling stays quiet after
+    /// a Deny. Caches on success — the next poll picks the credentials up.
+    static func forceKeychainRead() throws {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: promptCooldownKey)
+        let oauth = try ClaudeKeychainReader.read().claudeAiOauth
+        ClaudeCredentialsCache.save(oauth)
     }
 
     private static func merged(

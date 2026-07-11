@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var adminKeyDraft: String = ""
     @State private var savedAdminKeyMasked: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
+    @State private var keychainReadStatus: String?
 
     enum Tab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -213,6 +214,31 @@ struct SettingsView: View {
                             .textSelection(.enabled)
                     }
                 }
+            }
+
+            Section {
+                HStack {
+                    Button("Request keychain access now") {
+                        do {
+                            try ClaudeOAuthProvider.forceKeychainRead()
+                            keychainReadStatus = "Access granted — refreshing…"
+                            AppState.shared.refreshNow()
+                        } catch {
+                            keychainReadStatus = "Failed: \(error.localizedDescription)"
+                        }
+                    }
+                    Spacer()
+                    if let status = keychainReadStatus {
+                        Text(status)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                Text("Shows the macOS dialog for the Claude Code-credentials item immediately, skipping the hourly retry limit — use it if Claude shows errors right after an install. Click Always Allow in the dialog.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Claude keychain access")
             }
 
             Section {
