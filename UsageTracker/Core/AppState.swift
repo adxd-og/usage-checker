@@ -55,6 +55,7 @@ final class AppState: ObservableObject {
             antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled
         )
         next = await Self.applyPayAsYouGo(to: next)
+        next = Self.retainingLastGoodServices(previous: snapshot, next: next)
 
         // A failed or empty poll (network blip, transient API error) must not wipe the
         // last-known usage from the menu bar. Keep the previous data and flag it stale;
@@ -145,6 +146,43 @@ final class AppState: ObservableObject {
             fetchedAt: snapshot.fetchedAt,
             isStale: snapshot.isStale,
             lastError: snapshot.lastError
+        )
+    }
+
+    /// Per-service last-good retention. The whole-snapshot keep-on-failure logic
+    /// stopped helping once there were several providers: with Codex healthy, a
+    /// rate-limited Claude replaced its bars with a bare error tile. Instead, a
+    /// service that comes back failed keeps its previous data (bars, plan, costs)
+    /// alongside the error state — the badge says what's wrong, the numbers stay.
+    private static func retainingLastGoodServices(
+        previous: UsageSnapshot,
+        next: UsageSnapshot
+    ) -> UsageSnapshot {
+        let services = next.services.map { service -> ServiceSnapshot in
+            guard service.state != .ok, service.buckets.isEmpty,
+                  let prev = previous.services.first(where: { $0.id == service.id }),
+                  !prev.buckets.isEmpty
+            else { return service }
+            return ServiceSnapshot(
+                id: service.id,
+                displayName: service.displayName,
+                icon: service.icon,
+                plan: prev.plan,
+                accountLabel: prev.accountLabel,
+                buckets: prev.buckets,
+                extraUsage: prev.extraUsage,
+                weekCost: prev.weekCost,
+                state: service.state,
+                stateMessage: service.stateMessage,
+                fetchedAt: prev.fetchedAt,
+                retryAfter: service.retryAfter
+            )
+        }
+        return UsageSnapshot(
+            services: services,
+            fetchedAt: next.fetchedAt,
+            isStale: next.isStale,
+            lastError: next.lastError
         )
     }
 

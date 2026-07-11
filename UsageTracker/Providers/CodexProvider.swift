@@ -117,7 +117,10 @@ actor CodexProvider: UsageProvider {
 
     private static func label(for w: CodexBarCore.RateWindow) -> String {
         guard let minutes = w.windowMinutes else { return "Usage" }
-        return minutes <= 24 * 60 ? "Current session" : "Weekly"
+        if minutes <= 24 * 60 { return "Current session" }
+        // Free-plan Codex reports a ~30-day window; don't call that "Weekly".
+        if minutes <= 8 * 24 * 60 { return "Weekly" }
+        return "Monthly"
     }
 
     private static func kind(for w: CodexBarCore.RateWindow) -> BucketKind {

@@ -297,6 +297,18 @@ private struct ServiceSection: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(3)
                 }
+                // Last-good data retained through a transient failure: keep showing
+                // the numbers — the state badge already says what's wrong.
+                if !service.buckets.isEmpty {
+                    if !sessionBuckets.isEmpty { sessionBlock }
+                    if !weeklyBuckets.isEmpty { weeklyBlock }
+                    if let extra = service.extraUsage, extra.isEnabled {
+                        extraBlock(extra)
+                    }
+                    if let week = service.weekCost, week > 0 {
+                        weekCostBlock(week)
+                    }
+                }
             }
         }
     }
