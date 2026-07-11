@@ -29,6 +29,18 @@ struct DashboardWindow: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
+            // The whole dashboard is fed by Claude sources (usage history +
+            // Claude Code session logs) — say so instead of implying every
+            // provider is in these charts.
+            .safeAreaInset(edge: .bottom) {
+                Label("Claude data only", systemImage: "sparkles")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .help("Charts are built from Claude usage history and Claude Code session logs. Other providers aren't included yet.")
+            }
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

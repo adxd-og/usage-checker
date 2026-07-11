@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.6] — 2026-07-11
+
+### Changed
+- **The Dashboard now says "Claude data only".** Its charts are built from
+  Claude usage history and Claude Code session logs; the sidebar badge makes
+  that honest instead of implying every provider is included.
+
 ## [1.7.5] — 2026-07-11
 
 ### Fixed
