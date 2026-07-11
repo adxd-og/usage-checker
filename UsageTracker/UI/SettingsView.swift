@@ -221,8 +221,13 @@ struct SettingsView: View {
                     Button("Request keychain access now") {
                         do {
                             try ClaudeOAuthProvider.forceKeychainRead()
-                            keychainReadStatus = "Access granted — refreshing…"
+                            keychainReadStatus = "Access granted ✓"
                             AppState.shared.refreshNow()
+                            // Confirmation, not a progress claim — clear it after a beat.
+                            Task {
+                                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                                keychainReadStatus = nil
+                            }
                         } catch {
                             keychainReadStatus = "Failed: \(error.localizedDescription)"
                         }

@@ -13,6 +13,10 @@ final class AppState: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private var lastRefreshAt: Date = .distantPast
     private var nextAllowedRefresh: Date = .distantPast
+    /// A user request that arrived while a poll was in flight — run one more
+    /// poll right after instead of silently dropping it (multiple requests
+    /// coalesce into a single rerun).
+    private var pendingUserRefresh = false
 
     private init() {}
 
@@ -21,18 +25,38 @@ final class AppState: ObservableObject {
         startTimer()
     }
 
-    func refreshNow() {
-        if inflight != nil { return }
-        let now = Date()
-        // Respect a server Retry-After from a previous 429 instead of hammering the endpoint.
-        if now < nextAllowedRefresh { return }
-        if now.timeIntervalSince(lastRefreshAt) < 0.5 {
+    /// User-initiated by default (settings toggles, Refresh buttons). A user
+    /// request is never silently dropped: mid-flight it's remembered and rerun
+    /// once the current poll finishes, and it bypasses the Retry-After backoff
+    /// (one deliberate request isn't a hammer — a re-enabled provider used to
+    /// stay invisible for up to the backoff/interval because of this). The
+    /// timer passes `userInitiated: false` and keeps honoring the backoff.
+    func refreshNow(userInitiated: Bool = true) {
+        if inflight != nil {
+            if userInitiated { pendingUserRefresh = true }
             return
         }
+        let now = Date()
+        if !userInitiated {
+            // Respect a server Retry-After from a previous 429 instead of hammering the endpoint.
+            if now < nextAllowedRefresh { return }
+            if now.timeIntervalSince(lastRefreshAt) < 0.5 { return }
+        }
+        startRefresh(at: now)
+    }
+
+    private func startRefresh(at now: Date) {
         lastRefreshAt = now
         inflight = Task { [weak self] in
             await self?.performRefresh()
-            await MainActor.run { self?.inflight = nil }
+            await MainActor.run {
+                guard let self else { return }
+                self.inflight = nil
+                if self.pendingUserRefresh {
+                    self.pendingUserRefresh = false
+                    self.startRefresh(at: Date())
+                }
+            }
         }
     }
 
@@ -206,7 +230,7 @@ final class AppState: ObservableObject {
                     return // cancelled
                 }
                 guard !Task.isCancelled else { return }
-                self?.refreshNow()
+                self?.refreshNow(userInitiated: false)
             }
         }
     }

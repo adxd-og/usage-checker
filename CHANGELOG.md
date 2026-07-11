@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.5] — 2026-07-11
+
+### Fixed
+- **Re-enabling a provider brings it back immediately.** A user-initiated
+  refresh (provider toggles, Refresh buttons, keychain button) was silently
+  dropped when a poll was already in flight or a 429 backoff was active — the
+  provider then stayed hidden until the next timer tick, which with a 5-minute
+  interval felt like forever. User requests now coalesce into a guaranteed
+  follow-up poll and bypass the backoff; the timer still honors Retry-After.
+- The keychain-access button status no longer claims "refreshing…" forever —
+  it confirms and clears itself.
+
 ## [1.7.4] — 2026-07-11
 
 ### Changed
