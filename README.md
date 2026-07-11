@@ -9,8 +9,6 @@ A native macOS menu bar widget that tracks your **AI coding limits** in real tim
 > window arrives as `seven_day_omelette`). The name was too good to leave
 > buried in a JSON key.
 
-![Screenshot](docs/screenshot.png)
-
 ## Why
 
 If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've probably hit a 5-hour or weekly rate limit mid-task. This widget shows exactly where you are at a glance — across every provider you use — so you can plan ahead and never get caught off guard.
@@ -44,7 +42,7 @@ Reads the OAuth token that **Claude Code** stores in your macOS Keychain (item n
 
 The widget:
 - Uses **only your own credentials**, already obtained by the tools themselves — it never asks you to log in anywhere
-- Talks only to: `api.anthropic.com` / `console.anthropic.com` (usage + token refresh), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `github.com` (update check), and localhost RPC for Codex/Antigravity
+- Talks only to: `api.anthropic.com` / `console.anthropic.com` (usage + token refresh), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `github.com` + `adxd-og.github.io` (Sparkle update feed & DMG download), and localhost RPC for Codex/Antigravity
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
 - Open source end to end — audit anything above
@@ -62,8 +60,10 @@ The widget:
 2. Open the DMG and drag `Omelette.app` to `~/Applications/` (or `/Applications/`).
    Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first —
    settings, history and widgets carry over automatically
-3. Launch it. macOS will ask once for permission to read the `Claude Code-credentials` Keychain item — click **Always Allow**
+3. Launch it. macOS will ask once for permission to read the `Claude Code-credentials` Keychain item — click **Always Allow**.
+   Missed or denied the dialog? Settings → Account → **Request keychain access now** brings it back instantly
 4. The icon appears in your menu bar; click it to see usage
+5. That's the last manual install — updates arrive automatically via Sparkle (signed & notarized), or on demand via Settings → **Check for updates now**
 
 ## Settings
 
@@ -71,11 +71,8 @@ Open via the popover's gear icon (or `⌘,`):
 
 - **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity), update check
 - **Notifications** — threshold alerts, quiet hours, daily summary
-- **Account** — subscription tier, optional Admin API key, pay-as-you-go weekly budget
+- **Account** — subscription tier, re-request keychain access, optional Admin API key, pay-as-you-go weekly budget
 - **Advanced** — override the `anthropic-beta` OAuth header, reset settings
-
-> **Updating:** automatic updates aren't wired up yet — grab new versions from
-> [Releases](../../releases) (they ship often).
 
 ## Build from source
 

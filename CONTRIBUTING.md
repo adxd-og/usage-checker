@@ -26,11 +26,14 @@ Production releases are notarized DMGs distributed via GitHub Releases, with Spa
 
 1. **Developer ID Application certificate** — Xcode → Settings → Accounts → select your team → Manage Certificates → + → Developer ID Application
 2. **App-specific password** — [appleid.apple.com/account/manage](https://appleid.apple.com/account/manage) → Sign-In and Security → App-Specific Passwords → label "Usage Checker notarize"
-3. **Sparkle EdDSA keys** — Sparkle requires a key pair to verify updates. From your local clone of Sparkle's tools:
-   ```bash
-   ./bin/generate_keys
-   ```
-   This prints a base64 public key. Paste it into the `SUPublicEDKey` field of the Info.plist (currently configured as an empty placeholder via `project.yml`'s `INFOPLIST_KEY_SUPublicEDKey`). The private key is stored in your Keychain.
+3. **Sparkle EdDSA keys** — already generated; the public key lives in
+   `project.yml` (`info.properties.SUPublicEDKey`) and the private key in the
+   release Mac's login keychain ("Private key for signing Sparkle updates").
+   **Back it up** (`generate_keys -x <file>`, tools ship inside the Sparkle
+   SPM artifact under `build/DerivedData/SourcePackages/artifacts/sparkle/`) —
+   losing it breaks the update chain for every installed copy. Note: the SU*
+   keys must stay in the `info:` block, NOT `INFOPLIST_KEY_*` build settings —
+   Xcode silently drops custom keys passed that way.
 4. Store notarization credentials once:
    ```bash
    xcrun notarytool store-credentials "UsageChecker-Notary" \
@@ -41,16 +44,32 @@ Production releases are notarized DMGs distributed via GitHub Releases, with Spa
 
 ### Local release
 
-Switch `CODE_SIGN_IDENTITY` to `Developer ID Application` in `signing.xcconfig` and `ENABLE_HARDENED_RUNTIME = YES`, then:
+Bump `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` in `project.yml`, add the
+CHANGELOG section (the appcast release notes are generated from it), then:
 
 ```bash
 ./scripts/build_dmg.sh
 ./scripts/notarize_dmg.sh
+git tag vX.Y.Z && git push origin main vX.Y.Z
+gh release create vX.Y.Z build/Omelette.dmg --title "Omelette vX.Y.Z 🍳" --notes "..."
+./scripts/update_appcast.sh X.Y.Z <build>   # signs the DMG, prepends the appcast item
+git add docs/appcast.xml && git commit -m "Appcast: vX.Y.Z" && git push
 ```
 
-### GitHub Actions release
+The appcast lives in `docs/appcast.xml`, served by GitHub Pages (`main`,
+`/docs`) at the `SUFeedURL`. Installed apps see the update within a day, or
+immediately via "Check for updates now".
 
-Push a tag like `v1.0.0` — the workflow in `.github/workflows/release.yml` builds, notarizes, and publishes the DMG to a GitHub Release automatically.
+### GitHub Actions
+
+Every push to `main` runs an **unsigned build check** (`build-check` job) —
+no secrets needed; it catches toolchain/package breakage.
+
+Pushing a tag like `v1.0.0` additionally runs the **release** job: build,
+notarize, publish the DMG to a GitHub Release. Without the ASC secrets below
+it skips with a warning (release locally instead); the appcast update stays a
+local step either way because the Sparkle private key never leaves the
+release Mac.
 
 Required secrets in repo Settings → Secrets and variables → Actions:
 
@@ -62,6 +81,9 @@ Required secrets in repo Settings → Secrets and variables → Actions:
 | `DEVELOPER_ID_CERT_BASE64` | Developer ID Application cert exported as .p12, base64-encoded |
 | `DEVELOPER_ID_CERT_PASSWORD` | Password you set when exporting the .p12 |
 | `KEYCHAIN_PASSWORD` | Any random string — used for the temporary CI keychain |
+| `ASC_KEY_ID` | App Store Connect API key ID (role: Admin) — cloud signing needs it for the app-group provisioning profiles |
+| `ASC_ISSUER_ID` | Issuer ID from the same App Store Connect API page |
+| `ASC_KEY_P8_BASE64` | The `.p8` key file, base64-encoded |
 
 To export the .p12:
 1. Keychain Access → My Certificates → right-click "Developer ID Application: …" → Export → save as `cert.p12` with a password
@@ -70,7 +92,11 @@ To export the .p12:
 
 ### Sparkle appcast
 
-After each release, generate or update `appcast.xml` and publish it where `SUFeedURL` points (default: GitHub Pages of this repo). The release workflow can be extended to do this automatically with Sparkle's `generate_appcast` tool; for now it's a manual step.
+`./scripts/update_appcast.sh <version> <build>` signs `build/Omelette.dmg`
+with the keychain key and prepends an `<item>` to `docs/appcast.xml`, with
+release notes converted to HTML from that version's CHANGELOG section (so
+write the CHANGELOG entry before running it). Commit + push; GitHub Pages
+serves the feed at the `SUFeedURL`.
 
 ## Architecture overview
 
