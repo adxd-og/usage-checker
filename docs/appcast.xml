@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.3</title>
+      <pubDate>Sat, 11 Jul 2026 19:08:28 +0300</pubDate>
+      <sparkle:version>16</sparkle:version>
+      <sparkle:shortVersionString>1.7.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Settings → Account → "Request keychain access now".</b> Shows the macOS dialog for the Claude Code-credentials item immediately, skipping the hourly retry limit — the cure for a fresh install stuck on errors until the next automatic prompt.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.3">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.3/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="QUstfDmy0iwk8JVD44eO8qhg+UHsRyBS40JTH+iy2O9kifg9kcJWnYQd/Qy03YBV/8Vf9AazVfDsq7hh9lz5Aw=="
+        length="14607369"/>
+    </item>
+    <item>
       <title>Omelette v1.7.2</title>
       <pubDate>Sat, 11 Jul 2026 18:55:10 +0300</pubDate>
       <sparkle:version>15</sparkle:version>
