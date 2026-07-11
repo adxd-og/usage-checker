@@ -76,20 +76,13 @@ struct OnboardingView: View {
 
     private var welcomePage: some View {
         VStack(spacing: 20) {
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [.accentColor, .cyan.opacity(0.8)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 72, height: 72)
-                Image(systemName: "chart.bar.fill")
-                    .font(.system(size: 30, weight: .semibold))
-                    .foregroundStyle(.white)
-            }
+            // The real app icon (the omelette), not a drawn stand-in — it
+            // tracks icon updates for free.
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 84, height: 84)
+                .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
             Text("Welcome to Omelette")
                 .font(.title2.weight(.semibold))
             Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Antigravity — so you never get surprised by hitting a limit mid-task.")
@@ -108,7 +101,7 @@ struct OnboardingView: View {
             permissionRow(
                 icon: "key.fill",
                 title: "Keychain access",
-                description: "We read the OAuth token that Claude Code stored in your macOS Keychain. macOS will show a one-time prompt asking you to allow this. Click **Always Allow**."
+                description: "We read the OAuth token that Claude Code stored in your macOS Keychain. macOS will show a one-time prompt asking you to allow this. Click **Always Allow**. Missed the dialog? Settings → Account → **Request keychain access now** shows it again."
             )
 
             permissionRow(
@@ -222,6 +215,7 @@ struct OnboardingView: View {
                 tip("Click", "menu bar icon to open the popover")
                 tip("Hover", "menu bar icon for a quick summary tooltip")
                 tip("From popover", "open Dashboard, Settings, or Refresh")
+                tip("Updates", "install themselves — signed and notarized")
             }
             Spacer()
         }

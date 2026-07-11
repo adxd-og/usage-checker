@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.4] — 2026-07-11
+
+### Changed
+- **The popover hero ring shows only for a single provider.** With several
+  providers the big percentage was anonymous (whose 33%?); the header now
+  stays neutral and the per-provider sections carry the numbers — same rule
+  the menu bar pills follow since 1.7.2.
+- **Welcome tour refreshed.** The real omelette app icon instead of the old
+  drawn placeholder, the keychain page mentions the "Request keychain access
+  now" fallback button, and the final page notes that updates install
+  themselves.
+
 ## [1.7.3] — 2026-07-11
 
 ### Added

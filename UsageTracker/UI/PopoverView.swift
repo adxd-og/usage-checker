@@ -50,10 +50,18 @@ struct PopoverView: View {
         }?.element
     }
 
+    /// The hero ring answers "how close am I to MY limit" — unambiguous only
+    /// while a single provider is on screen. With several providers the number
+    /// is anonymous (whose 33%?), so the header goes neutral and the
+    /// per-provider sections below carry the percentages.
+    private var showsHero: Bool {
+        state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }.count == 1
+    }
+
     private var header: some View {
         TimelineView(.periodic(from: .now, by: 5)) { ctx in
             HStack(spacing: 12) {
-                if let hero = heroBucket {
+                if showsHero, let hero = heroBucket {
                     UsageRing(percent: hero.clampedPercent, size: 52)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(statusPhrase(hero.clampedPercent))
