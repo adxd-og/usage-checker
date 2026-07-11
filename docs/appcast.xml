@@ -6,6 +6,26 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.5</title>
+      <pubDate>Sat, 11 Jul 2026 19:35:20 +0300</pubDate>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>1.7.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Re-enabling a provider brings it back immediately.</b> A user-initiated refresh (provider toggles, Refresh buttons, keychain button) was silently dropped when a poll was already in flight or a 429 backoff was active — the provider then stayed hidden until the next timer tick, which with a 5-minute interval felt like forever. User requests now coalesce into a guaranteed follow-up poll and bypass the backoff; the timer still honors Retry-After.</li>
+<li>The keychain-access button status no longer claims "refreshing…" forever — it confirms and clears itself.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.5">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.5/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="yjpCo9BhljcGv9y5QjlBvg1ysRCsMW+reJK7dq/LVOaF3UgtgwnD06Z1KwyvxgZPKgBZPBNwGymYs1ePZCe2BQ=="
+        length="14605984"/>
+    </item>
+    <item>
       <title>Omelette v1.7.4</title>
       <pubDate>Sat, 11 Jul 2026 19:22:30 +0300</pubDate>
       <sparkle:version>17</sparkle:version>
