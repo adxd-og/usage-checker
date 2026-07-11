@@ -2,19 +2,56 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [main]
+    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  # Unsigned compile check — runs on every push. Catches toolchain/package
+  # breakage (e.g. a CodexBar pin bumping swift-tools) without needing any
+  # signing secrets.
+  build-check:
     # macos-26: default Xcode 26.x (Swift 6.2) — the CodexBar pin needs
     # swift-tools 6.2, which macos-15's default Xcode 16.4 (Swift 6.1) lacks.
     runs-on: macos-26
     timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate project (stub signing config)
+        run: |
+          cat > signing.xcconfig <<EOF
+          CODE_SIGN_STYLE = Automatic
+          PRODUCT_BUNDLE_IDENTIFIER = com.usagetracker.app
+          EOF
+          xcodegen generate
+
+      - name: Build (unsigned)
+        run: |
+          xcodebuild \
+            -project UsageTracker.xcodeproj \
+            -scheme UsageTracker \
+            -configuration Release \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build
+
+  # Full signed + notarized DMG, tag pushes only. Needs the Developer ID cert
+  # secrets AND an App Store Connect API key (ASC_KEY_P8_BASE64 / ASC_KEY_ID /
+  # ASC_ISSUER_ID) so xcodebuild's cloud signing can manage the provisioning
+  # profiles that the app-group entitlement requires under Developer ID.
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-check
+    runs-on: macos-26
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -44,16 +81,33 @@ jobs:
         env:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          # Mirrors the local file: Automatic style so xcodebuild manages the
+          # Developer ID provisioning profiles (required by the app-group
+          # entitlement) via the ASC API key below.
           cat > signing.xcconfig <<EOF
           DEVELOPMENT_TEAM = $APPLE_TEAM_ID
-          CODE_SIGN_IDENTITY = Developer ID Application
+          CODE_SIGN_STYLE = Automatic
           PRODUCT_BUNDLE_IDENTIFIER = com.usagetracker.app
-          CODE_SIGN_STYLE = Manual
           ENABLE_HARDENED_RUNTIME = YES
           OTHER_CODE_SIGN_FLAGS = --timestamp --options=runtime
           EOF
 
+      - name: Write App Store Connect API key
+        env:
+          ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "$ASC_KEY_P8_BASE64" ]; then
+            echo "::error::ASC_KEY_P8_BASE64 secret is missing — cloud signing cannot manage provisioning profiles. See README release notes."
+            exit 1
+          fi
+          echo "$ASC_KEY_P8_BASE64" | base64 --decode -o "$RUNNER_TEMP/asc_key.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc_key.p8" >> "$GITHUB_ENV"
+
       - name: Build DMG
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: ./scripts/build_dmg.sh
 
       - name: Notarize DMG
@@ -72,9 +126,6 @@ jobs:
           xcrun stapler validate build/Omelette.dmg
 
       - name: Upload to GitHub Release
-        # Tag pushes only — a workflow_dispatch run is a build/notarize dry-run
-        # and must not touch (or overwrite the notes of) any release.
-        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: build/Omelette.dmg

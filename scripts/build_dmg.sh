@@ -19,6 +19,20 @@ if [ ! -f signing.xcconfig ]; then
   exit 1
 fi
 
+# CI cloud signing: an App Store Connect API key lets xcodebuild create/fetch
+# the Developer ID provisioning profiles (required by the app-group
+# entitlement) without a logged-in Xcode. Locally these vars are unset and the
+# behavior is unchanged (your Xcode session manages profiles).
+AUTH_ARGS=()
+if [ -n "${ASC_KEY_PATH:-}" ] && [ -n "${ASC_KEY_ID:-}" ] && [ -n "${ASC_ISSUER_ID:-}" ]; then
+  echo "==> Using App Store Connect API key for provisioning"
+  AUTH_ARGS=(
+    -authenticationKeyPath "$ASC_KEY_PATH"
+    -authenticationKeyID "$ASC_KEY_ID"
+    -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+  )
+fi
+
 echo "==> Regenerating project"
 xcodegen generate
 
@@ -30,6 +44,7 @@ xcodebuild \
   -derivedDataPath "$BUILD_DIR/DerivedData" \
   -archivePath "$ARCHIVE_PATH" \
   -allowProvisioningUpdates \
+  ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
   archive
 
 echo "==> Generating exportOptions.plist (Team ID from signing.xcconfig — kept out of git)"
@@ -62,7 +77,8 @@ xcodebuild \
   -archivePath "$ARCHIVE_PATH" \
   -exportPath "$EXPORT_DIR" \
   -exportOptionsPlist "$ROOT/scripts/exportOptions.plist" \
-  -allowProvisioningUpdates
+  -allowProvisioningUpdates \
+  ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"}
 
 echo "==> Verifying signatures"
 APP="$EXPORT_DIR/$PRODUCT_NAME.app"
