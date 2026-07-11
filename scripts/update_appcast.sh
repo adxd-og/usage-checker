@@ -22,9 +22,11 @@ SIGN_UPDATE="$(find "$ROOT/build/DerivedData/SourcePackages/artifacts" -type f -
 SIG_LINE="$("$SIGN_UPDATE" "$DMG")"   # sparkle:edSignature="..." length="..."
 PUB_DATE="$(LC_ALL=C date "+%a, %d %b %Y %H:%M:%S %z")"
 
-export VERSION BUILD SIG_LINE PUB_DATE REPO_URL
+CHANGELOG="$ROOT/CHANGELOG.md"
+
+export VERSION BUILD SIG_LINE PUB_DATE REPO_URL CHANGELOG
 python3 - "$APPCAST" <<'PY'
-import os, re, sys
+import html, os, re, sys
 
 path = sys.argv[1]
 sig = os.environ["SIG_LINE"]
@@ -33,13 +35,46 @@ length = re.search(r'length="(\d+)"', sig).group(1)
 v, b = os.environ["VERSION"], os.environ["BUILD"]
 repo = os.environ["REPO_URL"]
 
+# --- release notes: CHANGELOG section for this version -> embedded HTML.
+# Sparkle renders <description> right in the update window; a
+# releaseNotesLink would embed the whole GitHub page instead.
+def md_inline(s):
+    s = html.escape(s, quote=False)
+    s = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", s)
+    s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    s = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
+    return s
+
+def md_to_html(md):
+    out, in_list = [], False
+    for line in md.splitlines():
+        if line.startswith("### "):
+            if in_list: out.append("</ul>"); in_list = False
+            out.append(f"<h3>{md_inline(line[4:])}</h3>")
+        elif line.startswith("- "):
+            if not in_list: out.append("<ul>"); in_list = True
+            out.append(f"<li>{md_inline(line[2:])}</li>")
+        elif line.strip() and in_list:
+            out[-1] = out[-1][:-5] + " " + md_inline(line.strip()) + "</li>"
+        elif line.strip():
+            out.append(f"<p>{md_inline(line.strip())}</p>")
+    if in_list: out.append("</ul>")
+    return "\n".join(out)
+
+cl = open(os.environ["CHANGELOG"]).read()
+m = re.search(rf"^## \[{re.escape(v)}\][^\n]*\n(.*?)(?=^## \[|\Z)", cl, re.S | re.M)
+notes = md_to_html(m.group(1).strip()) if m else ""
+notes += f'\n<p><a href="{repo}/releases/tag/v{v}">Full release on GitHub</a></p>'
+
 item = f"""    <item>
       <title>Omelette v{v}</title>
       <pubDate>{os.environ["PUB_DATE"]}</pubDate>
       <sparkle:version>{b}</sparkle:version>
       <sparkle:shortVersionString>{v}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>{repo}/releases/tag/v{v}</sparkle:releaseNotesLink>
+      <description><![CDATA[
+{notes}
+      ]]></description>
       <enclosure
         url="{repo}/releases/download/v{v}/Omelette.dmg"
         type="application/octet-stream"

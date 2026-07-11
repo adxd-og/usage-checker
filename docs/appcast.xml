@@ -11,7 +11,11 @@
       <sparkle:version>15</sparkle:version>
       <sparkle:shortVersionString>1.7.2</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/adxd-og/usage-checker/releases/tag/v1.7.2</sparkle:releaseNotesLink>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul><li><b>Quieter menu bar with several providers</b> — the pills drop their numbers and keep just the colored bars; a lone provider still shows its percent. (The number is that provider's hottest real window — session, weekly or spend limit; promo pools don't count.)</li></ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.2">Full release on GitHub</a></p>
+      ]]></description>
       <enclosure
         url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.2/Omelette.dmg"
         type="application/octet-stream"
@@ -24,7 +28,14 @@
       <sparkle:version>14</sparkle:version>
       <sparkle:shortVersionString>1.7.1</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/adxd-og/usage-checker/releases/tag/v1.7.1</sparkle:releaseNotesLink>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Auto-updates via Sparkle.</b> This build checks the release feed automatically — updates arrive on their own, EdDSA-signed and notarized.</li>
+<li><b>Settings → Updates</b> now shows the app version and build number.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.1">Full release on GitHub</a></p>
+      ]]></description>
       <enclosure
         url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.1/Omelette.dmg"
         type="application/octet-stream"
@@ -37,7 +48,14 @@
       <sparkle:version>13</sparkle:version>
       <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-      <sparkle:releaseNotesLink>https://github.com/adxd-og/usage-checker/releases/tag/v1.7.0</sparkle:releaseNotesLink>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>New app icon</b> — a sunny-side-up egg whose yolk wears a progress ring.</li>
+<li><b>README hero banner</b> in the style of Dalí's "The Persistence of Memory".</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.0">Full release on GitHub</a></p>
+      ]]></description>
       <enclosure
         url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.0/Omelette.dmg"
         type="application/octet-stream"
