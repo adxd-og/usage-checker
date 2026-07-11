@@ -6,6 +6,26 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.7.4</title>
+      <pubDate>Sat, 11 Jul 2026 19:22:30 +0300</pubDate>
+      <sparkle:version>17</sparkle:version>
+      <sparkle:shortVersionString>1.7.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>The popover hero ring shows only for a single provider.</b> With several providers the big percentage was anonymous (whose 33%?); the header now stays neutral and the per-provider sections carry the numbers — same rule the menu bar pills follow since 1.7.2.</li>
+<li><b>Welcome tour refreshed.</b> The real omelette app icon instead of the old drawn placeholder, the keychain page mentions the "Request keychain access now" fallback button, and the final page notes that updates install themselves.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.7.4">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.4/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="NubCFeyac4p0A+8ZAiD1q42FBKNrSbXhvc7VWRt4tSCQ9P/7cAHjKZlfDIyDi/VT674vJ6exlLkSV8E7Of85Dw=="
+        length="14598505"/>
+    </item>
+    <item>
       <title>Omelette v1.7.3</title>
       <pubDate>Sat, 11 Jul 2026 19:08:28 +0300</pubDate>
       <sparkle:version>16</sparkle:version>
