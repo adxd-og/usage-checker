@@ -11,6 +11,8 @@ struct WidgetBucket: Codable, Equatable, Sendable, Identifiable {
     var kind: String? = nil
 
     var isSession: Bool { kind == "session" }
+    /// Promo pools stay visible in rows but never drive the widget's headline ring.
+    var isPromo: Bool { id.lowercased().contains("promo") || label.lowercased().contains("promo") }
 }
 
 /// One provider ("Claude", "Codex", …) with its usage windows.
@@ -22,9 +24,12 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
     let buckets: [WidgetBucket]
 
     /// The window the small widget's ring shows: the session window when the
-    /// provider has one, otherwise whichever window is closest to its limit.
+    /// provider has one, otherwise whichever non-promo window is closest to its
+    /// limit (promo pools only lead when they're all there is).
     var headlineBucket: WidgetBucket? {
-        buckets.first(where: \.isSession) ?? buckets.max(by: { $0.percent < $1.percent })
+        if let session = buckets.first(where: { $0.isSession && !$0.isPromo }) { return session }
+        let real = buckets.filter { !$0.isPromo }
+        return (real.isEmpty ? buckets : real).max(by: { $0.percent < $1.percent })
     }
 
     var sessionBuckets: [WidgetBucket] { buckets.filter(\.isSession) }

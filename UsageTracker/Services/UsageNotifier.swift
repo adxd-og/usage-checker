@@ -26,7 +26,19 @@ final class UsageNotifier {
             let thresholdMid = SettingsStore.shared.threshold80
 
             for service in snapshot.services {
-                for bucket in service.buckets {
+                // Promo pools don't alert (running a free bonus dry costs nothing);
+                // the Enterprise spend limit alerts like any rate window.
+                var watchable = service.buckets.filter { !$0.isPromotional }
+                if let extra = service.extraUsage, extra.isEnabled {
+                    watchable.append(UsageBucket(
+                        id: "extra_usage",
+                        label: extraUsageTitle(plan: service.plan),
+                        utilization: extra.utilization,
+                        resetsAt: .distantFuture,
+                        kind: .other
+                    ))
+                }
+                for bucket in watchable {
                     let key = "\(service.id):\(bucket.id)"
                     let p = Int(bucket.clampedPercent.rounded())
                     let bucketLevel: Int
@@ -37,9 +49,12 @@ final class UsageNotifier {
                     let prev = lastFiredKey[key] ?? 0
                     if bucketLevel > prev {
                         let critical = bucketLevel >= thresholdHigh
+                        let resetPhrase = bucket.resetsAt < .distantFuture
+                            ? " Resets \(formatReset(bucket.resetsAt))."
+                            : ""
                         fire(
                             title: "\(service.displayName) — \(bucket.label) at \(bucketLevel)%+",
-                            body: "Currently \(p)%. Resets \(formatReset(bucket.resetsAt)).",
+                            body: "Currently \(p)%.\(resetPhrase)",
                             critical: critical
                         )
                         lastFiredKey[key] = bucketLevel

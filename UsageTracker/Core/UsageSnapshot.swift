@@ -16,6 +16,13 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
 
+    /// Bonus quota pools (e.g. Anthropic's "…_promotional" windows). Informational:
+    /// running one dry costs nothing, so they never drive the headline percent,
+    /// the hero header, or threshold notifications — only their own row.
+    var isPromotional: Bool {
+        id.lowercased().contains("promo") || label.lowercased().contains("promo")
+    }
+
     /// Total length of this rate-limit window, inferred from its id/kind.
     /// nil when the length can't be inferred (unknown future window types).
     var windowDuration: TimeInterval? {
@@ -65,9 +72,27 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// After a 429, how many seconds to wait before polling again. nil = no backoff.
     var retryAfter: TimeInterval? = nil
 
+    /// The number the menu bar shows: the worst *real* constraint. Promotional
+    /// pools don't count (free bonuses shouldn't scream "almost at the limit"),
+    /// while an Enterprise spend limit does. Falls back to promo windows only
+    /// when they're all the account has.
     var headlinePercent: Double {
-        buckets.map(\.clampedPercent).max() ?? 0
+        var candidates = buckets.filter { !$0.isPromotional }.map(\.clampedPercent)
+        if let extra = extraUsage, extra.isEnabled {
+            candidates.append(max(0, min(100, extra.utilization)))
+        }
+        if candidates.isEmpty {
+            candidates = buckets.map(\.clampedPercent)
+        }
+        return candidates.max() ?? 0
     }
+}
+
+/// Enterprise/Team accounts know extra usage as their spend limit;
+/// subscription accounts as prepaid extra credits. Same API field either way.
+func extraUsageTitle(plan: String?) -> String {
+    let plan = plan ?? ""
+    return plan.contains("Enterprise") || plan.contains("Team") ? "Spend limit" : "Extra usage credits"
 }
 
 struct UsageSnapshot: Equatable, Sendable {
@@ -84,7 +109,7 @@ struct UsageSnapshot: Equatable, Sendable {
     )
 
     var headlinePercent: Double {
-        services.flatMap(\.buckets).map(\.clampedPercent).max() ?? 0
+        services.map(\.headlinePercent).max() ?? 0
     }
 
     var hasAnyData: Bool {

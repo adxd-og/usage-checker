@@ -21,9 +21,28 @@ struct PopoverView: View {
     /// The most-constrained window across all services — the one that answers
     /// "can I keep working right now?". Ties resolve to the first in API order
     /// (the 5-hour session), so an all-zero account leads with the session.
+    /// Promotional pools don't compete (a free bonus running low isn't "almost
+    /// at the limit"); an Enterprise spend limit does. Promo windows only lead
+    /// when they're all the account has.
     private var heroBucket: UsageBucket? {
-        let buckets = state.snapshot.services.flatMap(\.buckets)
-        return buckets.enumerated().max { a, b in
+        var candidates = state.snapshot.services.flatMap { service in
+            service.buckets.filter { !$0.isPromotional }
+        }
+        for service in state.snapshot.services {
+            if let extra = service.extraUsage, extra.isEnabled {
+                candidates.append(UsageBucket(
+                    id: "\(service.id)_extra_usage",
+                    label: extraUsageTitle(plan: service.plan),
+                    utilization: extra.utilization,
+                    resetsAt: .distantFuture,
+                    kind: .other
+                ))
+            }
+        }
+        if candidates.isEmpty {
+            candidates = state.snapshot.services.flatMap(\.buckets)
+        }
+        return candidates.enumerated().max { a, b in
             if a.element.clampedPercent != b.element.clampedPercent {
                 return a.element.clampedPercent < b.element.clampedPercent
             }
@@ -537,12 +556,7 @@ private struct ServiceSection: View {
         return "You haven't used \(name) yet"
     }
 
-    /// Enterprise/Team accounts know this as their spend limit; subscription
-    /// accounts as extra-usage credits. Same API field either way.
-    private var extraUsageLabel: String {
-        let plan = service.plan ?? ""
-        return plan.contains("Enterprise") || plan.contains("Team") ? "Spend limit" : "Extra usage credits"
-    }
+    private var extraUsageLabel: String { extraUsageTitle(plan: service.plan) }
 
     private func extraBlock(_ extra: ExtraUsage) -> some View {
         VStack(alignment: .leading, spacing: 4) {
