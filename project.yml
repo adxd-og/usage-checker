@@ -46,22 +46,31 @@ targets:
       - package: Sparkle
       - package: CodexBar
         product: CodexBarCore
+    # Generated Info.plist (xcodegen writes it at `generate` time). NOTE: the
+    # Sparkle keys CANNOT go through INFOPLIST_KEY_* build settings — Xcode
+    # injects only its own allowlisted keys that way and silently drops custom
+    # ones (SUFeedURL never reached any shipped build until this block).
+    info:
+      path: UsageTracker/Info.plist
+      properties:
+        CFBundleDisplayName: Omelette
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        LSUIElement: true
+        LSApplicationCategoryType: public.app-category.developer-tools
+        NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
+        NSPrincipalClass: NSApplication
+        SUFeedURL: "https://adxd-og.github.io/usage-checker/appcast.xml"
+        # EdDSA public key; the private half lives in the release Mac's login
+        # keychain ("Private key for signing Sparkle updates") — back it up,
+        # losing it breaks the update chain for every shipped build.
+        SUPublicEDKey: "MHnsTPADe6xMrC9FNW2+JGcON46j6J2JSrG/wCqpLDA="
+        SUEnableAutomaticChecks: true
     settings:
       base:
         PRODUCT_NAME: Omelette
         MARKETING_VERSION: "1.7.0"
         CURRENT_PROJECT_VERSION: "13"
-        INFOPLIST_KEY_LSUIElement: YES
-        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 adxd-og. MIT License."
-        INFOPLIST_KEY_CFBundleDisplayName: "Omelette"
-        INFOPLIST_KEY_NSPrincipalClass: NSApplication
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.developer-tools
-        INFOPLIST_KEY_SUFeedURL: "https://adxd-og.github.io/usage-checker/appcast.xml"
-        INFOPLIST_KEY_SUPublicEDKey: ""
-        # Disabled until SUPublicEDKey + appcast.xml are configured.
-        # Re-enable in v1.1 when releasing notarized updates via Sparkle.
-        INFOPLIST_KEY_SUEnableAutomaticChecks: NO
-        GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: NO

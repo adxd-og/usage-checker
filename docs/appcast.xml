@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Omelette</title>
+    <link>https://adxd-og.github.io/usage-checker/appcast.xml</link>
+    <description>Omelette release feed</description>
+    <language>en</language>
+    <item>
+      <title>Omelette v1.7.0</title>
+      <pubDate>Fri, 11 Jul 2026 14:30:00 +0300</pubDate>
+      <sparkle:version>13</sparkle:version>
+      <sparkle:shortVersionString>1.7.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:releaseNotesLink>https://github.com/adxd-og/usage-checker/releases/tag/v1.7.0</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.7.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="Xy4/z47DRlneuqGC+hrJLNcU5NDOzovzyas6b9MLlxAER3BNu1XszU+yWNexx0puinlhVdoE2ZqnLG7JWlTmCg=="
+        length="14601908"/>
+    </item>
+  </channel>
+</rss>

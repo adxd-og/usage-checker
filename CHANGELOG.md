@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Auto-updates via Sparkle are live.** The app now ships with the EdDSA
+  public key and checks the appcast feed (GitHub Pages, `docs/appcast.xml`)
+  automatically; each release DMG is signed with the private key from the
+  release Mac's keychain (`scripts/update_appcast.sh`). Builds prior to this
+  one must update by hand one last time.
 - Settings → Updates now shows the app version and build number.
 
 ## [1.7.0] — 2026-07-11
