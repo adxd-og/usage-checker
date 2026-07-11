@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] — 2026-07-11
+
 ### Added
 - **Auto-updates via Sparkle are live.** The app now ships with the EdDSA
   public key and checks the appcast feed (GitHub Pages, `docs/appcast.xml`)

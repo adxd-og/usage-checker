@@ -93,24 +93,31 @@ jobs:
           EOF
 
       - name: Write App Store Connect API key
+        id: asc
         env:
           ASC_KEY_P8_BASE64: ${{ secrets.ASC_KEY_P8_BASE64 }}
         run: |
           set -euo pipefail
           if [ -z "$ASC_KEY_P8_BASE64" ]; then
-            echo "::error::ASC_KEY_P8_BASE64 secret is missing — cloud signing cannot manage provisioning profiles. See README release notes."
-            exit 1
+            # No cloud-signing key — releases are built locally for now. Skip
+            # the remaining steps instead of failing so a tag push stays green.
+            echo "::warning::ASC_KEY_P8_BASE64 secret is missing — skipping CI release; build locally (scripts/build_dmg.sh + notarize_dmg.sh + update_appcast.sh)."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           echo "$ASC_KEY_P8_BASE64" | base64 --decode -o "$RUNNER_TEMP/asc_key.p8"
           echo "ASC_KEY_PATH=$RUNNER_TEMP/asc_key.p8" >> "$GITHUB_ENV"
+          echo "ok=true" >> "$GITHUB_OUTPUT"
 
       - name: Build DMG
+        if: steps.asc.outputs.ok == 'true'
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: ./scripts/build_dmg.sh
 
       - name: Notarize DMG
+        if: steps.asc.outputs.ok == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
@@ -126,6 +133,7 @@ jobs:
           xcrun stapler validate build/Omelette.dmg
 
       - name: Upload to GitHub Release
+        if: steps.asc.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: build/Omelette.dmg
