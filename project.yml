@@ -39,6 +39,7 @@ targets:
         excludes:
           - "**/*.entitlements"
       - path: UsageTrackerWidget/SharedWidgetData.swift
+      - path: UsageTrackerWidget/ProviderIconView.swift
     resources:
       - path: UsageTracker/Resources
     dependencies:
@@ -86,6 +87,8 @@ targets:
         excludes:
           - "**/*.entitlements"
           - "Info.plist"
+    resources:
+      - path: UsageTracker/Resources/ProviderIcons.xcassets
     settings:
       base:
         PRODUCT_NAME: UsageTrackerWidget
