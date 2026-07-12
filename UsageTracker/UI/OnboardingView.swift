@@ -85,7 +85,7 @@ struct OnboardingView: View {
                 .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
             Text("Welcome to Omelette")
                 .font(.title2.weight(.semibold))
-            Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Antigravity — so you never get surprised by hitting a limit mid-task.")
+            Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)

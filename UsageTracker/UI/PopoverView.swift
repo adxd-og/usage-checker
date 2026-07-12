@@ -384,6 +384,8 @@ private struct ServiceSection: View {
         let message: String
         var command: String?
         var appPath: String?
+        var linkTitle: String?
+        var linkURL: String?
     }
 
     /// Per-service recovery instructions behind the state badge.
@@ -410,6 +412,13 @@ private struct ServiceSection: View {
                 message: "Antigravity shares quotas only while the app, `agy` CLI, or IDE is running.",
                 command: installed ? nil : "agy",
                 appPath: installed ? "/Applications/Antigravity.app" : nil
+            )
+        case ("grok", .notSignedIn):
+            return StateHelp(
+                message: "Sign into the Grok CLI, then refresh. Credits reset with your xAI billing period.",
+                command: "grok login",
+                linkTitle: "Open grok.com usage",
+                linkURL: "https://grok.com/?_s=usage"
             )
         default:
             return nil
@@ -444,6 +453,10 @@ private struct ServiceSection: View {
                     showsStateHelp = false
                 }
                 .controlSize(.small)
+            }
+            if let title = help.linkTitle, let url = help.linkURL.flatMap(URL.init(string:)) {
+                Link(title, destination: url)
+                    .font(.caption)
             }
         }
         .padding(14)
