@@ -181,9 +181,7 @@ struct NoDataView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            Image(systemName: provider.fallbackIcon)
-                .font(.system(size: 22, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
+            ProviderIconView(serviceID: provider.rawValue, sfFallback: provider.fallbackIcon, size: 24)
                 .foregroundStyle(.secondary)
             Text(provider.fallbackName)
                 .font(.system(size: 12, weight: .semibold))
@@ -337,9 +335,7 @@ struct ServiceHeader: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: service.icon)
-                .font(.system(size: 12, weight: .medium))
-                .symbolRenderingMode(.hierarchical)
+            ProviderIconView(serviceID: service.id, sfFallback: service.icon, size: 13)
                 .foregroundStyle(.tint)
             Text(service.name)
                 .font(.system(size: 13, weight: .semibold))

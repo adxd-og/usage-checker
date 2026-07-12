@@ -197,7 +197,9 @@ struct SettingsView: View {
                 } else {
                     ForEach(snap.services) { svc in
                         HStack(spacing: 8) {
-                            Image(systemName: svc.icon).foregroundStyle(.tint).frame(width: 18)
+                            ProviderIconView(serviceID: svc.id, sfFallback: svc.icon, size: 14)
+                                .foregroundStyle(.tint)
+                                .frame(width: 18)
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(svc.displayName).font(.system(size: 12, weight: .medium))
                                 Text(stateLabel(svc.state) + (svc.plan.map { " · \($0)" } ?? ""))

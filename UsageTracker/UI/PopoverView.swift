@@ -325,8 +325,7 @@ private struct ServiceSection: View {
 
     private var sectionHeader: some View {
         HStack(spacing: 8) {
-            Image(systemName: service.icon)
-                .font(.system(size: 14, weight: .medium))
+            ProviderIconView(serviceID: service.id, sfFallback: service.icon)
                 .foregroundStyle(.tint)
                 .frame(width: 18)
             VStack(alignment: .leading, spacing: 1) {
