@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.1] — 2026-07-12
+
+### Changed
+- **Provider cards show real brand logos.** The popover, Settings list, and
+  desktop widget now render each provider's monochrome logo (Claude, Codex,
+  Gemini, Antigravity, Grok) instead of generic system symbols. Logos are
+  tinted like the old icons and fall back to a system symbol for entries
+  without one (e.g. the Anthropic admin card).
+
 ## [1.8.0] — 2026-07-12
 
 ### Added
