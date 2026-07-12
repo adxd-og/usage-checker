@@ -56,3 +56,6 @@ notarization/
 .idea/
 *.swp
 *.swo
+
+# Superpowers SDD scratch (briefs, reports, progress ledger)
+.superpowers/
