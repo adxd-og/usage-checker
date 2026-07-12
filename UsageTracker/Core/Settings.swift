@@ -30,6 +30,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("geminiProviderEnabled") var geminiProviderEnabled: Bool = GeminiProvider.isGeminiSignedIn
     // Defaults to on when Antigravity (app or CLI) is installed on this machine.
     @AppStorage("antigravityProviderEnabled") var antigravityProviderEnabled: Bool = AntigravityProvider.isAntigravityInstalled
+    // Defaults to on once the Grok CLI has been signed into on this machine.
+    @AppStorage("grokProviderEnabled") var grokProviderEnabled: Bool = GrokProvider.isGrokInstalled
     // Pay-as-you-go accounts: weekly $ budget the local CLI spend is measured
     // against (0 = no budget set). Only used when the account has no rate windows.
     @AppStorage("claudeWeeklyBudgetUSD") var claudeWeeklyBudgetUSD: Double = 0

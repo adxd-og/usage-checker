@@ -76,7 +76,8 @@ final class AppState: ObservableObject {
             preferAdmin: preferAdmin,
             codexEnabled: SettingsStore.shared.codexProviderEnabled,
             geminiEnabled: SettingsStore.shared.geminiProviderEnabled,
-            antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled
+            antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
+            grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
         next = await Self.applyPayAsYouGo(to: next)
         next = Self.retainingLastGoodServices(previous: snapshot, next: next)

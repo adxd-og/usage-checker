@@ -95,6 +95,13 @@ struct SettingsView: View {
                 Text("Reads model-pool quotas from a running Antigravity app, `agy` CLI, or IDE. The Gemini-CLI replacement for personal Google accounts.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Toggle("Show Grok usage", isOn: $settings.grokProviderEnabled)
+                    .onChange(of: settings.grokProviderEnabled) { _, _ in
+                        AppState.shared.refreshNow()
+                    }
+                Text("Reads billing-period credit usage from the local Grok CLI, with a grok.com fallback. Requires being signed in (`grok login`).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Updates") {
