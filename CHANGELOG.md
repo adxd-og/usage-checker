@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-07-12
+
+### Added
+- **Grok (xAI) usage tracking.** A new provider card shows billing-period
+  credit usage from the local Grok CLI (`grok agent stdio` RPC), falling back
+  to grok.com web billing when the CLI is unavailable. Includes a Settings
+  toggle (on by default when the Grok CLI is signed in), a sign-in recovery
+  popover (`grok login` + dashboard link), and Grok as a selectable provider
+  in the desktop widget.
+
 ## [1.7.7] — 2026-07-11
 
 ### Changed
