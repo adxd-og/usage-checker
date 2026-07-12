@@ -40,6 +40,10 @@ targets:
           - "**/*.entitlements"
       - path: UsageTrackerWidget/SharedWidgetData.swift
       - path: UsageTrackerWidget/ProviderIconView.swift
+      # The shared logo catalog is deliberately under sources:, not resources: —
+      # xcodegen (2.45.4) silently drops resources: entries that live outside a
+      # target's source roots, while sources: auto-routes .xcassets to the
+      # Resources build phase. Moving this to resources: starves the app of it.
       - path: SharedAssets/ProviderIcons.xcassets
     resources:
       - path: UsageTracker/Resources
@@ -88,6 +92,7 @@ targets:
         excludes:
           - "**/*.entitlements"
           - "Info.plist"
+      # Via sources:, not resources: — see the app target's note on the same path.
       - path: SharedAssets/ProviderIcons.xcassets
     settings:
       base:
