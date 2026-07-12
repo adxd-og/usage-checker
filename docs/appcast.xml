@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.8.1</title>
+      <pubDate>Sun, 12 Jul 2026 19:20:13 +0300</pubDate>
+      <sparkle:version>22</sparkle:version>
+      <sparkle:shortVersionString>1.8.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>Provider cards show real brand logos.</b> The popover, Settings list, and desktop widget now render each provider's monochrome logo (Claude, Codex, Gemini, Antigravity, Grok) instead of generic system symbols. Logos are tinted like the old icons and fall back to a system symbol for entries without one (e.g. the Anthropic admin card).</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.8.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.8.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="+dFOiB+A4Fleft5TL8qOm8OkdU/ULrf0/PL1gFH5U+imWybgPXYZ/mWYt/nKFhPjCj4CEk4Fcy9xhxBXzWsIDg=="
+        length="14701762"/>
+    </item>
+    <item>
       <title>Omelette v1.8.0</title>
       <pubDate>Sun, 12 Jul 2026 18:21:41 +0300</pubDate>
       <sparkle:version>21</sparkle:version>
