@@ -29,6 +29,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+Provider logo SVGs (`ProviderIcon-*.svg` in `SharedAssets/ProviderIcons.xcassets`) are copied from CodexBar's resources under the same MIT license.
+
 ## Sparkle
 
 Automatic updates are provided by Sparkle (<https://github.com/sparkle-project/Sparkle>),
