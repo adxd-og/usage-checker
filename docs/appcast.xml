@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.8.0</title>
+      <pubDate>Sun, 12 Jul 2026 18:21:41 +0300</pubDate>
+      <sparkle:version>21</sparkle:version>
+      <sparkle:shortVersionString>1.8.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Grok (xAI) usage tracking.</b> A new provider card shows billing-period credit usage from the local Grok CLI (<code>grok agent stdio</code> RPC), falling back to grok.com web billing when the CLI is unavailable. Includes a Settings toggle (on by default when the Grok CLI is signed in), a sign-in recovery popover (<code>grok login</code> + dashboard link), and Grok as a selectable provider in the desktop widget.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.8.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.8.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="xCf3Zad+18cKqulGM7HyRX3vKeAMpeVhw1J2Oa4P7ReghQ5HkDaAYhIBOwNtN18jHqSPQ2gJeDuoUiJbXhL+Cg=="
+        length="14633588"/>
+    </item>
+    <item>
       <title>Omelette v1.7.7</title>
       <pubDate>Sat, 11 Jul 2026 20:03:10 +0300</pubDate>
       <sparkle:version>20</sparkle:version>
