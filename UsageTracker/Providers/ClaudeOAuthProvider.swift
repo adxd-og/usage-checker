@@ -6,6 +6,7 @@ private struct OAuthUsageResponse: Decodable, Sendable {
     /// surface) shows up in the app without a code change.
     let windows: [String: WindowDTO]
     let extraUsage: ExtraDTO?
+    let limits: [LimitDTO]
 
     struct WindowDTO: Decodable, Sendable {
         let utilization: Double?
@@ -41,6 +42,52 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         }
     }
 
+    /// One entry of the modern `limits` array (server-side since ~July 2026).
+    /// Scoped windows (e.g. Fable's weekly cap) exist ONLY here — their legacy
+    /// per-key fields arrive as null. `severity`/`is_active`/`surface` are
+    /// deliberately not decoded: the UI derives urgency from the percent.
+    struct LimitDTO: Decodable, Sendable {
+        let kind: String?
+        let group: String?
+        let percent: Double?
+        let resetsAt: Date?
+        let scope: ScopeDTO?
+
+        enum CodingKeys: String, CodingKey {
+            case kind, group, percent, scope
+            case resetsAt = "resets_at"
+        }
+
+        struct ScopeDTO: Decodable, Sendable {
+            let model: ModelDTO?
+
+            struct ModelDTO: Decodable, Sendable {
+                let id: String?
+                let displayName: String?
+
+                enum CodingKeys: String, CodingKey {
+                    case id
+                    case displayName = "display_name"
+                }
+            }
+        }
+
+        /// Display-ready scope name when the limit is model-scoped: "Fable".
+        var scopeName: String? {
+            let name = scope?.model?.displayName ?? scope?.model?.id
+            return name?.isEmpty == false ? name : nil
+        }
+    }
+
+    /// Swallows per-element decode failures so one unexpected entry in
+    /// `limits` can't hide the rest of the array.
+    private struct Lossy<T: Decodable & Sendable>: Decodable, Sendable {
+        let value: T?
+        init(from decoder: Decoder) {
+            self.value = try? T(from: decoder)
+        }
+    }
+
     private struct AnyKey: CodingKey {
         let stringValue: String
         let intValue: Int? = nil
@@ -60,6 +107,9 @@ private struct OAuthUsageResponse: Decodable, Sendable {
             windows[key.stringValue] = dto
         }
         self.windows = windows
+        self.limits = (AnyKey(stringValue: "limits").flatMap {
+            try? c.decodeIfPresent([Lossy<LimitDTO>].self, forKey: $0)
+        } ?? []).compactMap(\.value)
         self.extraUsage = AnyKey(stringValue: "extra_usage").flatMap {
             try? c.decodeIfPresent(ExtraDTO.self, forKey: $0)
         }
@@ -124,7 +174,18 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             rateLimitTier: oauth.rateLimitTier
         )
 
-        let buckets = Self.buckets(from: resp.windows)
+        // The modern `limits` array is the source of truth when present (scoped
+        // windows exist only there); legacy top-level windows it doesn't cover
+        // (promotional pools) are appended after. An empty/missing array means
+        // the exact pre-`limits` behavior.
+        let limitBuckets = Self.buckets(fromLimits: resp.limits)
+        let buckets: [UsageBucket]
+        if limitBuckets.isEmpty {
+            buckets = Self.buckets(from: resp.windows)
+        } else {
+            let taken = Set(limitBuckets.map(\.id))
+            buckets = limitBuckets + Self.buckets(from: resp.windows).filter { !taken.contains($0.id) }
+        }
 
         let extra: ExtraUsage? = {
             guard let e = resp.extraUsage else { return nil }
@@ -282,6 +343,73 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             ))
         }
         return buckets
+    }
+
+    /// Buckets from the modern `limits` array. Ids reuse the keys the app has
+    /// published since v1.1.0 so history records, the widget, and threshold
+    /// notifications stay continuous.
+    private static func buckets(fromLimits limits: [OAuthUsageResponse.LimitDTO]) -> [UsageBucket] {
+        var seen = Set<String>()
+        var buckets: [UsageBucket] = []
+        for limit in limits {
+            guard let percent = limit.percent else { continue }
+            let identity = identity(for: limit)
+            // A duplicated server entry must not produce duplicate Identifiable
+            // ids in SwiftUI lists — first occurrence wins.
+            guard seen.insert(identity.id).inserted else { continue }
+            buckets.append(UsageBucket(
+                id: identity.id,
+                label: identity.label,
+                utilization: percent,
+                resetsAt: limit.resetsAt ?? .distantFuture,
+                kind: identity.kind
+            ))
+        }
+        return buckets
+    }
+
+    private static func identity(
+        for limit: OAuthUsageResponse.LimitDTO
+    ) -> (id: String, label: String, kind: BucketKind) {
+        let scopeName = limit.scopeName.map(Self.displayScopeName)
+        let scopeSlug = limit.scopeName.map(Self.slug)
+        switch limit.kind {
+        case "session":
+            return ("five_hour", "Current session", .session)
+        case "weekly_all":
+            return ("seven_day", "All models", .weekly)
+        case "weekly_scoped":
+            guard let scopeName, let scopeSlug else {
+                return ("seven_day_scoped", "Model-specific", .modelSpecific)
+            }
+            return ("seven_day_\(scopeSlug)", "\(scopeName) only", .modelSpecific)
+        default:
+            // A future kind still renders: id from kind (+ scope slug), label
+            // from the scope name or the kind's words.
+            let kindName = limit.kind ?? "limit"
+            let id = scopeSlug.map { "\(kindName)_\($0)" } ?? kindName
+            let label = scopeName.map { "\($0) only" }
+                ?? kindName.split(separator: "_").map { String($0).capitalized }.joined(separator: " ")
+            let bucketKind: BucketKind = {
+                switch limit.group {
+                case "session": return .session
+                case "weekly": return scopeName == nil ? .weekly : .modelSpecific
+                default: return autoKind(for: kindName)
+                }
+            }()
+            return (id, label, bucketKind)
+        }
+    }
+
+    /// "Fable" → "fable", "Claude Design" → "claude_design".
+    private static func slug(_ name: String) -> String {
+        name.lowercased().replacingOccurrences(of: " ", with: "_")
+    }
+
+    /// Keeps Anthropic's internal codenames out of the UI, mirroring autoLabel:
+    /// a scope named "omelette" is Claude Design.
+    private static func displayScopeName(_ name: String) -> String {
+        name.lowercased() == "omelette" ? "Claude Design" : name
     }
 
     /// "seven_day_fable" → "Fable only", "seven_day_code_review" → "Code Review".
