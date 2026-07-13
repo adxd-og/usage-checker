@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.9.0] — 2026-07-13
+
+### Added
+- **Model-scoped Claude limits (Fable).** The usage endpoint's new `limits`
+  array is now parsed, so model-scoped weekly windows — like Fable's cap —
+  appear as their own rows, drive the menu-bar headline when they're the
+  binding limit, and flow into the widget and history. Windows appear and
+  disappear with the server payload; the next scoped model needs no app
+  update.
+
 ## [1.8.1] — 2026-07-12
 
 ### Changed
