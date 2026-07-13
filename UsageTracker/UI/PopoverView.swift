@@ -63,6 +63,11 @@ struct PopoverView: View {
             )
         }
         .buttonStyle(.plain)
+        // The popover hands keyboard focus to its first control, which used to
+        // paint a stray focus ring around the first tab. Selection is already
+        // shown by the capsule; keyboard users still switch via mouse-equivalent
+        // full keyboard access, so hiding the ring loses nothing.
+        .focusEffectDisabled()
         .help(service.displayName)
         .accessibilityLabel("\(service.displayName) tab")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
