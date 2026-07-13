@@ -6,6 +6,12 @@ struct PopoverView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
+    /// Persisted tab selection (service id). Self-heals: when the stored
+    /// provider isn't currently displayed (toggled off, signed out of the
+    /// list, first launch), the first displayed service wins and the stored
+    /// value stays put until the user picks again.
+    @AppStorage("selectedProviderTab") private var selectedProviderTab: String = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             header
@@ -16,19 +22,77 @@ struct PopoverView: View {
         .frame(width: 360)
     }
 
+    // MARK: - Provider tabs
+
+    private var displayedServices: [ServiceSnapshot] {
+        state.snapshot.services
+    }
+
+    private var showsTabBar: Bool { displayedServices.count > 1 }
+
+    private var selectedService: ServiceSnapshot? {
+        displayedServices.first { $0.id == selectedProviderTab } ?? displayedServices.first
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 6) {
+            ForEach(displayedServices) { service in
+                providerTab(service)
+            }
+            Spacer()
+        }
+    }
+
+    private func providerTab(_ service: ServiceSnapshot) -> some View {
+        let isSelected = service.id == selectedService?.id
+        return Button {
+            selectedProviderTab = service.id
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                ProviderIconView(serviceID: service.id, sfFallback: service.icon)
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                Circle()
+                    .fill(tabDotColor(service))
+                    .frame(width: 5, height: 5)
+                    .offset(x: 3, y: -2)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                Capsule().fill(isSelected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(service.displayName)
+        .accessibilityLabel("\(service.displayName) tab")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+
+    /// Battery-style dot: worst percent when healthy; gray when the provider
+    /// can't report right now (the card's state badge explains why).
+    private func tabDotColor(_ service: ServiceSnapshot) -> Color {
+        service.state == .ok ? usageStatusColor(service.headlinePercent) : .secondary
+    }
+
     // MARK: - Hero header
 
-    /// The most-constrained window across all services — the one that answers
-    /// "can I keep working right now?". Ties resolve to the first in API order
-    /// (the 5-hour session), so an all-zero account leads with the session.
-    /// Promotional pools don't compete (a free bonus running low isn't "almost
-    /// at the limit"); an Enterprise spend limit does. Promo windows only lead
-    /// when they're all the account has.
+    /// The most-constrained window across the services the hero represents —
+    /// the one that answers "can I keep working right now?". Ties resolve to
+    /// the first in API order (the 5-hour session), so an all-zero account
+    /// leads with the session. Promotional pools don't compete (a free bonus
+    /// running low isn't "almost at the limit"); an Enterprise spend limit
+    /// does. Promo windows only lead when they're all the account has.
+    /// With tabs visible the hero speaks for the SELECTED provider only.
+    private var heroServices: [ServiceSnapshot] {
+        if showsTabBar, let selected = selectedService { return [selected] }
+        return state.snapshot.services
+    }
+
     private var heroBucket: UsageBucket? {
-        var candidates = state.snapshot.services.flatMap { service in
+        var candidates = heroServices.flatMap { service in
             service.buckets.filter { !$0.isPromotional }
         }
-        for service in state.snapshot.services {
+        for service in heroServices {
             if let extra = service.extraUsage, extra.isEnabled {
                 candidates.append(UsageBucket(
                     id: "\(service.id)_extra_usage",
@@ -40,7 +104,7 @@ struct PopoverView: View {
             }
         }
         if candidates.isEmpty {
-            candidates = state.snapshot.services.flatMap(\.buckets)
+            candidates = heroServices.flatMap(\.buckets)
         }
         return candidates.enumerated().max { a, b in
             if a.element.clampedPercent != b.element.clampedPercent {
@@ -52,10 +116,13 @@ struct PopoverView: View {
 
     /// The hero ring answers "how close am I to MY limit" — unambiguous only
     /// while a single provider is on screen. With several providers the number
-    /// is anonymous (whose 33%?), so the header goes neutral and the
-    /// per-provider sections below carry the percentages.
+    /// used to be anonymous (whose 33%?); tabs resolve that, so in multi-
+    /// provider mode the ring speaks for the selected tab when it has data.
     private var showsHero: Bool {
-        state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }.count == 1
+        if showsTabBar {
+            return selectedService.map { !$0.buckets.isEmpty || $0.weekCost != nil } ?? false
+        }
+        return state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }.count == 1
     }
 
     private var header: some View {
@@ -116,9 +183,10 @@ struct PopoverView: View {
 
     private func metaLine(now: Date) -> String {
         let updated = updatedText(now: now)
-        if let plan = state.snapshot.services.compactMap(\.plan).first {
-            return "\(plan) · \(updated)"
-        }
+        let plan = showsTabBar
+            ? selectedService?.plan
+            : state.snapshot.services.compactMap(\.plan).first
+        if let plan { return "\(plan) · \(updated)" }
         return updated
     }
 
@@ -155,11 +223,14 @@ struct PopoverView: View {
             .padding(.vertical, 4)
         } else {
             VStack(alignment: .leading, spacing: 14) {
-                ForEach(state.snapshot.services) { service in
+                if showsTabBar {
+                    tabBar
+                }
+                if let service = selectedService {
                     ServiceSection(
                         service: service,
                         burn: service.id == "claude" ? dashboard.burnFiveHour : nil,
-                        showsHeader: service.state != .ok || state.snapshot.services.count > 1
+                        showsHeader: service.state != .ok || showsTabBar
                     )
                 }
             }
