@@ -27,8 +27,9 @@ final class UsageNotifier {
 
             for service in snapshot.services {
                 // Promo pools don't alert (running a free bonus dry costs nothing);
+                // model-scoped caps ("Fable only") don't page the user either —
                 // the Enterprise spend limit alerts like any rate window.
-                var watchable = service.buckets.filter { !$0.isPromotional }
+                var watchable = service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
                 if let extra = service.extraUsage, extra.isEnabled {
                     watchable.append(UsageBucket(
                         id: "extra_usage",

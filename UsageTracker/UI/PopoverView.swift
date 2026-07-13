@@ -87,6 +87,7 @@ struct PopoverView: View {
     /// leads with the session. Promotional pools don't compete (a free bonus
     /// running low isn't "almost at the limit"); an Enterprise spend limit
     /// does. Promo windows only lead when they're all the account has.
+    /// Model-scoped windows don't compete either — they inform their own card row.
     /// With tabs visible the hero speaks for the SELECTED provider only.
     private var heroServices: [ServiceSnapshot] {
         if showsTabBar, let selected = selectedService { return [selected] }
@@ -95,7 +96,7 @@ struct PopoverView: View {
 
     private var heroBucket: UsageBucket? {
         var candidates = heroServices.flatMap { service in
-            service.buckets.filter { !$0.isPromotional }
+            service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
         }
         for service in heroServices {
             if let extra = service.extraUsage, extra.isEnabled {
@@ -106,6 +107,11 @@ struct PopoverView: View {
                     resetsAt: .distantFuture,
                     kind: .other
                 ))
+            }
+        }
+        if candidates.isEmpty {
+            candidates = heroServices.flatMap { service in
+                service.buckets.filter { !$0.isPromotional }
             }
         }
         if candidates.isEmpty {

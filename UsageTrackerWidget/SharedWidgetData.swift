@@ -26,9 +26,11 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
     /// The window the small widget's ring shows: the session window when the
     /// provider has one, otherwise whichever non-promo window is closest to its
     /// limit (promo pools only lead when they're all there is).
+    /// Model-scoped windows don't lead the ring either.
     var headlineBucket: WidgetBucket? {
         if let session = buckets.first(where: { $0.isSession && !$0.isPromo }) { return session }
-        let real = buckets.filter { !$0.isPromo }
+        let core = buckets.filter { !$0.isPromo && $0.kind != "modelSpecific" }
+        let real = core.isEmpty ? buckets.filter { !$0.isPromo } : core
         return (real.isEmpty ? buckets : real).max(by: { $0.percent < $1.percent })
     }
 

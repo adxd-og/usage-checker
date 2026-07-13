@@ -72,14 +72,21 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// After a 429, how many seconds to wait before polling again. nil = no backoff.
     var retryAfter: TimeInterval? = nil
 
-    /// The number the menu bar shows: the worst *real* constraint. Promotional
+    /// The number the menu bar shows: the worst *core* constraint. Promotional
     /// pools don't count (free bonuses shouldn't scream "almost at the limit"),
-    /// while an Enterprise spend limit does. Falls back to promo windows only
-    /// when they're all the account has.
+    /// and model-scoped windows (an "Opus only" / "Fable only" cap) inform their
+    /// own row without driving the headline — the all-models weekly is "the"
+    /// limit. An Enterprise spend limit does count. Scoped/promo windows only
+    /// lead when they're all the account has.
     var headlinePercent: Double {
-        var candidates = buckets.filter { !$0.isPromotional }.map(\.clampedPercent)
+        var candidates = buckets
+            .filter { !$0.isPromotional && $0.kind != .modelSpecific }
+            .map(\.clampedPercent)
         if let extra = extraUsage, extra.isEnabled {
             candidates.append(max(0, min(100, extra.utilization)))
+        }
+        if candidates.isEmpty {
+            candidates = buckets.filter { !$0.isPromotional }.map(\.clampedPercent)
         }
         if candidates.isEmpty {
             candidates = buckets.map(\.clampedPercent)
