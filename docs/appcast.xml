@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.9.0</title>
+      <pubDate>Mon, 13 Jul 2026 15:03:41 +0300</pubDate>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>1.9.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Model-scoped Claude limits (Fable).</b> The usage endpoint's new <code>limits</code> array is now parsed, so model-scoped weekly windows — like Fable's cap — appear as their own rows, drive the menu-bar headline when they're the binding limit, and flow into the widget and history. Windows appear and disappear with the server payload; the next scoped model needs no app update.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.9.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.9.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="Kmqa4SCpzikmrC3paFK+y9TXPMEPhyXRT/yrf1pktxwoELD/vRFkRR8u/+eTNJSGmgF64wIw9lz3A6dEbXilBQ=="
+        length="14709580"/>
+    </item>
+    <item>
       <title>Omelette v1.8.1</title>
       <pubDate>Sun, 12 Jul 2026 19:20:13 +0300</pubDate>
       <sparkle:version>22</sparkle:version>
