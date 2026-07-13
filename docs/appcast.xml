@@ -6,6 +6,29 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.10.0</title>
+      <pubDate>Mon, 13 Jul 2026 16:18:58 +0300</pubDate>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>1.10.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Provider tabs in the popover.</b> One provider on screen at a time, switched by a row of brand-logo tabs with battery-style status dots — no more stacking every card. The selection is remembered; with a single provider enabled the popover looks exactly as before, and the hero ring now speaks for the selected provider in multi-provider mode.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li><b>Model-scoped windows inform, never drive.</b> "Fable only" / "Opus only" caps keep their card row but no longer move the menu-bar percent, the hero ring, tab dots, the widget ring, or threshold notifications — the all-models weekly is "the" limit.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.10.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.10.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="swNEv0tSGakGsziyh4y+Xu3AksdrEjeKiPHTM0j0cQZ4Cd4kUijnay/2g/0hqUQ+Eh7nPAqTIB6FvnvXX6eDCw=="
+        length="14751781"/>
+    </item>
+    <item>
       <title>Omelette v1.9.0</title>
       <pubDate>Mon, 13 Jul 2026 15:03:41 +0300</pubDate>
       <sparkle:version>23</sparkle:version>
