@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.0] — 2026-07-13
+
+### Added
+- **Provider tabs in the popover.** One provider on screen at a time, switched
+  by a row of brand-logo tabs with battery-style status dots — no more
+  stacking every card. The selection is remembered; with a single provider
+  enabled the popover looks exactly as before, and the hero ring now speaks
+  for the selected provider in multi-provider mode.
+
+### Changed
+- **Model-scoped windows inform, never drive.** "Fable only" / "Opus only"
+  caps keep their card row but no longer move the menu-bar percent, the hero
+  ring, tab dots, the widget ring, or threshold notifications — the all-models
+  weekly is "the" limit.
+
 ## [1.9.0] — 2026-07-13
 
 ### Added
