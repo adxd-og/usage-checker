@@ -6,6 +6,36 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.11.0</title>
+      <pubDate>Tue, 04 Aug 2026 11:42:41 +0300</pubDate>
+      <sparkle:version>25</sparkle:version>
+      <sparkle:shortVersionString>1.11.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<p>Performance release: an Opus 5 audit of a 4.8-day-uptime process (4.75% constant</p>
+<p>CPU, 1.34 GB peak memory) traced every hot spot; all of them are fixed here.</p>
+<p>Verified against the previous code on real logs — every cost figure matches to</p>
+<p>the cent, first-scan peak memory drops from 1134 MB to 302 MB.</p>
+<h3>Fixed</h3>
+<ul>
+<li><b>Menu bar no longer redraws twice a second forever.</b> The critical-state pulse animation drove a continuous redraw loop even in the normal state, for every visible provider — the main source of the constant CPU burn. The animation timeline now exists only while a window is actually ≥95%.</li>
+<li><b>History no longer rewrites the whole file every minute.</b> Usage history is now an append-only JSONL log (~300 bytes per poll instead of re-serializing megabytes — about 9.5 GB of disk writes per day at 90 days of history). Existing <code>history.json</code> migrates automatically; the migration is rollback-safe (an older build's file, being a complete rewrite, supersedes the log when it's newer).</li>
+<li><b>First scan of Claude Code logs no longer spikes memory past 1 GB.</b> Session files are parsed and folded one at a time; turns older than a month collapse into per-day aggregates instead of being held forever; the dedup set keeps 8-byte hashes instead of id strings.</li>
+<li>**The poll path stopped hauling the full history array onto the main actor every minute.** Burn rate reads only the last half hour from the store; the dashboard loads the full history only while its window is open (and now refreshes live while it is).</li>
+<li><b>Polling pauses during sleep and screen lock</b> — no more waking CLI subprocesses to update a menu bar nobody can see — and refreshes immediately on wake/unlock.</li>
+<li><b>Changing the refresh interval applies immediately</b> instead of after the old interval elapsed one last time.</li>
+<li><b>Codex session parsing is incremental</b>: the active session file has only its new tail read on each poll (carrying the cumulative-counter baseline), and cache entries for files that aged out of the window are evicted.</li>
+<li>Removed a redundant 10-second tooltip timer (the snapshot notification already covers it); narrowed the popover header's clock tick to the "Updated Xs ago" text; Insights recompute off the main thread only when their inputs change; model-pricing normalization and project-name resolution are memoized off the per-turn hot path.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.11.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.11.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="CcT6H9sFTrkJk28pCcBNwyZJKrdr5/9fuuy3yOeTXx7X+GPzQ+CULn9ph7kW9oGA/djdyRwjkl4ozG0f7PseBQ=="
+        length="14773951"/>
+    </item>
+    <item>
       <title>Omelette v1.10.0</title>
       <pubDate>Mon, 13 Jul 2026 16:18:58 +0300</pubDate>
       <sparkle:version>24</sparkle:version>
