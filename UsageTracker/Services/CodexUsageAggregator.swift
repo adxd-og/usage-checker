@@ -16,8 +16,22 @@ actor CodexUsageAggregator {
 
     /// Sessions older than this can't contribute to the 7-day figure.
     private let mtimeWindow: TimeInterval = 8 * 24 * 3600
-    /// Per-file parse cache: unchanged files aren't re-read on every poll.
-    private var fileCache: [String: (size: UInt64, spends: [Spend])] = [:]
+
+    /// Per-file incremental parse state. The cumulative-counter format means a
+    /// resumed parse must carry the previous baseline and selected model, so the
+    /// active session file only has its new tail read on each poll instead of
+    /// being re-materialized whole.
+    private struct FileState {
+        /// Byte offset just past the last fully parsed line; a partial tail line
+        /// is re-read on the next poll.
+        var consumed: UInt64 = 0
+        var spends: [Spend] = []
+        var currentModel: String?
+        /// Cumulative counters as of the previous token_count event.
+        var prev: (input: Int, cached: Int, output: Int) = (0, 0, 0)
+    }
+
+    private var fileCache: [String: FileState] = [:]
 
     private let rootURL = FileManager.default.homeDirectoryForCurrentUser
         .appendingPathComponent(".codex/sessions", isDirectory: true)
@@ -50,76 +64,99 @@ actor CodexUsageAggregator {
 
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
         var all: [Spend] = []
+        var seenPaths: Set<String> = []
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             guard (values?.contentModificationDate ?? .distantPast) >= cutoff else { continue }
             let size = UInt64(values?.fileSize ?? 0)
+            seenPaths.insert(url.path)
 
-            if let cached = fileCache[url.path], cached.size == size {
-                all.append(contentsOf: cached.spends)
-                continue
+            var state = fileCache[url.path] ?? FileState()
+            if size < state.consumed {
+                // Truncated or rewritten in place — the carried baseline is invalid.
+                state = FileState()
             }
-            let spends = parseFile(at: url)
-            fileCache[url.path] = (size, spends)
-            all.append(contentsOf: spends)
+            if size > state.consumed {
+                parseTail(at: url, state: &state)
+            }
+            fileCache[url.path] = state
+            all.append(contentsOf: state.spends)
+        }
+        // Files that aged out of the mtime window never hit the loop again — without
+        // eviction their parsed spends stay pinned for the life of the process.
+        for path in fileCache.keys where !seenPaths.contains(path) {
+            fileCache.removeValue(forKey: path)
         }
         return all
     }
 
-    private func parseFile(at url: URL) -> [Spend] {
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else { return [] }
+    private func parseTail(at url: URL, state: inout FileState) {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+        defer { try? handle.close() }
+        do { try handle.seek(toOffset: state.consumed) } catch { return }
+        guard let data = try? handle.readToEnd(), !data.isEmpty else { return }
 
-        var spends: [Spend] = []
-        var currentModel: String?
-        // Cumulative counters as of the previous token_count event.
-        var prev = (input: 0, cached: 0, output: 0)
-
-        for line in text.split(separator: "\n") {
-            guard let obj = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-                  let type = obj["type"] as? String else { continue }
-
-            if type == "turn_context" {
-                if let payload = obj["payload"] as? [String: Any], let model = payload["model"] as? String {
-                    currentModel = model
+        var consumedInChunk = 0
+        data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
+            guard let base = raw.baseAddress else { return }
+            var lineStart = 0
+            for i in 0..<raw.count {
+                if raw.load(fromByteOffset: i, as: UInt8.self) == 0x0A {
+                    if i > lineStart {
+                        let line = Data(bytes: base.advanced(by: lineStart), count: i - lineStart)
+                        parseLine(line, into: &state)
+                    }
+                    lineStart = i + 1
                 }
-                continue
             }
-
-            guard type == "event_msg",
-                  let payload = obj["payload"] as? [String: Any],
-                  payload["type"] as? String == "token_count",
-                  let info = payload["info"] as? [String: Any],
-                  let total = info["total_token_usage"] as? [String: Any]
-            else { continue }
-
-            let input = intValue(total["input_tokens"])
-            let cached = intValue(total["cached_input_tokens"])
-            let output = intValue(total["output_tokens"])
-
-            // Compaction or a fresh thread can reset the counter — restart the baseline.
-            var delta = (input: input - prev.input, cached: cached - prev.cached, output: output - prev.output)
-            if delta.input < 0 || delta.output < 0 {
-                delta = (input, cached, output)
-            }
-            prev = (input, cached, output)
-            guard delta.input > 0 || delta.output > 0 else { continue }
-
-            guard let model = currentModel,
-                  let price = ModelPricing.dynamicLookup(for: model) else {
-                // Unknown model or pricing not loaded yet — better to skip than to guess.
-                continue
-            }
-            let freshInput = max(0, delta.input - delta.cached)
-            let cost = (Double(freshInput) * price.inputPerM
-                + Double(max(0, delta.cached)) * price.cacheReadPerM
-                + Double(delta.output) * price.outputPerM) / 1_000_000.0
-
-            let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
-            spends.append(Spend(timestamp: ts, cost: cost))
+            consumedInChunk = lineStart
         }
-        return spends
+        state.consumed += UInt64(consumedInChunk)
+    }
+
+    private func parseLine(_ data: Data, into state: inout FileState) {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = obj["type"] as? String else { return }
+
+        if type == "turn_context" {
+            if let payload = obj["payload"] as? [String: Any], let model = payload["model"] as? String {
+                state.currentModel = model
+            }
+            return
+        }
+
+        guard type == "event_msg",
+              let payload = obj["payload"] as? [String: Any],
+              payload["type"] as? String == "token_count",
+              let info = payload["info"] as? [String: Any],
+              let total = info["total_token_usage"] as? [String: Any]
+        else { return }
+
+        let input = intValue(total["input_tokens"])
+        let cached = intValue(total["cached_input_tokens"])
+        let output = intValue(total["output_tokens"])
+
+        // Compaction or a fresh thread can reset the counter — restart the baseline.
+        var delta = (input: input - state.prev.input, cached: cached - state.prev.cached, output: output - state.prev.output)
+        if delta.input < 0 || delta.output < 0 {
+            delta = (input, cached, output)
+        }
+        state.prev = (input, cached, output)
+        guard delta.input > 0 || delta.output > 0 else { return }
+
+        guard let model = state.currentModel,
+              let price = ModelPricing.dynamicLookup(for: model) else {
+            // Unknown model or pricing not loaded yet — better to skip than to guess.
+            return
+        }
+        let freshInput = max(0, delta.input - delta.cached)
+        let cost = (Double(freshInput) * price.inputPerM
+            + Double(max(0, delta.cached)) * price.cacheReadPerM
+            + Double(delta.output) * price.outputPerM) / 1_000_000.0
+
+        let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
+        state.spends.append(Spend(timestamp: ts, cost: cost))
     }
 
     private func intValue(_ any: Any?) -> Int {

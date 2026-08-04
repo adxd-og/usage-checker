@@ -63,15 +63,34 @@ struct CLIBreakdown: Sendable {
 actor JSONLAggregator {
     static let shared = JSONLAggregator()
 
+    private struct DayAgg {
+        var cost = 0.0
+        var tokens = 0
+        var turns = 0
+        var byFamily: [String: Double] = [:]
+    }
+
     private let rootURL: URL
     private var fileOffsets: [String: UInt64] = [:]
-    private var allTurns: [CLITurn] = []
+    /// Turns young enough to feed the rolling today/week/month figures. Turns
+    /// that age past `recentWindow` are folded into `oldDays` and released —
+    /// holding every turn of the 90-day window pinned tens of MB permanently.
+    private var recentTurns: [CLITurn] = []
+    /// Day-level aggregates for turns older than `recentWindow` — all `daily` needs.
+    private var oldDays: [Date: DayAgg] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
-    /// Message ids already counted, so duplicate log lines (and re-scanned file tails)
-    /// never inflate cost.
-    private var seenMessageIDs: Set<String> = []
+    /// The rolling figures reach back 30 days; keep turns one day longer so the
+    /// month boundary is never clipped.
+    private let recentWindow: TimeInterval = 31 * 24 * 3600
+    /// Stable 64-bit hashes of message ids already counted, so duplicate log lines
+    /// (re-scanned tails, forked sessions replaying old messages) never inflate cost.
+    private var seenMessageIDs: Set<UInt64> = []
+    /// One cached day interval covers the common case: log lines arrive in
+    /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
+    /// to call per turn.
+    private var dayCache: (start: Date, next: Date)?
 
     private init() {
         self.rootURL = FileManager.default.homeDirectoryForCurrentUser
@@ -82,23 +101,19 @@ actor JSONLAggregator {
     }
 
     func refresh() async {
-        let newRaw = scanIncrementally()
-        guard !newRaw.isEmpty || !initialized else { initialized = true; return }
-        // Each API response is logged multiple times with the same message id; count it once.
-        for turn in newRaw where seenMessageIDs.insert(turn.id).inserted {
-            allTurns.append(turn)
+        // Runaway backstop: ~250 days of continuous uptime before this trips;
+        // after a clear, only forked-session replays could double-count.
+        if seenMessageIDs.count > 500_000 {
+            seenMessageIDs.removeAll()
         }
-        if allTurns.count > 200_000 {
-            allTurns.removeFirst(allTurns.count - 150_000)
-            seenMessageIDs = Set(allTurns.map(\.id))
-        }
+        scanAndIngest()
         initialized = true
+        pruneAndFold()
     }
 
     func breakdown() -> CLIBreakdown {
         let now = Date()
-        let cal = Calendar.current
-        let startOfDay = cal.startOfDay(for: now)
+        let startOfDay = Calendar.current.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
@@ -108,13 +123,11 @@ actor JSONLAggregator {
         var weekCost = 0.0
         var monthCost = 0.0
         var byModelToday: [String: (cost: Double, tokens: Int)] = [:]
-        var dailyCost: [Date: (cost: Double, tokens: Int, turns: Int, byFamily: [String: Double])] = [:]
+        var dailyAcc = oldDays
         var projectsWeekAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
         var projectsMonthAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
 
-        for t in allTurns {
-            // Skip synthetic / internal Claude Code events — they're not user-facing models.
-            if ModelPricing.isSynthetic(t.model) { continue }
+        for t in recentTurns {
             let c = t.cost
             let tokens = t.totalTokens
             if t.timestamp >= startOfDay {
@@ -145,17 +158,16 @@ actor JSONLAggregator {
                 projectsMonthAcc[t.projectSlug] = pm
             }
 
-            let day = cal.startOfDay(for: t.timestamp)
-            var bucket = dailyCost[day] ?? (0, 0, 0, [:])
+            let day = dayStart(for: t.timestamp)
+            var bucket = dailyAcc[day] ?? DayAgg()
             bucket.cost += c
             bucket.tokens += tokens
             bucket.turns += 1
-            let family = ModelPricing.family(for: t.model)
-            bucket.byFamily[family, default: 0] += c
-            dailyCost[day] = bucket
+            bucket.byFamily[ModelPricing.family(for: t.model), default: 0] += c
+            dailyAcc[day] = bucket
         }
 
-        let daily = dailyCost.map { (k, v) in
+        let daily = dailyAcc.map { (k, v) in
             CLIDailySummary(day: k, totalCost: v.cost, totalTokens: v.tokens, turns: v.turns, byFamily: v.byFamily)
         }.sorted { $0.day < $1.day }
 
@@ -199,18 +211,80 @@ actor JSONLAggregator {
         )
     }
 
+    // MARK: - Ingest
+
+    private func ingest(_ turns: [CLITurn]) {
+        let recentCutoff = Date().addingTimeInterval(-recentWindow)
+        for turn in turns {
+            // Each API response is logged multiple times with the same message id; count it once.
+            guard seenMessageIDs.insert(Self.stableHash(turn.id)).inserted else { continue }
+            // Synthetic / internal Claude Code events aren't user-facing models.
+            if ModelPricing.isSynthetic(turn.model) { continue }
+            if turn.timestamp < recentCutoff {
+                fold(turn)
+            } else {
+                recentTurns.append(turn)
+            }
+        }
+    }
+
+    private func fold(_ t: CLITurn) {
+        let day = dayStart(for: t.timestamp)
+        var agg = oldDays[day] ?? DayAgg()
+        agg.cost += t.cost
+        agg.tokens += t.totalTokens
+        agg.turns += 1
+        agg.byFamily[ModelPricing.family(for: t.model), default: 0] += t.cost
+        oldDays[day] = agg
+    }
+
+    private func pruneAndFold() {
+        let recentCutoff = Date().addingTimeInterval(-recentWindow)
+        if recentTurns.contains(where: { $0.timestamp < recentCutoff }) {
+            var kept: [CLITurn] = []
+            kept.reserveCapacity(recentTurns.count)
+            for t in recentTurns {
+                if t.timestamp < recentCutoff { fold(t) } else { kept.append(t) }
+            }
+            recentTurns = kept
+        }
+        let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
+        if oldDays.keys.contains(where: { $0 < dayCutoff }) {
+            oldDays = oldDays.filter { $0.key >= dayCutoff }
+        }
+    }
+
+    private func dayStart(for date: Date) -> Date {
+        if let c = dayCache, date >= c.start, date < c.next { return c.start }
+        let cal = Calendar.current
+        let start = cal.startOfDay(for: date)
+        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        dayCache = (start, next)
+        return start
+    }
+
+    /// FNV-1a over UTF-8: stable across launches (unlike `Hasher`), 8 bytes per
+    /// entry instead of a retained id string.
+    private static func stableHash(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in s.utf8 {
+            h ^= UInt64(b)
+            h = h &* 0x0000_0100_0000_01b3
+        }
+        return h
+    }
+
     // MARK: - File scanning
 
-    private func scanIncrementally() -> [CLITurn] {
+    private func scanAndIngest() {
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return [] }
+        ) else { return }
 
         let firstScan = !initialized
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
-        var output: [CLITurn] = []
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
@@ -228,9 +302,13 @@ actor JSONLAggregator {
                 continue
             }
 
-            output.append(contentsOf: parseFile(at: url))
+            // One file at a time, drained inside an autorelease pool: the first
+            // scan used to buffer every turn from ~1 GB of logs (plus all the
+            // JSONSerialization garbage) before deduping, spiking memory past 1 GB.
+            autoreleasepool {
+                ingest(parseFile(at: url))
+            }
         }
-        return output
     }
 
     private func parseFile(at url: URL) -> [CLITurn] {

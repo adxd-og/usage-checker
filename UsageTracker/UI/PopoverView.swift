@@ -137,45 +137,49 @@ struct PopoverView: View {
     }
 
     private var header: some View {
-        TimelineView(.periodic(from: .now, by: 5)) { ctx in
-            HStack(spacing: 12) {
-                if showsHero, let hero = heroBucket {
-                    UsageRing(percent: hero.clampedPercent, size: 52)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(statusPhrase(hero.clampedPercent))
-                            .font(.headline)
-                        Text(heroDetail(hero))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .help(hero.resetsAt < .distantFuture
-                                  ? "Resets \(hero.resetsAt.formatted(date: .abbreviated, time: .shortened))"
-                                  : "")
+        HStack(spacing: 12) {
+            if showsHero, let hero = heroBucket {
+                UsageRing(percent: hero.clampedPercent, size: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(statusPhrase(hero.clampedPercent))
+                        .font(.headline)
+                    Text(heroDetail(hero))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help(hero.resetsAt < .distantFuture
+                              ? "Resets \(hero.resetsAt.formatted(date: .abbreviated, time: .shortened))"
+                              : "")
+                    // Only the relative "Updated Xs ago" text needs a clock tick —
+                    // keep the periodic timeline off the rest of the header.
+                    TimelineView(.periodic(from: .now, by: 5)) { ctx in
                         Text(metaLine(now: ctx.date))
-                            .font(.caption2)
-                            .foregroundStyle(.tertiary)
                     }
-                } else {
-                    // The real app icon, not a drawn stand-in — matches the
-                    // welcome tour and tracks icon updates for free.
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .interpolation(.high)
-                        .frame(width: 34, height: 34)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Omelette")
-                            .font(.headline)
-                        Text(updatedText(now: ctx.date))
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 }
-                Spacer()
-                if state.isLoading {
-                    ProgressView().controlSize(.small)
+            } else {
+                // The real app icon, not a drawn stand-in — matches the
+                // welcome tour and tracks icon updates for free.
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 34, height: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Omelette")
+                        .font(.headline)
+                    TimelineView(.periodic(from: .now, by: 5)) { ctx in
+                        Text(updatedText(now: ctx.date))
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
             }
-            .accessibilityElement(children: .combine)
+            Spacer()
+            if state.isLoading {
+                ProgressView().controlSize(.small)
+            }
         }
+        .accessibilityElement(children: .combine)
     }
 
     private func statusPhrase(_ percent: Double) -> String {

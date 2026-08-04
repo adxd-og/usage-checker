@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.0] — 2026-08-04
+
+Performance release: an Opus 5 audit of a 4.8-day-uptime process (4.75% constant
+CPU, 1.34 GB peak memory) traced every hot spot; all of them are fixed here.
+Verified against the previous code on real logs — every cost figure matches to
+the cent, first-scan peak memory drops from 1134 MB to 302 MB.
+
+### Fixed
+- **Menu bar no longer redraws twice a second forever.** The critical-state
+  pulse animation drove a continuous redraw loop even in the normal state, for
+  every visible provider — the main source of the constant CPU burn. The
+  animation timeline now exists only while a window is actually ≥95%.
+- **History no longer rewrites the whole file every minute.** Usage history is
+  now an append-only JSONL log (~300 bytes per poll instead of re-serializing
+  megabytes — about 9.5 GB of disk writes per day at 90 days of history).
+  Existing `history.json` migrates automatically; the migration is
+  rollback-safe (an older build's file, being a complete rewrite, supersedes
+  the log when it's newer).
+- **First scan of Claude Code logs no longer spikes memory past 1 GB.** Session
+  files are parsed and folded one at a time; turns older than a month collapse
+  into per-day aggregates instead of being held forever; the dedup set keeps
+  8-byte hashes instead of id strings.
+- **The poll path stopped hauling the full history array onto the main actor
+  every minute.** Burn rate reads only the last half hour from the store; the
+  dashboard loads the full history only while its window is open (and now
+  refreshes live while it is).
+- **Polling pauses during sleep and screen lock** — no more waking CLI
+  subprocesses to update a menu bar nobody can see — and refreshes immediately
+  on wake/unlock.
+- **Changing the refresh interval applies immediately** instead of after the
+  old interval elapsed one last time.
+- **Codex session parsing is incremental**: the active session file has only
+  its new tail read on each poll (carrying the cumulative-counter baseline),
+  and cache entries for files that aged out of the window are evicted.
+- Removed a redundant 10-second tooltip timer (the snapshot notification
+  already covers it); narrowed the popover header's clock tick to the
+  "Updated Xs ago" text; Insights recompute off the main thread only when
+  their inputs change; model-pricing normalization and project-name resolution
+  are memoized off the per-turn hot path.
+
 ## [1.10.0] — 2026-07-13
 
 ### Added

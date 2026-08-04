@@ -79,21 +79,56 @@ enum ModelPricing {
         return fallback
     }
 
+    // Both functions run a regex and sit on per-turn hot paths (cost aggregation
+    // over tens of thousands of log lines), so results are memoized — the set of
+    // distinct model ids is tiny. The count cap is insurance against garbage ids.
+    nonisolated(unsafe) private static var normalizeCache: [String: String] = [:]
+    nonisolated(unsafe) private static var displayNameCache: [String: String?] = [:]
+
     /// Strips the parts of a model id that don't affect pricing: the date suffix
     /// ("claude-haiku-4-5-20251001") and the context-size tag ("claude-fable-5[1m]" —
     /// long context bills at standard rates).
     static func normalize(_ model: String) -> String {
+        dynamicLock.lock()
+        if let cached = normalizeCache[model] {
+            dynamicLock.unlock()
+            return cached
+        }
+        dynamicLock.unlock()
+
         var s = model.lowercased()
         if let bracket = s.firstIndex(of: "[") { s = String(s[..<bracket]) }
         if let m = dateSuffixRegex.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)),
            let r = Range(m.range, in: s) {
             s.removeSubrange(r)
         }
+
+        dynamicLock.lock()
+        if normalizeCache.count > 10_000 { normalizeCache.removeAll() }
+        normalizeCache[model] = s
+        dynamicLock.unlock()
         return s
     }
 
     /// Returns nil for synthetic / internal model identifiers we don't want to surface.
     static func displayName(for model: String) -> String? {
+        dynamicLock.lock()
+        if let cached = displayNameCache[model] {
+            dynamicLock.unlock()
+            return cached
+        }
+        dynamicLock.unlock()
+
+        let name = computeDisplayName(for: model)
+
+        dynamicLock.lock()
+        if displayNameCache.count > 10_000 { displayNameCache.removeAll() }
+        displayNameCache[model] = name
+        dynamicLock.unlock()
+        return name
+    }
+
+    private static func computeDisplayName(for model: String) -> String? {
         if isSynthetic(model) { return nil }
 
         // "claude-<family>-<major>[-<minor>]" → "Family Major[.Minor]". Parsing the id

@@ -48,6 +48,12 @@ struct DashboardWindow: View {
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 820, idealWidth: 920, minHeight: 560, idealHeight: 640)
         .onAppear { dashboard.refreshAll() }
+        // The poll path no longer pushes the full history into DashboardState —
+        // while the window is open, each snapshot triggers the reload here; the
+        // subscription dies with the window, so a closed dashboard costs nothing.
+        .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
+            dashboard.refreshAll()
+        }
     }
 
     @ViewBuilder

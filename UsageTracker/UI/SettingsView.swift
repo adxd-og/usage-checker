@@ -61,6 +61,11 @@ struct SettingsView: View {
                         Text(iv.label).tag(iv.rawValue)
                     }
                 }
+                // The poll loop reads the interval only when a sleep cycle ends, so
+                // without a restart a 5m → 30s change waited out the old 5 minutes.
+                .onChange(of: settings.refreshIntervalSeconds) { _, _ in
+                    AppState.shared.restartTimer()
+                }
                 Text("How often the widget polls Anthropic. Faster = closer to real-time, but risks rate limits.")
                     .font(.caption)
                     .foregroundStyle(.secondary)

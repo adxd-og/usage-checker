@@ -62,37 +62,44 @@ private struct MiniServiceBar: View {
     private var shouldPulse: Bool { isCritical && !reduceMotion }
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: shouldPulse ? 0.05 : 0.5)) { ctx in
-            // A gentle opacity pulse is the critical-state alert; no glow, and it
-            // stays still when Reduce Motion is on.
-            let pulse: Double = {
-                guard shouldPulse else { return 1.0 }
+        // TimelineView(.animation) is a continuous redraw loop, so it only exists
+        // while the critical-state pulse is actually needed — the status item's
+        // hosting view never leaves the window, and a permanent timeline there
+        // redraws the menu bar forever.
+        if shouldPulse {
+            TimelineView(.animation(minimumInterval: 0.05)) { ctx in
+                // A gentle opacity pulse is the critical-state alert; no glow, and it
+                // stays still when Reduce Motion is on.
                 let t = ctx.date.timeIntervalSince1970
-                return 0.55 + 0.45 * abs(sin(t * 2.5))
-            }()
-
-            HStack(spacing: 4) {
-                ZStack(alignment: .leading) {
-                    Capsule(style: .continuous)
-                        .fill(.quaternary)
-                        .frame(width: 22, height: 8)
-                    Capsule(style: .continuous)
-                        .fill(barColor)
-                        .frame(width: max(2, 22 * percent / 100), height: 8)
-                }
-                .opacity(pulse)
-
-                if showsNumber {
-                    Text("\(Int(percent.rounded()))")
-                        .font(.system(size: 11, weight: .semibold, design: .rounded))
-                        .monospacedDigit()
-                        .foregroundStyle(isStale ? Color.secondary : barColor)
-                        .opacity(pulse)
-                }
+                content(pulse: 0.55 + 0.45 * abs(sin(t * 2.5)))
             }
-            .animation(.easeInOut(duration: 0.4), value: percent)
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(service.displayName) usage \(Int(percent.rounded())) percent")
+        } else {
+            content(pulse: 1.0)
         }
+    }
+
+    private func content(pulse: Double) -> some View {
+        HStack(spacing: 4) {
+            ZStack(alignment: .leading) {
+                Capsule(style: .continuous)
+                    .fill(.quaternary)
+                    .frame(width: 22, height: 8)
+                Capsule(style: .continuous)
+                    .fill(barColor)
+                    .frame(width: max(2, 22 * percent / 100), height: 8)
+            }
+            .opacity(pulse)
+
+            if showsNumber {
+                Text("\(Int(percent.rounded()))")
+                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(isStale ? Color.secondary : barColor)
+                    .opacity(pulse)
+            }
+        }
+        .animation(.easeInOut(duration: 0.4), value: percent)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(service.displayName) usage \(Int(percent.rounded())) percent")
     }
 }

@@ -13,7 +13,30 @@ import Foundation
 /// same as two folders "Orion" and "Gate"), but for display we strip the home prefix
 /// and show the last 2 path components — enough context for users to recognize the project.
 enum ProjectName {
+    // `resolveOnDisk` walks the real filesystem with an O(k²) token match — fine
+    // once, wasteful on every breakdown for every project. One resolution per
+    // slug per process is enough; renames show up after a relaunch.
+    nonisolated(unsafe) private static var cache: [String: String] = [:]
+    private static let cacheLock = NSLock()
+
     static func decode(slug: String) -> String {
+        cacheLock.lock()
+        if let cached = cache[slug] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
+
+        let result = computeDecode(slug: slug)
+
+        cacheLock.lock()
+        if cache.count > 10_000 { cache.removeAll() }
+        cache[slug] = result
+        cacheLock.unlock()
+        return result
+    }
+
+    private static func computeDecode(slug: String) -> String {
         let trimmed = slug.hasPrefix("-") ? String(slug.dropFirst()) : slug
         let tokens = trimmed.split(separator: "-", omittingEmptySubsequences: true).map(String.init)
         guard !tokens.isEmpty else { return slug }

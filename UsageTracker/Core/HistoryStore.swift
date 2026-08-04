@@ -59,17 +59,38 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
 actor HistoryStore {
     static let shared = HistoryStore()
 
+    /// Append-only JSONL log: one record per line. A poll appends ~300 bytes
+    /// instead of re-serializing the whole array (which rewrote megabytes to
+    /// disk every minute once the history grew).
     private let fileURL: URL
+    /// Pre-JSONL builds stored a single JSON array here; migrated on first load.
+    private let legacyURL: URL
     private var records: [HistoryRecord] = []
     private var loaded = false
     private let maxAge: TimeInterval = 90 * 24 * 3600
     private let minIntervalBetweenSnapshots: TimeInterval = 30
+    /// Records rotated out of memory but still sitting in the on-disk log;
+    /// the file is compacted once enough of them pile up.
+    private var staleOnDisk = 0
+    private let compactionThreshold = 5000
+
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("UsageTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("history.json")
+        self.fileURL = dir.appendingPathComponent("history.jsonl")
+        self.legacyURL = dir.appendingPathComponent("history.json")
     }
 
     func append(snapshot: ServiceSnapshot) {
@@ -78,9 +99,14 @@ actor HistoryStore {
         if let last = records.last, now.timeIntervalSince(last.timestamp) < minIntervalBetweenSnapshots {
             return
         }
-        records.append(HistoryRecord(from: snapshot, at: now))
+        let record = HistoryRecord(from: snapshot, at: now)
+        records.append(record)
         rotateIfNeeded()
-        persist()
+        if staleOnDisk >= compactionThreshold {
+            rewriteFile()
+        } else {
+            appendLine(record)
+        }
     }
 
     func all() -> [HistoryRecord] {
@@ -105,43 +131,108 @@ actor HistoryStore {
 
     func purgeAll() {
         records = []
+        staleOnDisk = 0
         try? FileManager.default.removeItem(at: fileURL)
+        try? FileManager.default.removeItem(at: legacyURL)
         loaded = true
     }
 
     private func loadIfNeeded() {
         guard !loaded else { return }
         loaded = true
-        guard let data = try? Data(contentsOf: fileURL) else { return }
-        do {
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            records = try decoder.decode([HistoryRecord].self, from: data)
-        } catch {
-            // Corrupt file — start fresh, keep a backup
+        migrateLegacyIfNeeded()
+        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else { return }
+
+        var parsed: [HistoryRecord] = []
+        var corrupt = 0
+        for line in data.split(separator: 0x0A) where !line.isEmpty {
+            if let record = try? decoder.decode(HistoryRecord.self, from: Data(line)) {
+                parsed.append(record)
+            } else {
+                corrupt += 1
+            }
+        }
+        if parsed.isEmpty && corrupt > 0 {
+            // Nothing decodable — start fresh, keep a backup
             let backup = fileURL.appendingPathExtension("backup-\(Int(Date().timeIntervalSince1970))")
             try? FileManager.default.moveItem(at: fileURL, to: backup)
             records = []
+            return
         }
+        records = parsed
+        rotateIfNeeded()
+        if staleOnDisk > 0 || corrupt > 0 {
+            rewriteFile()
+        }
+    }
+
+    /// One-time conversion of the pre-JSONL array file. The legacy file is
+    /// removed only after the JSONL log is safely on disk. A legacy file that is
+    /// NEWER than an existing log means a pre-JSONL build ran after the
+    /// migration (rollback) — it always rewrites the complete array, so it
+    /// supersedes the log and migration runs again.
+    private func migrateLegacyIfNeeded() {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: legacyURL.path) else { return }
+        if fm.fileExists(atPath: fileURL.path) {
+            let legacyModified = (try? legacyURL.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+            let logModified = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantFuture
+            guard legacyModified > logModified else { return }
+        }
+        guard let data = try? Data(contentsOf: legacyURL) else { return }
+        guard let legacy = try? decoder.decode([HistoryRecord].self, from: data) else {
+            let backup = legacyURL.appendingPathExtension("backup-\(Int(Date().timeIntervalSince1970))")
+            try? FileManager.default.moveItem(at: legacyURL, to: backup)
+            return
+        }
+        records = legacy
+        rewriteFile()
+        if FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.removeItem(at: legacyURL)
+        }
+        records = []
     }
 
     private func rotateIfNeeded() {
         let cutoff = Date().addingTimeInterval(-maxAge)
         let before = records.count
         records.removeAll { $0.timestamp < cutoff }
-        if before != records.count {
-            // rotation happened, fine
+        staleOnDisk += before - records.count
+    }
+
+    private func appendLine(_ record: HistoryRecord) {
+        do {
+            var data = try encoder.encode(record)
+            data.append(0x0A)
+            if let handle = try? FileHandle(forWritingTo: fileURL) {
+                defer { try? handle.close() }
+                try handle.seekToEnd()
+                try handle.write(contentsOf: data)
+            } else {
+                try data.write(to: fileURL, options: [.atomic])
+            }
+        } catch {
+            NSLog("[UT] HistoryStore append failed: %@", String(describing: error))
         }
     }
 
-    private func persist() {
+    /// Full rewrite — only at load-time cleanup and when rotation has left
+    /// enough dead records in the log (about once every few days), never on
+    /// the per-poll path.
+    private func rewriteFile() {
+        var data = Data()
+        for record in records {
+            guard let line = try? encoder.encode(record) else { continue }
+            data.append(line)
+            data.append(0x0A)
+        }
         do {
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(records)
             try data.write(to: fileURL, options: [.atomic])
+            staleOnDisk = 0
         } catch {
-            NSLog("[UT] HistoryStore persist failed: %@", String(describing: error))
+            NSLog("[UT] HistoryStore compaction failed: %@", String(describing: error))
         }
     }
 }

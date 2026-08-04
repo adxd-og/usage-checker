@@ -61,7 +61,11 @@ final class DashboardState: ObservableObject {
     }
 
     func refreshDerived() async {
-        let records = history
-        burnFiveHour = Analytics.burnRate(records: records, bucketId: "five_hour")
+        // Burn rate needs only the last half hour of history — fetching that
+        // slice directly keeps the per-poll path from copying the whole array
+        // onto the main actor (and re-publishing it) every minute.
+        let cutoff = Date().addingTimeInterval(-31 * 60)
+        let recent = await HistoryStore.shared.records(since: cutoff)
+        burnFiveHour = Analytics.burnRate(records: recent, bucketId: "five_hour")
     }
 }

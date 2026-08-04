@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 @MainActor
 final class AppState: ObservableObject {
@@ -17,12 +18,52 @@ final class AppState: ObservableObject {
     /// poll right after instead of silently dropping it (multiple requests
     /// coalesce into a single rerun).
     private var pendingUserRefresh = false
+    /// Polling while the Mac sleeps or the screen is locked is pure waste — the
+    /// menu bar isn't visible, and some providers spawn CLI subprocesses per poll.
+    private var systemAsleep = false
+    private var screenLocked = false
+    private var isSuspended: Bool { systemAsleep || screenLocked }
+    private var suspensionObservers: [NSObjectProtocol] = []
 
     private init() {}
 
     func bootstrap() {
+        observeSystemState()
         refreshNow()
         startTimer()
+    }
+
+    private func observeSystemState() {
+        let workspace = NSWorkspace.shared.notificationCenter
+        let distributed = DistributedNotificationCenter.default()
+        func handler(asleep: Bool? = nil, locked: Bool? = nil) -> (Notification) -> Void {
+            { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.setSuspension(asleep: asleep, locked: locked)
+                }
+            }
+        }
+        suspensionObservers = [
+            workspace.addObserver(forName: NSWorkspace.willSleepNotification, object: nil,
+                                  queue: .main, using: handler(asleep: true)),
+            workspace.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
+                                  queue: .main, using: handler(asleep: false)),
+            distributed.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil,
+                                    queue: .main, using: handler(locked: true)),
+            distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil,
+                                    queue: .main, using: handler(locked: false)),
+        ]
+    }
+
+    private func setSuspension(asleep: Bool?, locked: Bool?) {
+        let wasSuspended = isSuspended
+        if let asleep { systemAsleep = asleep }
+        if let locked { screenLocked = locked }
+        // Coming back from sleep/lock: the data on screen is stale — refresh
+        // right away instead of waiting out the remainder of the poll interval.
+        if wasSuspended && !isSuspended {
+            refreshNow(userInitiated: false)
+        }
     }
 
     /// User-initiated by default (settings toggles, Refresh buttons). A user
@@ -110,7 +151,6 @@ final class AppState: ObservableObject {
         }
         if let claude = next.services.first(where: { $0.id == "claude" }), claude.state == .ok {
             await HistoryStore.shared.append(snapshot: claude)
-            await DashboardState.shared.refreshHistory()
             await DashboardState.shared.refreshDerived()
         }
         NotificationCenter.default.post(name: .snapshotUpdated, object: nil)
@@ -231,7 +271,8 @@ final class AppState: ObservableObject {
                     return // cancelled
                 }
                 guard !Task.isCancelled else { return }
-                self?.refreshNow(userInitiated: false)
+                guard let self, !self.isSuspended else { continue }
+                self.refreshNow(userInitiated: false)
             }
         }
     }

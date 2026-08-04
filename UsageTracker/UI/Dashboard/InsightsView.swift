@@ -3,8 +3,33 @@ import SwiftUI
 struct InsightsView: View {
     @ObservedObject var dashboard: DashboardState
 
-    private var insights: Insights {
-        Insights(from: dashboard.cliBreakdown, history: dashboard.history)
+    // Rebuilt off the main actor only when the inputs actually change — the
+    // init reduces over every daily summary and the full history array, far
+    // too heavy to re-run on each body evaluation (same pattern as
+    // ActivityGridView's GridCache).
+    @State private var insights = Insights.empty
+
+    private struct CacheKey: Hashable {
+        let cliUpdatedAt: Date
+        let historyCount: Int
+        let lastHistoryAt: Date
+    }
+
+    private var cacheKey: CacheKey {
+        CacheKey(
+            cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
+            historyCount: dashboard.history.count,
+            lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast
+        )
+    }
+
+    @MainActor
+    private func rebuildInsights() async {
+        let cli = dashboard.cliBreakdown
+        let history = dashboard.history
+        insights = await Task.detached(priority: .userInitiated) {
+            Insights(from: cli, history: history)
+        }.value
     }
 
     var body: some View {
@@ -54,6 +79,9 @@ struct InsightsView: View {
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
+        .task(id: cacheKey) {
+            await rebuildInsights()
+        }
     }
 
     private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
@@ -176,7 +204,9 @@ struct WeekOverWeek {
     }
 }
 
-private struct Insights {
+private struct Insights: Sendable {
+    static let empty = Insights(from: nil, history: [])
+
     let avgDailyCost: Double?
     let activeDays: Int?
     let peakDay: (day: Date, cost: Double)?

@@ -6,7 +6,6 @@ final class StatusBarController {
     let statusItem: NSStatusItem
     private let popover: NSPopover
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
-    private var tooltipTimer: Timer?
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -19,25 +18,16 @@ final class StatusBarController {
         )
 
         configureButton()
+        // The snapshot notification is the only tooltip trigger: the data changes
+        // once per poll, so a wall-clock tick timer on top of it was pure waste
+        // (and was never invalidated).
         observeSnapshotForTooltip()
-        startTooltipTickTimer()
     }
 
     deinit {
         if let observer = snapshotObserver {
             NotificationCenter.default.removeObserver(observer)
         }
-    }
-
-    private func startTooltipTickTimer() {
-        tooltipTimer?.invalidate()
-        let timer = Timer.scheduledTimer(withTimeInterval: 10, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.updateTooltip()
-            }
-        }
-        RunLoop.main.add(timer, forMode: .common)
-        tooltipTimer = timer
     }
 
     private func configureButton() {
