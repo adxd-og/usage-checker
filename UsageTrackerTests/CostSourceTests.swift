@@ -28,7 +28,7 @@ final class CostSourceTests: XCTestCase {
         // change that — the user should stop looking.
         XCTAssertEqual(
             DashboardState.costSource(for: "antigravity"),
-            .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota windows are on the Overview tab.")
+            .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
         )
     }
 
@@ -43,7 +43,7 @@ final class CostSourceTests: XCTestCase {
     func testGeminiSaysItIsNotSupportedYet() {
         XCTAssertEqual(
             DashboardState.costSource(for: "gemini"),
-            .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota windows are on the Overview tab.")
+            .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota over time is charted instead.")
         )
     }
 
@@ -51,7 +51,7 @@ final class CostSourceTests: XCTestCase {
         let other = DashboardState.costSource(for: "anthropic-admin")
         XCTAssertEqual(
             other,
-            .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota windows are on the Overview tab.")
+            .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota over time is charted instead.")
         )
         XCTAssertNil(other.shortName)
         XCTAssertNil(other.longName)

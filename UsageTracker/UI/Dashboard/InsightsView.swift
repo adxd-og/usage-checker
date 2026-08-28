@@ -8,20 +8,26 @@ struct InsightsView: View {
     // too heavy to re-run on each body evaluation (same pattern as
     // ActivityGridView's GridCache).
     @State private var insights = Insights.empty
+    /// The quota half — what a provider with no cost log can still say about itself.
+    @State private var quota = QuotaInsights.empty
 
     private struct CacheKey: Hashable {
+        let service: String
         let cliUpdatedAt: Date
         let historyCount: Int
         let lastHistoryAt: Date
         let peakBucketID: String?
+        let quotaBucketIDs: [String]
     }
 
     private var cacheKey: CacheKey {
         CacheKey(
+            service: dashboard.selectedService,
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            peakBucketID: dashboard.burnBucket?.id
+            peakBucketID: dashboard.burnBucket?.id,
+            quotaBucketIDs: dashboard.quotaCoreBucketIDs
         )
     }
 
@@ -30,9 +36,20 @@ struct InsightsView: View {
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
         let peakBucketID = dashboard.burnBucket?.id
-        insights = await Task.detached(priority: .userInitiated) {
-            Insights(from: cli, history: history, peakBucketID: peakBucketID)
+        // Empty for a provider whose cost log is showing, which short-circuits the quota
+        // pass entirely: Claude has months of history across half a dozen windows, and
+        // walking all of it every poll to fill cards nobody sees is pure waste.
+        let quotaBucketIDs = dashboard.costSource.hasBreakdown ? [] : dashboard.quotaCoreBucketIDs
+        // Both halves in one detached pass: they read the same history array, and
+        // copying it across two tasks doubles the cost of the expensive part.
+        let built = await Task.detached(priority: .userInitiated) {
+            (
+                Insights(from: cli, history: history, peakBucketID: peakBucketID),
+                QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
+            )
         }.value
+        insights = built.0
+        quota = built.1
     }
 
     var body: some View {
@@ -63,7 +80,7 @@ struct InsightsView: View {
                             .padding(.horizontal, 24)
                     }
                 } else {
-                    noCostLogBlock
+                    quotaBlock
                         .padding(.horizontal, 24)
                 }
 
@@ -96,15 +113,61 @@ struct InsightsView: View {
         }
     }
 
-    private var noCostLogBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            sectionLabel("Cost")
+    /// What a provider without a cost log can still be asked. On a subscription the
+    /// quota is the bill, so these read as the cost cards' counterparts: how often the
+    /// limit actually got in the way, how much of a window a day costs, when.
+    private var quotaBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionLabel("Quota over time")
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+                card(
+                    title: "Days at capacity",
+                    value: "\(quota.daysAtCapacity)",
+                    sub: "of \(quota.daysObserved) days recorded"
+                )
+                card(
+                    title: "Average daily peak",
+                    value: quota.averageDailyPeak.map { String(format: "%.0f%%", $0) } ?? "—",
+                    sub: quota.todayPeak.map { String(format: "%.0f%% so far today", $0) }
+                )
+                card(
+                    title: "Quota used per day",
+                    value: quota.averageDailyConsumption.map { String(format: "%.0f%%", $0) } ?? "—",
+                    sub: "of a window, resets counted"
+                )
+                card(
+                    title: "Busiest day",
+                    value: quota.busiestDay.map { String(format: "%.0f%%", $0.peak) } ?? "—",
+                    sub: quota.busiestDay.map { busiestDaySubtitle($0) }
+                )
+                card(
+                    title: "Busiest hour",
+                    value: quota.busiestHour.map(formatHour) ?? "—",
+                    sub: "when the quota climbs most"
+                )
+            }
             Text(dashboard.costSource.reason ?? "")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+                .font(.caption)
+                .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func busiestDaySubtitle(_ peak: DailyPeak) -> String {
+        let label = dashboard.quotaBuckets.first(where: { $0.id == peak.peakBucketID })?.label
+            ?? QuotaAnalytics.prettifiedLabel(for: peak.peakBucketID)
+        return "\(peak.day.formatted(date: .abbreviated, time: .omitted)) · \(label)"
+    }
+
+    /// Rendered through the user's own clock format — "14:00" is the wrong answer on a
+    /// machine that shows 2 PM everywhere else.
+    private func formatHour(_ hour: Int) -> String {
+        let cal = Calendar.current
+        guard let date = cal.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) else {
+            return String(format: "%02d:00", hour)
+        }
+        return date.formatted(date: .omitted, time: .shortened)
     }
 
     private var cliBlock: some View {

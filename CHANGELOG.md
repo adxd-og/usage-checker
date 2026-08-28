@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.0] — 2026-08-28
+
+### Added
+- **Quota over time for providers without a cost log.** Antigravity and
+  Gemini keep no local token log and bill by subscription, so a dollar figure
+  can't exist for them — but consumption can. Their dashboard tabs now chart
+  the quota history the app has been recording since 1.12.0:
+  - **History** — one line per window on a fixed 0–100% axis (rescaling would
+    hide the headroom), binned by time keeping each bin's *peak*, plus a table
+    of daily peaks.
+  - **Activity** — a day grid coloured by the day's peak utilization; a day
+    the app wasn't running is shown as unobserved, not as 0%.
+  - **Insights** — days at capacity (≥95%: providers round and stop updating
+    at the cap), average daily peak, busiest day, today's peak, and average
+    daily *consumption* — the sum of positive increments, so a window driven
+    to 60% twice counts as 120% spent, taken over the largest window only so
+    a session window and the weekly it rolls into aren't billed twice.
+  History-only windows (ones the provider has stopped reporting) keep their
+  line, end early, and never colour the grid. 24 new tests (200 total).
+
+### Changed
+- The "no cost log" note for such providers now reads "Quota over time is
+  charted instead" and sits as a footnote beside the chart.
+
 ## [1.12.1] — 2026-08-28
 
 Patch from a five-part external code review of 1.12.0 (keychain, aggregators,

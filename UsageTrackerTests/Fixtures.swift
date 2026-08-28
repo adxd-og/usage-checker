@@ -64,6 +64,27 @@ enum Fixture {
         }
     }
 
+    /// History points carrying several windows at once, at absolute times. `history`
+    /// above is enough for burn rate, which reads one bucket relative to now; quota
+    /// charts read every bucket of a record and bin by calendar day, so they need both
+    /// halves fixed.
+    static func quotaHistory(
+        service: String = "antigravity",
+        points: [(at: Date, percents: [String: Double])]
+    ) -> [HistoryRecord] {
+        points.map { point in
+            HistoryRecord(
+                from: snapshot(
+                    id: service,
+                    buckets: point.percents
+                        .sorted { $0.key < $1.key }
+                        .map { bucket(id: $0.key, percent: $0.value) }
+                ),
+                at: point.at
+            )
+        }
+    }
+
     static func prediction(
         secondsToLimit: TimeInterval?,
         percentPerMinute: Double = 1,

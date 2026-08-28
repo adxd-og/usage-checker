@@ -76,6 +76,11 @@ final class DashboardState: ObservableObject {
     @Published private(set) var burnBucket: UsageBucket?
     /// What ran during the session window that's open right now.
     @Published private(set) var sessionWindow: WindowUsage?
+    /// The selected provider's chartable quota windows, named from the live snapshot
+    /// wherever it is still reporting them. Published next to `history` because the
+    /// quota views need both at once: a record stores bucket ids and percentages, and
+    /// a bucket id with no label is not chartable.
+    @Published private(set) var quotaBuckets: [QuotaBucketInfo] = []
     @Published private(set) var isLoadingCLI = false
     @Published private(set) var isLoadingHistory = false
     /// The provider picker's options — see `availableServices(recorded:snapshot:disabled:)`.
@@ -113,6 +118,7 @@ final class DashboardState: ObservableObject {
         sessionBurn = nil
         burnBucket = nil
         history = []
+        quotaBuckets = []
     }
 
     /// Back to the default provider without kicking off a reload — the settings reset
@@ -139,11 +145,11 @@ final class DashboardState: ObservableObject {
         case "codex":
             return .unavailable(reason: "The Codex CLI's logs only give running totals here — today's and the last 7 days' spend show in the menu bar popover. A day-by-day breakdown isn't wired up yet.")
         case "antigravity":
-            return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota windows are on the Overview tab.")
+            return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
         case "gemini":
-            return .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota windows are on the Overview tab.")
+            return .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota over time is charted instead.")
         default:
-            return .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota windows are on the Overview tab.")
+            return .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota over time is charted instead.")
         }
     }
 
@@ -230,6 +236,19 @@ final class DashboardState: ObservableObject {
         let loaded = await HistoryStore.shared.all(service: pass.service)
         guard canPublish(pass) else { return }
         history = loaded
+        // Same pass, same guard: the labels come from the live snapshot and the ids from
+        // the records, so deriving them anywhere else would need a second refresh path
+        // and could pair one provider's ids with another's names.
+        quotaBuckets = QuotaAnalytics.bucketInfos(
+            service: AppState.shared.snapshot.services.first(where: { $0.id == pass.service }),
+            records: loaded
+        )
+    }
+
+    /// The windows a quota chart may summarise for the selected provider — the core
+    /// ones, in the provider's own order.
+    var quotaCoreBucketIDs: [String] {
+        quotaBuckets.filter(\.isCore).map(\.id)
     }
 
     func refreshCLI() async {
