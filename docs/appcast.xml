@@ -6,6 +6,42 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.12.1</title>
+      <pubDate>Fri, 28 Aug 2026 12:08:44 +0300</pubDate>
+      <sparkle:version>27</sparkle:version>
+      <sparkle:shortVersionString>1.12.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<p>Patch from a five-part external code review of 1.12.0 (keychain, aggregators,</p>
+<p>notifier, dashboard, test quality), every finding verified against the code</p>
+<p>before being fixed and several refuted. Tests: 96 → 176.</p>
+<h3>Fixed</h3>
+<ul>
+<li><b>Keychain writes are gated like reads.</b> <code>save()</code>/<code>clear()</code> on the credentials cache checked nothing; with a locked login keychain and a <code>~/.claude/.credentials.json</code> present, a background poll could still raise the password panel through the cache *write*. A user who clicks Deny on the interactive dialog now gets the permission message, not "status -128".</li>
+<li><b>A 401 can't replace the cache with an older token.</b> The renewal read after a 401 accepted whatever Claude Code's sources held — a stale credentials file could overwrite the newer cached token.</li>
+<li><b>Burn rate survives a session reset.</b> The prediction used the first and last points of the 30-minute lookback; after a reset (92% → 4% → 38%) the delta was negative and "burning fast" stayed silent for up to half an hour — exactly when it matters. The rate is now measured on the window that is open now. Staleness is also reachable again (10 minutes), and the minimum legal 30-second spacing between points counts.</li>
+<li><b>Threshold alerts don't re-fire on a rounding wobble</b> (80 → 79 → 80). The fired level clears only after usage drops a few points below the threshold.</li>
+<li><b>Claude Code's last log line is never lost.</b> The Claude aggregator marked a partially written last line as consumed; it now advances only past the last newline (as the Grok aggregator already did). A line whose timestamp can't be parsed is dropped instead of being billed as "now".</li>
+<li><b>Grok costs: <code>costUsdTicks: 0</code> means unpriced, not free</b>, negative token counts are clamped, and a turn total larger than its per-model split is no longer silently discarded.</li>
+<li>**Dashboard selection can't paint one provider's costs under another's title.** Switching providers mid-scan discarded nothing; a refresh started for the previous selection could publish after the switch. Refreshes now carry the service and generation they were started for.</li>
+<li><b>A Grok-only user is no longer stuck on Claude in the dashboard</b>, and a provider disabled in Settings is no longer selectable there. The popover's burn-rate verdict follows the popover's own tab, not the dashboard's.</li>
+<li><b>Reset all settings also resets</b> the dashboard and popover selections, the peek shortcut, remembered alert levels, and Launch at Login.</li>
+<li><b>The last visible provider can't be hidden from the menu bar.</b></li>
+<li><b>Unfunded dollar pools no longer appear as windows.</b> The usage payload carries codenamed pools (<code>nimbus_quill</code> and friends) with dollar fields; one of them reported <code>utilization: 0</code> and showed up as a 0% window. A pool renders only when it has a limit. The daily-summary day key is a local calendar day (the GMT rendering was fragile across timezone changes).</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Test suite hardened per the review: a tautological test removed, two coincidental fixtures replaced with ones where the alternatives disagree, <code>NotNil</code> assertions replaced with exact values, boundary and guard cases added for pacing, burn rate, payload decoding, history, pricing parse, and the notifier; new <code>UsageSnapshot</code> tests for the headline rule. Every group mutation-checked.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.12.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.12.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="ufaxqjULtROyCvylHrm/c42uqiF5/nAs599+f/Jg9jxz3EaXU+crCuA4ou8sB3us+5TSRcro2nHNPUSoOJGOAQ=="
+        length="15210995"/>
+    </item>
+    <item>
       <title>Omelette v1.12.0</title>
       <pubDate>Fri, 28 Aug 2026 11:13:34 +0300</pubDate>
       <sparkle:version>26</sparkle:version>
