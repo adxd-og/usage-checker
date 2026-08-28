@@ -6,6 +6,58 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.12.0</title>
+      <pubDate>Fri, 28 Aug 2026 11:13:34 +0300</pubDate>
+      <sparkle:version>26</sparkle:version>
+      <sparkle:shortVersionString>1.12.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<p>The keychain release. The permission dialog that came back every few hours</p>
+<p>was never the ACL reset the code assumed — Claude Code *updates* its item and</p>
+<p>has since April. Two other things were prompting, and this release measures</p>
+<p>rather than guesses: what actually silences a background keychain read on</p>
+<p>macOS 26, and what can't be silenced at all (a locked login keychain — so we</p>
+<p>stop asking). Also the first unit-test suite: 96 tests, each group verified to</p>
+<p>go red when its logic is broken.</p>
+<h3>Fixed</h3>
+<ul>
+<li><b>Background polling never shows a keychain dialog.</b> Every background read runs with keychain UI disabled at the process level and is skipped outright while the login keychain is locked. <code>LAContext.interactionNotAllowed</code> and <code>kSecUseAuthenticationUIFail</code> — the previous approach, and CodexBar's — were measured to still raise the legacy Allow/Deny panel; they stay as a belt-and-braces layer, but the guarantee comes from <code>SecKeychainSetUserInteractionAllowed</code>. The only reads allowed to prompt are the onboarding <b>Grant access</b> button and Settings → **Request keychain access now**.</li>
+<li><b>Omelette no longer refreshes the Anthropic token itself.</b> Claude Code rotates its refresh token, so a refresh from a second app either stole the CLI's session or lost the race and killed ours — that race, not an ACL, was the "every ~8 hours" cadence. Credentials are now read-only: own cache → <code>~/.claude/.credentials.json</code> → silent probe of Claude Code's item. A 401 no longer clears the cache (on machines without the credentials file it was the only copy), it re-reads Claude Code's sources once and otherwise shows a signed-out state with a hint to run <code>claude</code>.</li>
+<li><b>Gemini's threshold notifications fire.</b> Providers whose every window is model-scoped (Gemini's daily Pro/Flash quotas) had nothing left to alert on after the model-scoped filter; those windows are now watchable when they're all a provider has.</li>
+<li><b>Gemini's pace indicator is right.</b> Window length is carried in the model (from CodexBarCore's <code>windowMinutes</code>) instead of being inferred as "weekly" for every model-scoped window; Gemini's are daily.</li>
+<li><b>Threshold alerts don't replay after a restart.</b> Fired levels persist.</li>
+<li><b>Pay-as-you-go accounts appear in the widget</b> — a spend limit renders as a window, and a windowless account shows its 7-day CLI spend instead of being filtered out entirely.</li>
+<li><b>A 401 response body never reaches the UI.</b> Error text is a short status description; the body goes to the log only.</li>
+<li><b>Reset all settings resets all settings</b> — providers, budget, menu bar options, session alerts and onboarding included, behind a confirmation. A single <code>SettingsStore.Defaults</code> is the source of truth for every default.</li>
+<li>Settings → Account describes each provider in plain words ("Session 42% · Week 18%") instead of "N buckets". Onboarding and Settings no longer promise off-peak reminders that didn't exist. README no longer claims the keychain dialog appears exactly once.</li>
+<li><code>signing.xcconfig.example</code> now produces a notarizable build (<code>ENABLE_HARDENED_RUNTIME</code> + <code>OTHER_CODE_SIGN_FLAGS</code>), and <code>project.yml</code> no longer sets a project-level <code>ENABLE_HARDENED_RUNTIME = NO</code> that outranked the xcconfig.</li>
+</ul>
+<h3>Added</h3>
+<ul>
+<li><b>Session-timing alerts.</b> "Burning fast" fires when, at the current pace, the session window hits 100% *before* it resets — a fast pace that resets in time is deliberately silent. "Resets in N min" fires in the last 15 minutes of a window you're already pressed against. Each nudges once per window; lead time is configurable in Settings → Notifications.</li>
+<li><b>"Current session window" in Insights</b> — what ran while the open session window filled: cost, turns, models and projects from the CLI logs. Honest about its limits: when the log shows nothing, it says the usage came from elsewhere (the Claude apps, another machine) rather than implying nothing happened.</li>
+<li><b>Grok costs in the dashboard.</b> A new incremental aggregator reads the Grok CLI's session logs (<code>~/.grok/sessions</code>), using the CLI's own <code>costUsdTicks</code> as the cost — no price table involved — with per-model and per-project breakdowns. Cold scan of 400 MB of logs: 0.66 s; subsequent polls: 0.04 s. The popover gains a "Last 7 days" row for Grok.</li>
+<li><b>Dashboard and floating window for every provider.</b> History is recorded for each provider (old records read as Claude), with a service picker in the dashboard header. Where a provider has no local cost log — Antigravity keeps none, Codex's logs give only totals — the dashboard says exactly that instead of a generic "Claude only".</li>
+<li><b>Menu bar options</b> — choose which providers occupy the menu bar, and whether the percentage shows always, never, or only with a single provider.</li>
+<li><b>Global "peek at usage" shortcut</b> (Settings → General), via KeyboardShortcuts. Unset by default.</li>
+<li><b>models.dev pricing now covers xAI and Google</b> models, alongside Anthropic and OpenAI. Models without a published price (image/video) are skipped; models known only to models.dev keep a readable display name.</li>
+<li><b>Unit-test target</b> (<code>UsageTrackerTests</code>, XCTest, 96 tests): pacing and burn-rate rules, both log aggregators on fixture logs, the Claude usage payload decoder, notifier bucket selection, window lengths, history round-trips and per-service throttling, settings reset, error descriptions, pricing parse. The app's launch side effects are gated off under XCTest.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>Onboarding asks for keychain access with an explicit <b>Grant access</b> button and shows whether it was granted — since background polling never prompts, the dialog has to be requested.</li>
+<li>User-Agent for the usage endpoint tracks the current Claude Code release.</li>
+<li>The unused <code>writeBack</code> into Claude Code's keychain item and the <code>OAuthRefreshClient</code> are gone.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.12.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.12.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="h+ZQecQQnO/Ao+9ueEaWKg9oNCM/xHzONCO4PLiZHv7tjVbmwxXHSRthSZR2wwVuE2gvWa6uI/Mw0pCwxTRIDA=="
+        length="15183225"/>
+    </item>
+    <item>
       <title>Omelette v1.11.0</title>
       <pubDate>Tue, 04 Aug 2026 11:42:41 +0300</pubDate>
       <sparkle:version>25</sparkle:version>
