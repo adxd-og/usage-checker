@@ -60,8 +60,10 @@ The widget:
 2. Open the DMG and drag `Omelette.app` to `~/Applications/` (or `/Applications/`).
    Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first —
    settings, history and widgets carry over automatically
-3. Launch it. macOS will ask once for permission to read the `Claude Code-credentials` Keychain item — click **Always Allow**.
-   Missed or denied the dialog? Settings → Account → **Request keychain access now** brings it back instantly
+3. Launch it. macOS asks for permission to read the `Claude Code-credentials` Keychain item — click **Always Allow**.
+   From then on Omelette works off its own copy and never raises that dialog from a background refresh. It can
+   reappear after something resets the item's access list — a reinstall, or a differently signed build — in which
+   case Settings → Account → **Request keychain access now** brings it back on demand
 4. The icon appears in your menu bar; click it to see usage
 5. That's the last manual install — updates arrive automatically via Sparkle (signed & notarized), or on demand via Settings → **Check for updates now**
 

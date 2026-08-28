@@ -144,6 +144,6 @@ jobs:
             ## Install
             1. Download `Omelette.dmg`
             2. Open it and drag `Omelette.app` to `~/Applications/` or `/Applications/`
-            3. Launch — macOS will ask once for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**
+            3. Launch — macOS asks for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**. Background refreshes never raise that dialog again; Settings → Account can re-request it if it's ever needed
 
             Requires macOS 14+ and [Claude Code](https://docs.anthropic.com/claude-code) signed in.

@@ -36,6 +36,15 @@ enum ProjectName {
         return result
     }
 
+    /// The Grok CLI names its session directory with the percent-encoded absolute cwd
+    /// (`%2FUsers%2Fme%2FDesktop%2FMovie%20app`) rather than Claude's dash slug. That
+    /// encoding is lossless, so there is nothing to guess and no filesystem walk to do —
+    /// decode and prettify with the same rules, so both providers' project rows read alike.
+    static func decode(encodedPath slug: String) -> String {
+        guard let path = slug.removingPercentEncoding, path.hasPrefix("/") else { return slug }
+        return prettify(path, fallback: slug)
+    }
+
     private static func computeDecode(slug: String) -> String {
         let trimmed = slug.hasPrefix("-") ? String(slug.dropFirst()) : slug
         let tokens = trimmed.split(separator: "-", omittingEmptySubsequences: true).map(String.init)

@@ -60,7 +60,36 @@ struct CLIBreakdown: Sendable {
     let updatedAt: Date
 }
 
-actor JSONLAggregator {
+/// What ran inside one rate-limit window — the answer to "why is my session at 90%?".
+///
+/// Cost is a proxy, not a decomposition: the JSONL knows dollars, the rate limit counts
+/// in units Anthropic doesn't publish. So this ranks what you were *doing* while the
+/// window filled, which is the actionable half of the question.
+struct WindowUsage: Sendable {
+    let start: Date
+    let end: Date
+    let cost: Double
+    let tokens: Int
+    let turns: Int
+    /// Ranked by cost, descending.
+    let projects: [ProjectSummary]
+    let models: [(model: String, cost: Double, tokens: Int)]
+
+    var isEmpty: Bool { turns == 0 }
+}
+
+/// A local per-turn cost log the dashboard can chart. Cost is a local-log question,
+/// not an API one — a provider is costable exactly when its CLI writes token/dollar
+/// figures to disk. Claude Code and the Grok CLI both do, and speak the same shapes
+/// here so every cost view works for either without knowing which is selected.
+protocol CostLogAggregating: Actor {
+    /// Incrementally ingest whatever the CLI has written since the last call.
+    func refresh() async
+    func breakdown() async -> CLIBreakdown
+    func usage(from start: Date, to end: Date) async -> WindowUsage
+}
+
+actor JSONLAggregator: CostLogAggregating {
     static let shared = JSONLAggregator()
 
     private struct DayAgg {
@@ -92,9 +121,11 @@ actor JSONLAggregator {
     /// to call per turn.
     private var dayCache: (start: Date, next: Date)?
 
-    private init() {
-        self.rootURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".claude/projects", isDirectory: true)
+    /// Injectable log root — the tests point it at a fixture directory instead of
+    /// the real `~/.claude/projects`.
+    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".claude/projects", isDirectory: true)) {
+        self.rootURL = rootURL
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
@@ -208,6 +239,57 @@ actor JSONLAggregator {
             projectsWeek: projectsWeek,
             projectsMonth: projectsMonth,
             updatedAt: now
+        )
+    }
+
+    /// Slices the already-parsed turns to one window. Cheap: `recentTurns` holds a
+    /// month, and a rate-limit window is hours.
+    func usage(from start: Date, to end: Date) -> WindowUsage {
+        var cost = 0.0
+        var tokens = 0
+        var turns = 0
+        var byProject: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
+        var byModel: [String: (cost: Double, tokens: Int)] = [:]
+
+        for t in recentTurns where t.timestamp >= start && t.timestamp <= end {
+            let c = t.cost
+            let tok = t.totalTokens
+            cost += c
+            tokens += tok
+            turns += 1
+
+            var p = byProject[t.projectSlug] ?? (0, 0, 0, t.timestamp)
+            p.cost += c
+            p.tokens += tok
+            p.turns += 1
+            p.lastActivity = max(p.lastActivity, t.timestamp)
+            byProject[t.projectSlug] = p
+
+            if let modelDisplay = ModelPricing.displayName(for: t.model) {
+                let m = byModel[modelDisplay] ?? (0, 0)
+                byModel[modelDisplay] = (m.cost + c, m.tokens + tok)
+            }
+        }
+
+        return WindowUsage(
+            start: start,
+            end: end,
+            cost: cost,
+            tokens: tokens,
+            turns: turns,
+            projects: byProject
+                .map { ProjectSummary(
+                    slug: $0.key,
+                    displayName: ProjectName.decode(slug: $0.key),
+                    totalCost: $0.value.cost,
+                    totalTokens: $0.value.tokens,
+                    turns: $0.value.turns,
+                    lastActivity: $0.value.lastActivity
+                ) }
+                .sorted { $0.totalCost > $1.totalCost },
+            models: byModel
+                .map { ($0.key, $0.value.cost, $0.value.tokens) }
+                .sorted { $0.1 > $1.1 }
         )
     }
 

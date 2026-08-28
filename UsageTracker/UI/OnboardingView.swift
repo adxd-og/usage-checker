@@ -5,6 +5,10 @@ struct OnboardingView: View {
     @StateObject private var settings = SettingsStore.shared
     @State private var page: Int = 0
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
+    /// Background polling never prompts, so the keychain dialog has to be asked for
+    /// explicitly — here on first run, or from Settings later.
+    @State private var keychainGranted = ClaudeCredentialsCache.load() != nil
+    @State private var keychainError: String?
     let onFinish: () -> Void
 
     private let totalPages = 3
@@ -101,13 +105,35 @@ struct OnboardingView: View {
             permissionRow(
                 icon: "key.fill",
                 title: "Keychain access",
-                description: "We read the OAuth token that Claude Code stored in your macOS Keychain. macOS will show a one-time prompt asking you to allow this. Click **Always Allow**. Missed the dialog? Settings → Account → **Request keychain access now** shows it again."
+                description: "We read the OAuth token that Claude Code stored in your macOS Keychain. Click **Grant access** and macOS will ask you to allow it — choose **Always Allow**. Omelette then works from its own copy and never raises that dialog on its own; Settings → Account → **Request keychain access now** brings it back if it's ever needed again."
             )
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(keychainGranted ? Color.green : Color.orange)
+                    .frame(width: 8, height: 8)
+                Text(keychainGranted ? "Access granted" : "Not granted yet")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(keychainGranted ? "Re-check" : "Grant access") {
+                    requestKeychainAccess()
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding(.top, 4)
+
+            if let keychainError {
+                Text(keychainError)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
 
             permissionRow(
                 icon: "bell.fill",
                 title: "Notifications",
-                description: "Alerts at 80% / 95% of any limit, plus daily summary and off-peak reminders. You can opt out in Settings."
+                description: "Alerts at 80% / 95% of any limit, plus an optional daily summary. You can opt out in Settings."
             )
 
             HStack(spacing: 8) {
@@ -186,6 +212,18 @@ struct OnboardingView: View {
             if let url = URL(string: raw), NSWorkspace.shared.open(url) {
                 return
             }
+        }
+    }
+
+    private func requestKeychainAccess() {
+        do {
+            try ClaudeOAuthProvider.forceKeychainRead()
+            keychainGranted = true
+            keychainError = nil
+            AppState.shared.refreshNow()
+        } catch {
+            keychainGranted = false
+            keychainError = error.localizedDescription
         }
     }
 

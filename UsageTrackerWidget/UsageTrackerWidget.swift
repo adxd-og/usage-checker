@@ -205,10 +205,13 @@ struct SmallProviderView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
-                Text("\(Int((service.headlineBucket?.percent ?? 0).rounded()))%")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                Text(headlineText)
+                    .font(.system(size: service.headlineBucket == nil ? 20 : 34,
+                                  weight: .bold, design: .rounded))
                     .foregroundStyle(.primary)
                     .monospacedDigit()
+                    .minimumScaleFactor(0.6)
+                    .lineLimit(1)
                 if let label = service.headlineBucket?.label {
                     Text(label)
                         .font(.system(size: 8, weight: .medium))
@@ -218,6 +221,12 @@ struct SmallProviderView: View {
             }
             .padding(.horizontal, 22)
         }
+    }
+
+    /// Percent when there's a window; the dollar figure when there isn't.
+    private var headlineText: String {
+        if let bucket = service.headlineBucket { return "\(Int(bucket.percent.rounded()))%" }
+        return service.spendLabel.map { $0.replacingOccurrences(of: " last 7 days", with: "") } ?? "—"
     }
 
     private var ringBar: some View {
@@ -250,6 +259,9 @@ struct MediumProviderView: View {
             ForEach(displayBuckets) { bucket in
                 WidgetBucketRow(bucket: bucket)
             }
+            if displayBuckets.isEmpty, let spend = service.spendLabel {
+                SpendRow(label: spend)
+            }
         }
         .padding(14)
     }
@@ -281,6 +293,9 @@ struct LargeProviderView: View {
             ForEach(service.nonSessionBuckets.prefix(5)) { bucket in
                 WidgetBucketRow(bucket: bucket)
             }
+            if service.buckets.isEmpty, let spend = service.spendLabel {
+                SpendRow(label: spend)
+            }
             Spacer()
             Text("Updated \(WidgetTime.ago(updatedAt))")
                 .font(.system(size: 9))
@@ -303,6 +318,9 @@ struct AllProvidersWidgetView: View {
                     // The worst two windows tell the story; details live in the app.
                     ForEach(topBuckets(of: service)) { bucket in
                         WidgetBucketRow(bucket: bucket, compact: true)
+                    }
+                    if service.buckets.isEmpty, let spend = service.spendLabel {
+                        SpendRow(label: spend, compact: true)
                     }
                 }
                 if service.id != snapshot.services.prefix(4).last?.id {
@@ -328,6 +346,20 @@ struct AllProvidersWidgetView: View {
 }
 
 // MARK: - Shared pieces
+
+/// Stands in for a usage bar on pay-as-you-go accounts, which have no window to fill.
+struct SpendRow: View {
+    let label: String
+    var compact: Bool = false
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: compact ? 10 : 12, weight: .medium, design: .rounded))
+            .foregroundStyle(.secondary)
+            .monospacedDigit()
+            .lineLimit(1)
+    }
+}
 
 struct ServiceHeader: View {
     let service: WidgetService

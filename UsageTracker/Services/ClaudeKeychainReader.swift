@@ -1,5 +1,4 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 struct ClaudeCredentials: Decodable, Sendable {
@@ -22,7 +21,6 @@ enum ClaudeKeychainError: LocalizedError, Sendable {
     case notFound
     case readFailed(OSStatus)
     case decodeFailed(String)
-    case writeFailed(OSStatus)
     /// Reading would show a permission prompt (non-interactive probe declined).
     case interactionRequired
 
@@ -31,7 +29,6 @@ enum ClaudeKeychainError: LocalizedError, Sendable {
         case .notFound: return "Claude Code credentials not found. Please log into Claude Code (run `claude login`)."
         case .readFailed(let s): return "Keychain read failed (status \(s))"
         case .decodeFailed(let m): return "Could not parse credentials: \(m)"
-        case .writeFailed(let s): return "Keychain write failed (status \(s))"
         case .interactionRequired: return "Keychain access needs your permission"
         }
     }
@@ -52,6 +49,11 @@ enum ClaudeKeychainReader {
     }
 
     private static func read(allowingUI: Bool) throws -> ClaudeCredentials {
+        // A locked login keychain turns any read of a secret into a password panel that
+        // no query flag suppresses. Don't ask; report that interaction would be needed.
+        if !allowingUI, !KeychainNoUI.isDefaultKeychainUnlocked {
+            throw ClaudeKeychainError.interactionRequired
+        }
         var item: AnyObject?
         var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -60,11 +62,12 @@ enum ClaudeKeychainReader {
             kSecReturnData as String: true,
         ]
         if !allowingUI {
-            let context = LAContext()
-            context.interactionNotAllowed = true
-            query[kSecUseAuthenticationContext as String] = context
+            KeychainNoUI.apply(to: &query)
         }
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        let q = query
+        let status = allowingUI
+            ? KeychainNoUI.withUI { SecItemCopyMatching(q as CFDictionary, &item) }
+            : KeychainNoUI.withoutUI { SecItemCopyMatching(q as CFDictionary, &item) }
 
         switch status {
         case errSecSuccess:
@@ -88,6 +91,28 @@ enum ClaudeKeychainReader {
         }
     }
 
+    /// Silent existence check. Asks for the item's *attributes*, never `kSecReturnData`,
+    /// so it reads the keychain's index rather than the protected payload — no ACL
+    /// evaluation, no prompt, even when the secret itself is unreadable to us.
+    /// Lets the UI tell "Claude Code was never logged in" apart from "we can't read it".
+    static func itemExists() -> Bool {
+        // Locked: we can't tell, and "false" would wrongly claim Claude Code never
+        // logged in. Say the item may be there and let the message stay about access.
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return true }
+        var query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnAttributes as String: true,
+        ]
+        KeychainNoUI.apply(to: &query)
+        var item: AnyObject?
+        let q = query
+        let status = KeychainNoUI.withoutUI { SecItemCopyMatching(q as CFDictionary, &item) }
+        // A guarded item still reports its presence via the interaction statuses.
+        return status == errSecSuccess || KeychainNoUI.isInteractionRequired(status)
+    }
+
     /// Claude Code stores credentials in a plain file on some setups (and always on Linux).
     /// Reading it needs no keychain access at all, so it's a free prompt-less source.
     static func readFromFile() -> ClaudeCredentials? {
@@ -95,20 +120,5 @@ enum ClaudeKeychainReader {
             .appendingPathComponent(".claude/.credentials.json")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(ClaudeCredentials.self, from: data)
-    }
-
-    static func writeBack(_ payload: [String: Any]) throws {
-        let json = try JSONSerialization.data(withJSONObject: payload, options: [])
-        let attrs: [String: Any] = [
-            kSecValueData as String: json,
-        ]
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-        ]
-        let status = SecItemUpdate(query as CFDictionary, attrs as CFDictionary)
-        if status != errSecSuccess {
-            throw ClaudeKeychainError.writeFailed(status)
-        }
     }
 }

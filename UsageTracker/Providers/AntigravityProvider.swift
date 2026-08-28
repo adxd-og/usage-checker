@@ -90,7 +90,8 @@ actor AntigravityProvider: UsageProvider {
                 label: named.title,
                 utilization: named.window.usedPercent,
                 resetsAt: named.window.resetsAt ?? .distantFuture,
-                kind: kind(for: named.window)
+                kind: kind(for: named.window),
+                windowLength: windowLength(for: named.window)
             ))
         }
 
@@ -117,8 +118,15 @@ actor AntigravityProvider: UsageProvider {
             label: label,
             utilization: w.usedPercent,
             resetsAt: w.resetsAt ?? .distantFuture,
-            kind: kind(for: w)
+            kind: kind(for: w),
+            windowLength: windowLength(for: w)
         )
+    }
+
+    /// Antigravity mixes five-hour and weekly pools per model group; only the
+    /// reported length tells them apart for the pace indicator.
+    private static func windowLength(for w: CodexBarCore.RateWindow) -> TimeInterval? {
+        w.windowMinutes.map { TimeInterval($0) * 60 }
     }
 
     private static func kind(for w: CodexBarCore.RateWindow) -> BucketKind {

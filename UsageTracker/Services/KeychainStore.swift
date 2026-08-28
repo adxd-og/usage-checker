@@ -28,15 +28,20 @@ enum KeychainStore {
     }
 
     static func loadAdminKey() -> String? {
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return nil }
         var item: AnyObject?
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
         ]
-        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        // This is our own item, but a locked login keychain would still put an unlock
+        // panel on screen from a background poll. Skip the admin card instead.
+        KeychainNoUI.apply(to: &query)
+        let q = query
+        let status = KeychainNoUI.withoutUI { SecItemCopyMatching(q as CFDictionary, &item) }
         guard status == errSecSuccess, let data = item as? Data else { return nil }
         return String(data: data, encoding: .utf8)
     }

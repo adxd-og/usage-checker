@@ -118,28 +118,28 @@ private struct OAuthUsageResponse: Decodable, Sendable {
 
 final class ClaudeOAuthProvider: UsageProvider, Sendable {
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
-    static let userAgent = "claude-code/2.1.149"
+    /// The usage endpoint is undocumented and identifies callers by Claude Code's own
+    /// User-Agent. Keep this roughly in step with the shipping CLI — a version far in
+    /// the past is the first thing a server-side filter would reject.
+    static let userAgent = "claude-code/2.1.247"
 
     let serviceID = "claude"
     private let http: HTTPClient
-    private let refresher: OAuthRefreshClient
     private let betaHeader: String
 
     init(
         http: HTTPClient = HTTPClient(),
-        refresher: OAuthRefreshClient = OAuthRefreshClient(),
         betaHeader: String = "oauth-2025-04-20"
     ) {
         self.http = http
-        self.refresher = refresher
         self.betaHeader = betaHeader
     }
 
     func fetch() async -> ServiceSnapshot {
         let now = Date()
-        let oauth: ClaudeCredentials.OAuth
+        var oauth: ClaudeCredentials.OAuth
         do {
-            oauth = try await resolveCredentials(now: now)
+            oauth = try resolveCredentials(now: now)
         } catch {
             return .notSignedIn(message: error.localizedDescription, at: now)
         }
@@ -148,19 +148,24 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         do {
             resp = try await fetchUsage(token: oauth.accessToken)
         } catch HTTPClientError.badStatus(401, _) {
-            guard let refreshToken = oauth.refreshToken else {
-                ClaudeCredentialsCache.clear()
-                return .errorState(message: "Unauthorized and no refresh token", at: now)
+            // The token is dead and refreshing it is Claude Code's job, not ours. Give
+            // its sources one more look — it may have rotated already — and otherwise
+            // report a signed-out state. The cache is deliberately NOT cleared: on a
+            // machine with no credentials file it is the only copy we have, and
+            // dropping it would force the next poll back onto an interactive read.
+            guard let renewed = Self.newestFromClaudeCode(beating: nil),
+                  renewed.accessToken != oauth.accessToken
+            else {
+                return .notSignedIn(
+                    message: "Claude Code session expired — run `claude` once to renew it",
+                    at: now
+                )
             }
+            ClaudeCredentialsCache.save(renewed)
+            oauth = renewed
             do {
-                let refreshed = try await refresher.refresh(refreshToken: refreshToken, userAgent: Self.userAgent)
-                let merged = Self.merged(oauth, with: refreshed, at: now)
-                ClaudeCredentialsCache.save(merged)
-                resp = try await fetchUsage(token: merged.accessToken)
+                resp = try await fetchUsage(token: renewed.accessToken)
             } catch {
-                // Both the token and its refresh are dead — drop the cache so the next
-                // poll re-bootstraps from Claude Code's sources.
-                ClaudeCredentialsCache.clear()
                 return .errorState(message: error.localizedDescription, at: now)
             }
         } catch HTTPClientError.rateLimited(let retryAfter) {
@@ -174,41 +179,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             rateLimitTier: oauth.rateLimitTier
         )
 
-        // The modern `limits` array is the source of truth when present (scoped
-        // windows exist only there); legacy top-level windows it doesn't cover
-        // (promotional pools) are appended after. An empty/missing array means
-        // the exact pre-`limits` behavior.
-        let limitBuckets = Self.buckets(fromLimits: resp.limits)
-        let buckets: [UsageBucket]
-        if limitBuckets.isEmpty {
-            buckets = Self.buckets(from: resp.windows)
-        } else {
-            let taken = Set(limitBuckets.map(\.id))
-            buckets = limitBuckets + Self.buckets(from: resp.windows).filter { !taken.contains($0.id) }
-        }
-
-        let extra: ExtraUsage? = {
-            guard let e = resp.extraUsage else { return nil }
-            // The API reports these in CENTS: an Enterprise account showing
-            // "$156.40 of $200.00" in Claude's own UI arrives here as
-            // used_credits=15640, monthly_limit=20000.
-            let monthlyLimit = (e.monthlyLimit ?? 0) / 100
-            let usedCredits = (e.usedCredits ?? 0) / 100
-            // Normalize to 0–100 to match UsageBucket.utilization. Prefer the unambiguous
-            // used/limit ratio so the bar always agrees with the "$X / $Y" text beside it;
-            // fall back to the raw utilization field (a 0–1 fraction from the API).
-            let util: Double = {
-                if monthlyLimit > 0 { return min(100, usedCredits / monthlyLimit * 100) }
-                let u = e.utilization ?? 0
-                return u <= 1.0 ? u * 100 : u
-            }()
-            return ExtraUsage(
-                isEnabled: e.isEnabled ?? false,
-                monthlyLimit: monthlyLimit,
-                usedCredits: usedCredits,
-                utilization: util
-            )
-        }()
+        let buckets = Self.buckets(from: resp)
+        let extra = Self.extraUsage(from: resp)
 
         return ServiceSnapshot(
             id: serviceID,
@@ -227,78 +199,108 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
     // MARK: - Credentials
 
-    /// Resolves OAuth credentials prompt-lessly wherever possible.
+    /// Resolves OAuth credentials without ever putting a keychain dialog on screen.
     ///
-    /// Claude Code re-creates its keychain item on every token refresh (~8h), resetting the
-    /// ACL — so a plain read used to re-prompt the user that often. Order here: our own
-    /// cache → silent probe of Claude Code's item (picks up re-logins for free while the
-    /// ACL lasts) → the credentials file → interactive read (may prompt, cooldown-limited).
-    /// Expired tokens are refreshed by us and cached, so we stay off Claude Code's item.
-    private func resolveCredentials(now: Date) async throws -> ClaudeCredentials.OAuth {
-        var best = ClaudeCredentialsCache.load()?.claudeAiOauth
+    /// Claude Code owns the refresh lifecycle — it *rotates* its refresh token, so
+    /// refreshing on our own would invalidate the CLI's copy and steal the session
+    /// (and lose the race the other half of the time). We only ever read, cheapest
+    /// source first: our own cache → the credentials file (no keychain at all) →
+    /// a silent probe of Claude Code's item. Every one of those is prompt-proof;
+    /// the interactive read lives behind the Settings button alone.
+    private func resolveCredentials(now: Date) throws -> ClaudeCredentials.OAuth {
+        let cached = ClaudeCredentialsCache.load()?.claudeAiOauth
+        if let cached, !Self.isExpired(cached, at: now) { return cached }
 
+        // Cache missing or stale: ask Claude Code what it has now.
+        if let fresh = Self.newestFromClaudeCode(beating: cached) {
+            ClaudeCredentialsCache.save(fresh)
+            return fresh
+        }
+        // Nothing newer anywhere. An expired cached token still beats no token: the
+        // usage API is the authority on whether it's really dead, and a 401 there is
+        // recoverable, whereas throwing here would blank the menu bar.
+        if let cached { return cached }
+
+        // Truly nothing to work with — say which of the two situations this is.
+        throw ClaudeKeychainReader.itemExists()
+            ? ClaudeKeychainError.interactionRequired
+            : ClaudeKeychainError.notFound
+    }
+
+    /// Newest credentials Claude Code currently exposes, or nil when nothing it has
+    /// beats `best`. Pass nil to get the newest regardless. Never prompts.
+    private static func newestFromClaudeCode(
+        beating best: ClaudeCredentials.OAuth?
+    ) -> ClaudeCredentials.OAuth? {
+        var winner: ClaudeCredentials.OAuth?
+        var bestExpiry = best?.expiresAt ?? 0
+        // File first: it needs no keychain access, so it can't fail on an ACL.
+        if let file = ClaudeKeychainReader.readFromFile()?.claudeAiOauth, file.expiresAt > bestExpiry {
+            winner = file
+            bestExpiry = file.expiresAt
+        }
         if let probed = try? ClaudeKeychainReader.readNonInteractive().claudeAiOauth,
-           probed.expiresAt > (best?.expiresAt ?? 0) {
-            best = probed
-            ClaudeCredentialsCache.save(probed)
+           probed.expiresAt > bestExpiry {
+            winner = probed
         }
-        if best == nil, let file = ClaudeKeychainReader.readFromFile()?.claudeAiOauth {
-            best = file
-            ClaudeCredentialsCache.save(file)
-        }
-        if best == nil {
-            best = try interactiveRead(now: now)
-        }
-        guard var oauth = best else { throw ClaudeKeychainError.notFound }
-
-        let nowMs = now.timeIntervalSince1970 * 1000
-        if nowMs > oauth.expiresAt - 5 * 60 * 1000, let refreshToken = oauth.refreshToken {
-            if let refreshed = try? await refresher.refresh(refreshToken: refreshToken, userAgent: Self.userAgent) {
-                oauth = Self.merged(oauth, with: refreshed, at: now)
-                ClaudeCredentialsCache.save(oauth)
-            }
-        }
-        return oauth
+        return winner
     }
 
-    /// UserDefaults key holding the last interactive keychain attempt timestamp.
-    private static let promptCooldownKey = "claudeKeychainPromptAt"
-
-    /// Interactive keychain read — the only path that can show the permission prompt.
-    /// Rate-limited so background polling can't turn a Deny into a prompt storm.
-    private func interactiveRead(now: Date) throws -> ClaudeCredentials.OAuth {
-        let last = UserDefaults.standard.double(forKey: Self.promptCooldownKey)
-        guard now.timeIntervalSince1970 - last >= 3600 else {
-            throw ClaudeKeychainError.interactionRequired
-        }
-        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: Self.promptCooldownKey)
-        let oauth = try ClaudeKeychainReader.read().claudeAiOauth
-        ClaudeCredentialsCache.save(oauth)
-        return oauth
+    /// Treats the token as expired a few minutes early, so a poll doesn't spend its
+    /// request on a token that dies mid-flight.
+    private static func isExpired(_ oauth: ClaudeCredentials.OAuth, at now: Date) -> Bool {
+        now.timeIntervalSince1970 * 1000 > oauth.expiresAt - 5 * 60 * 1000
     }
 
-    /// User-initiated keychain read (the Settings button): skips the hourly
-    /// prompt cooldown, may show the macOS permission dialog right away, and
-    /// re-arms the cooldown either way so background polling stays quiet after
-    /// a Deny. Caches on success — the next poll picks the credentials up.
+    /// User-initiated keychain read (the Settings button): the only path in the app
+    /// allowed to show the macOS permission dialog. Caches on success — the next poll
+    /// picks the credentials up.
     static func forceKeychainRead() throws {
-        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: promptCooldownKey)
         let oauth = try ClaudeKeychainReader.read().claudeAiOauth
         ClaudeCredentialsCache.save(oauth)
     }
 
-    private static func merged(
-        _ oauth: ClaudeCredentials.OAuth,
-        with refreshed: OAuthTokenResponse,
-        at now: Date
-    ) -> ClaudeCredentials.OAuth {
-        ClaudeCredentials.OAuth(
-            accessToken: refreshed.accessToken,
-            refreshToken: refreshed.refreshToken ?? oauth.refreshToken,
-            expiresAt: now.timeIntervalSince1970 * 1000 + Double(refreshed.expiresIn ?? 3600) * 1000,
-            scopes: oauth.scopes,
-            subscriptionType: oauth.subscriptionType,
-            rateLimitTier: oauth.rateLimitTier
+    // MARK: - Payload → model
+
+    /// The one door into the payload-shaping logic that doesn't need a network
+    /// round-trip: `OAuthUsageResponse` and the builders below stay private, and
+    /// the tests exercise exactly the path `fetch()` takes.
+    static func usage(fromPayload data: Data) throws -> (buckets: [UsageBucket], extraUsage: ExtraUsage?) {
+        let resp = try JSONDecoder.usageTracker.decode(OAuthUsageResponse.self, from: data)
+        return (buckets(from: resp), extraUsage(from: resp))
+    }
+
+    /// The modern `limits` array is the source of truth when present (scoped
+    /// windows exist only there); legacy top-level windows it doesn't cover
+    /// (promotional pools) are appended after. An empty/missing array means
+    /// the exact pre-`limits` behavior.
+    private static func buckets(from resp: OAuthUsageResponse) -> [UsageBucket] {
+        let limitBuckets = buckets(fromLimits: resp.limits)
+        guard !limitBuckets.isEmpty else { return buckets(from: resp.windows) }
+        let taken = Set(limitBuckets.map(\.id))
+        return limitBuckets + buckets(from: resp.windows).filter { !taken.contains($0.id) }
+    }
+
+    private static func extraUsage(from resp: OAuthUsageResponse) -> ExtraUsage? {
+        guard let e = resp.extraUsage else { return nil }
+        // The API reports these in CENTS: an Enterprise account showing
+        // "$156.40 of $200.00" in Claude's own UI arrives here as
+        // used_credits=15640, monthly_limit=20000.
+        let monthlyLimit = (e.monthlyLimit ?? 0) / 100
+        let usedCredits = (e.usedCredits ?? 0) / 100
+        // Normalize to 0–100 to match UsageBucket.utilization. Prefer the unambiguous
+        // used/limit ratio so the bar always agrees with the "$X / $Y" text beside it;
+        // fall back to the raw utilization field (a 0–1 fraction from the API).
+        let util: Double = {
+            if monthlyLimit > 0 { return min(100, usedCredits / monthlyLimit * 100) }
+            let u = e.utilization ?? 0
+            return u <= 1.0 ? u * 100 : u
+        }()
+        return ExtraUsage(
+            isEnabled: e.isEnabled ?? false,
+            monthlyLimit: monthlyLimit,
+            usedCredits: usedCredits,
+            utilization: util
         )
     }
 

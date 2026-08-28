@@ -1,5 +1,11 @@
 import AppKit
+import KeyboardShortcuts
 import SwiftUI
+
+extension KeyboardShortcuts.Name {
+    /// Global "peek at usage" — opens the popover without reaching for the menu bar.
+    static let peekUsage = Self("peekUsage")
+}
 
 @MainActor
 final class StatusBarController {
@@ -18,6 +24,9 @@ final class StatusBarController {
         )
 
         configureButton()
+        KeyboardShortcuts.onKeyUp(for: .peekUsage) { [weak self] in
+            self?.peek()
+        }
         // The snapshot notification is the only tooltip trigger: the data changes
         // once per poll, so a wall-clock tick timer on top of it was pure waste
         // (and was never invalidated).
@@ -55,6 +64,18 @@ final class StatusBarController {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    /// Hotkey entry point. A menu bar app is usually not frontmost when the shortcut
+    /// fires, and a popover shown from a background app opens behind whatever the user
+    /// is looking at — so activate first, then toggle.
+    private func peek() {
+        if popover.isShown {
+            popover.performClose(nil)
+            return
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        togglePopover()
     }
 
     private func observeSnapshotForTooltip() {

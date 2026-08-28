@@ -12,4 +12,11 @@ CODE_SIGN_IDENTITY = Apple Development
 PRODUCT_BUNDLE_IDENTIFIER = com.example.usagetracker
 
 CODE_SIGN_STYLE = Manual
-ENABLE_HARDENED_RUNTIME = NO
+
+// Required for notarization, and harmless for local development — leave it on.
+// Without it a build looks fine right up until `notarytool` rejects it.
+ENABLE_HARDENED_RUNTIME = YES
+
+// Notarized distribution also needs a secure timestamp. Harmless locally (it just
+// contacts Apple's timestamp server at signing time).
+OTHER_CODE_SIGN_FLAGS = --timestamp --options=runtime

@@ -145,14 +145,22 @@ final class AppState: ObservableObject {
             nextAllowedRefresh = .distantPast
         }
 
-        UsageNotifier.shared.evaluate(snapshot: next)
         if next.hasAnyData {
             WidgetBridge.publish(next.services, at: next.fetchedAt)
         }
-        if let claude = next.services.first(where: { $0.id == "claude" }), claude.state == .ok {
-            await HistoryStore.shared.append(snapshot: claude)
+        // Every healthy provider gets a history point, not just Claude — the
+        // dashboard's charts and the pace prediction are per service now.
+        var recordedAny = false
+        for service in next.services where service.state == .ok {
+            await HistoryStore.shared.append(snapshot: service)
+            recordedAny = true
+        }
+        if recordedAny {
             await DashboardState.shared.refreshDerived()
         }
+        // Deliberately after the history append: the pace alert predicts from a slice
+        // that has to include this poll's data point to be current.
+        await UsageNotifier.shared.evaluate(snapshot: next)
         NotificationCenter.default.post(name: .snapshotUpdated, object: nil)
     }
 

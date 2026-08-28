@@ -2,15 +2,26 @@ import SwiftUI
 
 struct MenuBarLabel: View {
     let snapshot: UsageSnapshot
+    @ObservedObject private var settings = SettingsStore.shared
 
     private var displayServices: [ServiceSnapshot] {
-        // A service earns a pill with rate windows OR (pay-as-you-go) a $ figure.
-        snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
+        // A service earns a pill with rate windows OR (pay-as-you-go) a $ figure —
+        // unless the user has taken it out of the menu bar.
+        snapshot.services.filter {
+            (!$0.buckets.isEmpty || $0.weekCost != nil) && settings.isShownInMenuBar($0.id)
+        }
     }
 
-    /// Several pills with numbers turn the menu bar into a ruler — the colored
-    /// bars carry the signal on their own. A lone provider keeps its number.
-    private var showsNumber: Bool { displayServices.count == 1 }
+    /// Several pills with numbers turn the menu bar into a ruler — the colored bars
+    /// carry the signal on their own — so a lone provider keeps its number by default.
+    /// Overridable both ways.
+    private var showsNumber: Bool {
+        switch settings.menuBarNumberMode {
+        case .always: return true
+        case .never: return false
+        case .auto: return displayServices.count == 1
+        }
+    }
 
     var body: some View {
         HStack(spacing: 4) {

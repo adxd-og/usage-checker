@@ -244,7 +244,7 @@ struct PopoverView: View {
                 if let service = selectedService {
                     ServiceSection(
                         service: service,
-                        burn: service.id == "claude" ? dashboard.burnFiveHour : nil,
+                        burn: service.id == dashboard.selectedService ? dashboard.sessionBurn : nil,
                         showsHeader: service.state != .ok || showsTabBar
                     )
                 }

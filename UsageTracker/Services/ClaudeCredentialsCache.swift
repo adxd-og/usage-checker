@@ -1,36 +1,40 @@
 import Foundation
-import LocalAuthentication
 import Security
 
 /// App-owned keychain cache for Claude OAuth credentials.
 ///
-/// Reading Claude Code's own keychain item (`Claude Code-credentials`) triggers a macOS
-/// permission prompt, and "Always Allow" doesn't stick: Claude Code re-creates the item on
-/// every token refresh (~8h), which resets its ACL and re-prompts us. So after the first
-/// successful read we keep a copy in an item *we* own — reading our own item never prompts —
-/// and refresh the access token ourselves via `OAuthRefreshClient`.
+/// Reading Claude Code's own item (`Claude Code-credentials`) can raise a macOS permission
+/// dialog whenever that item's access list no longer trusts this binary — a reinstall, a
+/// re-signed or renamed build, a fresh login. Keeping our own copy means the menu bar keeps
+/// working across those gaps: reading an item we created never prompts.
+///
+/// We never refresh the token from here. Claude Code rotates its refresh token, so a refresh
+/// of our own would invalidate the CLI's session (or lose the race and invalidate ours). This
+/// holds whatever Claude Code last exposed, and is replaced when it exposes something newer.
 enum ClaudeCredentialsCache {
     static let service = "com.usagetracker.app.claude-oauth-cache"
     static let account = "claude-oauth"
 
     static func load() -> ClaudeCredentials? {
+        // Ours or not, a secret in a locked keychain can't be read without a password
+        // panel. Report "no credentials" and let the UI go stale instead.
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return nil }
         var item: AnyObject?
         // Strictly non-interactive: after the app binary is renamed (Usage Checker →
         // Omelette) the old item's ACL doesn't trust the new binary, and a plain read
         // would throw a pointless permission dialog for our OWN cache. Fail silently
         // instead — the bootstrap chain re-acquires credentials and save() below
         // replaces the stale item with one the new binary owns.
-        let context = LAContext()
-        context.interactionNotAllowed = true
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnData as String: true,
-            kSecUseAuthenticationContext as String: context,
         ]
-        guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+        KeychainNoUI.apply(to: &query)
+        let q = query
+        guard KeychainNoUI.withoutUI({ SecItemCopyMatching(q as CFDictionary, &item) }) == errSecSuccess,
               let data = item as? Data,
               let creds = try? JSONDecoder().decode(ClaudeCredentials.self, from: data)
         else { return nil }
@@ -56,7 +60,11 @@ enum ClaudeCredentialsCache {
             kSecAttrAccount as String: account,
         ]
         let update: [String: Any] = [kSecValueData as String: data]
-        let status = SecItemUpdate(base as CFDictionary, update as CFDictionary)
+        // Writing our own item can hit the same ACL wall as reading it (a re-signed
+        // build), and that must not surface a dialog from a poll either.
+        let status = KeychainNoUI.withoutUI {
+            SecItemUpdate(base as CFDictionary, update as CFDictionary)
+        }
         switch status {
         case errSecSuccess:
             break
@@ -65,7 +73,7 @@ enum ClaudeCredentialsCache {
         case errSecAuthFailed, errSecInteractionNotAllowed:
             // The item belongs to a previous binary (pre-rename install) and its ACL
             // doesn't trust us. Replace it with one we own — self-healing migration.
-            SecItemDelete(base as CFDictionary)
+            _ = KeychainNoUI.withoutUI { SecItemDelete(base as CFDictionary) }
             addFresh(base: base, data: data)
         default:
             break
@@ -77,7 +85,8 @@ enum ClaudeCredentialsCache {
         add[kSecValueData as String] = data
         add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
         add[kSecAttrSynchronizable as String] = false
-        SecItemAdd(add as CFDictionary, nil)
+        let attrs = add
+        _ = KeychainNoUI.withoutUI { SecItemAdd(attrs as CFDictionary, nil) }
     }
 
     static func clear() {

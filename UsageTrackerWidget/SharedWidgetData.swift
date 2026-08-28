@@ -22,6 +22,13 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
     let icon: String
     let plan: String?
     let buckets: [WidgetBucket]
+    /// Pay-as-you-go accounts get no rate-limit windows at all — their whole story is
+    /// a dollar figure. Optional (and defaulted) so a file written by an older build
+    /// still decodes. nil for subscription accounts.
+    var spendLabel: String? = nil
+
+    /// A provider with neither windows nor spend has nothing to draw.
+    var hasContent: Bool { !buckets.isEmpty || spendLabel != nil }
 
     /// The window the small widget's ring shows: the session window when the
     /// provider has one, otherwise whichever non-promo window is closest to its

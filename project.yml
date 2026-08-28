@@ -21,12 +21,18 @@ packages:
   CodexBar:
     url: https://github.com/steipete/CodexBar
     revision: a83a83fa4131bfbfbb62a1a8fc565fcb597ba173
+  # Global hotkey recording + dispatch. Already in CodexBar's own graph, so the
+  # resolved version is shared rather than duplicated.
+  KeyboardShortcuts:
+    url: https://github.com/sindresorhus/KeyboardShortcuts
+    from: 2.4.0
 
 settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
-    ENABLE_HARDENED_RUNTIME: NO
+    # Hardened Runtime deliberately lives in signing.xcconfig, not here: a value set
+    # at this level outranks the xcconfig and would silently win over it.
     SWIFT_STRICT_CONCURRENCY: minimal
 
 targets:
@@ -52,6 +58,7 @@ targets:
       - package: Sparkle
       - package: CodexBar
         product: CodexBarCore
+      - package: KeyboardShortcuts
     # Generated Info.plist (xcodegen writes it at `generate` time). NOTE: the
     # Sparkle keys CANNOT go through INFOPLIST_KEY_* build settings — Xcode
     # injects only its own allowlisted keys that way and silently drops custom
@@ -75,13 +82,42 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Omelette
-        MARKETING_VERSION: "1.11.0"
-        CURRENT_PROJECT_VERSION: "25"
+        MARKETING_VERSION: "1.12.0"
+        CURRENT_PROJECT_VERSION: "26"
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: NO
         COMBINE_HIDPI_IMAGES: YES
         DEAD_CODE_STRIPPING: YES
+    # Makes `xcodebuild test -scheme UsageTracker` run the unit tests; without an
+    # explicit scheme block xcodegen emits none and Xcode auto-creates a
+    # test-less one.
+    scheme:
+      testTargets:
+        - UsageTrackerTests
+
+  UsageTrackerTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: UsageTrackerTests
+    # Also wires TEST_HOST/BUNDLE_LOADER, which is what lets `@testable import
+    # Omelette` see the app's internal types.
+    dependencies:
+      - target: UsageTracker
+    settings:
+      base:
+        # signing.xcconfig sets one bundle id for every target; the test bundle
+        # must not ship the app's own identifier.
+        PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.tests
+        SWIFT_EMIT_LOC_STRINGS: NO
+        # xcodegen derives TEST_HOST from the target NAME; the app's product is
+        # Omelette.app, so the generated path points at nothing.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Omelette.app/Contents/MacOS/Omelette"
+        # No Info.plist of its own — unlike the app target this bundle has
+        # nothing to declare, and code signing refuses without one.
+        GENERATE_INFOPLIST_FILE: YES
 
   UsageTrackerWidget:
     type: app-extension
@@ -98,8 +134,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "1.11.0"
-        CURRENT_PROJECT_VERSION: "25"
+        MARKETING_VERSION: "1.12.0"
+        CURRENT_PROJECT_VERSION: "26"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO

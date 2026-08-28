@@ -4,30 +4,30 @@ struct OverviewView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var dashboard: DashboardState
 
-    private var claude: ServiceSnapshot? {
-        appState.snapshot.services.first(where: { $0.id == "claude" })
+    private var service: ServiceSnapshot? {
+        appState.snapshot.services.first(where: { $0.id == dashboard.selectedService })
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
-                    title: claude?.displayName ?? "Claude",
-                    subtitle: claude?.plan ?? "—"
+                    title: service?.displayName ?? dashboard.displayName(for: dashboard.selectedService),
+                    subtitle: service?.plan ?? "—"
                 )
 
                 HStack(alignment: .top, spacing: 16) {
-                    burnCard(title: "5-hour burn rate", burn: dashboard.burnFiveHour, bucketId: "five_hour")
-                    todayCard
+                    burnCard
+                    if dashboard.costSource.hasBreakdown { todayCard }
                 }
                 .padding(.horizontal, 24)
 
-                if let claude {
-                    bucketsBlock(claude: claude)
+                if let service {
+                    bucketsBlock(service: service)
                         .padding(.horizontal, 24)
                 }
 
-                if let cli = dashboard.cliBreakdown {
+                if dashboard.costSource.hasBreakdown, let cli = dashboard.cliBreakdown {
                     cliBlock(cli: cli)
                         .padding(.horizontal, 24)
                 }
@@ -38,7 +38,11 @@ struct OverviewView: View {
         .background(Color(NSColor.windowBackgroundColor))
     }
 
-    private func burnCard(title: String, burn: BurnRatePrediction?, bucketId: String) -> some View {
+    /// Titled after the window it actually predicts — with several providers a
+    /// fixed "5-hour" was wrong for anyone whose leading window isn't five hours.
+    private var burnCard: some View {
+        let burn = dashboard.sessionBurn
+        let bucket = dashboard.burnBucket
         let value: String = {
             guard let burn else { return "Not enough data" }
             guard let secs = burn.secondsToLimit else {
@@ -48,18 +52,15 @@ struct OverviewView: View {
             return "Hit limit in \(formatDuration(secs))"
         }()
 
-        let percent: Double = {
-            guard let claude else { return 0 }
-            return claude.buckets.first(where: { $0.id == bucketId })?.clampedPercent ?? 0
-        }()
-
         return HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.subheadline).foregroundStyle(.secondary)
+                Text(bucket.map { "\($0.label) burn rate" } ?? "Burn rate")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
                 Text(value).font(.body.weight(.semibold))
             }
             Spacer()
-            UsageRing(percent: percent, size: 48)
+            UsageRing(percent: bucket?.clampedPercent ?? 0, size: 48)
         }
         .dashboardCard(padding: 14)
     }
@@ -97,13 +98,13 @@ struct OverviewView: View {
         return "\(n)"
     }
 
-    private func bucketsBlock(claude: ServiceSnapshot) -> some View {
+    private func bucketsBlock(service: ServiceSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Usage windows".uppercased())
                 .font(.caption2.weight(.semibold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
-            ForEach(claude.buckets) { b in
+            ForEach(service.buckets) { b in
                 HStack {
                     Text(b.label).font(.subheadline.weight(.medium))
                     Spacer()
@@ -120,7 +121,7 @@ struct OverviewView: View {
     private func cliBlock(cli: CLIBreakdown) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Claude Code CLI".uppercased())
+                Text((dashboard.costSource.shortName ?? "CLI").uppercased())
                     .font(.caption2.weight(.semibold))
                     .tracking(0.6)
                     .foregroundStyle(.secondary)

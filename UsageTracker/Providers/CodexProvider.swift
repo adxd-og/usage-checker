@@ -81,7 +81,8 @@ actor CodexProvider: UsageProvider {
                 label: named.title,
                 utilization: named.window.usedPercent,
                 resetsAt: named.window.resetsAt ?? .distantFuture,
-                kind: kind(for: named.window)
+                kind: kind(for: named.window),
+                windowLength: windowLength(for: named.window)
             ))
         }
 
@@ -111,8 +112,16 @@ actor CodexProvider: UsageProvider {
             label: label(for: w),
             utilization: w.usedPercent,
             resetsAt: w.resetsAt ?? .distantFuture,
-            kind: kind(for: w)
+            kind: kind(for: w),
+            windowLength: windowLength(for: w)
         )
+    }
+
+    /// Codex reports 5-hour, weekly and (on the free plan) ~30-day windows; the
+    /// id/kind inference in `UsageBucket` only knows Anthropic's shapes, so the
+    /// reported length is what makes the pace indicator honest here.
+    private static func windowLength(for w: CodexBarCore.RateWindow) -> TimeInterval? {
+        w.windowMinutes.map { TimeInterval($0) * 60 }
     }
 
     private static func label(for w: CodexBarCore.RateWindow) -> String {

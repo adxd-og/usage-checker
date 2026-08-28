@@ -51,3 +51,47 @@ enum Analytics {
         )
     }
 }
+
+/// A time-based nudge for a session window, when one is warranted.
+enum PacingAdvice: Equatable, Sendable {
+    /// The window will hit 100% before it resets, within the warning horizon.
+    case burningFast(secondsToLimit: TimeInterval)
+    /// The window is nearly over and the user is pressed against it.
+    case aboutToReset
+}
+
+extension Analytics {
+    /// Decides whether a session window deserves a nudge right now.
+    ///
+    /// Kept separate from the notifier so the rules are testable on their own — the
+    /// interesting part is what does *not* fire: a fast pace that still resets in time
+    /// is not a problem, and a reset is only news if you're actually pressed against
+    /// the limit.
+    static func pacingAdvice(
+        percent: Double,
+        untilReset: TimeInterval,
+        prediction: BurnRatePrediction?,
+        leadSeconds: TimeInterval,
+        resetLeadSeconds: TimeInterval,
+        highWaterMark: Double,
+        wantsPace: Bool,
+        wantsReset: Bool
+    ) -> PacingAdvice? {
+        guard untilReset > 0 else { return nil }
+
+        // A reset within minutes outranks a pace warning: the squeeze ends either way,
+        // and "it's about to start over" is the more actionable of the two.
+        if wantsReset, untilReset <= resetLeadSeconds, percent >= highWaterMark {
+            return .aboutToReset
+        }
+
+        guard wantsPace, percent < 100,
+              let prediction, !prediction.isStale,
+              let secondsToLimit = prediction.secondsToLimit,
+              secondsToLimit <= leadSeconds,
+              secondsToLimit < untilReset
+        else { return nil }
+
+        return .burningFast(secondsToLimit: secondsToLimit)
+    }
+}

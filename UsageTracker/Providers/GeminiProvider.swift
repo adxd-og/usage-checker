@@ -94,7 +94,11 @@ actor GeminiProvider: UsageProvider {
             label: label,
             utilization: w.usedPercent,
             resetsAt: w.resetsAt ?? .distantFuture,
-            kind: .modelSpecific
+            kind: .modelSpecific,
+            // Gemini's model quotas are daily; without the reported length the
+            // `.modelSpecific` inference would call them weekly and the pace
+            // indicator would read as barely-started all day.
+            windowLength: w.windowMinutes.map { TimeInterval($0) * 60 }
         )
     }
 }

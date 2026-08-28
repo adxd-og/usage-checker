@@ -13,6 +13,11 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     let utilization: Double
     let resetsAt: Date
     let kind: BucketKind
+    /// Total length of the window when the provider states it (CodexBarCore's
+    /// `RateWindow.windowMinutes`). Optional with a nil default so records
+    /// persisted by older builds still decode, and so the inference below
+    /// remains the fallback for providers that report no length.
+    var windowLength: TimeInterval? = nil
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
 
@@ -23,9 +28,14 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
         id.lowercased().contains("promo") || label.lowercased().contains("promo")
     }
 
-    /// Total length of this rate-limit window, inferred from its id/kind.
-    /// nil when the length can't be inferred (unknown future window types).
+    /// Total length of this rate-limit window. The provider's own figure wins;
+    /// the id/kind inference is a fallback for Anthropic's windows, which the
+    /// usage API never states a length for. Inferring alone made every
+    /// model-scoped window a week — wrong for Gemini, whose per-model quotas
+    /// are daily, so its pace indicator read as barely-started all day.
+    /// nil when the length is neither reported nor inferable.
     var windowDuration: TimeInterval? {
+        if let windowLength, windowLength > 0 { return windowLength }
         if id == "five_hour" || kind == .session { return 5 * 3600 }
         if id.hasPrefix("seven_day") || kind == .weekly || kind == .modelSpecific { return 7 * 24 * 3600 }
         return nil

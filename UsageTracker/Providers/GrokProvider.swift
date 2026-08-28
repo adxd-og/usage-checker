@@ -40,10 +40,16 @@ actor GrokProvider: UsageProvider {
     }
 
     private func fetchFresh(now: Date) async -> ServiceSnapshot {
+        // Local spend from ~/.grok/sessions, incrementally. Folded into the poll that's
+        // already happening rather than a second loop of its own, exactly as Codex does.
+        await GrokUsageAggregator.shared.refresh()
+        let weekCost = await GrokUsageAggregator.shared.weekCost(now: now)
+        NSLog("[UT] Grok local cost: 7d $%.2f", weekCost)
+
         // 1. CLI RPC — richest data (percent plus billing-period bounds).
         do {
             let usage = try await GrokStatusProbe().fetch()
-            return Self.snapshot(from: usage, at: now)
+            return Self.snapshot(from: usage, weekCost: weekCost, at: now)
         } catch {
             NSLog("[UT] Grok CLI fetch failed, trying web billing: %@", String(describing: error))
         }
@@ -60,7 +66,7 @@ actor GrokProvider: UsageProvider {
                 cliVersion: nil,
                 updatedAt: now
             )
-            return Self.snapshot(from: usage, at: now)
+            return Self.snapshot(from: usage, weekCost: weekCost, at: now)
         } catch {
             // No CLI, signed out, or endpoint failure — present as signed-out
             // rather than an error so an enabled-but-unused provider stays quiet.
@@ -73,7 +79,9 @@ actor GrokProvider: UsageProvider {
                 accountLabel: nil,
                 buckets: [],
                 extraUsage: nil,
-                weekCost: nil,
+                // Local logs outlive a signed-out CLI, and the spend they record is
+                // still real — it's what keeps the menu bar's cost pill alive here.
+                weekCost: weekCost > 0 ? weekCost : nil,
                 state: .notSignedIn,
                 stateMessage: error.localizedDescription,
                 fetchedAt: now
@@ -81,7 +89,11 @@ actor GrokProvider: UsageProvider {
         }
     }
 
-    private static func snapshot(from usage: GrokUsageSnapshot, at now: Date) -> ServiceSnapshot {
+    private static func snapshot(
+        from usage: GrokUsageSnapshot,
+        weekCost: Double,
+        at now: Date
+    ) -> ServiceSnapshot {
         let core = usage.toUsageSnapshot()
         var buckets: [UsageBucket] = []
         if let w = core.primary, !w.isSyntheticPlaceholder {
@@ -93,7 +105,9 @@ actor GrokProvider: UsageProvider {
                 label: "Credits",
                 utilization: w.usedPercent,
                 resetsAt: w.resetsAt ?? .distantFuture,
-                kind: .weekly
+                kind: .weekly,
+                // A billing period is a month, not the week `.weekly` would infer.
+                windowLength: w.windowMinutes.map { TimeInterval($0) * 60 }
             ))
         }
 
@@ -113,7 +127,7 @@ actor GrokProvider: UsageProvider {
             accountLabel: identity?.accountEmail,
             buckets: buckets,
             extraUsage: nil,
-            weekCost: nil,
+            weekCost: weekCost > 0 ? weekCost : nil,
             state: .ok,
             stateMessage: nil,
             fetchedAt: now

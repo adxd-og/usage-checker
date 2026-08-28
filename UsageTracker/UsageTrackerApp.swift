@@ -1,13 +1,25 @@
 import SwiftUI
 import AppKit
 
+/// True while the app is running only as a host for the unit-test bundle.
+///
+/// Everything the app does at launch — polling, the status item, the notification
+/// authorization prompt, the CLI-log scan behind the dashboard — is a side effect a
+/// test run must not trigger; a permission dialog in particular would block the run.
+enum AppEnvironment {
+    static let isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+        || NSClassFromString("XCTestCase") != nil
+}
+
 @main
 struct UsageTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
         Window("Omelette", id: "dashboard") {
-            DashboardWindow(appState: AppState.shared)
+            if !AppEnvironment.isRunningTests {
+                DashboardWindow(appState: AppState.shared)
+            }
         }
         .windowResizability(.contentSize)
         .commands {
@@ -37,6 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
+        guard !AppEnvironment.isRunningTests else { return }
         self.statusBar = StatusBarController()
         AppState.shared.bootstrap()
         UsageNotifier.shared.requestAuthorizationIfNeeded()

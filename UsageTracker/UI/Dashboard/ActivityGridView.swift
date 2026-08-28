@@ -14,11 +14,13 @@ struct ActivityGridView: View {
             VStack(alignment: .leading, spacing: 20) {
                 DashboardHeader(
                     title: "Activity",
-                    subtitle: "Daily cost (Claude Code CLI)",
+                    subtitle: dashboard.costSource.shortName.map { "Daily cost (\($0))" } ?? "Daily cost",
                     trailing: AnyView(rangePicker)
                 )
 
-                if let cache {
+                if !dashboard.costSource.hasBreakdown {
+                    noCostLogPlaceholder
+                } else if let cache {
                     statCards(cache)
                         .padding(.horizontal, 24)
                     gridBlock(cache)
@@ -64,6 +66,24 @@ struct ActivityGridView: View {
             Text("Loading activity…")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 200)
+    }
+
+    /// The grid is daily cost, and cost comes from a CLI's own log — painting one
+    /// provider's squares under another's name would be a lie. Which log is missing
+    /// differs per provider, so the reason comes from `CostSource`, not from here.
+    private var noCostLogPlaceholder: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "doc.text.magnifyingglass").font(.largeTitle).foregroundStyle(.tertiary)
+            Text("No cost log for \(dashboard.displayName(for: dashboard.selectedService))")
+                .foregroundStyle(.secondary)
+            Text(dashboard.costSource.reason ?? "")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity, minHeight: 200)
     }

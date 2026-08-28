@@ -18,11 +18,14 @@ struct SessionHistoryView: View {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
                     title: "Session history",
-                    subtitle: "Daily cost over the selected range",
+                    subtitle: dashboard.costSource.longName.map { "Daily cost from \($0)" }
+                        ?? "Daily cost",
                     trailing: AnyView(RangePicker(range: $dashboard.range))
                 )
 
-                if data.isEmpty {
+                if !dashboard.costSource.hasBreakdown {
+                    noCostLogPlaceholder
+                } else if data.isEmpty {
                     placeholder
                 } else {
                     chart
@@ -103,6 +106,24 @@ struct SessionHistoryView: View {
             Text("Run a `claude` session to start collecting data")
                 .font(.callout)
                 .foregroundStyle(.tertiary)
+        }
+        .frame(maxWidth: .infinity, minHeight: 220)
+    }
+
+    /// Daily cost is reconstructed from Claude Code's own session logs. Showing
+    /// those figures under another provider would attribute the wrong spend, so
+    /// this says what's missing instead of drawing a misleading chart.
+    private var noCostLogPlaceholder: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "doc.text.magnifyingglass").font(.largeTitle).foregroundStyle(.tertiary)
+            Text("No cost log for \(dashboard.displayName(for: dashboard.selectedService))")
+                .foregroundStyle(.secondary)
+            Text(dashboard.costSource.reason ?? "")
+                .font(.callout)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 420)
         }
         .frame(maxWidth: .infinity, minHeight: 220)
     }

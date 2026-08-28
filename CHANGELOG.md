@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] — 2026-08-28
+
+The keychain release. The permission dialog that came back every few hours
+was never the ACL reset the code assumed — Claude Code *updates* its item and
+has since April. Two other things were prompting, and this release measures
+rather than guesses: what actually silences a background keychain read on
+macOS 26, and what can't be silenced at all (a locked login keychain — so we
+stop asking). Also the first unit-test suite: 96 tests, each group verified to
+go red when its logic is broken.
+
+### Fixed
+- **Background polling never shows a keychain dialog.** Every background read
+  runs with keychain UI disabled at the process level and is skipped outright
+  while the login keychain is locked. `LAContext.interactionNotAllowed` and
+  `kSecUseAuthenticationUIFail` — the previous approach, and CodexBar's — were
+  measured to still raise the legacy Allow/Deny panel; they stay as a
+  belt-and-braces layer, but the guarantee comes from
+  `SecKeychainSetUserInteractionAllowed`. The only reads allowed to prompt are
+  the onboarding **Grant access** button and Settings → **Request keychain
+  access now**.
+- **Omelette no longer refreshes the Anthropic token itself.** Claude Code
+  rotates its refresh token, so a refresh from a second app either stole the
+  CLI's session or lost the race and killed ours — that race, not an ACL, was
+  the "every ~8 hours" cadence. Credentials are now read-only: own cache →
+  `~/.claude/.credentials.json` → silent probe of Claude Code's item. A 401 no
+  longer clears the cache (on machines without the credentials file it was the
+  only copy), it re-reads Claude Code's sources once and otherwise shows a
+  signed-out state with a hint to run `claude`.
+- **Gemini's threshold notifications fire.** Providers whose every window is
+  model-scoped (Gemini's daily Pro/Flash quotas) had nothing left to alert on
+  after the model-scoped filter; those windows are now watchable when they're
+  all a provider has.
+- **Gemini's pace indicator is right.** Window length is carried in the model
+  (from CodexBarCore's `windowMinutes`) instead of being inferred as "weekly"
+  for every model-scoped window; Gemini's are daily.
+- **Threshold alerts don't replay after a restart.** Fired levels persist.
+- **Pay-as-you-go accounts appear in the widget** — a spend limit renders as a
+  window, and a windowless account shows its 7-day CLI spend instead of being
+  filtered out entirely.
+- **A 401 response body never reaches the UI.** Error text is a short status
+  description; the body goes to the log only.
+- **Reset all settings resets all settings** — providers, budget, menu bar
+  options, session alerts and onboarding included, behind a confirmation. A
+  single `SettingsStore.Defaults` is the source of truth for every default.
+- Settings → Account describes each provider in plain words ("Session 42% ·
+  Week 18%") instead of "N buckets". Onboarding and Settings no longer promise
+  off-peak reminders that didn't exist. README no longer claims the keychain
+  dialog appears exactly once.
+- `signing.xcconfig.example` now produces a notarizable build
+  (`ENABLE_HARDENED_RUNTIME` + `OTHER_CODE_SIGN_FLAGS`), and `project.yml` no
+  longer sets a project-level `ENABLE_HARDENED_RUNTIME = NO` that outranked the
+  xcconfig.
+
+### Added
+- **Session-timing alerts.** "Burning fast" fires when, at the current pace,
+  the session window hits 100% *before* it resets — a fast pace that resets in
+  time is deliberately silent. "Resets in N min" fires in the last 15 minutes
+  of a window you're already pressed against. Each nudges once per window;
+  lead time is configurable in Settings → Notifications.
+- **"Current session window" in Insights** — what ran while the open session
+  window filled: cost, turns, models and projects from the CLI logs. Honest
+  about its limits: when the log shows nothing, it says the usage came from
+  elsewhere (the Claude apps, another machine) rather than implying nothing
+  happened.
+- **Grok costs in the dashboard.** A new incremental aggregator reads the Grok
+  CLI's session logs (`~/.grok/sessions`), using the CLI's own `costUsdTicks`
+  as the cost — no price table involved — with per-model and per-project
+  breakdowns. Cold scan of 400 MB of logs: 0.66 s; subsequent polls: 0.04 s.
+  The popover gains a "Last 7 days" row for Grok.
+- **Dashboard and floating window for every provider.** History is recorded
+  for each provider (old records read as Claude), with a service picker in the
+  dashboard header. Where a provider has no local cost log — Antigravity keeps
+  none, Codex's logs give only totals — the dashboard says exactly that instead
+  of a generic "Claude only".
+- **Menu bar options** — choose which providers occupy the menu bar, and
+  whether the percentage shows always, never, or only with a single provider.
+- **Global "peek at usage" shortcut** (Settings → General), via
+  KeyboardShortcuts. Unset by default.
+- **models.dev pricing now covers xAI and Google** models, alongside Anthropic
+  and OpenAI. Models without a published price (image/video) are skipped;
+  models known only to models.dev keep a readable display name.
+- **Unit-test target** (`UsageTrackerTests`, XCTest, 96 tests): pacing and
+  burn-rate rules, both log aggregators on fixture logs, the Claude usage
+  payload decoder, notifier bucket selection, window lengths, history
+  round-trips and per-service throttling, settings reset, error descriptions,
+  pricing parse. The app's launch side effects are gated off under XCTest.
+
+### Changed
+- Onboarding asks for keychain access with an explicit **Grant access** button
+  and shows whether it was granted — since background polling never prompts,
+  the dialog has to be requested.
+- User-Agent for the usage endpoint tracks the current Claude Code release.
+- The unused `writeBack` into Claude Code's keychain item and the
+  `OAuthRefreshClient` are gone.
+
 ## [1.11.0] — 2026-08-04
 
 Performance release: an Opus 5 audit of a 4.8-day-uptime process (4.75% constant

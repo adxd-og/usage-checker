@@ -29,18 +29,10 @@ struct DashboardWindow: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            // The whole dashboard is fed by Claude sources (usage history +
-            // Claude Code session logs) — say so instead of implying every
-            // provider is in these charts.
-            .safeAreaInset(edge: .bottom) {
-                Label("Claude data only", systemImage: "sparkles")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .help("Charts are built from Claude usage history and Claude Code session logs. Other providers aren't included yet.")
-            }
+            // Usage history is per provider, and so is cost now — but only for the
+            // providers whose CLI writes a local log. Say which of the two this tab is
+            // showing instead of letting the reader assume either way.
+            .safeAreaInset(edge: .bottom) { sourceFooter }
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -54,6 +46,22 @@ struct DashboardWindow: View {
         .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
             dashboard.refreshAll()
         }
+    }
+
+    private var sourceFooter: some View {
+        let name = dashboard.displayName(for: dashboard.selectedService)
+        let source = dashboard.costSource
+        return Label(
+            source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
+            systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
+        )
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .help(source.longName.map { "Charts are built from \(name) usage history and \($0)." }
+              ?? "Usage windows come from this provider. " + (source.reason ?? ""))
     }
 
     @ViewBuilder
@@ -78,6 +86,8 @@ struct DashboardHeader: View {
     let subtitle: String?
     var trailing: AnyView? = nil
 
+    @ObservedObject private var dashboard = DashboardState.shared
+
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
@@ -90,11 +100,35 @@ struct DashboardHeader: View {
                 }
             }
             Spacer()
+            ServicePicker(dashboard: dashboard)
             trailing
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 12)
+    }
+}
+
+/// Which provider the dashboard is about. Hidden until a second provider has
+/// actually recorded something — a one-provider setup shouldn't pay screen space
+/// for a control with a single option.
+struct ServicePicker: View {
+    @ObservedObject var dashboard: DashboardState
+
+    var body: some View {
+        if dashboard.availableServices.count > 1 {
+            Picker("", selection: Binding(
+                get: { dashboard.selectedService },
+                set: { dashboard.selectedService = $0 }
+            )) {
+                ForEach(dashboard.availableServices, id: \.self) { id in
+                    Text(dashboard.displayName(for: id)).tag(id)
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+        }
     }
 }
 

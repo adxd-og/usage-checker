@@ -9,8 +9,13 @@ enum HTTPClientError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .badStatus(let code, let body):
-            return "HTTP \(code): \(body.prefix(200))"
+        case .badStatus(let code, _):
+            // Never the response body: this string reaches the UI as `lastError`,
+            // and a 401/403 body from the usage API can carry token detail. The
+            // body is logged at the throw site instead, where only the console
+            // sees it.
+            if let reason = Self.reason(for: code) { return "HTTP \(code) (\(reason))" }
+            return "HTTP \(code)"
         case .rateLimited(let retryAfter):
             if let s = retryAfter { return "Rate limited (retry after \(Int(s))s)" }
             return "Rate limited"
@@ -20,6 +25,23 @@ enum HTTPClientError: LocalizedError, Sendable {
             return "Invalid response"
         case .decoding(let msg):
             return "Decoding failed: \(msg)"
+        }
+    }
+
+    /// A word for the codes a user can act on; anything else stays a bare number
+    /// rather than inventing an explanation.
+    private static func reason(for code: Int) -> String? {
+        switch code {
+        case 400: return "bad request"
+        case 401: return "unauthorized"
+        case 403: return "forbidden"
+        case 404: return "not found"
+        case 408: return "request timeout"
+        case 500: return "server error"
+        case 502: return "bad gateway"
+        case 503: return "service unavailable"
+        case 504: return "gateway timeout"
+        default: return nil
         }
     }
 }
@@ -108,6 +130,10 @@ struct HTTPClient: Sendable {
                 continue
             }
             let bodyStr = String(data: data, encoding: .utf8) ?? ""
+            // The only place the body is allowed to surface — debugging a 4xx is
+            // impossible without it, and the console is not the UI.
+            NSLog("[UT] HTTP %d from %@: %@", code, url.absoluteString,
+                  String(bodyStr.prefix(200)).trimmingCharacters(in: .whitespacesAndNewlines))
             throw HTTPClientError.badStatus(code, body: bodyStr)
         }
     }

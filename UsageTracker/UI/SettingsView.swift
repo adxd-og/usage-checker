@@ -1,3 +1,4 @@
+import KeyboardShortcuts
 import SwiftUI
 
 struct SettingsView: View {
@@ -8,6 +9,7 @@ struct SettingsView: View {
     @State private var savedAdminKeyMasked: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
     @State private var keychainReadStatus: String?
+    @State private var showsResetConfirmation = false
 
     enum Tab: String, CaseIterable, Identifiable {
         case general = "General"
@@ -67,6 +69,40 @@ struct SettingsView: View {
                     AppState.shared.restartTimer()
                 }
                 Text("How often the widget polls Anthropic. Faster = closer to real-time, but risks rate limits.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Menu bar") {
+                Picker("Show the percentage", selection: $settings.menuBarNumberMode) {
+                    ForEach(MenuBarNumberMode.allCases) { mode in
+                        Text(mode.displayName).tag(mode)
+                    }
+                }
+                let candidates = state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
+                if candidates.isEmpty {
+                    Text("Providers appear here once they report usage.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(candidates) { service in
+                        Toggle(
+                            "Show \(service.displayName)",
+                            isOn: Binding(
+                                get: { settings.isShownInMenuBar(service.id) },
+                                set: { settings.setShownInMenuBar(service.id, $0) }
+                            )
+                        )
+                    }
+                    Text("Hidden providers stay in the popover, the widget and notifications — this only frees up menu bar width.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Shortcut") {
+                KeyboardShortcuts.Recorder("Peek at usage", name: .peekUsage)
+                Text("Opens the popover from any app. Unset by default — click the field and press a combination.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -155,6 +191,22 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Session timing") {
+                Toggle("Warn when the session window is burning fast", isOn: $settings.paceAlertsEnabled)
+                if settings.paceAlertsEnabled {
+                    Picker("Warn this far ahead", selection: $settings.paceAlertLeadMinutes) {
+                        Text("15 min").tag(15)
+                        Text("30 min").tag(30)
+                        Text("45 min").tag(45)
+                        Text("1 hour").tag(60)
+                    }
+                }
+                Toggle("Tell me when the session window is about to reset", isOn: $settings.resetAlertsEnabled)
+                Text("The first fires only when you'd hit the limit *before* the window resets — a pace that resets in time isn't a problem. The second fires in the last 15 minutes of a window you're already pressed against.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Quiet hours") {
                 Toggle("Silence notifications at night", isOn: $settings.quietHoursEnabled)
                 if settings.quietHoursEnabled {
@@ -163,7 +215,7 @@ struct SettingsView: View {
                         Spacer()
                         hourPicker(label: "To", selection: $settings.quietHoursEnd)
                     }
-                    Text("Threshold alerts, off-peak reminders and the daily summary are all suppressed during quiet hours.")
+                    Text("Every alert — thresholds, session timing and the daily summary — is suppressed during quiet hours.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -212,9 +264,11 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             Spacer()
-                            Text("\(svc.buckets.count) buckets")
-                                .font(.caption.monospaced())
+                            Text(usageSummary(svc))
+                                .font(.caption)
+                                .monospacedDigit()
                                 .foregroundStyle(.secondary)
+                                .lineLimit(1)
                         }
                     }
                 }
@@ -330,18 +384,22 @@ struct SettingsView: View {
                 Button("Force refresh now") {
                     AppState.shared.refreshNow()
                 }
-                Button("Reset all settings") {
-                    settings.refreshIntervalSeconds = 60
-                    settings.notificationsEnabled = true
-                    settings.threshold80 = 80
-                    settings.threshold95 = 95
-                    settings.preferAdminWhenAvailable = false
-                    settings.anthropicBetaHeader = "oauth-2025-04-20"
-                    settings.quietHoursEnabled = true
-                    settings.quietHoursStart = 23
-                    settings.quietHoursEnd = 9
-                    settings.dailySummaryEnabled = true
-                    settings.dailySummaryHour = 9
+                Button("Reset all settings", role: .destructive) {
+                    showsResetConfirmation = true
+                }
+                .confirmationDialog(
+                    "Reset all settings?",
+                    isPresented: $showsResetConfirmation,
+                    titleVisibility: .visible
+                ) {
+                    Button("Reset everything", role: .destructive) {
+                        settings.resetToDefaults()
+                        AppState.shared.restartTimer()
+                        AppState.shared.refreshNow()
+                    }
+                    Button("Cancel", role: .cancel) {}
+                } message: {
+                    Text("Every preference goes back to its default — providers, thresholds, quiet hours, the menu bar and the welcome tour. Your saved Admin API key is not touched.")
                 }
                 Button("Quit Omelette", role: .destructive) {
                     NSApp.terminate(nil)
@@ -351,6 +409,37 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// What this service is actually reporting, in the words the rest of the app
+    /// uses — "3 buckets" was an internal count nobody outside the code reads.
+    /// The two windows closest to their limit, or the pay-as-you-go spend, and a
+    /// dash when the service has reported nothing (the state label above says why).
+    private func usageSummary(_ svc: ServiceSnapshot) -> String {
+        let worst = svc.buckets
+            .filter { !$0.isPromotional }
+            .sorted { $0.clampedPercent > $1.clampedPercent }
+            .prefix(2)
+        if !worst.isEmpty {
+            return worst
+                .map { "\(shortWindowName($0)) \(Int($0.clampedPercent.rounded()))%" }
+                .joined(separator: " · ")
+        }
+        if let extra = svc.extraUsage, extra.isEnabled, extra.monthlyLimit > 0 {
+            return String(format: "$%.2f of $%.2f", extra.usedCredits, extra.monthlyLimit)
+        }
+        if let cost = svc.weekCost, cost > 0 {
+            return String(format: "$%.2f this week", cost)
+        }
+        return "—"
+    }
+
+    private func shortWindowName(_ b: UsageBucket) -> String {
+        switch b.kind {
+        case .session: return "Session"
+        case .weekly: return "Week"
+        case .modelSpecific, .other: return b.label
+        }
     }
 
     private func stateLabel(_ s: ServiceState) -> String {

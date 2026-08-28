@@ -17,11 +17,27 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     /// Every bucket's utilization keyed by bucket id. Optional because records written
     /// by older builds don't have it; those fall back to the fixed fields above.
     let bucketPercents: [String: Double]?
+    /// Absent in every record written before history went multi-provider, and back
+    /// then only Claude was ever recorded — so a missing field means "claude".
+    private let storedServiceID: String?
+
+    var serviceID: String { storedServiceID ?? "claude" }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, plan, bucketPercents
+        case fiveHourPercent, fiveHourResetsAt
+        case sevenDayPercent, sevenDayResetsAt
+        case opusWeeklyPercent, sonnetWeeklyPercent
+        case claudeDesignWeeklyPercent, coworkWeeklyPercent
+        case extraCreditsUsed
+        case storedServiceID = "serviceID"
+    }
 
     init(from snapshot: ServiceSnapshot, at date: Date = Date()) {
         self.id = UUID()
         self.timestamp = date
         self.plan = snapshot.plan
+        self.storedServiceID = snapshot.id
 
         func bucket(_ id: String) -> UsageBucket? {
             snapshot.buckets.first(where: { $0.id == id })
@@ -85,18 +101,30 @@ actor HistoryStore {
         return d
     }()
 
-    private init() {
+    /// Not private: it is the default argument of an internal initializer, and a
+    /// default argument may not reference a private member.
+    static var defaultDirectory: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("UsageTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.fileURL = dir.appendingPathComponent("history.jsonl")
-        self.legacyURL = dir.appendingPathComponent("history.json")
+        return dir
+    }
+
+    /// Injectable log location — the tests point it at a temp directory instead of
+    /// the real Application Support log.
+    init(directory: URL = HistoryStore.defaultDirectory) {
+        self.fileURL = directory.appendingPathComponent("history.jsonl")
+        self.legacyURL = directory.appendingPathComponent("history.json")
     }
 
     func append(snapshot: ServiceSnapshot) {
         loadIfNeeded()
         let now = Date()
-        if let last = records.last, now.timeIntervalSince(last.timestamp) < minIntervalBetweenSnapshots {
+        // Throttle per service, not globally: with several providers polling
+        // together, a single `records.last` check let the first one through and
+        // silently dropped every other provider's point.
+        if let last = records.last(where: { $0.serviceID == snapshot.id }),
+           now.timeIntervalSince(last.timestamp) < minIntervalBetweenSnapshots {
             return
         }
         let record = HistoryRecord(from: snapshot, at: now)
@@ -109,24 +137,21 @@ actor HistoryStore {
         }
     }
 
-    func all() -> [HistoryRecord] {
+    func all(service: String = "claude") -> [HistoryRecord] {
         loadIfNeeded()
-        return records
+        return records.filter { $0.serviceID == service }
     }
 
-    func records(since cutoff: Date) -> [HistoryRecord] {
+    func records(since cutoff: Date, service: String = "claude") -> [HistoryRecord] {
         loadIfNeeded()
-        return records.filter { $0.timestamp >= cutoff }
+        return records.filter { $0.timestamp >= cutoff && $0.serviceID == service }
     }
 
-    func records(in interval: DateInterval) -> [HistoryRecord] {
+    /// Service ids that have actually recorded something — what the dashboard's
+    /// provider picker offers.
+    func recordedServices() -> [String] {
         loadIfNeeded()
-        return records.filter { interval.contains($0.timestamp) }
-    }
-
-    func mostRecent(_ n: Int) -> [HistoryRecord] {
-        loadIfNeeded()
-        return Array(records.suffix(n))
+        return Set(records.map(\.serviceID)).sorted()
     }
 
     func purgeAll() {

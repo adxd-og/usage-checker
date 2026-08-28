@@ -138,14 +138,54 @@ enum ModelPricing {
             return parsed.version.map { "\(parsed.family) \($0)" } ?? parsed.family
         }
 
+        let l = model.lowercased()
+        // xAI ships the same model line under build variants ("grok-4.6-build");
+        // the line is what a user recognizes, so that's what the UI shows.
+        if let line = grokLine(l) {
+            return "Grok " + line.dropFirst("grok-".count)
+        }
+
         // Ids without the canonical prefix (bare "opus", legacy "claude-3-5-sonnet-…"):
         // at least recognize the family word.
-        let l = model.lowercased()
         for family in ["fable", "mythos", "opus", "sonnet", "haiku"] where l.contains(family) {
             return family.capitalized
         }
-        return model
+        return prettifyID(model)
     }
+
+    /// "grok-4.6-build" → "grok-4.6". nil for ids that don't carry a version right
+    /// after the prefix ("grok-build-0.1", "grok-imagine-video").
+    private static func grokLine(_ lowerID: String) -> String? {
+        let range = NSRange(lowerID.startIndex..., in: lowerID)
+        guard let m = grokIDRegex.firstMatch(in: lowerID, range: range),
+              let majorR = Range(m.range(at: 1), in: lowerID)
+        else { return nil }
+        var line = "grok-\(lowerID[majorR])"
+        if let minorR = Range(m.range(at: 2), in: lowerID) {
+            line += ".\(lowerID[minorR])"
+        }
+        return line
+    }
+
+    /// Last resort for an id from a provider we don't parse specially — a model that
+    /// only models.dev knows about ("gemini-3.1-pro-preview") should still read like a
+    /// name in the UI instead of appearing as a raw slug.
+    private static func prettifyID(_ id: String) -> String {
+        let base = id.split(separator: "/").last.map(String.init) ?? id
+        let range = NSRange(base.startIndex..., in: base)
+        let stripped = dateSuffixRegex.stringByReplacingMatches(in: base, range: range, withTemplate: "")
+        let words = stripped
+            .split(whereSeparator: { $0 == "-" || $0 == "_" })
+            .map { part -> String in
+                let s = String(part)
+                if let acronym = acronyms[s.lowercased()] { return acronym }
+                guard let first = s.first, first.isLetter else { return s }
+                return first.uppercased() + s.dropFirst()
+            }
+        return words.isEmpty ? id : words.joined(separator: " ")
+    }
+
+    private static let acronyms = ["gpt": "GPT", "tts": "TTS", "ai": "AI"]
 
     private static func parseID(_ lowerID: String) -> (family: String, version: String?)? {
         let range = NSRange(lowerID.startIndex..., in: lowerID)
@@ -169,6 +209,12 @@ enum ModelPricing {
 
     private static let dateSuffixRegex = try! NSRegularExpression(pattern: #"-\d{8}$"#)
 
+    /// Anchored at the start so only a version directly after the prefix counts:
+    /// "grok-4.20-multi-agent-0309" is the 4.20 line, "grok-build-0.1" is not a line.
+    private static let grokIDRegex = try! NSRegularExpression(
+        pattern: #"^grok-(\d{1,2})(?:[.-](\d{1,2}))?(?![\d.])"#
+    )
+
     static func isSynthetic(_ model: String) -> Bool {
         model.isEmpty
             || model == "unknown"
@@ -181,6 +227,10 @@ enum ModelPricing {
         for family in ["fable", "mythos", "opus", "sonnet", "haiku"] where l.contains(family) {
             return family
         }
+        // Grok's families are model lines, not code names: collapsing every variant of
+        // 4.6 into one bucket keeps the per-family cost split readable across a point
+        // release, the way "opus" does for Anthropic.
+        if l.hasPrefix("grok") { return grokLine(l) ?? "grok" }
         return "other"
     }
 }

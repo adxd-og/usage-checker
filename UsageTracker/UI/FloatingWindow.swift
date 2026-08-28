@@ -72,21 +72,30 @@ final class FloatingWindowController {
 
 struct FloatingMiniView: View {
     @ObservedObject var state: AppState
+    @ObservedObject private var dashboard = DashboardState.shared
     let onClose: () -> Void
 
-    private var claude: ServiceSnapshot? {
-        state.snapshot.services.first(where: { $0.id == "claude" })
+    init(state: AppState, onClose: @escaping () -> Void) {
+        self.state = state
+        self.onClose = onClose
     }
 
-    private var fiveHour: UsageBucket? {
-        claude?.buckets.first(where: { $0.id == "five_hour" })
+    /// Follows the dashboard's provider selection, so the two windows never
+    /// disagree about whose numbers are on screen.
+    private var service: ServiceSnapshot? {
+        state.snapshot.services.first(where: { $0.id == dashboard.selectedService })
+            ?? state.snapshot.services.first
+    }
+
+    private var session: UsageBucket? {
+        service?.buckets.first(where: { $0.kind == .session })
     }
 
     /// The most-constrained weekly window — with per-model caps, "All models" at 12%
     /// is useless information when "Opus only" sits at 80%. Ties keep API order,
     /// so an untouched account still shows "All models".
     private var topWeekly: UsageBucket? {
-        let weekly = claude?.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } ?? []
+        let weekly = service?.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } ?? []
         return weekly.enumerated().max { a, b in
             if a.element.clampedPercent != b.element.clampedPercent {
                 return a.element.clampedPercent < b.element.clampedPercent
@@ -102,7 +111,7 @@ struct FloatingMiniView: View {
                     .font(.system(size: 14))
                     .symbolRenderingMode(.hierarchical)
                     .foregroundStyle(.tint)
-                Text(claude?.plan ?? "Claude")
+                Text(service?.plan ?? service?.displayName ?? "Omelette")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
                 Button(action: onClose) {
@@ -113,7 +122,7 @@ struct FloatingMiniView: View {
                 .buttonStyle(.borderless)
             }
 
-            row(label: "5-hour", bucket: fiveHour)
+            row(label: session?.label ?? "Session", bucket: session)
             row(label: topWeekly?.label ?? "7-day", bucket: topWeekly)
 
             Spacer()
