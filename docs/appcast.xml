@@ -6,6 +6,29 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.13.0</title>
+      <pubDate>Fri, 28 Aug 2026 15:56:50 +0300</pubDate>
+      <sparkle:version>28</sparkle:version>
+      <sparkle:shortVersionString>1.13.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Quota over time for providers without a cost log.</b> Antigravity and Gemini keep no local token log and bill by subscription, so a dollar figure can't exist for them — but consumption can. Their dashboard tabs now chart the quota history the app has been recording since 1.12.0: - <b>History</b> — one line per window on a fixed 0–100% axis (rescaling would hide the headroom), binned by time keeping each bin's *peak*, plus a table of daily peaks. - <b>Activity</b> — a day grid coloured by the day's peak utilization; a day the app wasn't running is shown as unobserved, not as 0%. - <b>Insights</b> — days at capacity (≥95%: providers round and stop updating at the cap), average daily peak, busiest day, today's peak, and average daily *consumption* — the sum of positive increments, so a window driven to 60% twice counts as 120% spent, taken over the largest window only so a session window and the weekly it rolls into aren't billed twice. History-only windows (ones the provider has stopped reporting) keep their line, end early, and never colour the grid. 24 new tests (200 total).</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The "no cost log" note for such providers now reads "Quota over time is charted instead" and sits as a footnote beside the chart.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.13.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.13.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="Mjyrcr64wMpy2zCfDBFYOHskvHOfzC7lXrLshRcY9Epb3RboKV62SM3SmAUgrJr3rhXNgRTx0QewSny8c0T/CQ=="
+        length="15324164"/>
+    </item>
+    <item>
       <title>Omelette v1.12.1</title>
       <pubDate>Fri, 28 Aug 2026 12:08:44 +0300</pubDate>
       <sparkle:version>27</sparkle:version>
