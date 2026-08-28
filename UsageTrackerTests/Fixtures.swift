@@ -49,8 +49,7 @@ enum Fixture {
     }
 
     /// History points for a single bucket, given as (minutes before `now`, percent).
-    /// Pass them in chronological order — `Analytics.burnRate` reads the first and
-    /// last entries as written rather than sorting.
+    /// Order is free: `Analytics.burnRate` sorts by timestamp before reading the ends.
     static func history(
         service: String = "claude",
         bucketID: String,

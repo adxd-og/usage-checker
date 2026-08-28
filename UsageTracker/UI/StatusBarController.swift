@@ -25,7 +25,11 @@ final class StatusBarController {
 
         configureButton()
         KeyboardShortcuts.onKeyUp(for: .peekUsage) { [weak self] in
-            self?.peek()
+            // The library dispatches its Carbon handler on the main thread but types the
+            // callback as a plain `() -> Void`, so the hop into `peek()`'s main-actor
+            // state is implicit and only compiles because this target checks
+            // concurrency minimally. Assert the isolation instead of relying on that.
+            MainActor.assumeIsolated { self?.peek() }
         }
         // The snapshot notification is the only tooltip trigger: the data changes
         // once per poll, so a wall-clock tick timer on top of it was pure waste
@@ -75,7 +79,12 @@ final class StatusBarController {
             return
         }
         NSApp.activate(ignoringOtherApps: true)
-        togglePopover()
+        // Next run loop turn, not this one: a `.transient` popover shown in the same
+        // turn as the activation can be dismissed again by the activation's own events
+        // before the user ever sees it.
+        DispatchQueue.main.async { [weak self] in
+            self?.togglePopover()
+        }
     }
 
     private func observeSnapshotForTooltip() {

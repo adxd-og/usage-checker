@@ -62,6 +62,57 @@ final class HistoryRecordCodingTests: XCTestCase {
         XCTAssertEqual(record.percent(for: "seven_day"), 18.0)
         XCTAssertEqual(record.plan, "Max 20x")
     }
+
+    func testAServiceIDThisBuildHasNeverHeardOfIsKeptVerbatim() {
+        // Records outlive the build that wrote them: a provider added later, or one
+        // removed, must not have its history silently re-attributed to Claude.
+        let record = HistoryRecord(
+            from: Fixture.snapshot(id: "some-future-provider"),
+            at: Date(timeIntervalSince1970: 1_800_000_000)
+        )
+        XCTAssertEqual(record.serviceID, "some-future-provider")
+    }
+
+    func testARecordFromBeforeBucketPercentsFallsBackToTheFixedFields() throws {
+        // Written when only Claude's six named windows existed, so `bucketPercents` is
+        // absent entirely and `percent(for:)` has to read the per-window columns.
+        let legacy = """
+        {"id":"7C6DEC8E-0F71-4E27-9C2C-1F7A1E9A0003",
+         "timestamp":"2026-08-01T10:00:00Z",
+         "fiveHourPercent":42.0,
+         "sevenDayPercent":18.0,
+         "opusWeeklyPercent":7.0,
+         "sonnetWeeklyPercent":3.0,
+         "claudeDesignWeeklyPercent":1.0,
+         "coworkWeeklyPercent":0.5}
+        """
+        let record = try Self.decoder.decode(HistoryRecord.self, from: Data(legacy.utf8))
+
+        XCTAssertNil(record.bucketPercents)
+        XCTAssertEqual(record.percent(for: "five_hour"), 42.0)
+        XCTAssertEqual(record.percent(for: "seven_day"), 18.0)
+        XCTAssertEqual(record.percent(for: "seven_day_opus"), 7.0)
+        XCTAssertEqual(record.percent(for: "seven_day_sonnet"), 3.0)
+        XCTAssertEqual(record.percent(for: "seven_day_omelette"), 1.0)
+        XCTAssertEqual(record.percent(for: "seven_day_cowork"), 0.5)
+        // The fallback knows only Claude's windows — another provider's bucket has no
+        // column to read, and inventing 0 would draw a flat line that never happened.
+        XCTAssertNil(record.percent(for: "codex_session"))
+        XCTAssertNil(record.percent(for: "seven_day_fable"))
+    }
+
+    func testTheBucketMapWinsOverTheFixedFields() throws {
+        // Both present and disagreeing: the map is what the current writer fills, so it
+        // is the one that must be read.
+        let conflicting = """
+        {"id":"7C6DEC8E-0F71-4E27-9C2C-1F7A1E9A0004",
+         "timestamp":"2026-08-01T10:00:00Z",
+         "fiveHourPercent":99.0,
+         "bucketPercents":{"five_hour":1.0}}
+        """
+        let record = try Self.decoder.decode(HistoryRecord.self, from: Data(conflicting.utf8))
+        XCTAssertEqual(record.percent(for: "five_hour"), 1.0)
+    }
 }
 
 final class HistoryStoreTests: XCTestCase {
@@ -149,6 +200,20 @@ final class HistoryStoreTests: XCTestCase {
 
         let seen = await store.recordedServices()
         XCTAssertEqual(seen, ["claude", "codex", "gemini"])
+    }
+
+    func testRecentByServicePartitionsInOnePass() async {
+        let store = HistoryStore(directory: directory)
+        await store.append(snapshot: claude(percent: 61))
+        await store.append(snapshot: codex(percent: 3))
+
+        let recent = await store.recentByService(since: Date().addingTimeInterval(-3600))
+        XCTAssertEqual(Set(recent.keys), ["claude", "codex"])
+        XCTAssertEqual(recent["claude"]?.first?.percent(for: "five_hour"), 61)
+        XCTAssertEqual(recent["codex"]?.first?.percent(for: "codex_session"), 3)
+
+        let future = await store.recentByService(since: Date().addingTimeInterval(3600))
+        XCTAssertTrue(future.isEmpty, "a cutoff in the future must exclude everything")
     }
 
     func testRecordsSurviveAReopenWithTheirService() async {

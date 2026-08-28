@@ -44,6 +44,17 @@ enum ClaudeCredentialsCache {
     /// Stores credentials in the same JSON shape Claude Code uses, so load() reuses
     /// the `ClaudeCredentials` decoder.
     static func save(_ oauth: ClaudeCredentials.OAuth) {
+        // A locked login keychain answers a WRITE with the same password panel a read
+        // would raise, and no query flag suppresses it — so don't ask. `load()` was
+        // gated for that reason; `save()` wasn't, which meant a machine with a locked
+        // keychain and a `~/.claude/.credentials.json` present raised the panel from a
+        // background poll: the file read succeeded and its result was written here.
+        //
+        // The guard also keeps the `errSecAuthFailed` branch below honest. While the
+        // keychain is locked that status means "locked", not "the item belongs to an
+        // older build" — and the delete-and-replace it triggers would throw away the
+        // only cached copy on a machine that has no credentials file.
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return }
         var inner: [String: Any] = [
             "accessToken": oauth.accessToken,
             "expiresAt": oauth.expiresAt,
@@ -90,6 +101,10 @@ enum ClaudeCredentialsCache {
     }
 
     static func clear() {
+        // Same reason as save(): a delete is a write, and a write to a locked keychain
+        // prompts. Leaving the stale item behind is harmless — the next unlocked save
+        // replaces it.
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return }
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

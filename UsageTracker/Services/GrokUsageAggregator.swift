@@ -302,9 +302,11 @@ actor GrokUsageAggregator: CostLogAggregating {
 
         let firstScan = !initialized
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
+        var seenPaths = Set<String>()
 
         for case let url as URL in enumerator {
             guard url.lastPathComponent == "updates.jsonl" else { continue }
+            seenPaths.insert(url.path)
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             let mtime = values?.contentModificationDate ?? .distantPast
 
@@ -326,6 +328,12 @@ actor GrokUsageAggregator: CostLogAggregating {
                 let parsed = parseFile(at: url)
                 ingest(parsed.turns, eventIDs: parsed.eventIDs)
             }
+        }
+
+        // Offsets for files the enumerator no longer returns — a deleted project, a
+        // cleared session — would otherwise be carried for the life of the process.
+        if fileOffsets.count > seenPaths.count {
+            fileOffsets = fileOffsets.filter { seenPaths.contains($0.key) }
         }
     }
 
@@ -452,7 +460,7 @@ actor GrokUsageAggregator: CostLogAggregating {
             rows = [rawUsage(model: unknownModel, from: usage)]
         }
 
-        let turnCost = doubleValue(usage["costUsdTicks"]).map { $0 / ticksPerUSD }
+        let turnCost = ticksToUSD(usage["costUsdTicks"])
         let spends = resolveCosts(rows, turnCost: turnCost)
         let turn = Turn(
             timestamp: timestamp,
@@ -465,32 +473,67 @@ actor GrokUsageAggregator: CostLogAggregating {
     }
 
     private static func rawUsage(model: String, from usage: [String: Any]) -> RawModelUsage {
-        let input = intValue(usage["inputTokens"])
-        let output = intValue(usage["outputTokens"])
+        // Counters are clamped at zero: a negative token count is nonsense that would
+        // subtract from the day's total and skew the per-model share the turn cost is
+        // split by.
+        let input = max(0, intValue(usage["inputTokens"]))
+        let output = max(0, intValue(usage["outputTokens"]))
         // `totalTokens` is input + output, and `cachedReadTokens` is a subset of
         // `inputTokens` — adding the cache fields on top would double-count them.
-        let total = intValue(usage["totalTokens"])
+        let total = max(0, intValue(usage["totalTokens"]))
         return RawModelUsage(
             model: model,
             input: input,
             output: output,
-            cacheRead: intValue(usage["cachedReadTokens"]),
-            cacheCreate: intValue(usage["cacheCreationTokens"]),
+            cacheRead: max(0, intValue(usage["cachedReadTokens"])),
+            cacheCreate: max(0, intValue(usage["cacheCreationTokens"])),
             tokens: total > 0 ? total : input + output,
-            cost: doubleValue(usage["costUsdTicks"]).map { $0 / ticksPerUSD }
+            cost: ticksToUSD(usage["costUsdTicks"])
         )
     }
+
+    /// `costUsdTicks` as dollars, or nil when the field doesn't actually price anything.
+    ///
+    /// Zero and negative tick counts are "unpriced", not "free": a `costUsdTicks: 0`
+    /// used to read as a real $0, which marked the row priced and skipped the models.dev
+    /// fallback entirely — so a CLI build that writes the field but leaves it empty
+    /// silently reported a whole session as costing nothing.
+    private static func ticksToUSD(_ any: Any?) -> Double? {
+        guard let ticks = doubleValue(any), ticks > 0 else { return nil }
+        return ticks / ticksPerUSD
+    }
+
+    /// Ten ticks ($1e-9). The per-row figures and the turn total are separate sums of
+    /// the same doubles, so a "remainder" smaller than this is rounding, not money.
+    private static let remainderEpsilon = 10 / ticksPerUSD
 
     /// The CLI's per-model ticks are the answer whenever it logs them. Rows it didn't
     /// price fall back to the turn's own total (split by token share), and then to
     /// models.dev rates.
+    ///
+    /// When every row IS priced but the turn total is larger, the difference is real
+    /// spend the per-model split doesn't account for — a model the CLI billed without
+    /// breaking out. It used to be discarded, so the turn read cheaper than the CLI's
+    /// own figure. It goes onto the biggest row rather than onto a synthetic "unknown"
+    /// one, which would surface in the dashboard's per-model breakdown as a model the
+    /// user never ran.
     private static func resolveCosts(_ rows: [RawModelUsage], turnCost: Double?) -> [ModelSpend] {
         let unpriced = rows.filter { $0.cost == nil }
+        let alreadyPriced = rows.reduce(0.0) { $0 + ($1.cost ?? 0) }
+
         guard !unpriced.isEmpty else {
-            return rows.map { ModelSpend(model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens) }
+            var spends = rows.map { ModelSpend(model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens) }
+            guard let turnCost, turnCost - alreadyPriced > remainderEpsilon,
+                  let biggest = spends.indices.max(by: { spends[$0].cost < spends[$1].cost })
+            else { return spends }
+            spends[biggest] = ModelSpend(
+                model: spends[biggest].model,
+                cost: spends[biggest].cost + (turnCost - alreadyPriced),
+                tokens: spends[biggest].tokens
+            )
+            return spends
         }
 
-        let alreadyPriced = rows.reduce(0.0) { $0 + ($1.cost ?? 0) }
         if let turnCost, turnCost > alreadyPriced {
             let remainder = turnCost - alreadyPriced
             let unpricedTokens = unpriced.reduce(0) { $0 + $1.tokens }

@@ -32,25 +32,29 @@ final class CostSourceTests: XCTestCase {
         )
     }
 
-    func testCodexSaysItsBreakdownIsNotWiredUpYet() throws {
-        let codex = DashboardState.costSource(for: "codex")
-        XCTAssertFalse(codex.hasBreakdown, "CodexUsageAggregator only yields today/7d totals")
-        let reason = try XCTUnwrap(codex.reason)
-        XCTAssertTrue(reason.contains("menu bar popover"), reason)
-        XCTAssertTrue(reason.contains("isn't wired up yet"), reason)
+    func testCodexSaysItsBreakdownIsNotWiredUpYet() {
+        // Verbatim for the same reason as Antigravity's: this string IS the empty state.
+        XCTAssertEqual(
+            DashboardState.costSource(for: "codex"),
+            .unavailable(reason: "The Codex CLI's logs only give running totals here — today's and the last 7 days' spend show in the menu bar popover. A day-by-day breakdown isn't wired up yet.")
+        )
     }
 
     func testGeminiSaysItIsNotSupportedYet() {
-        let gemini = DashboardState.costSource(for: "gemini")
-        XCTAssertFalse(gemini.hasBreakdown)
-        XCTAssertEqual(gemini.reason?.contains("isn't supported yet"), true)
+        XCTAssertEqual(
+            DashboardState.costSource(for: "gemini"),
+            .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota windows are on the Overview tab.")
+        )
     }
 
     func testAnUnknownProviderGetsAGenericButTruthfulReason() {
         let other = DashboardState.costSource(for: "anthropic-admin")
-        XCTAssertFalse(other.hasBreakdown)
-        XCTAssertNotNil(other.reason)
+        XCTAssertEqual(
+            other,
+            .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota windows are on the Overview tab.")
+        )
         XCTAssertNil(other.shortName)
+        XCTAssertNil(other.longName)
     }
 
     func testTheAggregatorExistsExactlyWhenTheCostSourceSaysItDoes() {
@@ -84,7 +88,12 @@ final class CostSourceTests: XCTestCase {
         // so a priced model must never come back nil.
         XCTAssertEqual(ModelPricing.displayName(for: "gemini-3.1-pro-preview"), "Gemini 3.1 Pro Preview")
         XCTAssertEqual(ModelPricing.displayName(for: "gpt-5.6-luna"), "GPT 5.6 Luna")
-        XCTAssertNotNil(ModelPricing.displayName(for: "some-brand-new-model-20260101"))
+        // Dashes become spaces, words are capitalized, and the release-date suffix is
+        // dropped — the exact string, so a change to prettifyID has to be deliberate.
+        XCTAssertEqual(
+            ModelPricing.displayName(for: "some-brand-new-model-20260101"),
+            "Some Brand New Model"
+        )
     }
 
     func testSyntheticIDsStayHidden() {

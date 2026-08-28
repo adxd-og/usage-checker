@@ -131,6 +131,61 @@ final class AnalyticsPacingTests: XCTestCase {
         )
     }
 
+    // MARK: - Boundaries
+
+    func testTheHighWaterMarkItselfCountsAsPressedAgainstTheLimit() {
+        XCTAssertEqual(
+            advice(percent: highWaterMark, untilReset: 10 * 60, prediction: nil),
+            .aboutToReset
+        )
+        // A hair under it does not.
+        XCTAssertNil(advice(percent: 79.9, untilReset: 10 * 60, prediction: nil))
+    }
+
+    func testALimitLandingExactlyAtTheResetIsNotWorthSaying() {
+        // "You'll hit 100% at the same moment the window starts over" is not a warning.
+        XCTAssertNil(advice(
+            percent: 50,
+            untilReset: 30 * 60,
+            prediction: Fixture.prediction(secondsToLimit: 30 * 60)
+        ))
+        // One second earlier and it is.
+        XCTAssertEqual(
+            advice(
+                percent: 50,
+                untilReset: 30 * 60,
+                prediction: Fixture.prediction(secondsToLimit: 30 * 60 - 1)
+            ),
+            .burningFast(secondsToLimit: 30 * 60 - 1)
+        )
+    }
+
+    func testPaceStillWarnsWhenResetAlertsAreOff() {
+        // The two toggles are independent: switching off "about to reset" must not take
+        // the pace warning with it.
+        XCTAssertEqual(
+            advice(
+                percent: 90,
+                untilReset: 3 * 3600,
+                prediction: Fixture.prediction(secondsToLimit: 1800),
+                wantsReset: false
+            ),
+            .burningFast(secondsToLimit: 1800)
+        )
+    }
+
+    func testResetStillWarnsWhenPaceAlertsAreOff() {
+        XCTAssertEqual(
+            advice(
+                percent: 90,
+                untilReset: 10 * 60,
+                prediction: Fixture.prediction(secondsToLimit: 60),
+                wantsPace: false
+            ),
+            .aboutToReset
+        )
+    }
+
     func testSilentOnceTheWindowHasAlreadyReset() {
         for untilReset in [0, -60] as [TimeInterval] {
             XCTAssertNil(

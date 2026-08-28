@@ -79,6 +79,50 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         }
     }
 
+    /// A dollar-denominated pool, not a rate-limit window.
+    ///
+    /// The live payload carries `nimbus_quill` at the top level next to the real
+    /// windows: `{"utilization": 0.0, "resets_at": null, "limit_dollars": null,
+    /// "used_dollars": null, "remaining_dollars": null}`. It reports `utilization`
+    /// exactly the way a window does, so the generic decoder below happily published it
+    /// as a "Nimbus Quill 0%" bar in the popover, the widget and the history log — on
+    /// accounts where the pool isn't even switched on.
+    ///
+    /// The dollar keys are the tell, and they identify the object even when every one of
+    /// their values is null, so presence is checked on the container rather than on the
+    /// decoded values.
+    struct DollarPoolDTO: Decodable, Sendable {
+        let isDollarPool: Bool
+        let utilization: Double?
+        let resetsAt: Date?
+        let limitDollars: Double?
+
+        private enum CodingKeys: String, CodingKey {
+            case utilization
+            case resetsAt = "resets_at"
+            case limitDollars = "limit_dollars"
+            case usedDollars = "used_dollars"
+            case remainingDollars = "remaining_dollars"
+        }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            isDollarPool = c.contains(.limitDollars)
+                || c.contains(.usedDollars)
+                || c.contains(.remainingDollars)
+            utilization = try? c.decodeIfPresent(Double.self, forKey: .utilization)
+            resetsAt = try? c.decodeIfPresent(Date.self, forKey: .resetsAt)
+            limitDollars = try? c.decodeIfPresent(Double.self, forKey: .limitDollars)
+        }
+
+        /// The pool is worth a bar only when there is real money behind it: a null or
+        /// zero `limit_dollars` is a pool the account doesn't have.
+        var asWindow: WindowDTO? {
+            guard let limit = limitDollars, limit > 0, let utilization else { return nil }
+            return WindowDTO(utilization: utilization, resetsAt: resetsAt, usedPercentage: nil)
+        }
+    }
+
     /// Swallows per-element decode failures so one unexpected entry in
     /// `limits` can't hide the rest of the array.
     private struct Lossy<T: Decodable & Sendable>: Decodable, Sendable {
@@ -102,6 +146,13 @@ private struct OAuthUsageResponse: Decodable, Sendable {
             // `extra_usage` also carries a `utilization` field, hence the by-name skip
             // above; anything else that decodes as a window object and reports a percent
             // is treated as one.
+            if let pool = try? c.decode(DollarPoolDTO.self, forKey: key), pool.isDollarPool {
+                // A dollar pool is either a real limit or nothing at all — never a 0%
+                // bar. `spend` (the usage-credits object) has no dollar keys of this
+                // shape and no `utilization`, so it falls through and is skipped below.
+                if let window = pool.asWindow { windows[key.stringValue] = window }
+                continue
+            }
             guard let dto = try? c.decode(WindowDTO.self, forKey: key),
                   dto.normalizedPercent != nil else { continue }
             windows[key.stringValue] = dto
@@ -154,7 +205,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             // machine with no credentials file it is the only copy we have, and
             // dropping it would force the next poll back onto an interactive read.
             guard let renewed = Self.newestFromClaudeCode(beating: nil),
-                  renewed.accessToken != oauth.accessToken
+                  Self.isUsableRenewal(renewed, after: oauth)
             else {
                 return .notSignedIn(
                     message: "Claude Code session expired — run `claude` once to renew it",
@@ -244,6 +295,23 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             winner = probed
         }
         return winner
+    }
+
+    /// Whether credentials found after a 401 are worth swapping in.
+    ///
+    /// The 401 path re-reads Claude Code's sources with no "beat this" floor, because
+    /// the token that just failed may still be the newest thing on disk. That leaves it
+    /// open to going *backwards*: a stale `~/.claude/.credentials.json` holding an older
+    /// token than the one in the cache would win on the "different token" test alone and
+    /// overwrite the cache with something even deader.
+    ///
+    /// `>=` rather than `>` on the expiry so a rotation landing in the same millisecond
+    /// still counts — the access token is what has to differ.
+    static func isUsableRenewal(
+        _ candidate: ClaudeCredentials.OAuth,
+        after expired: ClaudeCredentials.OAuth
+    ) -> Bool {
+        candidate.expiresAt >= expired.expiresAt && candidate.accessToken != expired.accessToken
     }
 
     /// Treats the token as expired a few minutes early, so a poll doesn't spend its

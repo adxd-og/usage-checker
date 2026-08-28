@@ -27,6 +27,9 @@ final class GrokUsageAggregatorTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
+        // `ModelPricing.dynamicTable` is process-global; a test that seeds it must not
+        // leave rates behind for the next one.
+        ModelPricing.updateDynamic([:])
     }
 
     // MARK: - Fixture writing
@@ -312,9 +315,11 @@ final class GrokUsageAggregatorTests: XCTestCase {
     // MARK: - breakdown()
 
     func testBreakdownFillsTheShapeTheDashboardRenders() async throws {
+        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
+        // into yesterday whenever the suite runs between 00:00 and 00:10.
         try write([turnLine(
             eventID: "a1",
-            secondsAgo: 600,
+            secondsAgo: 1,
             ticks: 300_000_000,
             models: [ModelFixture("grok-4.6-build", input: 300, output: 3, ticks: 300_000_000)]
         )], project: alphaDir)
@@ -350,6 +355,166 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let breakdown = await aggregator.breakdown()
         XCTAssertEqual(week, 0.025, accuracy: 1e-9)
         XCTAssertEqual(week, breakdown.weekCost, accuracy: 1e-9)
+    }
+
+    // MARK: - Reconciling per-model and per-turn dollars
+
+    func testAnUnpricedSplitIsSharedByTokenCount() async throws {
+        // Neither row is priced, so the turn's own total is divided by token share:
+        // 1000 of 1500 tokens takes two thirds of $0.03.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 300_000_000,
+            models: [
+                ModelFixture("grok-4.6-build", input: 1_000, output: 0, ticks: nil),
+                ModelFixture("grok-4.3", input: 500, output: 0, ticks: nil),
+            ]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.models.map { $0.model }, ["Grok 4.6", "Grok 4.3"])
+        XCTAssertEqual(usage.models[0].cost, 0.02, accuracy: 1e-9)
+        XCTAssertEqual(usage.models[1].cost, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(usage.cost, 0.03, accuracy: 1e-9)
+    }
+
+    func testAPricedSplitBeatsASmallerTurnTotal() async throws {
+        // The per-model figures add up to more than the turn says. They are the more
+        // specific number, so they stand — the turn total does not shrink them.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [
+                ModelFixture("grok-4.6-build", input: 1_000, output: 0, ticks: 200_000_000),
+                ModelFixture("grok-4.3", input: 500, output: 0, ticks: 100_000_000),
+            ]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.cost, 0.03, accuracy: 1e-9)
+        XCTAssertEqual(usage.models[0].cost, 0.02, accuracy: 1e-9)
+        XCTAssertEqual(usage.models[1].cost, 0.01, accuracy: 1e-9)
+    }
+
+    func testSpendTheSplitDoesNotAccountForLandsOnTheBiggestRow() async throws {
+        // The turn cost $0.04 but the per-model rows only explain $0.03. The difference
+        // used to be dropped, so the turn read cheaper than the CLI's own figure.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 400_000_000,
+            models: [
+                ModelFixture("grok-4.6-build", input: 1_000, output: 0, ticks: 200_000_000),
+                ModelFixture("grok-4.3", input: 500, output: 0, ticks: 100_000_000),
+            ]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.cost, 0.04, accuracy: 1e-9, "the turn's own total is the truth")
+        XCTAssertEqual(usage.models[0].model, "Grok 4.6")
+        XCTAssertEqual(usage.models[0].cost, 0.03, accuracy: 1e-9)
+        XCTAssertEqual(usage.models[1].cost, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(usage.models.count, 2, "no phantom 'unknown' model in the breakdown")
+    }
+
+    func testZeroTicksMeanUnpricedNotFree() async throws {
+        // A CLI build that writes the field but leaves it at zero used to mark the row
+        // priced at $0 and skip the models.dev fallback entirely — a whole session of
+        // work reported as costing nothing.
+        ModelPricing.updateDynamic([
+            "grok-4.6": ModelPrice(
+                inputPerM: 2, outputPerM: 6, cacheReadPerM: 0.5,
+                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+            )
+        ])
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 0,
+            models: [ModelFixture("grok-4.6-build", input: 1_000_000, output: 0, ticks: 0)]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.cost, 2.0, accuracy: 1e-9, "a million input tokens at $2/M")
+    }
+
+    // MARK: - Fields the CLI doesn't always write
+
+    /// A `turn_completed` line assembled from raw fragments, for shapes the typed
+    /// builder above can't express — a missing field, an empty split.
+    private func rawTurnLine(timestampField: String?, usage: String, meta: String) -> String {
+        let ts = timestampField.map { "\"timestamp\":\($0)," } ?? ""
+        return """
+        {\(ts)"method":"_x.ai/session/update","params":{"sessionId":"s-1",\
+        "update":{"sessionUpdate":"turn_completed","usage":{\(usage)}},"_meta":{\(meta)}}}
+        """
+    }
+
+    func testTheAgentTimestampStandsInForAMissingOuterOne() async throws {
+        let ms = Int(now.addingTimeInterval(-600).timeIntervalSince1970 * 1000)
+        try write([rawTurnLine(
+            timestampField: nil,
+            usage: #""inputTokens":100,"outputTokens":1,"totalTokens":101,"costUsdTicks":100000000"#,
+            meta: #""eventId":"m1","agentTimestampMs":\#(ms)"#
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.cost, 0.01, accuracy: 1e-9)
+    }
+
+    func testALineWithNoTimeAtAllIsDropped() async throws {
+        try write([rawTurnLine(
+            timestampField: nil,
+            usage: #""inputTokens":100,"outputTokens":1,"totalTokens":101,"costUsdTicks":100000000"#,
+            meta: #""eventId":"m1""#
+        )], project: alphaDir)
+
+        let breakdown = await loaded().breakdown()
+        XCTAssertEqual(breakdown.weekCost, 0, "a turn with no time has no place in any window")
+    }
+
+    func testWithoutAnEventIdIdentityFallsBackToTheTurnsContent() async throws {
+        let seconds = Int(now.addingTimeInterval(-600).timeIntervalSince1970)
+        let sameContent = #""inputTokens":100,"outputTokens":1,"totalTokens":101,"costUsdTicks":100000000"#
+        let otherContent = #""inputTokens":200,"outputTokens":2,"totalTokens":202,"costUsdTicks":200000000"#
+        try write([
+            rawTurnLine(timestampField: "\(seconds)", usage: sameContent, meta: ""),
+            rawTurnLine(timestampField: "\(seconds)", usage: sameContent, meta: ""),
+            rawTurnLine(timestampField: "\(seconds)", usage: otherContent, meta: ""),
+        ], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 2, "identical content is one event; different content is not")
+        XCTAssertEqual(usage.cost, 0.03, accuracy: 1e-9)
+    }
+
+    func testATurnWithoutAModelSplitIsBilledToAGenericGrokRow() async throws {
+        let seconds = Int(now.addingTimeInterval(-600).timeIntervalSince1970)
+        try write([rawTurnLine(
+            timestampField: "\(seconds)",
+            usage: #""inputTokens":100,"outputTokens":1,"totalTokens":101,"costUsdTicks":100000000"#,
+            meta: #""eventId":"nosplit""#
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.models.map { $0.model }, ["Grok"])
+        XCTAssertEqual(usage.cost, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(usage.tokens, 101)
+    }
+
+    func testAZeroTotalFallsBackToInputPlusOutput() async throws {
+        let seconds = Int(now.addingTimeInterval(-600).timeIntervalSince1970)
+        try write([rawTurnLine(
+            timestampField: "\(seconds)",
+            usage: #""inputTokens":100,"outputTokens":7,"totalTokens":0,"costUsdTicks":100000000"#,
+            meta: #""eventId":"zerototal""#
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.tokens, 107)
     }
 
     func testAnEmptyLogRootProducesNothing() async throws {

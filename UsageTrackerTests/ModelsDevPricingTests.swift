@@ -103,6 +103,66 @@ final class ModelsDevPricingTests: XCTestCase {
         XCTAssertEqual(price.cacheCreate5mPerM, 0)
     }
 
+    // MARK: - Shapes that must not take the rest of the payload down with them
+
+    /// models.dev is a community dataset: one entry with a hand-edited `cost` block, or
+    /// a provider whose `models` came back as a list, must not cost the models beside it.
+    private let malformed = """
+    {
+      "xai": {
+        "models": {
+          "grok-4.6": {"cost": {"input": 2, "output": 6, "cache_read": 0.5}},
+          "grok-no-output": {"cost": {"input": 2}},
+          "grok-free-text": {"cost": "free"},
+          "grok-not-a-dict": 42,
+          "grok-null-cost": {"cost": null}
+        }
+      },
+      "openai": {"models": [{"id": "gpt-5.6", "cost": {"input": 1, "output": 2}}]},
+      "anthropic": {
+        "models": {
+          "claude-sonnet-4-6": {"cost": {"input": 3, "output": 15}}
+        }
+      }
+    }
+    """
+
+    private func parsedMalformed() throws -> [String: ModelPrice] {
+        let root = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(malformed.utf8)) as? [String: Any]
+        )
+        return try ModelsDevPricing.parse(root)
+    }
+
+    func testABadEntryIsSkippedAndItsNeighboursAreNot() throws {
+        let prices = try parsedMalformed()
+
+        let grok = try XCTUnwrap(prices["grok-4.6"], "a valid model beside broken ones must still parse")
+        XCTAssertEqual(grok.inputPerM, 2)
+        XCTAssertEqual(grok.outputPerM, 6)
+
+        XCTAssertNil(prices["grok-no-output"], "a cost block without an output rate prices nothing")
+        XCTAssertNil(prices["grok-free-text"], #"a string "cost" is not a rate table"#)
+        XCTAssertNil(prices["grok-not-a-dict"], "a model whose value isn't an object")
+        XCTAssertNil(prices["grok-null-cost"])
+    }
+
+    func testAProviderWhoseModelsAreAListIsSkippedWhole() throws {
+        // `models` as an array can't be walked by key, and guessing at its shape would
+        // publish rates nobody checked.
+        XCTAssertNil(try parsedMalformed()["gpt-5.6"])
+    }
+
+    func testAnAnthropicModelWithoutACacheWriteRateGetsTheInferredOnes() throws {
+        // Anthropic always bills cache writes, and prices the 5-minute tier at 1.25× the
+        // input rate and the 1-hour tier at 1.6× that. Cache reads fall back to a tenth
+        // of input the same way every provider's do.
+        let price = try XCTUnwrap(try parsedMalformed()["claude-sonnet-4-6"])
+        XCTAssertEqual(price.cacheCreate5mPerM, 3.75, accuracy: 1e-9)   // 3 × 1.25
+        XCTAssertEqual(price.cacheCreate1hPerM, 6.0, accuracy: 1e-9)    // 3.75 × 1.6
+        XCTAssertEqual(price.cacheReadPerM, 0.3, accuracy: 1e-9)        // 3 × 0.1
+    }
+
     func testAPayloadWithNoPricedProviderIsRejected() throws {
         let root = try XCTUnwrap(
             JSONSerialization.jsonObject(with: Data(#"{"mistral":{"models":{}}}"#.utf8)) as? [String: Any]

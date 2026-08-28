@@ -85,6 +85,7 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 } else {
+                    let shown = candidates.filter { settings.isShownInMenuBar($0.id) }
                     ForEach(candidates) { service in
                         Toggle(
                             "Show \(service.displayName)",
@@ -93,8 +94,13 @@ struct SettingsView: View {
                                 set: { settings.setShownInMenuBar(service.id, $0) }
                             )
                         )
+                        // Hiding the last one left the menu bar with nothing but an
+                        // empty chart glyph and no way back except this screen.
+                        .disabled(shown.count == 1 && shown.first?.id == service.id)
                     }
-                    Text("Hidden providers stay in the popover, the widget and notifications — this only frees up menu bar width.")
+                    Text(shown.count == 1
+                         ? "Hidden providers stay in the popover, the widget and notifications. The last visible one can't be hidden — the menu bar would show nothing but an empty icon."
+                         : "Hidden providers stay in the popover, the widget and notifications — this only frees up menu bar width.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -394,6 +400,12 @@ struct SettingsView: View {
                 ) {
                     Button("Reset everything", role: .destructive) {
                         settings.resetToDefaults()
+                        // Launch at login is OS state, not a stored preference, so
+                        // `resetToDefaults()` deliberately can't reach it — and the
+                        // toggle's own `@State` has to be re-read afterwards or it goes
+                        // on showing the value it had before the reset.
+                        LaunchAtLogin.isEnabled = false
+                        launchAtLogin = LaunchAtLogin.isEnabled
                         AppState.shared.restartTimer()
                         AppState.shared.refreshNow()
                     }

@@ -100,6 +100,9 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     private let rootURL: URL
+    /// Byte offset just past the last complete line already parsed, per file. A partial
+    /// tail line is deliberately left unconsumed so the next poll re-reads it whole
+    /// rather than dropping the turn it belongs to.
     private var fileOffsets: [String: UInt64] = [:]
     /// Turns young enough to feed the rolling today/week/month figures. Turns
     /// that age past `recentWindow` are folded into `oldDays` and released —
@@ -109,6 +112,10 @@ actor JSONLAggregator: CostLogAggregating {
     private var oldDays: [Date: DayAgg] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
+    /// Same format without the fractional-seconds requirement. Real Claude Code logs
+    /// always carry fractions, but a writer that stops doing so must not silently cost
+    /// us every turn's timestamp.
+    private let isoFormatterNoFraction: ISO8601DateFormatter
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the
     /// month boundary is never clipped.
@@ -129,6 +136,9 @@ actor JSONLAggregator: CostLogAggregating {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        self.isoFormatterNoFraction = plain
     }
 
     func refresh() async {
@@ -367,9 +377,11 @@ actor JSONLAggregator: CostLogAggregating {
 
         let firstScan = !initialized
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
+        var seenPaths = Set<String>()
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
+            seenPaths.insert(url.path)
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
             let mtime = values?.contentModificationDate ?? .distantPast
 
@@ -391,6 +403,12 @@ actor JSONLAggregator: CostLogAggregating {
                 ingest(parseFile(at: url))
             }
         }
+
+        // Offsets for files the enumerator no longer returns — a deleted project, a
+        // cleared session — would otherwise be carried for the life of the process.
+        if fileOffsets.count > seenPaths.count {
+            fileOffsets = fileOffsets.filter { seenPaths.contains($0.key) }
+        }
     }
 
     private func parseFile(at url: URL) -> [CLITurn] {
@@ -405,12 +423,12 @@ actor JSONLAggregator: CostLogAggregating {
         defer { try? handle.close() }
         do { try handle.seek(toOffset: start) } catch { return [] }
         guard let data = try? handle.readToEnd() else { return [] }
-        fileOffsets[path] = size
 
         // Claude Code stores sessions under ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
         // The project slug is the parent directory name (an encoded absolute path).
         let projectSlug = url.deletingLastPathComponent().lastPathComponent
         var turns: [CLITurn] = []
+        var consumedInChunk = 0
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let base = raw.baseAddress else { return }
             var lineStart = 0
@@ -423,9 +441,17 @@ actor JSONLAggregator: CostLogAggregating {
                         }
                     }
                     lineStart = i + 1
+                    consumedInChunk = lineStart
                 }
             }
         }
+        // Only past the last newline, never to `size`. A poll can land between the
+        // write of a line's bytes and its terminator, and marking the whole file
+        // consumed skipped that half-written line AND guaranteed it would never be
+        // read again — the turn was lost for good. Leaving the offset short makes the
+        // next poll re-read the line whole. Unchanged when the chunk holds no newline
+        // at all, which is the same situation stretched over more than one poll.
+        fileOffsets[path] = start + UInt64(consumedInChunk)
         return turns
     }
 
@@ -448,7 +474,13 @@ actor JSONLAggregator: CostLogAggregating {
         }
 
         let tsStr = (any["timestamp"] as? String) ?? ""
-        let ts = isoFormatter.date(from: tsStr) ?? Date()
+        // A line we can't date must be dropped, not billed as "now": the old
+        // `?? Date()` put a turn from an unparseable line into today's spend and into
+        // whatever rate window happens to be open, which is the one place a wrong
+        // answer is worse than no answer. Fractions first (what Claude Code writes),
+        // then plain ISO8601 for a writer that stops emitting them.
+        guard let ts = isoFormatter.date(from: tsStr) ?? isoFormatterNoFraction.date(from: tsStr)
+        else { return nil }
         // Older logs may lack a message id — fall back to a content identity so exact
         // duplicate lines still dedupe.
         let id = msgID.isEmpty

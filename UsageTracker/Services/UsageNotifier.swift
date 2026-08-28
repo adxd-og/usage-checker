@@ -14,10 +14,18 @@ final class UsageNotifier {
     /// a 60-second poll doesn't repeat the same nudge — but a *new* window can nudge again.
     private var firedForWindow: [String: Double]
 
-    private static let firedLevelsKey = "notifierFiredLevels"
-    private static let firedWindowsKey = "notifierFiredWindows"
+    static let firedLevelsKey = "notifierFiredLevels"
+    static let firedWindowsKey = "notifierFiredWindows"
     /// How close to a reset counts as "about to start over".
     private static let resetLead: TimeInterval = 15 * 60
+    /// How far a reading has to fall below the level it fired at before that level is
+    /// armed again. See `thresholdOutcome`.
+    nonisolated static let rearmMargin = 3
+    /// Two reset times this close are the same window. The stamp is a double that
+    /// round-trips through the preferences plist and comes from a server field that
+    /// nothing stops from moving by a fraction of a second between polls; an exact
+    /// inequality would replay the alert on every poll if it did.
+    private static let windowMatchTolerance: TimeInterval = 2
 
     private init() {
         lastFiredKey = UserDefaults.standard.dictionary(forKey: Self.firedLevelsKey) as? [String: Int] ?? [:]
@@ -28,6 +36,45 @@ final class UsageNotifier {
         guard lastFiredKey[key] != level else { return }
         lastFiredKey[key] = level
         UserDefaults.standard.set(lastFiredKey, forKey: Self.firedLevelsKey)
+    }
+
+    /// Drops every "already fired" record. A settings reset should let the alerts speak
+    /// again from the new thresholds rather than inherit the old ones' history.
+    func forgetFiredState() {
+        lastFiredKey = [:]
+        firedForWindow = [:]
+        UserDefaults.standard.removeObject(forKey: Self.firedLevelsKey)
+        UserDefaults.standard.removeObject(forKey: Self.firedWindowsKey)
+    }
+
+    /// What a bucket's current reading does to its stored alert level.
+    enum ThresholdOutcome: Equatable, Sendable {
+        /// Crossed a level it hasn't fired at yet.
+        case fire(level: Int)
+        /// Fell far enough below the level it fired at to arm that level again.
+        case rearm(level: Int)
+        case unchanged
+    }
+
+    /// The threshold rule, with hysteresis, as a pure function — the notification centre
+    /// is out of reach in tests, and this is the part worth testing.
+    ///
+    /// A percentage that hovers on a threshold used to alert over and over: 80 fired,
+    /// 79 cleared the stored level outright, 80 fired again, every couple of minutes.
+    /// Clearing now needs a real retreat — `rearmMargin` points below the level that
+    /// fired — and it drops to whichever level the reading still clears, so a fall from
+    /// 96% to 90% re-arms the 95% alert without replaying the 80% one.
+    nonisolated static func thresholdOutcome(
+        percent: Int,
+        lastFired: Int,
+        mid: Int,
+        high: Int,
+        rearmMargin: Int = UsageNotifier.rearmMargin
+    ) -> ThresholdOutcome {
+        let level = percent >= high ? high : (percent >= mid ? mid : 0)
+        if level > lastFired { return .fire(level: level) }
+        if lastFired > 0, percent < lastFired - rearmMargin { return .rearm(level: level) }
+        return .unchanged
     }
 
     func requestAuthorizationIfNeeded() {
@@ -49,25 +96,28 @@ final class UsageNotifier {
                 for bucket in Self.watchableBuckets(for: service) {
                     let key = "\(service.id):\(bucket.id)"
                     let p = Int(bucket.clampedPercent.rounded())
-                    let bucketLevel: Int
-                    if p >= thresholdHigh { bucketLevel = thresholdHigh }
-                    else if p >= thresholdMid { bucketLevel = thresholdMid }
-                    else { bucketLevel = 0 }
 
-                    let prev = lastFiredKey[key] ?? 0
-                    if bucketLevel > prev {
-                        let critical = bucketLevel >= thresholdHigh
+                    switch Self.thresholdOutcome(
+                        percent: p,
+                        lastFired: lastFiredKey[key] ?? 0,
+                        mid: thresholdMid,
+                        high: thresholdHigh
+                    ) {
+                    case .fire(let level):
+                        let critical = level >= thresholdHigh
                         let resetPhrase = bucket.resetsAt < .distantFuture
                             ? " Resets \(formatReset(bucket.resetsAt))."
                             : ""
                         fire(
-                            title: "\(service.displayName) — \(bucket.label) at \(bucketLevel)%+",
+                            title: "\(service.displayName) — \(bucket.label) at \(level)%+",
                             body: "Currently \(p)%.\(resetPhrase)",
                             critical: critical
                         )
-                        rememberFired(bucketLevel, for: key)
-                    } else if bucketLevel == 0 {
-                        rememberFired(0, for: key)
+                        rememberFired(level, for: key)
+                    case .rearm(let level):
+                        rememberFired(level, for: key)
+                    case .unchanged:
+                        break
                     }
                 }
             }
@@ -187,7 +237,7 @@ final class UsageNotifier {
         critical: Bool = false
     ) {
         let stamp = window.timeIntervalSince1970
-        guard firedForWindow[key] != stamp else { return }
+        if let fired = firedForWindow[key], abs(fired - stamp) < Self.windowMatchTolerance { return }
         firedForWindow[key] = stamp
         // Entries for windows long past are dead weight; drop them as we go.
         let cutoff = Date().addingTimeInterval(-24 * 3600).timeIntervalSince1970
@@ -224,17 +274,41 @@ final class UsageNotifier {
 
     // MARK: - Daily summary
 
+    /// Local calendar day key, "2026-08-27".
+    ///
+    /// The stored key used to be `ISO8601DateFormatter().string(from: startOfDay)` — a
+    /// GMT rendering of a *local* midnight, so the stored string moved with the machine's
+    /// timezone and told you nothing about which local day it meant. Built per call
+    /// rather than cached in a static so a timezone change takes effect immediately.
+    nonisolated static func dayKey(for date: Date, calendar: Calendar = .current) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = calendar
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
+    /// Whether a stored `lastDailySummaryDay` refers to `day`. Understands the current
+    /// local key and the GMT ISO8601 timestamp older builds wrote, so upgrading doesn't
+    /// send a second summary on the day it happens.
+    nonisolated static func isSameDay(storedKey: String, as day: Date, calendar: Calendar = .current) -> Bool {
+        guard !storedKey.isEmpty else { return false }
+        if storedKey == dayKey(for: day, calendar: calendar) { return true }
+        guard let legacy = ISO8601DateFormatter().date(from: storedKey) else { return false }
+        return calendar.isDate(legacy, inSameDayAs: day)
+    }
+
     private func checkDailySummary(at now: Date, inQuiet: Bool) {
         guard SettingsStore.shared.dailySummaryEnabled, !inQuiet else { return }
         let cal = Calendar.current
         let today = cal.startOfDay(for: now)
-        let formatter = ISO8601DateFormatter()
-        let todayKey = formatter.string(from: today)
-        guard SettingsStore.shared.lastDailySummaryDay != todayKey else { return }
+        guard !Self.isSameDay(storedKey: SettingsStore.shared.lastDailySummaryDay, as: today, calendar: cal)
+        else { return }
         let hour = cal.component(.hour, from: now)
         guard hour >= SettingsStore.shared.dailySummaryHour else { return }
 
-        SettingsStore.shared.lastDailySummaryDay = todayKey
+        SettingsStore.shared.lastDailySummaryDay = Self.dayKey(for: today, calendar: cal)
         Task {
             await JSONLAggregator.shared.refresh()
             let breakdown = await JSONLAggregator.shared.breakdown()

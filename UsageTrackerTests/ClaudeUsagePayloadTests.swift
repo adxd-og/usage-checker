@@ -105,6 +105,99 @@ final class ClaudeUsagePayloadTests: XCTestCase {
         XCTAssertEqual(extra.utilization, 78.2, accuracy: 0.0001)
     }
 
+    private func extraUsage(_ json: String) throws -> ExtraUsage {
+        try XCTUnwrap(
+            ClaudeOAuthProvider.usage(fromPayload: Data("{\"extra_usage\":\(json)}".utf8)).extraUsage
+        )
+    }
+
+    func testTheUsedOverLimitRatioBeatsTheReportedUtilization() throws {
+        // In the account above the two happen to agree (15640/20000 == 0.782), which
+        // makes that test blind to which one is being read. Here they disagree, and the
+        // ratio has to win — it is what the "$100.00 / $200" text beside the bar says.
+        let extra = try extraUsage(
+            #"{"is_enabled": true, "monthly_limit": 20000, "used_credits": 10000, "utilization": 0.782}"#
+        )
+        XCTAssertEqual(extra.utilization, 50.0, accuracy: 0.0001)
+        XCTAssertEqual(extra.usedCredits, 100.0, accuracy: 0.0001)
+        XCTAssertEqual(extra.monthlyLimit, 200.0, accuracy: 0.0001)
+    }
+
+    func testWithoutALimitTheReportedFractionIsScaledToPercent() throws {
+        let extra = try extraUsage(
+            #"{"is_enabled": true, "monthly_limit": 0, "used_credits": 10000, "utilization": 0.782}"#
+        )
+        XCTAssertEqual(extra.utilization, 78.2, accuracy: 0.0001)
+    }
+
+    func testALegacyWindowsUtilizationIsAlreadyAPercent() throws {
+        // 1.0 means one percent. Reading it as a 0–1 fraction turned a barely-touched
+        // window into a full one.
+        let payload = """
+        {
+          "five_hour": { "utilization": 1.0 },
+          "seven_day": { "used_percentage": 22 }
+        }
+        """
+        let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets
+        XCTAssertEqual(buckets.first { $0.id == "five_hour" }?.utilization, 1.0)
+        // `used_percentage` is the older field name and stands in when there is no
+        // `utilization` at all.
+        XCTAssertEqual(buckets.first { $0.id == "seven_day" }?.utilization, 22.0)
+    }
+
+    // MARK: - Dollar pools and the spend object
+
+    /// The shapes the live payload actually carries next to the rate windows: five
+    /// codename keys that are null on this account, a dollar-denominated pool that
+    /// isn't switched on, and the usage-credits `spend` object.
+    private let noiseAroundTheWindows = """
+    {
+      "five_hour": { "utilization": 11.0, "resets_at": "2026-08-27T18:00:00.000Z" },
+      "tangelo": null,
+      "iguana_necktie": null,
+      "cinder_cove": null,
+      "amber_ladder": null,
+      "juniper_tide": null,
+      "nimbus_quill": {
+        "utilization": 0.0, "resets_at": null,
+        "limit_dollars": null, "used_dollars": null, "remaining_dollars": null
+      },
+      "spend": {
+        "used": { "amount_minor": 0, "currency": "USD", "exponent": 2 },
+        "limit": null, "percent": 0, "enabled": false, "can_purchase_credits": false
+      }
+    }
+    """
+
+    func testCodenameKeysAndAnUnfundedDollarPoolProduceNoBuckets() throws {
+        let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(noiseAroundTheWindows.utf8)).buckets
+        XCTAssertEqual(buckets.map(\.id), ["five_hour"], "only the real window survives")
+        XCTAssertNil(
+            buckets.first { $0.id == "nimbus_quill" },
+            "a dollar pool with no limit is not a 0% rate window — it showed as 'Nimbus Quill 0%'"
+        )
+        XCTAssertNil(buckets.first { $0.id == "spend" })
+    }
+
+    func testAFundedDollarPoolBecomesItsOwnWindow() throws {
+        let payload = """
+        {
+          "five_hour": { "utilization": 11.0, "resets_at": "2026-08-27T18:00:00.000Z" },
+          "nimbus_quill": {
+            "utilization": 24, "resets_at": null,
+            "limit_dollars": 5000, "used_dollars": 1200, "remaining_dollars": 3800
+          }
+        }
+        """
+        let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets
+        let pool = try XCTUnwrap(buckets.first { $0.id == "nimbus_quill" })
+        XCTAssertEqual(pool.utilization, 24)
+        XCTAssertEqual(pool.label, "Nimbus Quill")
+        XCTAssertEqual(pool.kind, .other)
+        XCTAssertEqual(pool.resetsAt, .distantFuture)
+    }
+
     func testExtraUsageIsNotMistakenForARateWindow() throws {
         // `extra_usage` also carries a `utilization` field; it must not become a bucket.
         XCTAssertNil(try decode().buckets.first { $0.id == "extra_usage" })

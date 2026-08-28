@@ -82,9 +82,13 @@ enum ClaudeKeychainReader {
             }
         case errSecItemNotFound:
             throw ClaudeKeychainError.notFound
-        case errSecInteractionNotAllowed:
-            throw ClaudeKeychainError.interactionRequired
-        case errSecAuthFailed where !allowingUI:
+        case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled:
+            // Non-interactive, these mean "the ACL would have needed your approval".
+            // Interactive, they mean the user saw the dialog and said no — Deny comes
+            // back as errSecAuthFailed and the close box as errSecUserCanceled (-128).
+            // Both used to fall through to `.readFailed`, so the Settings button
+            // answered a deliberate refusal with "Keychain read failed (status -128)".
+            // The situation is the same either way: we need permission we don't have.
             throw ClaudeKeychainError.interactionRequired
         default:
             throw ClaudeKeychainError.readFailed(status)

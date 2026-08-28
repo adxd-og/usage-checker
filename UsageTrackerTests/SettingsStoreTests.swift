@@ -27,7 +27,6 @@ final class SettingsStoreTests: XCTestCase {
     @MainActor
     private func scrambleEverything(_ s: SettingsStore) {
         s.refreshIntervalSeconds = 300
-        s.autoLaunch = !SettingsStore.Defaults.autoLaunch
         s.anthropicBetaHeader = "oauth-1999-01-01"
         s.preferAdminWhenAvailable = !SettingsStore.Defaults.preferAdminWhenAvailable
         s.codexProviderEnabled = !SettingsStore.Defaults.codexProviderEnabled
@@ -50,12 +49,22 @@ final class SettingsStoreTests: XCTestCase {
         s.menuBarHiddenServicesRaw = "codex,gemini"
         s.menuBarNumberMode = .never
         s.hasSeenOnboarding = !SettingsStore.Defaults.hasSeenOnboarding
+
+        // Preferences that live outside this object but are still preferences. Written
+        // by key rather than through the state objects, so the scramble doesn't kick off
+        // a dashboard reload against the developer's real history log.
+        UserDefaults.standard.set("codex", forKey: DashboardState.selectionKey)
+        UserDefaults.standard.set("grok", forKey: "selectedProviderTab")
+        UserDefaults.standard.set(["claude:five_hour": 95], forKey: UsageNotifier.firedLevelsKey)
+        UserDefaults.standard.set(
+            ["reset:claude:five_hour": Date().timeIntervalSince1970],
+            forKey: UsageNotifier.firedWindowsKey
+        )
     }
 
     @MainActor
     private func assertAllDefaults(_ s: SettingsStore, _ message: String = "") {
         XCTAssertEqual(s.refreshIntervalSeconds, SettingsStore.Defaults.refreshIntervalSeconds, message)
-        XCTAssertEqual(s.autoLaunch, SettingsStore.Defaults.autoLaunch, message)
         XCTAssertEqual(s.anthropicBetaHeader, SettingsStore.Defaults.anthropicBetaHeader, message)
         XCTAssertEqual(s.preferAdminWhenAvailable, SettingsStore.Defaults.preferAdminWhenAvailable, message)
         XCTAssertEqual(s.codexProviderEnabled, SettingsStore.Defaults.codexProviderEnabled, message)
@@ -78,6 +87,11 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.menuBarHiddenServicesRaw, SettingsStore.Defaults.menuBarHiddenServicesRaw, message)
         XCTAssertEqual(s.menuBarNumberMode, SettingsStore.Defaults.menuBarNumberMode, message)
         XCTAssertEqual(s.hasSeenOnboarding, SettingsStore.Defaults.hasSeenOnboarding, message)
+
+        XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
+        XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
+        XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedLevelsKey), message)
+        XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedWindowsKey), message)
     }
 
     @MainActor
@@ -89,10 +103,35 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertNotEqual(settings.refreshIntervalSeconds, SettingsStore.Defaults.refreshIntervalSeconds)
         XCTAssertNotEqual(settings.menuBarNumberMode, SettingsStore.Defaults.menuBarNumberMode)
         XCTAssertNotEqual(settings.hasSeenOnboarding, SettingsStore.Defaults.hasSeenOnboarding)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: DashboardState.selectionKey), "codex")
 
         settings.resetToDefaults()
 
         assertAllDefaults(settings, "a setting survived resetToDefaults()")
+    }
+
+    /// The five the reset used to walk straight past. They aren't `@AppStorage`
+    /// properties on this object, which is exactly why they were missed.
+    @MainActor
+    func testResetAlsoForgetsTheChoicesStoredOutsideThisObject() {
+        let settings = SettingsStore.shared
+        scrambleEverything(settings)
+
+        settings.resetToDefaults()
+
+        XCTAssertEqual(
+            DashboardState.shared.selectedService, "claude",
+            "the dashboard stayed on whichever provider was picked"
+        )
+        XCTAssertNil(
+            UserDefaults.standard.string(forKey: "selectedProviderTab"),
+            "the popover stayed on whichever tab was picked"
+        )
+        XCTAssertNil(
+            UserDefaults.standard.dictionary(forKey: UsageNotifier.firedLevelsKey),
+            "'already alerted at 95%' outlived the thresholds that produced it"
+        )
+        XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedWindowsKey))
     }
 
     @MainActor

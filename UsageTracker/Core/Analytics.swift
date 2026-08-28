@@ -8,28 +8,53 @@ struct BurnRatePrediction: Sendable, Equatable {
     let percentPerMinute: Double
     /// Bucket the prediction is for ("five_hour" or "seven_day").
     let bucketId: String
-    /// True if the prediction is older than ~30 minutes and may be stale.
+    /// True when the newest reading the prediction is built from is already old
+    /// enough that acting on it would be a guess (see `Analytics.staleAfter`).
     let isStale: Bool
 }
 
 enum Analytics {
+    /// A fall this large between two consecutive readings is a window starting over,
+    /// not usage going down — a rate limit only ever climbs until it resets.
+    static let resetDropThreshold: Double = 10
+
+    /// How old the newest reading may be before the prediction stops being actionable.
+    ///
+    /// This used to be 30 minutes, which equalled the default lookback: every point in
+    /// the slice was younger than the cutoff by construction, so `isStale` could never
+    /// become true at all. Ten minutes is the honest figure — the pace alert warns 45
+    /// minutes ahead, and a reading from ten minutes ago no longer says what is
+    /// happening now.
+    static let staleAfter: TimeInterval = 10 * 60
+
     /// Burn rate computed from the last `lookback` minutes of history for a single bucket.
+    ///
+    /// The slice is sorted before it is read (records arrive per provider and nothing
+    /// guaranteed their order) and then cut at the newest reset inside it. Without the
+    /// cut, a session that went 92% → 4% → 38% over 25 minutes had a *negative*
+    /// end-to-end delta and produced no prediction for a full lookback — which is
+    /// exactly the half hour after a reset when "burning fast" is worth saying.
     static func burnRate(records: [HistoryRecord], bucketId: String, lookbackMinutes: Double = 30) -> BurnRatePrediction? {
         let now = Date()
         let cutoff = now.addingTimeInterval(-lookbackMinutes * 60)
-        let relevant = records
+        let series = records
             .filter { $0.timestamp >= cutoff }
             .compactMap { rec -> (Date, Double)? in
                 guard let v = rec.percent(for: bucketId) else { return nil }
                 return (rec.timestamp, v)
             }
+            .sorted { $0.0 < $1.0 }
 
+        let relevant = Self.sinceLastReset(series)
         guard relevant.count >= 2 else { return nil }
 
         let first = relevant.first!
         let last = relevant.last!
+        // `>=`, not `>`: the history store spaces points at least 30 seconds apart, so
+        // two points at exactly the minimum legal spacing are a legitimate trend and
+        // were being thrown away.
         let deltaMinutes = last.0.timeIntervalSince(first.0) / 60.0
-        guard deltaMinutes > 0.5 else { return nil }
+        guard deltaMinutes >= 0.5 else { return nil }
 
         let deltaPercent = last.1 - first.1
         let rate = deltaPercent / deltaMinutes
@@ -47,8 +72,19 @@ enum Analytics {
             secondsToLimit: secondsToLimit,
             percentPerMinute: max(0, rate),
             bucketId: bucketId,
-            isStale: staleness > 30 * 60
+            isStale: staleness > staleAfter
         )
+    }
+
+    /// The tail of a chronological series that belongs to the current window: everything
+    /// up to and including the newest reset is dropped, so the rate is measured on what
+    /// has happened since. Returned as a slice — the caller only needs its ends.
+    static func sinceLastReset(_ series: [(Date, Double)]) -> ArraySlice<(Date, Double)> {
+        var start = series.startIndex
+        for i in series.indices.dropFirst() where series[i - 1].1 - series[i].1 > resetDropThreshold {
+            start = i
+        }
+        return series[start...]
     }
 }
 

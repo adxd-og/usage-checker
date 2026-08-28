@@ -147,6 +147,19 @@ actor HistoryStore {
         return records.filter { $0.timestamp >= cutoff && $0.serviceID == service }
     }
 
+    /// Recent records for every service at once, keyed by service id. One pass over the
+    /// log instead of one per provider: the popover needs a burn rate for each tab, and
+    /// asking `records(since:service:)` per provider re-scanned the whole array every
+    /// time.
+    func recentByService(since cutoff: Date) -> [String: [HistoryRecord]] {
+        loadIfNeeded()
+        var out: [String: [HistoryRecord]] = [:]
+        for record in records where record.timestamp >= cutoff {
+            out[record.serviceID, default: []].append(record)
+        }
+        return out
+    }
+
     /// Service ids that have actually recorded something — what the dashboard's
     /// provider picker offers.
     func recordedServices() -> [String] {

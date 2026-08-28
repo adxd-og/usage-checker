@@ -244,7 +244,11 @@ struct PopoverView: View {
                 if let service = selectedService {
                     ServiceSection(
                         service: service,
-                        burn: service.id == dashboard.selectedService ? dashboard.sessionBurn : nil,
+                        // This tab's own burn rate, not the dashboard's selection.
+                        // The two are separate persisted choices, so keying off the
+                        // dashboard meant the verdict either went missing or, worse,
+                        // described a provider that isn't on screen.
+                        burn: dashboard.burn(for: service.id),
                         showsHeader: service.state != .ok || showsTabBar
                     )
                 }

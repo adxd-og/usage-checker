@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] — 2026-08-28
+
+Patch from a five-part external code review of 1.12.0 (keychain, aggregators,
+notifier, dashboard, test quality), every finding verified against the code
+before being fixed and several refuted. Tests: 96 → 176.
+
+### Fixed
+- **Keychain writes are gated like reads.** `save()`/`clear()` on the
+  credentials cache checked nothing; with a locked login keychain and a
+  `~/.claude/.credentials.json` present, a background poll could still raise
+  the password panel through the cache *write*. A user who clicks Deny on the
+  interactive dialog now gets the permission message, not "status -128".
+- **A 401 can't replace the cache with an older token.** The renewal read
+  after a 401 accepted whatever Claude Code's sources held — a stale
+  credentials file could overwrite the newer cached token.
+- **Burn rate survives a session reset.** The prediction used the first and
+  last points of the 30-minute lookback; after a reset (92% → 4% → 38%) the
+  delta was negative and "burning fast" stayed silent for up to half an hour —
+  exactly when it matters. The rate is now measured on the window that is open
+  now. Staleness is also reachable again (10 minutes), and the minimum legal
+  30-second spacing between points counts.
+- **Threshold alerts don't re-fire on a rounding wobble** (80 → 79 → 80). The
+  fired level clears only after usage drops a few points below the threshold.
+- **Claude Code's last log line is never lost.** The Claude aggregator marked
+  a partially written last line as consumed; it now advances only past the
+  last newline (as the Grok aggregator already did). A line whose timestamp
+  can't be parsed is dropped instead of being billed as "now".
+- **Grok costs: `costUsdTicks: 0` means unpriced, not free**, negative token
+  counts are clamped, and a turn total larger than its per-model split is no
+  longer silently discarded.
+- **Dashboard selection can't paint one provider's costs under another's
+  title.** Switching providers mid-scan discarded nothing; a refresh started
+  for the previous selection could publish after the switch. Refreshes now
+  carry the service and generation they were started for.
+- **A Grok-only user is no longer stuck on Claude in the dashboard**, and a
+  provider disabled in Settings is no longer selectable there. The popover's
+  burn-rate verdict follows the popover's own tab, not the dashboard's.
+- **Reset all settings also resets** the dashboard and popover selections,
+  the peek shortcut, remembered alert levels, and Launch at Login.
+- **The last visible provider can't be hidden from the menu bar.**
+- **Unfunded dollar pools no longer appear as windows.** The usage payload
+  carries codenamed pools (`nimbus_quill` and friends) with dollar fields;
+  one of them reported `utilization: 0` and showed up as a 0% window. A pool
+  renders only when it has a limit. The daily-summary day key is a local
+  calendar day (the GMT rendering was fragile across timezone changes).
+
+### Changed
+- Test suite hardened per the review: a tautological test removed, two
+  coincidental fixtures replaced with ones where the alternatives disagree,
+  `NotNil` assertions replaced with exact values, boundary and guard cases
+  added for pacing, burn rate, payload decoding, history, pricing parse, and
+  the notifier; new `UsageSnapshot` tests for the headline rule. Every group
+  mutation-checked.
+
 ## [1.12.0] — 2026-08-28
 
 The keychain release. The permission dialog that came back every few hours

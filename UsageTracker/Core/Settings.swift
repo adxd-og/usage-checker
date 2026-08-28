@@ -1,4 +1,5 @@
 import Foundation
+import KeyboardShortcuts
 
 /// When the menu bar shows a percentage next to the bar.
 enum MenuBarNumberMode: String, CaseIterable, Identifiable, Sendable {
@@ -43,7 +44,6 @@ final class SettingsStore: ObservableObject {
     /// drifts apart the moment a setting is added.
     enum Defaults {
         static let refreshIntervalSeconds = 60
-        static let autoLaunch = false
         static let anthropicBetaHeader = "oauth-2025-04-20"
         static let preferAdminWhenAvailable = false
         static let claudeWeeklyBudgetUSD: Double = 0
@@ -73,7 +73,9 @@ final class SettingsStore: ObservableObject {
     }
 
     @AppStorage("refreshIntervalSeconds") var refreshIntervalSeconds: Int = Defaults.refreshIntervalSeconds
-    @AppStorage("autoLaunch") var autoLaunch: Bool = Defaults.autoLaunch
+    // No `autoLaunch` key: launch at login is `SMAppService` state, and the Settings
+    // toggle has always read and written `LaunchAtLogin.isEnabled`. The stored
+    // preference was written by nothing and read by nothing but its own reset.
     @AppStorage("anthropicBetaHeader") var anthropicBetaHeader: String = Defaults.anthropicBetaHeader
     @AppStorage("preferAdminWhenAvailable") var preferAdminWhenAvailable: Bool = Defaults.preferAdminWhenAvailable
     // Defaults to on when the Codex CLI has been signed into on this machine.
@@ -113,9 +115,12 @@ final class SettingsStore: ObservableObject {
     /// Settings button so adding a setting means touching one file, not two — the
     /// old button reset ten of them and quietly left providers, budget, menu bar
     /// options, pace/reset alerts and onboarding as they were.
+    ///
+    /// Launch at login is the one exception and stays with the caller: it is OS state
+    /// (`SMAppService`), not a preference, and unregistering a login item from here
+    /// would fire from the test suite as well.
     func resetToDefaults() {
         refreshIntervalSeconds = Defaults.refreshIntervalSeconds
-        autoLaunch = Defaults.autoLaunch
         anthropicBetaHeader = Defaults.anthropicBetaHeader
         preferAdminWhenAvailable = Defaults.preferAdminWhenAvailable
         codexProviderEnabled = Defaults.codexProviderEnabled
@@ -138,7 +143,21 @@ final class SettingsStore: ObservableObject {
         menuBarHiddenServicesRaw = Defaults.menuBarHiddenServicesRaw
         menuBarNumberMode = Defaults.menuBarNumberMode
         hasSeenOnboarding = Defaults.hasSeenOnboarding
+
+        // Choices that live in the views and state objects rather than in a property
+        // here. They are still preferences, so a reset that leaves them behind isn't
+        // one: the dashboard stayed on whichever provider was picked, the popover on
+        // whichever tab, and the recorded hotkey kept firing.
+        DashboardState.shared.resetSelection()
+        UserDefaults.standard.removeObject(forKey: Self.popoverTabKey)
+        KeyboardShortcuts.reset(.peekUsage)
+        // "Already alerted at 80%" is state the old thresholds produced; after a reset
+        // the new ones should be able to speak.
+        UsageNotifier.shared.forgetFiredState()
     }
+
+    /// PopoverView's persisted tab. Owned by the view, reset here.
+    private static let popoverTabKey = "selectedProviderTab"
 
     var menuBarHiddenServices: Set<String> {
         get { Set(menuBarHiddenServicesRaw.split(separator: ",").map(String.init)) }
