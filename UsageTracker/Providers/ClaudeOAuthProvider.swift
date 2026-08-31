@@ -256,8 +256,9 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     /// refreshing on our own would invalidate the CLI's copy and steal the session
     /// (and lose the race the other half of the time). We only ever read, cheapest
     /// source first: our own cache → the credentials file (no keychain at all) →
-    /// a silent probe of Claude Code's item. Every one of those is prompt-proof;
-    /// the interactive read lives behind the Settings button alone.
+    /// a silent probe of Claude Code's item → the same item read through
+    /// `/usr/bin/security`, whose access survives our renames. Every one of those is
+    /// prompt-proof; the interactive read lives behind the Settings button alone.
     private func resolveCredentials(now: Date) throws -> ClaudeCredentials.OAuth {
         let cached = ClaudeCredentialsCache.load()?.claudeAiOauth
         if let cached, !Self.isExpired(cached, at: now) { return cached }
@@ -290,8 +291,14 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             winner = file
             bestExpiry = file.expiresAt
         }
-        if let probed = try? ClaudeKeychainReader.readNonInteractive().claudeAiOauth,
-           probed.expiresAt > bestExpiry {
+        // Then Claude Code's own item. The direct silent read only works while this
+        // binary is on that item's ACL trust list; a rename or a re-sign drops it off
+        // and the read can then only ever fail. `security` wrote the item, so it stays
+        // on the list — delegating to it is what keeps the cache refreshable without
+        // ever putting a permission panel on screen.
+        let probed = (try? ClaudeKeychainReader.readNonInteractive().claudeAiOauth)
+            ?? ClaudeKeychainReader.readViaSecurityTool()?.claudeAiOauth
+        if let probed, probed.expiresAt > bestExpiry {
             winner = probed
         }
         return winner

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.13.1] — 2026-08-31
+
+### Fixed
+- Claude went signed-out roughly once per token lifetime and only came back after
+  pressing "Request keychain access now". A keychain ACL trusts *binaries*, so the
+  rename to Omelette dropped the app off `Claude Code-credentials`' trust list: with
+  the prompt suppressed (1.12.0's silent keychain) its background read could only ever
+  fail, leaving the app's own cache as the sole source and nothing able to refresh it.
+  The item's ACL does trust `/usr/bin/security` — the tool Claude Code writes it with —
+  so the read is now delegated there when the direct one fails, guarded by an ACL
+  preflight so an untrusted `security` is never invoked and can't raise a panel.
+
 ## [1.13.0] — 2026-08-28
 
 ### Added

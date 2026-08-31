@@ -90,6 +90,66 @@ enum KeychainNoUI {
         return (bits & kSecUnlockStateStatus) != 0
     }
 
+    /// Whether the item's access list lets the binary at `path` decrypt it — i.e.
+    /// whether that binary can read the secret with no permission panel.
+    ///
+    /// This is the preflight for the one read the app delegates to another binary.
+    /// Reading an ACL is metadata access, not secret access: measured here, it returns
+    /// the trust list from a binary the list doesn't name, with no dialog. Asking first
+    /// is what keeps the delegated read prompt-proof — `security` inherits none of this
+    /// process's no-UI state, so an untrusted `security` would raise from a background
+    /// poll exactly the panel this file exists to prevent.
+    static func aclTrusts(path: String, service: String) -> Bool {
+        guard let acl = aclFns else { return false }
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitOne,
+            kSecReturnRef as String: true,
+        ]
+        var ref: AnyObject?
+        guard SecItemCopyMatching(query as CFDictionary, &ref) == errSecSuccess,
+              let item = ref,
+              CFGetTypeID(item) == acl.itemTypeID()
+        else { return false }
+        let keychainItem = unsafeDowncast(item, to: SecKeychainItem.self)
+
+        var access: SecAccess?
+        guard acl.copyAccess(keychainItem, &access) == errSecSuccess, let access else { return false }
+        var list: CFArray?
+        guard acl.copyACLList(access, &list) == errSecSuccess,
+              let acls = list as? [SecACL]
+        else { return false }
+
+        let wanted = URL(fileURLWithPath: path).standardizedFileURL.path
+        for entry in acls {
+            // Only the ACL that governs decryption decides whether reading prompts;
+            // the others cover writing, integrity and the partition list.
+            guard let auths = acl.copyAuthorizations(entry) as? [String],
+                  auths.contains("ACLAuthorizationDecrypt")
+            else { continue }
+            var apps: CFArray?
+            var description: CFString?
+            var prompt = SecKeychainPromptSelector()
+            guard acl.copyContents(entry, &apps, &description, &prompt) == errSecSuccess else { continue }
+            guard let trusted = apps as? [SecTrustedApplication] else {
+                // A nil app list means "any application" — nothing to check against.
+                return true
+            }
+            for app in trusted {
+                var data: CFData?
+                guard acl.copyAppData(app, &data) == errSecSuccess,
+                      let bytes = data as Data?,
+                      let raw = String(data: bytes, encoding: .utf8)
+                else { continue }
+                // The path arrives NUL-terminated.
+                let trimmed = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\0"))
+                if URL(fileURLWithPath: trimmed).standardizedFileURL.path == wanted { return true }
+            }
+        }
+        return false
+    }
+
     // `SecKeychainCopyDefault` / `SecKeychainGetStatus` are deprecated, and there is no
     // modern replacement that reports lock state. Bind them at runtime so the
     // deprecation never becomes a build error.
@@ -117,6 +177,47 @@ enum KeychainNoUI {
             unsafeBitCast($0, to: SetInteractionFn.self)
         }
         return (copyDefault, getStatus, setInteraction)
+    }()
+
+    // The ACL entry points are deprecated too, and bound the same way for the same
+    // reason. All-or-nothing: a partial set can't answer the question, so `aclTrusts`
+    // reports "not trusted" and the delegated read is skipped.
+    private typealias CopyAccessFn = @convention(c) (SecKeychainItem, UnsafeMutablePointer<SecAccess?>) -> OSStatus
+    private typealias CopyACLListFn = @convention(c) (SecAccess, UnsafeMutablePointer<CFArray?>?) -> OSStatus
+    private typealias CopyContentsFn = @convention(c) (
+        SecACL,
+        UnsafeMutablePointer<CFArray?>?,
+        UnsafeMutablePointer<CFString?>?,
+        UnsafeMutablePointer<SecKeychainPromptSelector>?
+    ) -> OSStatus
+    private typealias CopyAuthorizationsFn = @convention(c) (SecACL) -> CFArray
+    private typealias CopyAppDataFn = @convention(c) (SecTrustedApplication, UnsafeMutablePointer<CFData?>) -> OSStatus
+    private typealias ItemTypeIDFn = @convention(c) () -> CFTypeID
+
+    private static let aclFns: (
+        copyAccess: CopyAccessFn,
+        copyACLList: CopyACLListFn,
+        copyContents: CopyContentsFn,
+        copyAuthorizations: CopyAuthorizationsFn,
+        copyAppData: CopyAppDataFn,
+        itemTypeID: ItemTypeIDFn
+    )? = {
+        guard let handle = dlopen("/System/Library/Frameworks/Security.framework/Security", RTLD_NOW),
+              let copyAccess = dlsym(handle, "SecKeychainItemCopyAccess"),
+              let copyACLList = dlsym(handle, "SecAccessCopyACLList"),
+              let copyContents = dlsym(handle, "SecACLCopyContents"),
+              let copyAuthorizations = dlsym(handle, "SecACLCopyAuthorizations"),
+              let copyAppData = dlsym(handle, "SecTrustedApplicationCopyData"),
+              let itemTypeID = dlsym(handle, "SecKeychainItemGetTypeID")
+        else { return nil }
+        return (
+            unsafeBitCast(copyAccess, to: CopyAccessFn.self),
+            unsafeBitCast(copyACLList, to: CopyACLListFn.self),
+            unsafeBitCast(copyContents, to: CopyContentsFn.self),
+            unsafeBitCast(copyAuthorizations, to: CopyAuthorizationsFn.self),
+            unsafeBitCast(copyAppData, to: CopyAppDataFn.self),
+            unsafeBitCast(itemTypeID, to: ItemTypeIDFn.self)
+        )
     }()
 
     /// `kSecUseAuthenticationUIFail` is deprecated, so referencing it at compile time

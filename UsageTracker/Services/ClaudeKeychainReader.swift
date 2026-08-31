@@ -117,6 +117,61 @@ enum ClaudeKeychainReader {
         return status == errSecSuccess || KeychainNoUI.isInteractionRequired(status)
     }
 
+    /// The tool Claude Code writes its credential item with — and therefore a name the
+    /// item's ACL trusts, whatever this app happens to be called this month.
+    static let securityToolPath = "/usr/bin/security"
+
+    /// Silent read delegated to `/usr/bin/security`.
+    ///
+    /// A keychain ACL trusts *binaries*, by path and signature. Renaming or re-signing
+    /// this app drops it out of `Claude Code-credentials`' trust list, and from then on
+    /// its own silent read can only return `errSecAuthFailed` — the prompt is suppressed
+    /// by design, so nothing is left to refresh the cache from and the menu bar goes
+    /// signed-out roughly every time the access token expires.
+    ///
+    /// `security` is in that trust list because Claude Code writes the item through it,
+    /// so borrowing its access gets the current credentials with no panel and no ACL
+    /// surgery. Verified on this item: a direct silent read answers -25293 while the
+    /// delegated one returns the payload.
+    ///
+    /// Returns nil rather than throwing: every caller treats "nothing here" the same way,
+    /// and this source is an optional supplement to the two above it.
+    static func readViaSecurityTool(for service: String = ClaudeKeychainReader.service) -> ClaudeCredentials? {
+        // Locked keychain: `security` would raise a password panel this process can't
+        // suppress. Same gate as every other read here.
+        guard KeychainNoUI.isDefaultKeychainUnlocked else { return nil }
+        // And only when the ACL really names the tool. Without this check a changed
+        // Claude Code storage backend would turn a background poll into a dialog.
+        guard KeychainNoUI.aclTrusts(path: securityToolPath, service: service) else { return nil }
+        guard let data = runSecurityTool(service: service) else { return nil }
+        return try? JSONDecoder().decode(ClaudeCredentials.self, from: data)
+    }
+
+    /// Runs `security find-generic-password -w` and returns its stdout.
+    ///
+    /// The timeout is the backstop for the preflight above: if the tool ever does end up
+    /// facing a panel, it would sit there until the user answered, holding a poll open.
+    /// Killing it takes the request down with it.
+    private static func runSecurityTool(service: String, timeout: TimeInterval = 5) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: securityToolPath)
+        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        process.standardInput = FileHandle.nullDevice
+        do { try process.run() } catch { return nil }
+
+        let watchdog = DispatchWorkItem { process.terminate() }
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: watchdog)
+        // Read before waiting: waiting on a process whose pipe is full deadlocks.
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        watchdog.cancel()
+        guard process.terminationStatus == 0, !data.isEmpty else { return nil }
+        return data
+    }
+
     /// Claude Code stores credentials in a plain file on some setups (and always on Linux).
     /// Reading it needs no keychain access at all, so it's a free prompt-less source.
     static func readFromFile() -> ClaudeCredentials? {
