@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v1.13.1</title>
+      <pubDate>Mon, 31 Aug 2026 23:14:02 +0300</pubDate>
+      <sparkle:version>29</sparkle:version>
+      <sparkle:shortVersionString>1.13.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>Claude went signed-out roughly once per token lifetime and only came back after pressing "Request keychain access now". A keychain ACL trusts <em>binaries</em>, so the rename to Omelette dropped the app off <code>Claude Code-credentials</code>' trust list: with the prompt suppressed (1.12.0's silent keychain) its background read could only ever fail, leaving the app's own cache as the sole source and nothing able to refresh it. The item's ACL does trust <code>/usr/bin/security</code> — the tool Claude Code writes it with — so the read is now delegated there when the direct one fails, guarded by an ACL preflight so an untrusted <code>security</code> is never invoked and can't raise a panel.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v1.13.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v1.13.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="TEYsOR3Oet4LvFWWw4SY5JuA7DJhK4sSwv32iaUNpvSdqg7MwiVlG8ucaztIbWh+nfauOSqnpE5f2748zHNgBQ=="
+        length="15345522"/>
+    </item>
+    <item>
       <title>Omelette v1.13.0</title>
       <pubDate>Fri, 28 Aug 2026 15:56:50 +0300</pubDate>
       <sparkle:version>28</sparkle:version>
