@@ -18,11 +18,3 @@ extension View {
     }
 
 }
-
-/// Battery-style status color for a usage percentage: calm while comfortable,
-/// amber when high, red when critical. Shared by every gauge in the app.
-func usageStatusColor(_ percent: Double) -> Color {
-    if percent >= 90 { return .red }
-    if percent >= 70 { return .orange }
-    return .accentColor
-}
