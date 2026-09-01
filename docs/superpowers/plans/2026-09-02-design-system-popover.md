@@ -20,7 +20,7 @@
 - The widget extension keeps its own colour copy (`UsageTrackerWidget.swift:468`) — do not touch the widget in this phase.
 - New source files are picked up by xcodegen from `sources: - path: UsageTracker`; run `xcodegen generate` after adding files and before building. `UsageTracker.xcodeproj/` is generated and gitignored — never `git add` it.
 - Build: `xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug -derivedDataPath build/DerivedData build`.
-  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). If local signing of the test host fails, append `CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO`.
+  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). **Always append `ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""` to every `xcodebuild test` invocation** — `signing.xcconfig` turns on the hardened runtime, which blocks the `DYLD_INSERT_LIBRARIES` injection XCTest needs, and the runner then hangs for ~6 min with "The test runner hung before establishing connection" (verified in P1). Plain `build` keeps the real settings.
 - Commits end with the trailer lines
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and
   `Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X`.
