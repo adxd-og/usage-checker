@@ -33,14 +33,21 @@ enum AgentFixture {
     /// Codex `notify` argument: kebab-case keys, only `agent-turn-complete` exists today.
     static let codexTurnComplete = #"{"type":"agent-turn-complete","thread-id":"thr-9","turn-id":"turn-2","cwd":"/Users/me/Desktop/Orion Gate","input-messages":["ship it"],"last-assistant-message":"Done."}"#
 
+    /// A 128-bit request id as the helper prints it: 32 lowercase hex characters.
+    static let requestID = "0123456789abcdef0123456789abcdef"
+
+    /// The helper's envelope. `v` defaults to the current wire version; pass 1 for a
+    /// pre-2.2 helper. `requestID` is only ever present on a `PermissionRequest`.
     static func envelope(
         source: String = "claude",
         payload: String,
-        v: Int = 1,
+        v: Int = 2,
         receivedAt: Double = 1_756_800_000.123,
-        host: String = AgentFixture.hostJSON
+        host: String = AgentFixture.hostJSON,
+        requestID: String? = nil
     ) -> Data {
-        Data(#"{"v":\#(v),"source":"\#(source)","helper_version":1,"received_at":\#(receivedAt),"host":\#(host),"payload":\#(payload)}"#.utf8)
+        let id = requestID.map { #","request_id":"\#($0)""# } ?? ""
+        return Data(#"{"v":\#(v),"source":"\#(source)","helper_version":\#(v),"received_at":\#(receivedAt),"host":\#(host)\#(id),"payload":\#(payload)}"#.utf8)
     }
 }
 

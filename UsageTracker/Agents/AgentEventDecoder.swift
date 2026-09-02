@@ -19,18 +19,29 @@ enum AgentEventDecoder {
         guard let object = try? JSONSerialization.jsonObject(with: line),
               let envelope = object as? [String: Any] else { throw Error.notJSON }
         guard let version = envelope["v"] as? Int else { throw Error.missingField("v") }
-        guard version == AgentPaths.wireVersion else { throw Error.unsupportedVersion(version) }
+        guard AgentPaths.supportedWireVersions.contains(version) else { throw Error.unsupportedVersion(version) }
         guard let sourceRaw = envelope["source"] as? String,
               let source = AgentSource(rawValue: sourceRaw) else { throw Error.missingField("source") }
         guard let payload = envelope["payload"] as? [String: Any] else { throw Error.missingField("payload") }
 
         let receivedAt = (envelope["received_at"] as? Double).map(Date.init(timeIntervalSince1970:)) ?? Date()
         let host = decodeHost(envelope["host"] as? [String: Any])
+        let requestID = validRequestID(envelope["request_id"])
 
         switch source {
-        case .claude: return try claudeEvent(payload: payload, host: host, receivedAt: receivedAt)
+        case .claude: return try claudeEvent(payload: payload, host: host, receivedAt: receivedAt, requestID: requestID)
         case .codex: return try codexEvent(payload: payload, host: host, receivedAt: receivedAt)
         }
+    }
+
+    /// The only shape the server will ever echo back: 32 lowercase hex characters.
+    /// Anything else is treated as "no id" — the request is answered immediately
+    /// like a v1 event instead of being held for an id the helper could not match.
+    static func validRequestID(_ value: Any?) -> String? {
+        guard let id = value as? String, id.utf8.count == AgentPaths.requestIDLength,
+              id.utf8.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) })
+        else { return nil }
+        return id
     }
 
     private static func decodeHost(_ object: [String: Any]?) -> AgentHostInfo {
@@ -42,7 +53,7 @@ enum AgentEventDecoder {
         )
     }
 
-    private static func claudeEvent(payload: [String: Any], host: AgentHostInfo, receivedAt: Date) throws -> AgentEvent {
+    private static func claudeEvent(payload: [String: Any], host: AgentHostInfo, receivedAt: Date, requestID: String?) throws -> AgentEvent {
         guard let name = payload["hook_event_name"] as? String else { throw Error.missingField("hook_event_name") }
         guard let sessionID = payload["session_id"] as? String, !sessionID.isEmpty else { throw Error.missingField("session_id") }
         let toolName = payload["tool_name"] as? String
@@ -76,7 +87,8 @@ enum AgentEventDecoder {
             toolSummary: AgentToolSummary.make(toolName: toolName, toolInput: toolInput),
             isSubagent: !(agentID ?? "").isEmpty,
             host: host,
-            receivedAt: receivedAt
+            receivedAt: receivedAt,
+            requestID: kind == .permissionRequested ? requestID : nil
         )
     }
 

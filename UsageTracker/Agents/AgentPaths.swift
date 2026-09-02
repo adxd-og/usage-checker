@@ -32,11 +32,21 @@ enum AgentPaths {
     static var codexConfigURL: URL { home.appendingPathComponent(".codex/config.toml") }
     static var codexSessionsURL: URL { home.appendingPathComponent(".codex/sessions", isDirectory: true) }
 
-    static let helperVersion = 1
-    static let wireVersion = 1
+    /// Bumped together with the helper: 2 = phase 4 (request ids + decisions).
+    static let helperVersion = 2
+    /// The wire version this app speaks (its reply lines carry it).
+    static let wireVersion = 2
+    /// Envelope versions the decoder still accepts. A pre-2.2 helper (old symlink
+    /// target still running) sends v1 and gets the phase-2 behaviour: no hold.
+    static let supportedWireVersions: ClosedRange<Int> = 1...2
     static let helperName = "omelette-hook"
     /// Set in the helper's environment to redirect it to another socket (tests use a temp path).
     static let socketEnvironmentKey = "OMELETTE_AGENT_SOCKET"
+    /// Shortens the helper's decision wait (seconds) — tests only; honoured only
+    /// together with a socket override, and never above the production 140 s.
+    static let decisionTimeoutEnvironmentKey = "OMELETTE_DECISION_TIMEOUT"
+    /// A request id is 128 random bits as lowercase hex.
+    static let requestIDLength = 32
     /// `sockaddr_un.sun_path` holds 104 bytes including the terminating NUL.
     static let maxSocketPathBytes = 103
 

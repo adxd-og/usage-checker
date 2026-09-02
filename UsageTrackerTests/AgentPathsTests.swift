@@ -21,8 +21,11 @@ final class AgentPathsTests: XCTestCase {
     }
 
     func testConstantsMatchTheContract() {
-        XCTAssertEqual(AgentPaths.helperVersion, 1)
-        XCTAssertEqual(AgentPaths.wireVersion, 1)
+        XCTAssertEqual(AgentPaths.helperVersion, 2)
+        XCTAssertEqual(AgentPaths.wireVersion, 2)
+        XCTAssertEqual(AgentPaths.supportedWireVersions, 1...2)
+        XCTAssertEqual(AgentPaths.decisionTimeoutEnvironmentKey, "OMELETTE_DECISION_TIMEOUT")
+        XCTAssertEqual(AgentPaths.requestIDLength, 32)
         XCTAssertEqual(AgentPaths.helperName, "omelette-hook")
         XCTAssertEqual(AgentPaths.socketURL.lastPathComponent, "agent.sock")
         XCTAssertEqual(AgentPaths.socketURL.deletingLastPathComponent().lastPathComponent, "UsageTracker")
