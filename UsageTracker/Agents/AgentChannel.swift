@@ -77,3 +77,23 @@ final class AgentChannel {
         AgentDiagnostics.server = nil
     }
 }
+
+/// What `AppState.bootstrap()` installs as `AgentChannel.shared.onEvent`. Kept as a
+/// function over its two collaborators so the ordering rule is testable:
+///
+/// 1. A held `PermissionRequest` (it carries a request id) is registered with the
+///    broker *first*, so that when the store applies the event and fires `onNeedsYou`
+///    synchronously, `broker.pending(for:)` already answers and the notifier can
+///    withhold the plain needs-you banner.
+/// 2. Then the store applies it. For every other event only step 2 runs — the server
+///    has already written the immediate reply.
+enum AgentEventRouter {
+    @MainActor
+    static func handle(_ event: AgentEvent, reply: AgentReply, store: AgentSessionStore, broker: PermissionBroker) {
+        if event.kind == .permissionRequested, reply.requestID != nil {
+            let id = AgentSession.makeID(source: event.source, sessionID: event.sessionID)
+            broker.register(event: event, reply: reply, session: store.sessions.first { $0.id == id })
+        }
+        store.apply(event)
+    }
+}
