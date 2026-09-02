@@ -58,6 +58,17 @@ the helper's 500 ms reply wait / 800 ms watchdog must become conditional on
 `PermissionRequest` (the hook is registered with `timeout: 5`); the reply line
 gains a `decision` payload the helper prints to stdout only for that event.
 
+Security rules for that channel (second opinion from Gemini 3.7 Flash, 2026-09-02,
+to be turned into acceptance tests): (1) fail closed — the helper never prints
+`allow` on any error, disconnect or timeout; (2) authenticate the peer with
+`LOCAL_PEERCRED` (same uid) and `LOCAL_PEERPID` (a live `claude` lineage); (3) a
+single-use random request id per `PermissionRequest`, consumed on first answer,
+late/duplicate answers ignored; (4) an app crash or quit mid-request → the helper
+sees EOF and exits without a decision, and no "allow" state survives a restart;
+(5) helper read timeout ≈ 4.2 s inside Claude's 5 s, and the app withdraws the
+notification when the window expires so a stale click cannot approve; (6) the
+notification shows tool name + truncated command only, full detail in the popover.
+
 ### Phase 5 — Rules inventory
 Read-only map of what shapes a session: CLAUDE.md chain, hooks, MCP servers,
 skills, permissions. "Open file" only, no editing.
