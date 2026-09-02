@@ -1,3 +1,4 @@
+import Combine
 import XCTest
 @testable import Omelette
 
@@ -511,5 +512,21 @@ final class AgentSessionStoreTests: XCTestCase {
 
         XCTAssertTrue(store.sessions.isEmpty)
         XCTAssertEqual(try AgentHistoryStore(fileURL: historyURL).load(), [])
+    }
+
+    /// The scan runs every few seconds and normally finds exactly what it found last
+    /// time; republishing the same array would redraw every observer for nothing.
+    func testRepeatingTheSameScanPublishesOnce() {
+        let store = makeStore()
+        var emissions = 0
+        let cancellable = store.$sessions.sink { _ in emissions += 1 }
+        defer { cancellable.cancel() }
+        XCTAssertEqual(emissions, 1, "@Published emits the current value on subscription")
+
+        store.mergePassive([passive(state: .working, at: t0)], now: t0)
+        store.mergePassive([passive(state: .working, at: t0)], now: at(5))
+
+        XCTAssertEqual(emissions, 2)
+        XCTAssertEqual(store.sessions.count, 1)
     }
 }

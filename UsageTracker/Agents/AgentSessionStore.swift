@@ -178,8 +178,11 @@ final class AgentSessionStore: ObservableObject {
             merged.append(fresh)
         }
 
+        merged.sort(by: Self.displayOrder)
+        // The poll runs every few seconds and almost always finds the same files;
+        // publishing an identical array would redraw the popover for nothing.
+        guard merged != sessions else { return }
         sessions = merged
-        sortSessions()
     }
 
     /// Drops sessions that have gone quiet for `staleAfter` and whose host process is
@@ -273,12 +276,14 @@ final class AgentSessionStore: ObservableObject {
 
     /// State group first, then most recent activity, then id so the order is stable
     /// when two sessions share a timestamp (they do: one poll merges many at once).
+    private static func displayOrder(_ a: AgentSession, _ b: AgentSession) -> Bool {
+        if a.state.rank != b.state.rank { return a.state.rank < b.state.rank }
+        if a.lastEventAt != b.lastEventAt { return a.lastEventAt > b.lastEventAt }
+        return a.id < b.id
+    }
+
     private func sortSessions() {
-        sessions.sort { a, b in
-            if a.state.rank != b.state.rank { return a.state.rank < b.state.rank }
-            if a.lastEventAt != b.lastEventAt { return a.lastEventAt > b.lastEventAt }
-            return a.id < b.id
-        }
+        sessions.sort(by: Self.displayOrder)
     }
 
     /// A session leaves the list into the history log. Approximate (passive) sessions
