@@ -463,7 +463,8 @@ final class UsageNotifier: NSObject {
         guard AgentNotificationRules.shouldNotifyNeedsYou(
             notifyEnabled: SettingsStore.shared.agentsNotifyNeedsYou,
             bypassQuietHours: SettingsStore.shared.agentsNeedsYouBypassQuietHours,
-            isQuietHours: isInQuietHours()
+            isQuietHours: isInQuietHours(),
+            permissionPending: PermissionBroker.shared.pending(for: session.id) != nil
         ) else { return }
 
         // Recorded only once the banner is actually scheduled: a suppressed alert
