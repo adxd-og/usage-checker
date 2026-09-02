@@ -5,15 +5,23 @@ import XCTest
 final class AgentChannelTests: XCTestCase {
     private var socketURL: URL!
     private var channel: AgentChannel!
+    /// `start()` rotates the session log. Every test passes this temp URL, so the
+    /// owner's real `agent-sessions.jsonl` is never read, rewritten or created.
+    private var historyURL: URL!
 
-    override func setUp() {
+    // The async overrides are what let a @MainActor test class touch its own
+    // properties here; the synchronous ones are nonisolated and warn.
+    override func setUp() async throws {
         socketURL = AgentFixture.temporarySocketURL()
+        historyURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentChannelTests-\(UUID().uuidString).jsonl")
         channel = AgentChannel()
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         channel.stop()
         try? FileManager.default.removeItem(at: socketURL)
+        try? FileManager.default.removeItem(at: historyURL)
     }
 
     private func waitOnMain(timeout: TimeInterval = 2, until condition: () -> Bool) -> Bool {
@@ -25,7 +33,7 @@ final class AgentChannelTests: XCTestCase {
     }
 
     func testStartBindsTheSocketAndPublishesTheServerForDiagnostics() throws {
-        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
 
         let server = try XCTUnwrap(channel.server)
         XCTAssertNil(channel.startError)
@@ -36,7 +44,7 @@ final class AgentChannelTests: XCTestCase {
     func testEventsReachTheConsumerOnTheMainActor() throws {
         var kinds: [AgentEvent.Kind] = []
         channel.onEvent = { kinds.append($0.kind) }
-        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
 
         AgentSocketTestClient.send(AgentFixture.envelope(payload: AgentFixture.userPromptSubmit) + Data([0x0A]), to: socketURL.path)
 
@@ -44,22 +52,22 @@ final class AgentChannelTests: XCTestCase {
     }
 
     func testSecondStartIsANoOp() throws {
-        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
         let first = try XCTUnwrap(channel.server)
-        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
         XCTAssertTrue(channel.server === first)
     }
 
     func testStartFailureIsRecordedNotThrown() {
         let tooLong = FileManager.default.temporaryDirectory
             .appendingPathComponent(String(repeating: "x", count: 120) + ".sock")
-        channel.start(socketURL: tooLong, refreshSymlink: false)
+        channel.start(socketURL: tooLong, refreshSymlink: false, historyURL: historyURL)
         XCTAssertNil(channel.server)
         XCTAssertNotNil(channel.startError)
     }
 
     func testStopRemovesTheSocketFile() {
-        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
         channel.stop()
         XCTAssertNil(channel.server)
         XCTAssertFalse(FileManager.default.fileExists(atPath: socketURL.path))
