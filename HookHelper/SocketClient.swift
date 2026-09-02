@@ -1,16 +1,18 @@
 import Foundation
 
-/// Connect → write one line → optionally wait for one reply line → close. Every
-/// failure is silent: Omelette not running is the normal case, not an error.
+/// Connect → write one line → (PermissionRequest only) wait for the decision line.
+/// Every failure is silent: Omelette not running is the normal case, not an error.
 enum SocketClient {
-    static func send(_ line: Data, to path: String, connectTimeout: TimeInterval, replyTimeout: TimeInterval) {
+    /// Connects within `connectTimeout`, writes `line`, and returns the connected
+    /// descriptor so the caller can wait for a reply on it. nil (and the socket
+    /// closed) when anything goes wrong. The caller closes a returned fd.
+    static func send(_ line: Data, to path: String, connectTimeout: TimeInterval) -> Int32? {
         var address = sockaddr_un()
         let capacity = MemoryLayout.size(ofValue: address.sun_path)   // 104, including the NUL
-        guard path.utf8.count < capacity else { return }
+        guard path.utf8.count < capacity else { return nil }
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
-        guard fd >= 0 else { return }
-        defer { close(fd) }
+        guard fd >= 0 else { return nil }
         var one: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
         _ = fcntl(fd, F_SETFL, O_NONBLOCK)
@@ -31,16 +33,37 @@ enum SocketClient {
         }
         if connected != 0 {
             // Unix sockets connect synchronously unless the backlog is full (EINPROGRESS).
-            guard errno == EINPROGRESS, wait(fd, for: POLLOUT, until: deadline) else { return }
+            guard errno == EINPROGRESS, wait(fd, for: POLLOUT, until: deadline) else { close(fd); return nil }
             var error: Int32 = 0
             var length = socklen_t(MemoryLayout<Int32>.size)
-            guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) == 0, error == 0 else { return }
+            guard getsockopt(fd, SOL_SOCKET, SO_ERROR, &error, &length) == 0, error == 0 else { close(fd); return nil }
         }
 
-        guard writeAll(fd, line, until: deadline) else { return }
-        guard replyTimeout > 0, wait(fd, for: POLLIN, until: Date().addingTimeInterval(replyTimeout)) else { return }
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        _ = read(fd, &buffer, buffer.count)   // phase 2 ignores the reply; phase 4 reads a decision here
+        guard writeAll(fd, line, until: deadline) else { close(fd); return nil }
+        return fd
+    }
+
+    /// Reads one reply line and returns "allow" / "deny" only when it is a JSON object
+    /// whose `request_id` is exactly ours and whose `decision` is one of those two
+    /// words. Anything else — timeout, EOF (Omelette quit), garbage, a foreign id, a
+    /// `null` or unknown decision — is nil. Fail closed (spec rule 1).
+    static func awaitDecision(fd: Int32, requestID: String, timeout: TimeInterval) -> String? {
+        let deadline = Date().addingTimeInterval(timeout)
+        var buffer = Data()
+        var chunk = [UInt8](repeating: 0, count: 1024)
+        while !buffer.contains(0x0A) {
+            guard buffer.count < 4096, wait(fd, for: POLLIN, until: deadline) else { return nil }
+            let count = read(fd, &chunk, chunk.count)
+            if count < 0, errno == EAGAIN || errno == EINTR { continue }
+            guard count > 0 else { return nil }              // EOF: no decision survives Omelette going away
+            buffer.append(chunk, count: count)
+        }
+        let line = buffer.prefix(while: { $0 != 0x0A })
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any],
+              let id = object["request_id"] as? String, id == requestID,
+              let decision = object["decision"] as? String, decision == "allow" || decision == "deny"
+        else { return nil }
+        return decision
     }
 
     /// The default AF_UNIX send buffer is 8 KB, so a 64 KB line takes several writes
