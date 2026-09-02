@@ -14,6 +14,7 @@ struct SettingsView: View {
     enum Tab: String, CaseIterable, Identifiable {
         case general = "General"
         case notifications = "Notifications"
+        case agents = "Agents"
         case account = "Account"
         case advanced = "Advanced"
         var id: String { rawValue }
@@ -22,6 +23,7 @@ struct SettingsView: View {
             switch self {
             case .general: return "gearshape"
             case .notifications: return "bell.badge"
+            case .agents: return "bolt.horizontal.circle"
             case .account: return "person.crop.circle"
             case .advanced: return "slider.horizontal.3"
             }
@@ -44,6 +46,9 @@ struct SettingsView: View {
             notificationsTab
                 .tabItem { Label(Tab.notifications.rawValue, systemImage: Tab.notifications.icon) }
                 .tag(Tab.notifications)
+            AgentsSettingsView()
+                .tabItem { Label(Tab.agents.rawValue, systemImage: Tab.agents.icon) }
+                .tag(Tab.agents)
             accountTab
                 .tabItem { Label(Tab.account.rawValue, systemImage: Tab.account.icon) }
                 .tag(Tab.account)
