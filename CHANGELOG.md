@@ -5,6 +5,25 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] — unreleased
+
+### Added
+- **Approve or deny Claude Code from Omelette.** When a session asks permission
+  and the terminal running it isn't the app you're looking at, the notification
+  carries **Allow** and **Deny**, and so does that session's row in the popover.
+  When the terminal *is* in front, nothing changes: Claude Code asks where it
+  always has.
+- Held requests are answered at most once, expire after two minutes, live only in
+  memory, and are released to the terminal untouched on any timeout, quit,
+  disconnect or malformed reply — Omelette never allows anything by itself.
+- Settings → Agents has a switch for it, with counts of the requests pending,
+  answered, expired and released to the terminal.
+
+### Changed
+- The `PermissionRequest` hook now waits up to 150 seconds instead of 5, so there
+  is time to answer. Settings → Agents will say **Installed — older than this
+  build** once; one **Update** click rewrites the entry.
+
 ## [2.1.0] — 2026-09-02
 
 ### Added

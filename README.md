@@ -23,6 +23,11 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
   **Open** button. Powered by Claude Code hooks you enable with one click
   (Settings → Agents shows the exact JSON first and removes it again); without
   hooks, sessions are still read from the CLIs' own logs
+- **Approve or deny from Omelette (2.2)** — when a Claude Code session asks for
+  permission and its terminal isn't in front, the notification and the session's
+  popover row both offer **Allow** / **Deny**. The request is held for two minutes,
+  answered once, and released to the terminal if you don't answer; when the terminal
+  is in front, Claude Code asks there as usual
 - **All tab** — one tile per provider with a ring for the leading window, and
   provider tabs with a large session ring and weekly windows as rings
 - **Compact menu bar pill per provider** — no Dock icon, no clutter
@@ -90,7 +95,8 @@ Open via the popover's gear icon (or `⌘,`):
 - **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity), update check
 - **Notifications** — threshold alerts, quiet hours, daily summary
 - **Agents** — enable/remove the Claude Code hooks and the Codex `notify` line (with the exact
-  JSON/TOML shown first), agent alert toggles, menu-bar pill toggle, socket diagnostics
+  JSON/TOML shown first), agent alert toggles, menu-bar pill toggle, the switch for answering
+  permission requests with its pending / answered / expired counts, socket diagnostics
 - **Account** — subscription tier, re-request keychain access, optional Admin API key, pay-as-you-go weekly budget
 - **Advanced** — override the `anthropic-beta` OAuth header, reset settings
 
