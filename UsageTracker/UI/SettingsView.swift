@@ -9,7 +9,7 @@ struct SettingsView: View {
     @State private var adminKeyDraft: String = ""
     @State private var savedAdminKeyMasked: String = ""
     @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
-    @State private var keychainReadStatus: String?
+    @State private var keychainReadStatus: KeychainReadStatus?
     @State private var showsResetConfirmation = false
 
     enum Tab: String, CaseIterable, Identifiable {
@@ -29,6 +29,13 @@ struct SettingsView: View {
             case .advanced: return "slider.horizontal.3"
             }
         }
+    }
+
+    /// The keychain button reports two very different things: a one-word success
+    /// that belongs in a chip, and a system error message that does not.
+    private enum KeychainReadStatus: Equatable {
+        case granted
+        case failed(String)
     }
 
     /// "1.7.0 (13)" — marketing version + build number from the bundle.
@@ -81,7 +88,7 @@ struct SettingsView: View {
                     AppState.shared.restartTimer()
                 }
                 Text("How often the widget polls Anthropic. Faster = closer to real-time, but risks rate limits.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -94,7 +101,7 @@ struct SettingsView: View {
                 let candidates = state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
                 if candidates.isEmpty {
                     Text("Providers appear here once they report usage.")
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                 } else {
                     let shown = candidates.filter { settings.isShownInMenuBar($0.id) }
@@ -113,7 +120,7 @@ struct SettingsView: View {
                     Text(shown.count == 1
                          ? "Hidden providers stay in the popover, the widget and notifications. The last visible one can't be hidden — the menu bar would show nothing but an empty icon."
                          : "Hidden providers stay in the popover, the widget and notifications — this only frees up menu bar width.")
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -121,7 +128,7 @@ struct SettingsView: View {
             Section("Shortcut") {
                 KeyboardShortcuts.Recorder("Peek at usage", name: .peekUsage)
                 Text("Opens the popover from any app. Unset by default — click the field and press a combination.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -138,28 +145,28 @@ struct SettingsView: View {
                         AppState.shared.refreshNow()
                     }
                 Text("Reads session and weekly limits from the local Codex CLI. Requires being signed in (`codex login`).")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show Gemini usage", isOn: $settings.geminiProviderEnabled)
                     .onChange(of: settings.geminiProviderEnabled) { _, _ in
                         AppState.shared.refreshNow()
                     }
                 Text("Reads daily model quotas using the Gemini CLI's Google sign-in. API-key and Vertex AI auth don't expose quotas.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show Antigravity usage", isOn: $settings.antigravityProviderEnabled)
                     .onChange(of: settings.antigravityProviderEnabled) { _, _ in
                         AppState.shared.refreshNow()
                     }
                 Text("Reads model-pool quotas from a running Antigravity app, `agy` CLI, or IDE. The Gemini-CLI replacement for personal Google accounts.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
                 Toggle("Show Grok usage", isOn: $settings.grokProviderEnabled)
                     .onChange(of: settings.grokProviderEnabled) { _, _ in
                         AppState.shared.refreshNow()
                     }
                 Text("Reads billing-period credit usage from the local Grok CLI, with a grok.com fallback. Requires being signed in (`grok login`).")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -176,7 +183,7 @@ struct SettingsView: View {
                     Spacer()
                     if let date = Updater.shared.lastUpdateCheckDate {
                         Text("Last check: \(date.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.caption)
+                            .font(OMFont.caption)
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -204,7 +211,7 @@ struct SettingsView: View {
                         Text("Final warning at ") + Text("\(settings.threshold95)%").bold()
                     }
                     Text("You'll get one macOS notification when any window crosses the threshold. Resets when it drops back.")
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -221,7 +228,7 @@ struct SettingsView: View {
                 }
                 Toggle("Tell me when the session window is about to reset", isOn: $settings.resetAlertsEnabled)
                 Text("The first fires only when you'd hit the limit *before* the window resets — a pace that resets in time isn't a problem. The second fires in the last 15 minutes of a window you're already pressed against.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -234,7 +241,7 @@ struct SettingsView: View {
                         hourPicker(label: "To", selection: $settings.quietHoursEnd)
                     }
                     Text("Every alert — thresholds, session timing and the daily summary — is suppressed during quiet hours.")
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                 }
             }
@@ -248,7 +255,7 @@ struct SettingsView: View {
 
     private func hourPicker(label: String, selection: Binding<Int>) -> some View {
         HStack(spacing: 6) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
+            Text(label).font(OMFont.caption).foregroundStyle(.secondary)
             Picker("", selection: selection) {
                 ForEach(0..<24, id: \.self) { h in
                     Text(formatHour(h)).tag(h)
@@ -275,15 +282,20 @@ struct SettingsView: View {
                             ProviderIconView(serviceID: svc.id, sfFallback: svc.icon, size: 14)
                                 .foregroundStyle(.tint)
                                 .frame(width: 18)
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(svc.displayName).font(.system(size: 12, weight: .medium))
-                                Text(stateLabel(svc.state) + (svc.plan.map { " · \($0)" } ?? ""))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(svc.displayName).font(OMFont.bodyStrong)
+                                HStack(spacing: OMSpacing.xs) {
+                                    OMChip(text: stateLabel(svc.state), tint: stateTint(svc.state))
+                                    if let plan = svc.plan {
+                                        Text(plan)
+                                            .font(OMFont.caption)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
                             }
                             Spacer()
                             Text(usageSummary(svc))
-                                .font(.caption)
+                                .font(OMFont.caption)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -296,7 +308,7 @@ struct SettingsView: View {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
                         Text(err)
-                            .font(.caption)
+                            .font(OMFont.caption)
                             .textSelection(.enabled)
                     }
                 }
@@ -307,7 +319,7 @@ struct SettingsView: View {
                     Button("Request keychain access now") {
                         do {
                             try ClaudeOAuthProvider.forceKeychainRead()
-                            keychainReadStatus = "Access granted ✓"
+                            keychainReadStatus = .granted
                             AppState.shared.refreshNow()
                             // Confirmation, not a progress claim — clear it after a beat.
                             Task {
@@ -315,18 +327,14 @@ struct SettingsView: View {
                                 keychainReadStatus = nil
                             }
                         } catch {
-                            keychainReadStatus = "Failed: \(error.localizedDescription)"
+                            keychainReadStatus = .failed(error.localizedDescription)
                         }
                     }
                     Spacer()
-                    if let status = keychainReadStatus {
-                        Text(status)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    keychainStatusView
                 }
                 Text("Shows the macOS dialog for the Claude Code-credentials item immediately, skipping the hourly retry limit — use it if Claude shows errors right after an install. Click Always Allow in the dialog.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Claude keychain access")
@@ -351,11 +359,11 @@ struct SettingsView: View {
                     }
                     Spacer()
                     Text(savedAdminKeyMasked)
-                        .font(.caption.monospaced())
+                        .font(OMFont.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
                 Text("Only needed for Anthropic Team/Enterprise organisations. Personal Pro/Max accounts use the Claude Code OAuth token automatically.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Admin API (Enterprise)")
@@ -371,7 +379,7 @@ struct SettingsView: View {
                         .onSubmit { AppState.shared.refreshNow() }
                 }
                 Text("For pay-as-you-go accounts without session limits: local CLI spend is measured against this budget — bars, thresholds and notifications work off the percentage. Set to $0 to just show the dollar figure.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             } header: {
                 Text("Pay-as-you-go budget")
@@ -387,7 +395,7 @@ struct SettingsView: View {
                     .font(.system(.body, design: .monospaced))
                     .disableAutocorrection(true)
                 Text("Only change if Anthropic ships a new value and the OAuth endpoint starts returning 401. Default: oauth-2025-04-20.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }
 
@@ -475,6 +483,32 @@ struct SettingsView: View {
         }
     }
 
+    /// Same battery semantics as everywhere else: green is fine, amber wants an
+    /// action from you, red is broken, grey is "nothing to say".
+    private func stateTint(_ s: ServiceState) -> Color {
+        switch s {
+        case .ok: return .green
+        case .notSignedIn: return .orange
+        case .notRunning: return .secondary
+        case .error: return .red
+        }
+    }
+
+    @ViewBuilder
+    private var keychainStatusView: some View {
+        switch keychainReadStatus {
+        case .granted:
+            OMChip(text: "Access granted", tint: .green)
+        case .failed(let message):
+            Text("Failed: \(message)")
+                .font(OMFont.caption)
+                .foregroundStyle(.orange)
+                .textSelection(.enabled)
+        case nil:
+            EmptyView()
+        }
+    }
+
     private func lastFetchText(_ date: Date) -> String {
         if date.timeIntervalSince1970 == 0 { return "—" }
         let f = RelativeDateTimeFormatter()
@@ -502,3 +536,17 @@ struct SettingsView: View {
 extension Notification.Name {
     static let replayOnboarding = Notification.Name("com.usagetracker.replayOnboarding")
 }
+
+#if DEBUG
+// The window reads the real stores, which is the point: this preview is how the
+// tabs get checked in both schemes. It touches the keychain on appear (the
+// masked admin key), so macOS may show one access dialog the first time.
+#Preview("Settings — light") {
+    SettingsView()
+}
+
+#Preview("Settings — dark") {
+    SettingsView()
+        .preferredColorScheme(.dark)
+}
+#endif
