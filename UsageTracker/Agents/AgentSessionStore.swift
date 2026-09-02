@@ -38,6 +38,10 @@ final class AgentSessionStore: ObservableObject {
     /// inside the passive scan's window for a while after the CLI quits; without
     /// this the next poll would resurrect the row as "≈ Idle".
     private var endedIDs: [String: Date] = [:]
+    /// `AgentSession.id` → request id of the permission Omelette is holding for it.
+    /// Kept beside the rows because the broker registers a request *before* the
+    /// event that creates the row is applied (see `AppState.bootstrap`).
+    private var pendingPermissionIDs: [String: String] = [:]
     /// Matches the passive scan's `recentWindow`: once the file has aged out of
     /// the scan there is nothing left to suppress.
     static let endedTombstoneTTL: TimeInterval = 30 * 60
@@ -60,6 +64,21 @@ final class AgentSessionStore: ObservableObject {
         sessions.filter { $0.source == source }
     }
 
+    // MARK: - Pending permission (phase 4)
+
+    /// Records which permission request is held for `sessionID` (nil = none). The
+    /// broker is the only caller. Publishes only when the row actually changes.
+    func setPendingPermission(id: String?, for sessionID: String) {
+        if let id {
+            pendingPermissionIDs[sessionID] = id
+        } else {
+            pendingPermissionIDs.removeValue(forKey: sessionID)
+        }
+        guard let index = sessions.firstIndex(where: { $0.id == sessionID }),
+              sessions[index].pendingPermissionID != id else { return }
+        sessions[index].pendingPermissionID = id
+    }
+
     // MARK: - Hook events
 
     func apply(_ event: AgentEvent, now: Date = Date()) {
@@ -75,6 +94,7 @@ final class AgentSessionStore: ObservableObject {
 
         if case .sessionEnd = event.kind {
             endedIDs[id] = now
+            pendingPermissionIDs.removeValue(forKey: id)
             guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
             let ended = sessions.remove(at: index)
             archive(ended, endedAt: now)
@@ -129,6 +149,12 @@ final class AgentSessionStore: ObservableObject {
         if session.state == .needsYou, previousState != .needsYou {
             session.needsYouCount += 1
         }
+        // A held permission is moot once the session moved on (the user answered in
+        // the terminal, or the hook was released): the buttons must go with it.
+        if session.state != .needsYou {
+            pendingPermissionIDs.removeValue(forKey: id)
+        }
+        session.pendingPermissionID = pendingPermissionIDs[id]
         upsert(session)
         sortSessions()
 
