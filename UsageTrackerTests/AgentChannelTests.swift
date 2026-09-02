@@ -22,6 +22,7 @@ final class AgentChannelTests: XCTestCase {
         channel.stop()
         try? FileManager.default.removeItem(at: socketURL)
         try? FileManager.default.removeItem(at: historyURL)
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: historyURL.path + ".lock"))
     }
 
     private func waitOnMain(timeout: TimeInterval = 2, until condition: () -> Bool) -> Bool {
@@ -76,7 +77,10 @@ final class AgentChannelTests: XCTestCase {
     func testStartRotatesTheSessionLogInTheBackground() throws {
         let logURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("AgentChannelRotation-\(UUID().uuidString).jsonl")
-        defer { try? FileManager.default.removeItem(at: logURL) }
+        defer {
+            try? FileManager.default.removeItem(at: logURL)
+            try? FileManager.default.removeItem(at: URL(fileURLWithPath: logURL.path + ".lock"))
+        }
 
         let store = AgentHistoryStore(fileURL: logURL)
         // 2024-01-01 — years outside any 90-day window.
