@@ -102,14 +102,42 @@ final class AgentEventDecoderTests: XCTestCase {
         }
     }
 
-    func testRejectsOtherWireVersions() {
-        XCTAssertThrowsError(try AgentEventDecoder.decode(AgentFixture.envelope(payload: AgentFixture.stop, v: 2))) { error in
-            XCTAssertEqual(error as? AgentEventDecoder.Error, .unsupportedVersion(2))
+    func testAcceptsV1AndV2RejectsOthers() throws {
+        XCTAssertEqual(try AgentEventDecoder.decode(AgentFixture.envelope(payload: AgentFixture.stop, v: 1)).kind, .stop)
+        XCTAssertEqual(try AgentEventDecoder.decode(AgentFixture.envelope(payload: AgentFixture.stop, v: 2)).kind, .stop)
+        XCTAssertThrowsError(try AgentEventDecoder.decode(AgentFixture.envelope(payload: AgentFixture.stop, v: 3))) { error in
+            XCTAssertEqual(error as? AgentEventDecoder.Error, .unsupportedVersion(3))
         }
         let noVersion = Data(#"{"source":"claude","payload":\#(AgentFixture.stop)}"#.utf8)
         XCTAssertThrowsError(try AgentEventDecoder.decode(noVersion)) { error in
             XCTAssertEqual(error as? AgentEventDecoder.Error, .missingField("v"))
         }
+    }
+
+    // MARK: Request id (wire v2)
+
+    func testPermissionRequestCarriesItsRequestID() throws {
+        let data = AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit, requestID: AgentFixture.requestID)
+        let event = try AgentEventDecoder.decode(data)
+        XCTAssertEqual(event.kind, .permissionRequested)
+        XCTAssertEqual(event.requestID, AgentFixture.requestID)
+    }
+
+    func testRequestIDIsNilWhenAbsentOrMalformed() throws {
+        XCTAssertNil(try AgentEventDecoder.decode(AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit)).requestID,
+                     "a v1 helper sends no id")
+        for bad in ["", "0123", String(repeating: "g", count: 32), AgentFixture.requestID.uppercased(),
+                    AgentFixture.requestID + "0", "\\\"; drop table"] {   // JSON-escaped quote: a valid string, not a valid id
+            let data = AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit, requestID: bad)
+            XCTAssertNil(try AgentEventDecoder.decode(data).requestID, "accepted \(bad)")
+        }
+        let numeric = Data(#"{"v":2,"source":"claude","request_id":42,"payload":\#(AgentFixture.permissionRequestEdit)}"#.utf8)
+        XCTAssertNil(try AgentEventDecoder.decode(numeric).requestID)
+    }
+
+    func testRequestIDIsIgnoredOnOtherEvents() throws {
+        let data = AgentFixture.envelope(payload: AgentFixture.preToolUseBash, requestID: AgentFixture.requestID)
+        XCTAssertNil(try AgentEventDecoder.decode(data).requestID, "only a PermissionRequest can be held")
     }
 
     func testRejectsMissingFields() {

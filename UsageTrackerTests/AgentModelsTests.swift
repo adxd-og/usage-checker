@@ -47,4 +47,17 @@ final class AgentModelsTests: XCTestCase {
         XCTAssertNotEqual(AgentEvent.Kind.unknown("A"), .unknown("B"))
         XCTAssertNotEqual(AgentEvent.Kind.toolStarted, .toolFinished)
     }
+
+    func testEventAndSessionDefaultTheirPhase4Fields() {
+        let now = Date(timeIntervalSince1970: 1_756_800_000)
+        let event = AgentEvent(source: .claude, kind: .stop, sessionID: "s", cwd: nil, toolName: nil,
+                               toolSummary: nil, isSubagent: false, host: .none, receivedAt: now)
+        XCTAssertNil(event.requestID)
+        let session = AgentSession(sessionID: "s", source: .claude, projectName: "p", cwd: nil,
+                                   state: .idle, stateSince: now, lastEventAt: now, startedAt: now)
+        XCTAssertNil(session.pendingPermissionID)
+        var copy = session
+        copy.pendingPermissionID = "abc"
+        XCTAssertNotEqual(copy, session, "the pending id takes part in equality so the popover redraws")
+    }
 }

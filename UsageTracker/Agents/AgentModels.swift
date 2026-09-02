@@ -55,6 +55,33 @@ struct AgentEvent: Equatable, Sendable {
     let isSubagent: Bool             // payload has agent_id
     let host: AgentHostInfo
     let receivedAt: Date
+    /// Wire v2: the helper's one-shot id for a `PermissionRequest` it is waiting on.
+    /// nil for every other event and for a v1 helper.
+    let requestID: String?
+
+    init(
+        source: AgentSource,
+        kind: Kind,
+        sessionID: String,
+        cwd: String?,
+        toolName: String?,
+        toolSummary: String?,
+        isSubagent: Bool,
+        host: AgentHostInfo,
+        receivedAt: Date,
+        requestID: String? = nil
+    ) {
+        self.source = source
+        self.kind = kind
+        self.sessionID = sessionID
+        self.cwd = cwd
+        self.toolName = toolName
+        self.toolSummary = toolSummary
+        self.isSubagent = isSubagent
+        self.host = host
+        self.receivedAt = receivedAt
+        self.requestID = requestID
+    }
 }
 
 struct AgentSession: Identifiable, Equatable, Sendable {
@@ -72,6 +99,10 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     var isApproximate: Bool          // true for passive-scan sessions
     var turns: Int
     var needsYouCount: Int
+    /// The `request_id` of a permission request Omelette is holding for this session
+    /// (Allow / Deny buttons in the popover). Owned by `PermissionBroker`, written only
+    /// through `AgentSessionStore.setPendingPermission(id:for:)`.
+    var pendingPermissionID: String?
 
     static func makeID(source: AgentSource, sessionID: String) -> String {
         "\(source.rawValue):\(sessionID)"
@@ -90,7 +121,8 @@ struct AgentSession: Identifiable, Equatable, Sendable {
         host: AgentHostInfo = .none,
         isApproximate: Bool = false,
         turns: Int = 0,
-        needsYouCount: Int = 0
+        needsYouCount: Int = 0,
+        pendingPermissionID: String? = nil
     ) {
         self.id = Self.makeID(source: source, sessionID: sessionID)
         self.sessionID = sessionID
@@ -106,5 +138,6 @@ struct AgentSession: Identifiable, Equatable, Sendable {
         self.isApproximate = isApproximate
         self.turns = turns
         self.needsYouCount = needsYouCount
+        self.pendingPermissionID = pendingPermissionID
     }
 }
