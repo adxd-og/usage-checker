@@ -6,6 +6,33 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.1.0</title>
+      <pubDate>Wed, 02 Sep 2026 15:43:49 +0300</pubDate>
+      <sparkle:version>31</sparkle:version>
+      <sparkle:shortVersionString>2.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>An Agents tab in the dashboard.</b> Live sessions and the run history the app has been recording since 2.0.0: a summary strip (sessions, agent time, approval requests, busiest project) over the range you pick, the live list, and finished sessions grouped by day with their project, start time, duration and turns. Filter by source — All · Claude · Codex.</li>
+<li>The agent run history is trimmed to the last 90 days once per launch, so <code>agent-sessions.jsonl</code> can't grow without a bound.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The dashboard, Settings, the welcome tour, the floating window and the desktop widgets are drawn with the design system the popover got in 2.0.0 — the same ring gauges, bars, section headers, status chips and battery colours. The widgets now share the app's ring and bar code instead of keeping their own.</li>
+<li>The floating window shows the leading window as a ring with the next two under it, and how many agent sessions are running — amber when one needs you.</li>
+<li>The dashboard remembers its last tab, and on the Agents tab ⌘1 · ⌘2 · ⌘3 switch the All · Claude · Codex source filter.</li>
+<li>Cost accounting keeps a cache on disk (<code>cost-cache-claude-v1.json</code> in Application Support): relaunching no longer re-reads every Claude Code transcript before the $ figures appear, and the minute poll opens only files that changed.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.1.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.1.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="OX0v3qOM2repicGh4tdKff6eMp6xVTg007eMmZmAINs/ApedwOHcF2mpldAnow/KUBrrwD+qdqBksO5pPBFzBA=="
+        length="15974588"/>
+    </item>
+    <item>
       <title>Omelette v2.0.0</title>
       <pubDate>Wed, 02 Sep 2026 11:15:58 +0300</pubDate>
       <sparkle:version>30</sparkle:version>
