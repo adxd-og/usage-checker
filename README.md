@@ -15,6 +15,16 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
 
 ## Features
 
+- **Agent Overview (2.0)** — every live Claude Code and Codex session in the popover,
+  grouped *Needs you / Working / Done / Idle*, with the project, what the agent is
+  doing and for how long. Click a row to jump back to its terminal tab
+- **Agents pill in the menu bar** — grey when quiet, blue while agents work, amber
+  "1 needs you" when one waits for your approval — plus a notification with an
+  **Open** button. Powered by Claude Code hooks you enable with one click
+  (Settings → Agents shows the exact JSON first and removes it again); without
+  hooks, sessions are still read from the CLIs' own logs
+- **All tab** — one tile per provider with a ring for the leading window, and
+  provider tabs with a large session ring and weekly windows as rings
 - **Compact menu bar pill per provider** — no Dock icon, no clutter
 - **Claude** — 5-hour session, weekly limits per model (decoded dynamically, so new
   models appear without an update), extra usage credits / Enterprise spend limits
@@ -43,6 +53,10 @@ Reads the OAuth token that **Claude Code** stores in your macOS Keychain (item n
 The widget:
 - Uses **only your own credentials**, already obtained by the tools themselves — it never asks you to log in anywhere
 - Talks only to: `api.anthropic.com` / `console.anthropic.com` (usage + token refresh), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `github.com` + `adxd-og.github.io` (Sparkle update feed & DMG download), and localhost RPC for Codex/Antigravity
+- Agent status comes from a tiny `omelette-hook` helper inside the app that Claude Code / Codex
+  run on their hook events; it talks to Omelette over a local Unix socket (0600, 64 KB cap) and
+  forwards only the session id, tool name, a truncated tool summary, folder and host process —
+  never prompts or file contents — and always exits 0 within 0.8 s, so agents never wait on it
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
 - Open source end to end — audit anything above
@@ -73,6 +87,8 @@ Open via the popover's gear icon (or `⌘,`):
 
 - **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity), update check
 - **Notifications** — threshold alerts, quiet hours, daily summary
+- **Agents** — enable/remove the Claude Code hooks and the Codex `notify` line (with the exact
+  JSON/TOML shown first), agent alert toggles, menu-bar pill toggle, socket diagnostics
 - **Account** — subscription tier, re-request keychain access, optional Admin API key, pay-as-you-go weekly budget
 - **Advanced** — override the `anthropic-beta` OAuth header, reset settings
 
