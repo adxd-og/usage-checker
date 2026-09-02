@@ -46,10 +46,11 @@ struct MenuBarLabel: View {
         .animation(.easeInOut(duration: 0.45), value: snapshot.headlinePercent)
     }
 
-    /// Reserved for the phase-2 agents pill (count of live agent sessions).
+    /// The agents pill. A separate view, not an `@ObservedObject` on `MenuBarLabel`
+    /// itself: see `AgentsPillSlot`.
     @ViewBuilder
     private var leadingSlot: some View {
-        EmptyView()
+        AgentsPillSlot()
     }
 }
 
@@ -119,5 +120,26 @@ private struct MiniServiceBar: View {
         .animation(.easeInOut(duration: 0.4), value: percent)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(service.displayName) usage \(Int(percent.rounded())) percent")
+    }
+}
+
+/// Bridges `AgentSessionStore` into the menu bar.
+///
+/// The observation lives here rather than on `MenuBarLabel` on purpose. The store
+/// republishes on every hook event — a tool starting is an event — and observing it
+/// one level up would re-evaluate every provider pill each time an agent ran `Read`.
+/// Confined to this view, an event that moves none of the three counts re-evaluates
+/// these four lines and stops: SwiftUI compares `OMAgentsPill`'s stored `Int`s,
+/// finds them unchanged and skips its body, so nothing is redrawn. Nothing on this
+/// path is driven by a timer.
+private struct AgentsPillSlot: View {
+    @ObservedObject private var store = AgentSessionStore.shared
+
+    var body: some View {
+        OMAgentsPill(
+            needsYou: store.needsYouCount,
+            working: store.workingCount,
+            total: store.sessions.count
+        )
     }
 }
