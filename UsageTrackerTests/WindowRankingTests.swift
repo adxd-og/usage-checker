@@ -162,4 +162,16 @@ final class WindowRankingTests: XCTestCase {
         XCTAssertEqual(OMHero.statusPhrase(70), "Running hot")
         XCTAssertEqual(OMHero.statusPhrase(90), "Almost at the limit")
     }
+
+    // MARK: OMRing sizes
+    func testWidgetRingSizeMatchesTheSmallWidget() {
+        // 158 pt widget − 2×16 pt default content margins − 2×8 pt pad ≈ the ring
+        // the widget drew before it used OMRing; keep the number pinned.
+        XCTAssertEqual(OMRing.Size.widget.diameter, 110)
+        XCTAssertEqual(OMRing.Size.widget.lineWidth, 10)
+        XCTAssertEqual(OMRing.Size.widget.labelFont, OMFont.heroNumeral)
+        // The existing sizes must not shift while the case is added.
+        XCTAssertEqual(OMRing.Size.hero.diameter, 84)
+        XCTAssertEqual(OMRing.Size.mini.labelFont, nil)
+    }
 }
