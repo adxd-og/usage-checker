@@ -201,6 +201,112 @@ enum AgentHooksInstaller {
         try writeAtomically(data, to: url)
     }
 
+    // MARK: - Codex
+
+    /// The one line we own in config.toml.
+    static func codexNotifyLine(helperPath: String) -> String {
+        "notify = [\"\(tomlEscaped(helperPath))\", \"--codex\"]"
+    }
+
+    static func codexStatus(configURL: URL, helperPath: String) -> HookInstallStatus {
+        guard let text = try? readConfig(configURL) else { return .conflict(unreadableReason) }
+        guard let found = topLevelNotify(in: text) else { return .notInstalled }
+        let line = found.line.trimmingCharacters(in: .whitespaces)
+        if line == codexNotifyLine(helperPath: helperPath) { return .installed }
+        if line.contains(ourCommandMarker) { return .outdated }
+        return .conflict(line)
+    }
+
+    /// Adds or refreshes our `notify` line. A `notify` that is someone else's is
+    /// a conflict, not something to overwrite — the UI shows their line and ours
+    /// side by side instead.
+    static func installCodex(configURL: URL, helperPath: String) throws {
+        guard let text = try? readConfig(configURL) else { throw Error.conflict(unreadableReason) }
+        let ours = codexNotifyLine(helperPath: helperPath)
+        var all = lines(of: text)
+
+        if let found = topLevelNotify(in: text) {
+            let existing = found.line.trimmingCharacters(in: .whitespaces)
+            if existing == ours { return }
+            guard existing.contains(ourCommandMarker) else { throw Error.conflict(existing) }
+            all[found.index] = ours
+        } else {
+            while let last = all.last, last.trimmingCharacters(in: .whitespaces).isEmpty { all.removeLast() }
+            let index = topLevelInsertIndex(in: all)
+            all.insert(contentsOf: index < all.count ? [ours, ""] : [ours], at: index)
+        }
+        try writeConfig(all, to: configURL)
+    }
+
+    /// Removes our line only. A foreign `notify` is left exactly where it is.
+    /// `helperPath` is part of the shared signature; ownership is decided by
+    /// `ourCommandMarker`, so a line from an older build goes too.
+    static func removeCodex(configURL: URL, helperPath: String) throws {
+        guard let text = try? readConfig(configURL) else { throw Error.conflict(unreadableReason) }
+        guard let found = topLevelNotify(in: text), found.line.contains(ourCommandMarker) else { return }
+        var all = lines(of: text)
+        all.remove(at: found.index)
+        try writeConfig(all, to: configURL)
+    }
+
+    // MARK: - Codex internals
+
+    /// The index and raw text of the top-level `notify = …` line, if any.
+    /// The top level ends at the first `[table]` (or `[[array]]`) header;
+    /// comments never count.
+    private static func topLevelNotify(in text: String) -> (index: Int, line: String)? {
+        for (index, raw) in lines(of: text).enumerated() {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") { continue }
+            if line.hasPrefix("[") { return nil }
+            guard line.hasPrefix("notify") else { continue }
+            let rest = line.dropFirst("notify".count).trimmingCharacters(in: .whitespaces)
+            if rest.hasPrefix("=") { return (index, raw) }
+        }
+        return nil
+    }
+
+    /// Just before the first table header, so the key stays top-level; the end
+    /// of the file when there is no table.
+    private static func topLevelInsertIndex(in all: [String]) -> Int {
+        for (index, raw) in all.enumerated()
+        where raw.trimmingCharacters(in: .whitespaces).hasPrefix("[") {
+            return index
+        }
+        return all.count
+    }
+
+    private static func lines(of text: String) -> [String] {
+        text.components(separatedBy: "\n")
+    }
+
+    private static func tomlEscaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    /// Missing file → empty text. An existing file we cannot decode is a
+    /// refusal: overwriting it would destroy a config we never read.
+    private static func readConfig(_ url: URL) throws -> String {
+        guard let data = try? Data(contentsOf: url) else {
+            if FileManager.default.fileExists(atPath: url.path) { throw Error.unparsable(url) }
+            return ""
+        }
+        guard let text = String(data: data, encoding: .utf8) else { throw Error.unparsable(url) }
+        return text
+    }
+
+    private static func writeConfig(_ all: [String], to url: URL) throws {
+        var text = all.joined(separator: "\n")
+        if !text.hasSuffix("\n") { text += "\n" }
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
+        )
+        try backupOnce(url)
+        try writeAtomically(Data(text.utf8), to: url)
+    }
+
     // MARK: - Shared file plumbing
 
     /// One-time safety copy next to the file. Never overwritten, so it always
