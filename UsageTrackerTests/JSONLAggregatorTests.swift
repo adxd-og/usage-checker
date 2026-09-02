@@ -21,13 +21,16 @@ final class JSONLAggregatorTests: XCTestCase {
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
         try? FileManager.default.removeItem(at: cacheURL)
+        try? FileManager.default.removeItem(at: cacheFile(named: "control"))
     }
 
     /// The cache file lives beside the log root, never inside it — and never in the
     /// real Application Support directory, which no test may touch.
-    private var cacheURL: URL {
+    private var cacheURL: URL { cacheFile(named: "cost-cache") }
+
+    private func cacheFile(named name: String) -> URL {
         root.deletingLastPathComponent()
-            .appendingPathComponent("\(root.lastPathComponent)-cost-cache.json")
+            .appendingPathComponent("\(root.lastPathComponent)-\(name).json")
     }
 
     // MARK: - Fixture writing
@@ -427,6 +430,77 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(foreignParsed, 2, "a cache for another log root means a full rescan")
         XCTAssertEqual(fromForeign.turns, expected.turns)
         XCTAssertEqual(fromForeign.cost, expected.cost, accuracy: 0.0001)
+    }
+
+    func testCacheWritesAreThrottledWhileIngesting() async throws {
+        try writeStandardFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await aggregator.refresh()
+        let firstWrite = try cacheStamp()
+
+        // A poll five seconds later that really does ingest something. The snapshot
+        // runs to tens of MB on a busy machine; rewriting it per turn is the cost the
+        // throttle exists to avoid.
+        try append(
+            line(id: "msg_b2", minutesAgo: 20, model: "claude-sonnet-4-5", input: 1_000_000) + "\n",
+            project: betaSlug
+        )
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(usage.turns, 4, "the turn is counted straight away")
+        XCTAssertEqual(try cacheStamp(), firstWrite, "…but the file is not rewritten for it")
+
+        // The same sequence with the throttle off, so the assertion above is about the
+        // interval and not about a save path that quietly stopped working.
+        let control = JSONLAggregator(
+            rootURL: root, cacheURL: cacheFile(named: "control"), saveInterval: 0
+        )
+        await control.refresh()
+        let controlFirst = try cacheStamp(cacheFile(named: "control"))
+        try append(
+            line(id: "msg_b3", minutesAgo: 15, model: "claude-sonnet-4-5", input: 1_000_000) + "\n",
+            project: betaSlug
+        )
+        await control.refresh()
+        XCTAssertNotEqual(try cacheStamp(cacheFile(named: "control")), controlFirst)
+    }
+
+    func testFlushCacheWritesImmediately() async throws {
+        try writeStandardFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await aggregator.refresh()
+        let firstWrite = try cacheStamp()
+
+        try append(
+            line(id: "msg_b2", minutesAgo: 20, model: "claude-sonnet-4-5", input: 1_000_000) + "\n",
+            project: betaSlug
+        )
+        await aggregator.refresh()
+        XCTAssertEqual(try cacheStamp(), firstWrite, "still inside the throttle window")
+
+        // Quitting: what the throttle is holding back has to reach disk now.
+        await aggregator.flushCache()
+        XCTAssertNotEqual(try cacheStamp(), firstWrite, "the flush must not wait for the interval")
+
+        // And the flushed cache is complete: the next launch counts that turn without
+        // reading a single transcript.
+        let relaunched = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await relaunched.refresh()
+        let parsed = await relaunched.filesParsedInLastScan
+        let usage = await relaunched.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(parsed, 0)
+        XCTAssertEqual(usage.turns, 4)
+        XCTAssertEqual(usage.cost, 12.5, accuracy: 0.0001)
+    }
+
+    /// Size and mtime together: either moving means the file was rewritten.
+    private func cacheStamp(_ url: URL? = nil) throws -> [String] {
+        let attrs = try FileManager.default.attributesOfItem(atPath: (url ?? cacheURL).path)
+        let modified = try XCTUnwrap(attrs[.modificationDate] as? Date)
+        let size = try XCTUnwrap(attrs[.size] as? Int)
+        return ["\(modified.timeIntervalSince1970)", "\(size)"]
     }
 
     func testTheCacheIsNotRewrittenOnAQuietPoll() async throws {
