@@ -131,3 +131,23 @@ singleton; `OnboardingView.init(page:onFinish:)` is preview-only API in
 production; Settings keychain status auto-clear can wipe a newer message; the
 widget ring's 110 pt assumes WidgetKit's 16 pt content margins; a few test gaps
 (`inRange` at the exact cutoff, `days([])`, `content(maxRows: 0)`).
+
+## Phase 4 · Package 2 — UI + settings + hook (`…-phase4-p2-ui-settings-hook.md`) — APPROVED (amended)
+
+Checked against the phase-4 spec and the code: `fire(title:body:critical:identifier:category:timeSensitive:)`,
+`truncate(_:limit:)`, `sessionID(fromIdentifier:)`, and `claudeStatus` comparing whole entries
+(so `timeout` 5 → 150 reads `.outdated`) all exist as the plan assumes. The row restructure
+(jump `Button` around the first line only, buttons on a sibling line) is the right fix for
+buttons-inside-a-button; background (non-`.foreground`) actions are right for an
+`LSUIElement` app; `.authenticationRequired` on Allow is cheap insurance for the locked-screen
+hold. Amended: (1) **ordering** — the store fires `onNeedsYou` synchronously inside `apply`,
+so the needs-you veto only works if the broker registers first; the spec now fixes
+register-before-apply in `AppState` (package 1) and the plan's `agentPermissionPending`
+withdraws a stray needs-you banner (pending + delivered) as belt and braces; (2) **expiry
+leaves nothing on screen** — `onResolved` now carries a `PermissionResolution`, and on
+`.expired` the notifier re-fires the plain needs-you banner through `agentNeedsYou` so an
+absent user still finds an **Open** banner; (3) the `agentsAnswerPermissions` key moves to
+package 1 (the broker reads it) — Task 3 keeps the tests and adds the key only if missing;
+(4) settings caption reworded ("Allow / Deny appear … only while the terminal … isn't in
+front"; Omelette itself never answers). Risk to watch in review: the nine `OMAgentRow`
+call sites must pass `action:` by label.

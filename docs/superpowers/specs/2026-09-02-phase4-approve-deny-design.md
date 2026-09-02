@@ -71,9 +71,27 @@ struct PendingPermission: Identifiable, Equatable, Sendable {
     func releaseAll(for sessionID: String)                       // host became frontmost
     func pending(for sessionID: String) -> PendingPermission?
     var onPending: ((PendingPermission) -> Void)?                 // notifications
-    var onResolved: ((PendingPermission) -> Void)?                // withdraw UI
+    /// Called after the request has left `pending`, with why — package 2 withdraws
+    /// the banner and, on `.expired`, puts the plain needs-you banner up instead.
+    var onResolved: ((PendingPermission, PermissionResolution) -> Void)?
+}
+
+enum PermissionResolution: Equatable, Sendable {
+    case answered(PermissionDecision)   // Allow / Deny from the notification or the row
+    case releasedForPresence            // the hosting app became frontmost
+    case expired                        // the 120 s hold ran out
 }
 ```
+**Ordering rule.** `AppState.bootstrap()` wires `AgentChannel.shared.onEvent` so that for a
+`permissionRequested` event `PermissionBroker.shared.register(…)` runs **before**
+`AgentSessionStore.shared.apply(event)`. The store fires `onNeedsYou` synchronously inside
+`apply`, and the notifier vetoes that banner by asking `broker.pending(for:)`; registering
+second would let the plain banner through next to the Allow/Deny one. Presence is checked
+against `event.host` (every envelope carries it), falling back to the stored session's host
+when the event's is `.none`; a session the store has never seen still gets held if its host
+is known. `SettingsStore.agentsAnswerPermissions` (`Defaults` + `@AppStorage` + the reset line,
+default `true`) is **package 1's** because the broker reads it; package 2 adds the toggle, the
+caption and the settings tests.
 Presence: `PresenceMonitor` (`UsageTracker/Agents/PresenceMonitor.swift`) observes
 `NSWorkspace.didActivateApplicationNotification`, screen lock/unlock and
 `NSWorkspace.screensDidSleepNotification`; exposes `func isUserAt(host: AgentHostInfo) -> Bool`
@@ -86,7 +104,7 @@ and `var onActivation: ((NSRunningApplication) -> Void)?` that the broker uses t
 `AgentSession` gains `var pendingPermissionID: String?` (set/cleared by the broker via the store: `AgentSessionStore.setPendingPermission(id: String?, for sessionID: String)`). `AgentsSection` / `OMAgentRow` show Allow / Deny buttons when non-nil.
 
 ### Notifications (`UsageNotifier`)
-Category `AGENT_PERMISSION` with actions `AGENT_ALLOW` ("Allow") and `AGENT_DENY` ("Deny", `.destructive`), identifier `agent-permission-<request_id>`, delivered on `onPending`, withdrawn on `onResolved`; bypasses quiet hours like needs-you (same toggle). Body: `"<tool summary>"`, title `"<project> wants to run <tool>"`. Tapping the body opens the popover. The existing needs-you notification is **not** sent while a permission request is pending for that session (the permission one supersedes it); it still fires for `Notification/permission_prompt` events that arrive without a `PermissionRequest`.
+Category `AGENT_PERMISSION` with actions `AGENT_ALLOW` ("Allow") and `AGENT_DENY` ("Deny", `.destructive`), identifier `agent-permission-<request_id>`, delivered on `onPending`, withdrawn on `onResolved`; bypasses quiet hours like needs-you (same toggle). Body: `"<tool summary>"`, title `"<project> wants to run <tool>"`. Tapping the body opens the popover. The existing needs-you notification is **not** sent while a permission request is pending for that session (the permission one supersedes it); it still fires for `Notification/permission_prompt` events that arrive without a `PermissionRequest`. When a hold ends `.expired` and the session is still `needsYou`, the notifier fires the plain needs-you banner (**Open**) for it — the terminal prompt is up and nobody was there to see the two-minute banner; `.answered` and `.releasedForPresence` replace the withdrawn banner with nothing. As a belt-and-braces against ordering, `onPending` also withdraws any needs-you banner already filed for that session.
 
 ### Settings → Agents
 `@AppStorage("agentsAnswerPermissions") = true` ("Answer permission requests from Omelette when the terminal isn't in front"), caption explaining the presence rule and the 120 s window; diagnostics rows: pending, answered, expired, released-to-terminal. Hook template: `PermissionRequest` entry `timeout: 150` → existing installs read `outdated` → Update (one click); the prompt row copy mentions nothing new.
@@ -96,7 +114,7 @@ README + CHANGELOG `[2.2.0]`. No onboarding change.
 
 ## Packages (parallel planning)
 
-1. **Protocol, helper, server, broker** — wire v2, helper decision path, per-connection server with `LOCAL_PEERCRED`, `AgentReply`, `PermissionBroker` + `PresenceMonitor` + `shouldHold`, `AgentChannel` wiring (`onEvent` signature change; package 2 of phase 2 assigned `AgentChannel.shared.onEvent` — update `AppState.bootstrap()` accordingly), store field. Tests: helper E2E (allow/deny/none/timeout/id mismatch), server concurrency (a held connection does not delay a second hook), peer-cred rejection (unit-test the check with injected creds), broker table tests, presence pure rule.
+1. **Protocol, helper, server, broker** — wire v2, helper decision path, per-connection server with `LOCAL_PEERCRED`, `AgentReply`, `PermissionBroker` + `PresenceMonitor` + `shouldHold` + `PermissionResolution`, `AgentChannel` wiring (`onEvent` signature change; package 2 of phase 2 assigned `AgentChannel.shared.onEvent` — update `AppState.bootstrap()` accordingly, register-before-apply), store field, the `agentsAnswerPermissions` settings key. Tests: helper E2E (allow/deny/none/timeout/id mismatch), server concurrency (a held connection does not delay a second hook), peer-cred rejection (unit-test the check with injected creds), broker table tests, presence pure rule.
 2. **UI + settings + hook template** — notification category/actions/withdrawal, popover buttons, settings toggle + diagnostics, template timeout 150 with installer tests, CHANGELOG/README, version 2.2.0 / build 32.
 
 Package 2 depends on package 1's interfaces (this doc is the contract).
