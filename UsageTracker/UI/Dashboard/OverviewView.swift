@@ -60,7 +60,7 @@ struct OverviewView: View {
                 Text(value).font(.body.weight(.semibold))
             }
             Spacer()
-            UsageRing(percent: bucket?.clampedPercent ?? 0, size: 48)
+            OMRing(percent: bucket?.clampedPercent ?? 0, size: .medium)
         }
         .dashboardCard(padding: 14)
     }
