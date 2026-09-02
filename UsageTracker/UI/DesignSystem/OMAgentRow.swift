@@ -75,6 +75,15 @@ enum AgentRowText {
         }
     }
 
+    /// Whether the row offers Allow / Deny. Only a Claude session can be held —
+    /// Codex reports one event and has no approval hook — and an id that is blank
+    /// is not an id, so neither can put buttons on a row that answer nothing.
+    static func permissionButtonsVisible(pendingPermissionID: String?, source: AgentSource) -> Bool {
+        guard source == .claude else { return false }
+        let id = pendingPermissionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !id.isEmpty
+    }
+
     /// One sentence carrying everything the row shows visually: project,
     /// provider, state, activity, and how long it has been that way.
     static func accessibilityLabel(for session: AgentSession, now: Date = Date()) -> String {
@@ -98,53 +107,104 @@ enum AgentRowText {
 
 /// One agent session. The leading element is the provider logo with a small
 /// state badge on the All tab, where rows from every provider mix, and the state
-/// dot alone on a provider tab, where the provider is already the tab. The whole
-/// row is a button: clicking it jumps to that session.
+/// dot alone on a provider tab, where the provider is already the tab. The row's
+/// summary line is a button: clicking it jumps to that session. A session with a
+/// held permission request grows a second line carrying **Allow** / **Deny**,
+/// which is why the button is the line and not the whole card.
 struct OMAgentRow: View {
     let session: AgentSession
     var showsProviderIcon: Bool = true
+    /// Called by the row's **Allow** / **Deny**. Defaults do nothing so previews and
+    /// any host that does not deal in permissions can ignore them. They precede
+    /// `action`, which is why every call site passes `action:` by name: an unlabeled
+    /// trailing closure would be matched against `onAllow` first.
+    var onAllow: () -> Void = {}
+    var onDeny: () -> Void = {}
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    private var showsPermission: Bool {
+        AgentRowText.permissionButtonsVisible(
+            pendingPermissionID: session.pendingPermissionID,
+            source: session.source
+        )
+    }
+
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: OMSpacing.s + 1) {
-                leading
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(session.projectName)
-                        .font(OMFont.bodyStrong)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                    Text(AgentRowText.subtitle(for: session, showsState: !showsProviderIcon))
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: OMSpacing.xs)
-                // Only the elapsed time is on a clock, so only it re-renders.
-                TimelineView(.periodic(from: .now, by: 30)) { context in
-                    Text(AgentRowText.elapsed(since: session.stateSince, now: context.date, state: session.state))
-                        .font(OMFont.caption)
-                        .monospacedDigit()
-                        .foregroundStyle(.tertiary)
-                }
-                .fixedSize()
+        VStack(alignment: .leading, spacing: OMSpacing.xs + 2) {
+            // The jump target is the row's text, not the whole card: the buttons
+            // below must not be nested inside another button, or which one takes
+            // the click stops being predictable.
+            Button(action: action) {
+                summaryLine
             }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
-            .contentShape(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous))
+            .buttonStyle(.plain)
+            .focusEffectDisabled()
+            .help("Jump to \(session.projectName)")
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(AgentRowText.accessibilityLabel(for: session))
+            .accessibilityHint("Brings the window running this session to the front")
+            .accessibilityAddTraits(.isButton)
+
+            if showsPermission {
+                permissionLine
+            }
         }
-        .buttonStyle(.plain)
-        .focusEffectDisabled()
-        .help("Jump to \(session.projectName)")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(AgentRowText.accessibilityLabel(for: session))
-        .accessibilityHint("Brings the window running this session to the front")
-        .accessibilityAddTraits(.isButton)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
+        // The row grows by a line when a request arrives and shrinks when it is
+        // answered; without this the list jumps. Reduce Motion gets the jump.
+        .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: showsPermission)
+    }
+
+    private var summaryLine: some View {
+        HStack(spacing: OMSpacing.s + 1) {
+            leading
+            VStack(alignment: .leading, spacing: 1) {
+                Text(session.projectName)
+                    .font(OMFont.bodyStrong)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text(AgentRowText.subtitle(for: session, showsState: !showsProviderIcon))
+                    .font(OMFont.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: OMSpacing.xs)
+            // Only the elapsed time is on a clock, so only it re-renders.
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                Text(AgentRowText.elapsed(since: session.stateSince, now: context.date, state: session.state))
+                    .font(OMFont.caption)
+                    .monospacedDigit()
+                    .foregroundStyle(.tertiary)
+            }
+            .fixedSize()
+        }
+        .contentShape(Rectangle())
+    }
+
+    /// The held request, answerable here. Deliberately plain: the tool it wants to
+    /// run is already the subtitle above, and a second copy of it would push the
+    /// buttons off a 360 pt popover.
+    private var permissionLine: some View {
+        HStack(spacing: OMSpacing.s) {
+            Button("Allow", action: onAllow)
+                .glassProminentButtonStyle()
+                .controlSize(.small)
+                .accessibilityLabel("Allow \(session.projectName) to run this tool")
+                .help("Answers Claude Code with allow, once, for this tool call")
+            Button("Deny", action: onDeny)
+                .glassButtonStyle()
+                .controlSize(.small)
+                .accessibilityLabel("Deny \(session.projectName) this tool")
+                .help("Refuses this one tool call; the session carries on")
+            Spacer(minLength: 0)
+        }
+        .padding(.leading, 20 + OMSpacing.s + 1)   // clears the leading icon, so the buttons line up under the text
     }
 
     @ViewBuilder
@@ -271,11 +331,32 @@ enum AgentPreviewData {
 @MainActor
 private func agentRowPreviewStack(showsProviderIcon: Bool) -> some View {
     VStack(spacing: 5) {
-        OMAgentRow(session: AgentPreviewData.session("Usage tracker", .needsYou, activity: "Bash: xcodegen generate", minutes: 1), showsProviderIcon: showsProviderIcon) {}
-        OMAgentRow(session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14), showsProviderIcon: showsProviderIcon) {}
-        OMAgentRow(session: AgentPreviewData.session("Jaravis", .done, minutes: 5), showsProviderIcon: showsProviderIcon) {}
-        OMAgentRow(session: AgentPreviewData.session("orion-gemini", .idle, minutes: 42, source: .codex), showsProviderIcon: showsProviderIcon) {}
-        OMAgentRow(session: AgentPreviewData.session("Movie app", .working, activity: "Grep: usageStatusColor", minutes: 2, approximate: true), showsProviderIcon: showsProviderIcon) {}
+        OMAgentRow(session: AgentPreviewData.session("Usage tracker", .needsYou, activity: "Bash: xcodegen generate", minutes: 1), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Jaravis", .done, minutes: 5), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("orion-gemini", .idle, minutes: 42, source: .codex), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Movie app", .working, activity: "Grep: usageStatusColor", minutes: 2, approximate: true), showsProviderIcon: showsProviderIcon, action: {})
+    }
+    .padding()
+    .frame(width: 328)
+}
+
+/// A session with a request in flight, next to one without. `pendingPermissionID`
+/// is set after the fact because `AgentSession`'s initializer does not take it —
+/// the broker sets it through the store.
+@MainActor
+private func pendingPermissionPreviewStack(showsProviderIcon: Bool) -> some View {
+    var waiting = AgentPreviewData.session(
+        "Usage tracker", .needsYou, activity: "Bash: rm -rf build/DerivedData", minutes: 1
+    )
+    waiting.pendingPermissionID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
+    return VStack(spacing: 5) {
+        OMAgentRow(session: waiting, showsProviderIcon: showsProviderIcon, onAllow: {}, onDeny: {}, action: {})
+        OMAgentRow(
+            session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14),
+            showsProviderIcon: showsProviderIcon,
+            action: {}
+        )
     }
     .padding()
     .frame(width: 328)
@@ -285,4 +366,7 @@ private func agentRowPreviewStack(showsProviderIcon: Bool) -> some View {
 #Preview("Agent rows — icons, dark") { agentRowPreviewStack(showsProviderIcon: true).preferredColorScheme(.dark) }
 #Preview("Agent rows — dots, light") { agentRowPreviewStack(showsProviderIcon: false) }
 #Preview("Agent rows — dots, dark") { agentRowPreviewStack(showsProviderIcon: false).preferredColorScheme(.dark) }
+#Preview("Agent rows — permission pending, light") { pendingPermissionPreviewStack(showsProviderIcon: true) }
+#Preview("Agent rows — permission pending, dark") { pendingPermissionPreviewStack(showsProviderIcon: true).preferredColorScheme(.dark) }
+#Preview("Agent rows — permission pending, dots") { pendingPermissionPreviewStack(showsProviderIcon: false) }
 #endif

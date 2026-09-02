@@ -92,4 +92,27 @@ final class AgentRowTextTests: XCTestCase {
             "Jaravis, Claude Code, Working, approximately editing WalletView.swift, for 14 minutes"
         )
     }
+
+    // MARK: permission buttons
+
+    func testTheButtonsAppearOnlyForAHeldClaudeRequest() {
+        XCTAssertTrue(
+            AgentRowText.permissionButtonsVisible(pendingPermissionID: "0f1e2d3c", source: .claude)
+        )
+    }
+
+    func testARowWithNoHeldRequestOffersNoButtons() {
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: nil, source: .claude))
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: "", source: .claude))
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: "   ", source: .claude))
+    }
+
+    func testCodexNeverOffersButtons() {
+        // Codex has no approval hook, so nothing on its side is waiting for an
+        // answer. Buttons that answer nothing are worse than no buttons, whatever
+        // the store happens to hold.
+        XCTAssertFalse(
+            AgentRowText.permissionButtonsVisible(pendingPermissionID: "0f1e2d3c", source: .codex)
+        )
+    }
 }
