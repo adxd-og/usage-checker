@@ -9,6 +9,7 @@ struct DashboardWindow: View {
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
+        case agents = "Agents"
         case activity = "Activity"
         case history = "History"
         case insights = "Insights"
@@ -17,6 +18,7 @@ struct DashboardWindow: View {
         var icon: String {
             switch self {
             case .overview: return "chart.bar.doc.horizontal"
+            case .agents: return "bolt.horizontal.circle"
             case .activity: return "square.grid.4x3.fill"
             case .history: return "clock"
             case .insights: return "lightbulb"
@@ -71,6 +73,8 @@ struct DashboardWindow: View {
         switch selection {
         case .overview:
             OverviewView(appState: appState, dashboard: dashboard)
+        case .agents:
+            AgentsHistoryView(dashboard: dashboard)
         case .activity:
             ActivityGridView(dashboard: dashboard)
         case .history:
