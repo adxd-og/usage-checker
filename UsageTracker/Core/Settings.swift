@@ -62,6 +62,10 @@ final class SettingsStore: ObservableObject {
         static let menuBarHiddenServicesRaw = ""
         static let menuBarNumberMode = MenuBarNumberMode.auto
         static let hasSeenOnboarding = false
+        static let agentsNotifyNeedsYou = true
+        static let agentsNeedsYouBypassQuietHours = true
+        static let agentsNotifyDone = false
+        static let agentsShowInMenuBar = true
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -111,6 +115,16 @@ final class SettingsStore: ObservableObject {
 
     @AppStorage("hasSeenOnboarding") var hasSeenOnboarding: Bool = Defaults.hasSeenOnboarding
 
+    /// A session stopped and is waiting for a permission decision.
+    @AppStorage("agentsNotifyNeedsYou") var agentsNotifyNeedsYou: Bool = Defaults.agentsNotifyNeedsYou
+    /// "Needs you" is the one alert worth waking someone: on by default it ignores
+    /// quiet hours, because an agent that waits all night has wasted the night.
+    @AppStorage("agentsNeedsYouBypassQuietHours") var agentsNeedsYouBypassQuietHours: Bool = Defaults.agentsNeedsYouBypassQuietHours
+    /// A session finished its turn. Off by default — it fires on every reply.
+    @AppStorage("agentsNotifyDone") var agentsNotifyDone: Bool = Defaults.agentsNotifyDone
+    /// The agents pill in the menu bar (count of live sessions).
+    @AppStorage("agentsShowInMenuBar") var agentsShowInMenuBar: Bool = Defaults.agentsShowInMenuBar
+
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
     /// old button reset ten of them and quietly left providers, budget, menu bar
@@ -143,6 +157,10 @@ final class SettingsStore: ObservableObject {
         menuBarHiddenServicesRaw = Defaults.menuBarHiddenServicesRaw
         menuBarNumberMode = Defaults.menuBarNumberMode
         hasSeenOnboarding = Defaults.hasSeenOnboarding
+        agentsNotifyNeedsYou = Defaults.agentsNotifyNeedsYou
+        agentsNeedsYouBypassQuietHours = Defaults.agentsNeedsYouBypassQuietHours
+        agentsNotifyDone = Defaults.agentsNotifyDone
+        agentsShowInMenuBar = Defaults.agentsShowInMenuBar
 
         // Choices that live in the views and state objects rather than in a property
         // here. They are still preferences, so a reset that leaves them behind isn't
