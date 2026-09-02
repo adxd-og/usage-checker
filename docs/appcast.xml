@@ -6,6 +6,31 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.2.0</title>
+      <pubDate>Wed, 02 Sep 2026 23:02:07 +0300</pubDate>
+      <sparkle:version>32</sparkle:version>
+      <sparkle:shortVersionString>2.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Approve or deny Claude Code from Omelette.</b> When a session asks permission and the terminal running it isn't the app you're looking at, the notification carries <b>Allow</b> and <b>Deny</b>, and so does that session's row in the popover. When the terminal *is* in front, nothing changes: Claude Code asks where it always has.</li>
+<li>Held requests are answered at most once, expire after two minutes, live only in memory, and are released to the terminal untouched on any timeout, quit, disconnect or malformed reply — Omelette never allows anything by itself.</li>
+<li>Settings → Agents has a switch for it, with counts of the requests pending, answered, expired and released to the terminal.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The <code>PermissionRequest</code> hook now waits up to 150 seconds instead of 5, so there is time to answer. Settings → Agents will say **Installed — older than this build<b> once; one </b>Update** click rewrites the entry.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.2.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.2.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="cxUYV3O6bhp+leebpxvtpUMeRAIL/S4IiO8Za/N1paMm982obGtE2B9pbcCjtS4zqQ+/JeKBgrutqz/NLNQAAw=="
+        length="16022518"/>
+    </item>
+    <item>
       <title>Omelette v2.1.0</title>
       <pubDate>Wed, 02 Sep 2026 15:43:49 +0300</pubDate>
       <sparkle:version>31</sparkle:version>
