@@ -59,7 +59,7 @@ struct DashboardWindow: View {
             source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
             systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
         )
-        .font(.caption)
+        .font(OMFont.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

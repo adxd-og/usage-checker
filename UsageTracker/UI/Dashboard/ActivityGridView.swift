@@ -106,7 +106,7 @@ struct ActivityGridView: View {
             Text("No quota recorded yet for \(dashboard.displayName(for: dashboard.selectedService))")
                 .foregroundStyle(.secondary)
             Text("Each successful poll records this provider's windows; the grid fills in from there.")
-                .font(.callout)
+                .font(OMFont.body)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -119,7 +119,7 @@ struct ActivityGridView: View {
     /// read as a bug.
     private var costFootnote: some View {
         Text(dashboard.costSource.reason ?? "")
-            .font(.caption)
+            .font(OMFont.caption)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 24)

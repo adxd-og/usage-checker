@@ -147,7 +147,7 @@ struct InsightsView: View {
                 )
             }
             Text(dashboard.costSource.reason ?? "")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
