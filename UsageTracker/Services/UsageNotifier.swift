@@ -24,6 +24,11 @@ final class UsageNotifier: NSObject {
     private var notifiedNeedsYou: Set<String> = []
     private var agentSessionsObserver: AnyCancellable?
 
+    /// The broker whose held requests this notifier banners. Injected in
+    /// `startAgentNotifications` so a caller can hand in another one; `.shared`
+    /// until then, because `agentNeedsYou` may be asked before launch finishes.
+    private var broker: PermissionBroker = .shared
+
     static let firedLevelsKey = "notifierFiredLevels"
     static let firedWindowsKey = "notifierFiredWindows"
     /// How close to a reset counts as "about to start over".
@@ -349,6 +354,9 @@ final class UsageNotifier: NSObject {
     static let agentHooksEnableAction = "AGENT_HOOKS_ENABLE"
     /// Fixed, because there is only ever one of these.
     static let agentHooksPromptIdentifier = "agent-hooks-prompt"
+    static let agentPermissionCategory = "AGENT_PERMISSION"
+    static let agentAllowAction = "AGENT_ALLOW"
+    static let agentDenyAction = "AGENT_DENY"
 
     /// Installs the notification-centre delegate, registers the agent category and
     /// starts watching the session store. Called once at launch.
@@ -358,12 +366,15 @@ final class UsageNotifier: NSObject {
     /// must find a delegate already installed, including on the launch that tap
     /// causes.
     ///
-    /// Two categories carry a button: "needs you" (**Open**) and the one-time
-    /// hooks prompt (**Enable**). "Finished" needs none — its whole body is the
-    /// action, and a click on the body arrives as
-    /// `UNNotificationDefaultActionIdentifier`, which `handleAgentResponse` routes
-    /// exactly like **Open**.
-    func startAgentNotifications(store: AgentSessionStore = .shared) {
+    /// Three categories carry a button: "needs you" (**Open**), the one-time hooks
+    /// prompt (**Enable**) and a held permission request (**Allow** / **Deny**).
+    /// "Finished" needs none — its whole body is the action, and a click on the body
+    /// arrives as `UNNotificationDefaultActionIdentifier`, which `handleAgentResponse`
+    /// routes exactly like **Open**.
+    func startAgentNotifications(
+        store: AgentSessionStore = .shared,
+        broker: PermissionBroker = .shared
+    ) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.setNotificationCategories([
@@ -391,6 +402,30 @@ final class UsageNotifier: NSObject {
                 intentIdentifiers: [],
                 options: []
             ),
+            // Neither action is `.foreground`. Omelette is an accessory app, so
+            // activating it steals focus from the terminal the user is in — for a
+            // button that exists to answer *without* going anywhere, that is the
+            // wrong outcome, and the delegate receives the response perfectly well
+            // in the background. Allow asks for an unlock first: the presence rule
+            // holds requests while the screen is locked, and a lock screen must not
+            // be a way to approve `rm -rf`.
+            UNNotificationCategory(
+                identifier: Self.agentPermissionCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Self.agentAllowAction,
+                        title: "Allow",
+                        options: [.authenticationRequired]
+                    ),
+                    UNNotificationAction(
+                        identifier: Self.agentDenyAction,
+                        title: "Deny",
+                        options: [.destructive]
+                    ),
+                ],
+                intentIdentifiers: [],
+                options: []
+            ),
         ])
 
         // `AgentSessionStore` and `UsageNotifier` are both `@MainActor`, and the store
@@ -406,6 +441,15 @@ final class UsageNotifier: NSObject {
         // leaving, so the leaving edge is diffed out of the published list.
         agentSessionsObserver = store.$sessions.sink { [weak self] sessions in
             self?.clearResolvedNeedsYou(in: sessions)
+        }
+
+        // The broker is `@MainActor` like this object, so these are plain calls too.
+        self.broker = broker
+        broker.onPending = { [weak self] pending in
+            self?.agentPermissionPending(pending)
+        }
+        broker.onResolved = { [weak self] pending, resolution in
+            self?.permissionResolved(pending, resolution)
         }
     }
 
@@ -459,12 +503,30 @@ final class UsageNotifier: NSObject {
         }
     }
 
+    /// **Allow** and **Deny** answer the held request; anything else on that banner
+    /// — a click on the body, "Close" — opens the popover, where the same two
+    /// buttons sit on the row. A press that arrives after the hold window is a
+    /// no-op: the broker has already released that id and forgotten it, and it
+    /// answers each id at most once (design doc, rule 3).
+    private func handlePermissionResponse(requestID: String, action: String) {
+        switch action {
+        case Self.agentAllowAction:
+            broker.answer(id: requestID, .allow)
+        case Self.agentDenyAction:
+            broker.answer(id: requestID, .deny)
+        case UNNotificationDefaultActionIdentifier:
+            NotificationCenter.default.post(name: .showPopover, object: nil)
+        default:
+            break
+        }
+    }
+
     private func agentNeedsYou(_ session: AgentSession) {
         guard AgentNotificationRules.shouldNotifyNeedsYou(
             notifyEnabled: SettingsStore.shared.agentsNotifyNeedsYou,
             bypassQuietHours: SettingsStore.shared.agentsNeedsYouBypassQuietHours,
             isQuietHours: isInQuietHours(),
-            permissionPending: PermissionBroker.shared.pending(for: session.id) != nil
+            permissionPending: broker.pending(for: session.id) != nil
         ) else { return }
 
         // Recorded only once the banner is actually scheduled: a suppressed alert
@@ -477,6 +539,62 @@ final class UsageNotifier: NSObject {
             category: Self.agentNeedsYouCategory,
             timeSensitive: true
         )
+    }
+
+    /// A request the broker decided to hold. It follows the "needs you" toggle and
+    /// its quiet-hours escape hatch, because it *is* that interruption — with two
+    /// buttons on it. `permissionPending: false` is not a contradiction: the flag
+    /// suppresses the *other* banner, and this is the one it suppresses it for.
+    private func agentPermissionPending(_ pending: PendingPermission) {
+        guard AgentNotificationRules.shouldNotifyNeedsYou(
+            notifyEnabled: SettingsStore.shared.agentsNotifyNeedsYou,
+            bypassQuietHours: SettingsStore.shared.agentsNeedsYouBypassQuietHours,
+            isQuietHours: isInQuietHours(),
+            permissionPending: false
+        ) else { return }
+
+        // Belt and braces against ordering: `AppState` registers with the broker
+        // before the store applies the event, so `agentNeedsYou` already vetoed
+        // itself — but a needs-you banner that slipped through would sit next to
+        // this one asking the same question with no buttons. Pending *and*
+        // delivered, because a request added a millisecond ago is still pending.
+        let needsYouID = AgentNotificationRules.needsYouPrefix + pending.sessionID
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [needsYouID])
+        center.removeDeliveredNotifications(withIdentifiers: [needsYouID])
+        notifiedNeedsYou.remove(pending.sessionID)
+
+        // The project name is the session's, not the payload's. A request whose
+        // session we somehow do not know still has to name something.
+        let project = AgentSessionStore.shared.sessions
+            .first { $0.id == pending.sessionID }?.projectName ?? "An agent"
+        fire(
+            title: AgentNotificationRules.permissionTitle(
+                projectName: project, toolName: pending.toolName
+            ),
+            body: AgentNotificationRules.permissionBody(toolSummary: pending.toolSummary),
+            identifier: AgentNotificationRules.permissionIdentifier(requestID: pending.id),
+            category: Self.agentPermissionCategory,
+            timeSensitive: true
+        )
+    }
+
+    /// Answered, expired, or released because you switched back to the terminal —
+    /// either way the buttons are dead. A banner whose **Allow** no longer allows
+    /// anything is worse than no banner (design doc, rule 5). An *expired* hold is
+    /// the one case where nobody saw the two-minute banner: the terminal prompt is
+    /// up now, so the plain needs-you banner (**Open**) takes its place — through
+    /// `agentNeedsYou`, so `notifiedNeedsYou` and `clearResolvedNeedsYou` keep
+    /// working. The broker has already dropped the id, so the veto inside it is off.
+    private func permissionResolved(_ pending: PendingPermission, _ resolution: PermissionResolution) {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: [AgentNotificationRules.permissionIdentifier(requestID: pending.id)]
+        )
+        guard resolution == .expired,
+              let session = AgentSessionStore.shared.sessions.first(where: { $0.id == pending.sessionID }),
+              session.state == .needsYou
+        else { return }
+        agentNeedsYou(session)
     }
 
     private func agentDone(_ session: AgentSession) {
@@ -508,11 +626,15 @@ final class UsageNotifier: NSObject {
 
     /// Routes a tap on an agent notification to the session it names. A session that
     /// has since ended has nothing to jump to, so the popover — where the remaining
-    /// sessions are — opens instead. The hooks prompt names no session and is
-    /// handled first.
+    /// sessions are — opens instead. The two banners that name no session are handled
+    /// first: the hooks prompt, and a permission request (which names a request id).
     func handleAgentResponse(identifier: String, action: String) {
         if identifier == Self.agentHooksPromptIdentifier {
             handleHooksPromptResponse(action: action)
+            return
+        }
+        if let requestID = AgentNotificationRules.requestID(fromIdentifier: identifier) {
+            handlePermissionResponse(requestID: requestID, action: action)
             return
         }
         guard action == UNNotificationDefaultActionIdentifier || action == Self.agentOpenAction,
