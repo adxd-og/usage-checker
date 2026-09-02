@@ -6,7 +6,8 @@ struct OMHero: View {
     let hero: UsageBucket
     var verdict: BurnVerdict? = nil
 
-    static func statusPhrase(_ percent: Double) -> String {
+    /// `View` is @MainActor; the phrase is pure, so it stays callable anywhere.
+    nonisolated static func statusPhrase(_ percent: Double) -> String {
         if percent >= 90 { return "Almost at the limit" }
         if percent >= 70 { return "Running hot" }
         if percent >= 50 { return "On track" }

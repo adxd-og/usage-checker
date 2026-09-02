@@ -5,13 +5,15 @@ import SwiftUI
 struct OMCostTile: View {
     let services: [ServiceSnapshot]
 
-    static func total(_ services: [ServiceSnapshot]) -> Double {
+    // `View` is @MainActor, so these pure helpers say `nonisolated` to stay
+    // callable from tests and from any other context.
+    nonisolated static func total(_ services: [ServiceSnapshot]) -> Double {
         services.compactMap(\.weekCost).reduce(0, +)
     }
 
     /// `locale` is the viewer's by default (the popover formats money the same
     /// way); tests pin it so the wording assertion doesn't depend on the machine.
-    static func breakdown(_ services: [ServiceSnapshot], locale: Locale = .current) -> String {
+    nonisolated static func breakdown(_ services: [ServiceSnapshot], locale: Locale = .current) -> String {
         services.compactMap { s -> String? in
             guard let cost = s.weekCost, cost > 0 else { return nil }
             return "\(s.displayName) \(money(cost, locale: locale))"
@@ -19,7 +21,7 @@ struct OMCostTile: View {
         .joined(separator: " · ")
     }
 
-    static func money(_ value: Double, locale: Locale = .current) -> String {
+    nonisolated static func money(_ value: Double, locale: Locale = .current) -> String {
         value.formatted(.currency(code: "USD").precision(.fractionLength(2)).locale(locale))
     }
 
