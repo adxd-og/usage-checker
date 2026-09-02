@@ -21,8 +21,8 @@ final class OMAgentHistoryRowTests: XCTestCase {
 
     func testApprovalsOnlyShowWhenThereWereAny() {
         XCTAssertNil(OMAgentHistoryRow.approvalsText(0))
-        XCTAssertEqual(OMAgentHistoryRow.approvalsText(1), "⚠︎ 1")
-        XCTAssertEqual(OMAgentHistoryRow.approvalsText(3), "⚠︎ 3")
+        XCTAssertEqual(OMAgentHistoryRow.approvalsText(1), "1 approval")
+        XCTAssertEqual(OMAgentHistoryRow.approvalsText(3), "3 approvals")
     }
 
     func testTheSpokenLabelCarriesEverythingTheRowShows() {

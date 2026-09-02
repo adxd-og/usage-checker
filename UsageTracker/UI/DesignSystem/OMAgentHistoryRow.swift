@@ -30,11 +30,15 @@ struct OMAgentHistoryRow: View {
             Spacer(minLength: OMSpacing.s)
 
             if let approvals = Self.approvalsText(record.needsYouCount) {
-                Text(approvals)
+                // Spelled out, not a bare glyph: "2 approvals" says what happened
+                // without needing the tooltip (which a row inside a scroll view
+                // shows late or not at all).
+                Label(approvals, systemImage: "hand.raised.fill")
+                    .labelStyle(.titleAndIcon)
                     .font(OMFont.caption)
                     .monospacedDigit()
                     .foregroundStyle(OMAgentColor.needsYou)
-                    .help("Waited for you \(record.needsYouCount) time\(record.needsYouCount == 1 ? "" : "s")")
+                    .help("Stopped for your approval \(record.needsYouCount) time\(record.needsYouCount == 1 ? "" : "s")")
             }
             Text(Self.turnsText(record.turns))
                 .font(OMFont.caption)
@@ -65,7 +69,8 @@ struct OMAgentHistoryRow: View {
 
     /// nil at zero: a marker that is always there stops meaning anything.
     nonisolated static func approvalsText(_ count: Int) -> String? {
-        count > 0 ? "⚠︎ \(count)" : nil
+        guard count > 0 else { return nil }
+        return count == 1 ? "1 approval" : "\(count) approvals"
     }
 
     /// VoiceOver reads the glyphs and the columns as one sentence.
