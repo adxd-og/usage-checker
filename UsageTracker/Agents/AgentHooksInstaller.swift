@@ -42,8 +42,10 @@ enum AgentHooksInstaller {
     // MARK: - Claude
 
     /// The `hooks` fragment we own. Async everywhere so Claude Code never waits
-    /// on us; `PermissionRequest` is the single synchronous entry (5 s cap) so
-    /// phase 4 can answer it without anyone re-installing hooks. The two
+    /// on us; `PermissionRequest` is the single synchronous entry, and since 2.2.0
+    /// it is registered with a 150 s cap so Omelette can hold it while you decide.
+    /// The chain is deliberate: the app releases at 120 s and the helper at 140 s,
+    /// so Claude Code's own timeout is never the one that fires. The two
     /// `Notification` entries are literal matchers rather than one alternation,
     /// so each notification type we listen to is separately visible in the file.
     /// A Claude Code hook `command` is a shell command line, not an argv path,
@@ -57,7 +59,7 @@ enum AgentHooksInstaller {
     static func claudeTemplate(helperPath: String) -> [String: Any] {
         let command = shellQuoted(helperPath)
         let fireAndForget: [String: Any] = ["type": "command", "command": command, "async": true]
-        let blocking: [String: Any] = ["type": "command", "command": command, "timeout": 5]
+        let blocking: [String: Any] = ["type": "command", "command": command, "timeout": 150]
         func group(_ matcher: String, _ entry: [String: Any]) -> [String: Any] {
             ["matcher": matcher, "hooks": [entry]]
         }

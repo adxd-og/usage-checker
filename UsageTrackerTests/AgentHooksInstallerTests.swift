@@ -77,10 +77,11 @@ final class AgentHooksInstallerTests: XCTestCase {
             XCTAssertNil(entry["timeout"], "\(event) is fire-and-forget; a timeout would be meaningless")
         }
 
-        // The one synchronous entry: phase 4 answers it, so it keeps the 5 s cap
-        // and no async flag — installing it now means hook config never changes.
+        // The one synchronous entry, and the only one Claude Code waits on. 150 s is
+        // the outer ring of the timeout chain: the app gives up holding at 120 s and
+        // the helper at 140 s, so Claude Code's own cap is never the one that fires.
         let permission = try templateEntry(template, "PermissionRequest")
-        XCTAssertEqual(permission["timeout"] as? Int, 5)
+        XCTAssertEqual(permission["timeout"] as? Int, 150)
         XCTAssertNil(permission["async"])
 
         let notification = try XCTUnwrap(template["Notification"] as? [[String: Any]])
@@ -201,6 +202,40 @@ final class AgentHooksInstallerTests: XCTestCase {
         )
         XCTAssertEqual(commands(hooks, "Stop"), [quotedHelper])
         XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
+    }
+
+    /// 2.1 registered the permission hook with a 5-second cap, which is far too
+    /// short to ask a human anything. The one-time cost of 2.2 is that those
+    /// installs must read as outdated so the Agents tab offers **Update** once.
+    func testAFiveSecondPermissionHookReadsAsOutdated() throws {
+        try AgentHooksInstaller.installClaude(settingsURL: settingsURL, helperPath: helper)
+        XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
+
+        // Put the entry back the way 2.1 wrote it: same command, old cap.
+        var file = try json(at: settingsURL)
+        var hooks = try XCTUnwrap(file["hooks"] as? [String: Any])
+        var groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        var entries = try XCTUnwrap(groups[0]["hooks"] as? [[String: Any]])
+        entries[0]["timeout"] = 5
+        groups[0]["hooks"] = entries
+        hooks["PermissionRequest"] = groups
+        file["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: file).write(to: settingsURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .outdated,
+            "an install from 2.1 has to ask for one Update"
+        )
+
+        try AgentHooksInstaller.installClaude(settingsURL: settingsURL, helperPath: helper)
+
+        XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
+        let hooksAfter = try hooksJSON(at: settingsURL)
+        XCTAssertEqual(try templateEntry(hooksAfter, "PermissionRequest")["timeout"] as? Int, 150)
+        XCTAssertEqual(
+            commands(hooksAfter, "PermissionRequest").count, 1,
+            "Update must replace our entry, not add a second one"
+        )
     }
 
     func testStatusDoesNotCareWhereOurEntriesSitInTheFile() throws {
