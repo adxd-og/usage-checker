@@ -88,11 +88,25 @@ struct AgentsSection: View {
         .scrollDisabled(listHeight <= maxListHeight)
     }
 
+    /// Both list shapes go through here, so the grouped All tab and the flat
+    /// provider tab get the same buttons from one place.
     private func row(_ session: AgentSession) -> some View {
-        OMAgentRow(session: session, showsProviderIcon: grouped) {
-            SessionActivator.jump(to: session)
-        }
+        OMAgentRow(
+            session: session,
+            showsProviderIcon: grouped,
+            onAllow: { Self.answer(session, .allow) },
+            onDeny: { Self.answer(session, .deny) },
+            action: { SessionActivator.jump(to: session) }
+        )
         .opacity(Self.rowOpacity(session.state))
+    }
+
+    /// A row can outlive the request it was drawn for — the hold expires, or you
+    /// switched back to the terminal — so the id is re-read at click time and the
+    /// broker ignores an id it has already answered.
+    private static func answer(_ session: AgentSession, _ decision: PermissionDecision) {
+        guard let id = session.pendingPermissionID else { return }
+        PermissionBroker.shared.answer(id: id, decision)
     }
 
     private var emptyRow: some View {
