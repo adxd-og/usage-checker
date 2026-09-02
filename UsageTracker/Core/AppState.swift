@@ -29,13 +29,11 @@ final class AppState: ObservableObject {
 
     func bootstrap() {
         observeSystemState()
-        // Package 1's AgentChannel delivers hook events on the main actor; the
-        // session store is its one consumer (replaces the log-only default).
-        // Phase 4 Task 8 adds the PermissionBroker routing; until then a held
-        // request is released without a decision.
+        // Package 1's AgentChannel delivers hook events on the main actor. The router
+        // registers a held PermissionRequest with the broker before the session store
+        // applies it (see AgentEventRouter for why the order matters).
         AgentChannel.shared.onEvent = { event, reply in
-            AgentSessionStore.shared.apply(event)
-            reply.send(nil)
+            AgentEventRouter.handle(event, reply: reply, store: AgentSessionStore.shared, broker: PermissionBroker.shared)
         }
         refreshNow()
         startTimer()

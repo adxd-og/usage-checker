@@ -133,4 +133,87 @@ final class AgentChannelTests: XCTestCase {
         replies.first?.send(.deny)
         XCTAssertEqual(AgentSocketTestClient.readLine(fd), #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":"deny"}"#)
     }
+
+    // MARK: - AgentEventRouter (bootstrap wiring)
+
+    private func makeStoreAndBroker(userAway: Bool = true) -> (AgentSessionStore, PermissionBroker) {
+        let store = AgentSessionStore(historyURL: historyURL)
+        let presence = PresenceMonitor(frontmost: { userAway ? (1, "com.other") : (4242, "com.googlecode.iterm2") })
+        let broker = PermissionBroker(store: store, presence: presence, featureEnabled: { true })
+        return (store, broker)
+    }
+
+    private func permissionEvent(requestID: String? = AgentFixture.requestID) -> AgentEvent {
+        AgentEvent(source: .claude, kind: .permissionRequested, sessionID: "s1", cwd: "/Users/tester/Projects/alpha",
+                   toolName: "Edit", toolSummary: "Edit: WalletView.swift", isSubagent: false,
+                   host: AgentHostInfo(pid: 4242, bundleID: "com.googlecode.iterm2", tty: nil),
+                   receivedAt: Date(), requestID: requestID)
+    }
+
+    func testRouterRegistersWithTheBrokerBeforeApplyingToTheStore() {
+        let (store, broker) = makeStoreAndBroker()
+        var pendingInsideNeedsYou: String??
+        store.onNeedsYou = { [broker] session in pendingInsideNeedsYou = .some(broker.pending(for: session.id)?.id) }
+        let (reply, peer) = AgentFixture.replyPair()
+        defer { close(peer) }
+
+        AgentEventRouter.handle(permissionEvent(), reply: reply, store: store, broker: broker)
+
+        XCTAssertEqual(pendingInsideNeedsYou, .some(AgentFixture.requestID), "onNeedsYou must already see the held request")
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+        XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
+        XCTAssertFalse(reply.isSettled)
+    }
+
+    func testRouterReleasesWhenTheUserIsAtTheTerminalAndStillAppliesTheEvent() {
+        let (store, broker) = makeStoreAndBroker(userAway: false)
+        let (reply, peer) = AgentFixture.replyPair()
+        defer { close(peer) }
+
+        AgentEventRouter.handle(permissionEvent(), reply: reply, store: store, broker: broker)
+
+        XCTAssertTrue(reply.isSettled)
+        XCTAssertTrue(broker.pending.isEmpty)
+        XCTAssertEqual(store.sessions.first?.state, .needsYou, "the row still shows needs-you; Claude is prompting in the terminal")
+        XCTAssertNil(store.sessions.first?.pendingPermissionID)
+    }
+
+    func testRouterHandsTheStoredSessionToTheBroker() {
+        // Second request in a session the store already knows: the broker gets the row.
+        let (store, broker) = makeStoreAndBroker()
+        let first = AgentFixture.replyPair(requestID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        defer { close(first.peer) }
+        AgentEventRouter.handle(permissionEvent(requestID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), reply: first.reply, store: store, broker: broker)
+        broker.answer(id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", .allow)
+
+        let second = AgentFixture.replyPair(requestID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        defer { close(second.peer) }
+        var hostless = permissionEvent(requestID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+        hostless = AgentEvent(source: hostless.source, kind: hostless.kind, sessionID: hostless.sessionID, cwd: hostless.cwd,
+                              toolName: hostless.toolName, toolSummary: hostless.toolSummary, isSubagent: false,
+                              host: .none, receivedAt: hostless.receivedAt, requestID: hostless.requestID)
+        AgentEventRouter.handle(hostless, reply: second.reply, store: store, broker: broker)
+
+        XCTAssertEqual(broker.pending.map(\.id), ["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"], "the session's stored host made the hold possible")
+    }
+
+    func testRouterOnlyAppliesNonPermissionEvents() {
+        let (store, broker) = makeStoreAndBroker()
+        let reply = AgentReply(requestID: nil)
+        let stop = AgentEvent(source: .claude, kind: .stop, sessionID: "s1", cwd: nil, toolName: nil, toolSummary: nil,
+                              isSubagent: false, host: .none, receivedAt: Date())
+
+        AgentEventRouter.handle(stop, reply: reply, store: store, broker: broker)
+
+        XCTAssertEqual(store.sessions.first?.state, .done)
+        XCTAssertTrue(broker.pending.isEmpty)
+    }
+
+    func testRouterAppliesAPermissionWithoutAnIDWithoutHolding() {
+        let (store, broker) = makeStoreAndBroker()
+        AgentEventRouter.handle(permissionEvent(requestID: nil), reply: AgentReply(requestID: nil), store: store, broker: broker)
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+        XCTAssertTrue(broker.pending.isEmpty)
+        XCTAssertNil(store.sessions.first?.pendingPermissionID)
+    }
 }

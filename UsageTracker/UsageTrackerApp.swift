@@ -55,6 +55,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hook → app channel: helper symlink + Unix socket. Started after bootstrap
         // so a hook that fires during launch never beats the poll's first snapshot.
         AgentChannel.shared.start()
+        // Presence for held permission requests: which app is in front, lock/sleep,
+        // and the activation that releases a hold when the user returns to the terminal.
+        PresenceMonitor.shared.start()
         // Delegate and category first: an authorization prompt can be answered, and
         // a notification acted on, before the next statement would have run.
         UsageNotifier.shared.startAgentNotifications()
