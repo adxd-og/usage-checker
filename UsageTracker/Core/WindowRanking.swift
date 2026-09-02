@@ -22,6 +22,14 @@ enum WindowRanking {
         return worst(of: candidates)
     }
 
+    /// Provider-tab hero: the session window when the service has one — it
+    /// answers "can I keep working right now" and the tab has room to show every
+    /// other window underneath — otherwise the most-constrained window.
+    /// Tiles on the All tab keep `heroBucket`, where one ring is all there is.
+    static func detailHero(for service: ServiceSnapshot) -> UsageBucket? {
+        service.buckets.first { $0.kind == .session && !$0.isPromotional } ?? heroBucket(for: service)
+    }
+
     /// The window shown under the hero on a tile: the all-models weekly when it
     /// is not already the hero, otherwise the next-worst core window. nil when
     /// the service has nothing else worth showing.
