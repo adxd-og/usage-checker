@@ -5,6 +5,26 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] — unreleased
+
+### Added
+- **An Agents tab in the dashboard.** Live sessions and the run history the app
+  has been recording since 2.0.0: a summary strip (sessions, agent time,
+  approvals waited, busiest project) over the range you pick, the live list, and
+  finished sessions grouped by day with their project, start time, duration,
+  turns and how often they stopped for you. Filter by source — All · Claude ·
+  Codex.
+- The agent run history is trimmed to the last 90 days once per launch, so
+  `agent-sessions.jsonl` can't grow without a bound.
+
+### Changed
+- The dashboard, Settings, the welcome tour, the floating window and the desktop
+  widgets are drawn with the design system the popover got in 2.0.0 — the same
+  ring gauges, bars, section headers, status chips and battery colours. The
+  widgets now share the app's ring and bar code instead of keeping their own.
+- The floating window shows the leading window as a ring with the next two under
+  it, and how many agent sessions are running — amber when one needs you.
+
 ## [2.0.0] — 2026-09-02
 
 ### Added

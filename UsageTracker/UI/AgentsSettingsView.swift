@@ -26,7 +26,7 @@ struct AgentsSettingsView: View {
                 Section {
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                        Text(failure).font(.caption).textSelection(.enabled)
+                        Text(failure).font(OMFont.caption).textSelection(.enabled)
                     }
                 }
             }
@@ -55,7 +55,7 @@ struct AgentsSettingsView: View {
                 text: AgentHooksInstaller.claudePreviewJSON(helperPath: helperPath)
             )
             Text("Eight hooks in `~/.claude/settings.json` call Omelette's helper with the session id, the tool name and the folder — never your prompts or file contents. All but the permission hook are `async`, so Claude Code never waits for us. Omelette rewrites the file with sorted keys and two-space indentation and keeps the original as `settings.json.omelette-backup`.")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.secondary)
         } header: {
             Text("Claude Code")
@@ -79,7 +79,7 @@ struct AgentsSettingsView: View {
             if case .conflict(let line) = codex {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("`config.toml` already has a `notify` of its own:")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(OMFont.caption).foregroundStyle(.secondary)
                     Text(line)
                         .font(.system(size: 10, design: .monospaced))
                         .textSelection(.enabled)
@@ -92,7 +92,7 @@ struct AgentsSettingsView: View {
                 }
             }
             Text("Codex reports one event, `agent-turn-complete`, so its sessions show as working or done and never as \"needs you\". The line goes above the first `[table]` so it stays a top-level key.")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.secondary)
         } header: {
             Text("Codex")
@@ -100,9 +100,8 @@ struct AgentsSettingsView: View {
     }
 
     private func statusRow(_ status: HookInstallStatus) -> some View {
-        HStack(spacing: 8) {
-            Circle().fill(tint(status)).frame(width: 8, height: 8)
-            Text(label(status)).font(.system(size: 11)).foregroundStyle(.secondary)
+        HStack(spacing: OMSpacing.s) {
+            OMChip(text: label(status), tint: tint(status))
             Spacer()
         }
     }
@@ -156,7 +155,7 @@ struct AgentsSettingsView: View {
             Toggle("Notify when an agent finishes a turn", isOn: $settings.agentsNotifyDone)
             Toggle("Show agents in the menu bar", isOn: $settings.agentsShowInMenuBar)
             Text("\"Needs you\" fires when a session stops for a permission decision — that one ignores quiet hours by default, because an agent that waits all night has wasted the night. Finished-turn alerts fire on every reply, so they start off.")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -167,7 +166,7 @@ struct AgentsSettingsView: View {
         Section("Diagnostics") {
             LabeledContent("Socket") {
                 Text(AgentPaths.socketURL.path)
-                    .font(.caption.monospaced())
+                    .font(OMFont.caption.monospaced())
                     .textSelection(.enabled)
                     .lineLimit(1)
                     .truncationMode(.head)
@@ -175,13 +174,13 @@ struct AgentsSettingsView: View {
             LabeledContent("Helper", value: "omelette-hook v\(AgentPaths.helperVersion)")
             if let startError = AgentChannel.shared.startError {
                 LabeledContent("Socket status") {
-                    Text(startError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                    Text(startError).font(OMFont.caption).foregroundStyle(.red).textSelection(.enabled)
                 }
             }
             LabeledContent("Events", value: "\(received) received · \(dropped) dropped")
             LabeledContent("Last event", value: lastEventText)
             Text("Received counts messages the helper delivered; dropped counts messages the socket could not decode. Zero received with hooks installed usually means Omelette was restarted after the last session started — the next prompt re-registers it.")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.secondary)
         }
     }
@@ -253,3 +252,18 @@ struct AgentsSettingsView: View {
         }
     }
 }
+
+#if DEBUG
+// Shows the real install status of this machine's hooks — which is what the tab
+// is for. The 2 s diagnostics poll keeps running while the canvas is open.
+#Preview("Agents settings — light") {
+    AgentsSettingsView()
+        .frame(width: 520, height: 540)
+}
+
+#Preview("Agents settings — dark") {
+    AgentsSettingsView()
+        .frame(width: 520, height: 540)
+        .preferredColorScheme(.dark)
+}
+#endif
