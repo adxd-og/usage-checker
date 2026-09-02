@@ -37,6 +37,8 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
 - **Native notifications** at 80% and 95% (configurable thresholds) with quiet-hours support
 - **Daily summary notification** — wake up to "Yesterday: $4.20 across 23 turns"
 - **Dashboard window** with Activity heatmap (GitHub-style, last 52 weeks), Session History chart, and Insights (top project, week-over-week, peak day)
+- **Agents tab in the dashboard (2.1)** — live sessions plus the run history: sessions, agent time,
+  approval requests and busiest project over the range you pick, finished sessions grouped by day
 - **Desktop widgets** — per-provider Small / Medium / Large widgets (right-click →
   Edit Widget to pick the provider) and an "All providers" overview widget
 - **Floating mini window** — always-on-top compact view, dock it to a corner
