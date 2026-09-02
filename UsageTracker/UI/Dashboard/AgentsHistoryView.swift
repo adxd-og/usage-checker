@@ -22,6 +22,13 @@ struct AgentsHistoryView: View {
         stored == "all" ? nil : AgentSource(rawValue: stored)
     }
 
+    /// What `.task(id:)` watches. The session count alone misses every same-count
+    /// transition — one session ending as another starts, or a session archived and
+    /// revived by `claude --resume` — and each of those appends to the log.
+    nonisolated static func historyReloadKey(sessions: Int, lastEventAt: Date?) -> String {
+        "\(sessions)-\(lastEventAt?.timeIntervalSince1970 ?? 0)"
+    }
+
     private var source: AgentSource? { Self.selectedSource(storedSource) }
     private var calendar: Calendar { Calendar.current }
 
@@ -78,9 +85,9 @@ struct AgentsHistoryView: View {
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
-        // A session ending is what appends to the log, so the live list changing is
+        // A session ending is what appends to the log, so the live store changing is
         // the cheapest signal that the history is stale. Also runs on first appearance.
-        .task(id: agents.sessions.count) {
+        .task(id: Self.historyReloadKey(sessions: agents.sessions.count, lastEventAt: agents.lastEventAt)) {
             await dashboard.refreshAgentHistory()
         }
         .task { await refreshHookStatus() }
@@ -176,12 +183,17 @@ private struct AgentsSummaryStrip: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(.middle)
+            // A blank line that only keeps the four tiles the same height — there is
+            // nothing here to read out.
             Text(sub ?? " ")
                 .font(OMFont.caption)
                 .foregroundStyle(.tertiary)
                 .opacity(sub == nil ? 0 : 1)
+                .accessibilityHidden(sub == nil)
         }
         .dashboardCard(padding: 12)
+        // One stop per tile: "Sessions, 12" rather than three separate elements.
+        .accessibilityElement(children: .combine)
     }
 }
 
