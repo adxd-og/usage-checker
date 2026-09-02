@@ -52,8 +52,11 @@ struct OMProviderTile: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(WindowRanking.shortWindowLabel(hero.label))
                         .font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(WindowRanking.remainingText(until: hero.resetsAt) ?? "")
-                        .font(OMFont.caption.weight(.semibold))
+                    // A spend limit or a weekly budget has no reset: no empty line.
+                    if let remaining = WindowRanking.remainingText(until: hero.resetsAt) {
+                        Text(remaining)
+                            .font(OMFont.caption.weight(.semibold))
+                    }
                 }
             } else if isHealthy, let cost = service.weekCost {
                 VStack(alignment: .leading, spacing: 2) {
@@ -87,7 +90,7 @@ struct OMProviderTile: View {
         case .notSignedIn: "Sign in"
         case .notRunning: "Not running"
         case .error: "Error"
-        case .ok: "OK"
+        case .ok: "No data"   // healthy but nothing to show: not a state worth a green badge
         }
     }
     private var stateTint: Color {
@@ -95,7 +98,7 @@ struct OMProviderTile: View {
         case .notSignedIn: .orange
         case .notRunning: .secondary
         case .error: .red
-        case .ok: .green
+        case .ok: .secondary
         }
     }
     private var accessibilityText: String {

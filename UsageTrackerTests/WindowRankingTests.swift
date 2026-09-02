@@ -56,6 +56,25 @@ final class WindowRankingTests: XCTestCase {
         XCTAssertNil(WindowRanking.heroBucket(for: claude([])))
     }
 
+    // MARK: session rows
+
+    func testSessionRowsKeepTheSessionWindowWhenTheWeeklyIsHero() {
+        // Mid-week: weekly 52 % beats session 37 %, so the hero is "All models" —
+        // the 5-hour window must still be listed.
+        let service = claude([session, weekly, opus])
+        let hero = WindowRanking.heroBucket(for: service)
+        XCTAssertEqual(hero?.id, "seven_day")
+        XCTAssertEqual(WindowRanking.sessionRows(for: service, hero: hero).map(\.id), ["five_hour"])
+    }
+
+    func testSessionRowsAreEmptyWhenTheSessionIsTheHero() {
+        let hot = Fixture.bucket(id: "five_hour", label: "Current session", percent: 60, kind: .session)
+        let service = claude([hot, weekly])
+        let hero = WindowRanking.heroBucket(for: service)
+        XCTAssertEqual(hero?.id, "five_hour")
+        XCTAssertTrue(WindowRanking.sessionRows(for: service, hero: hero).isEmpty)
+    }
+
     // MARK: secondary
     func testSecondaryPrefersAllModelsWeeklyWhenNotHero() {
         let hotSession = Fixture.bucket(id: "five_hour", label: "Current session", percent: 60, kind: .session)
