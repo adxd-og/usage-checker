@@ -46,6 +46,10 @@ targets:
           - "**/*.entitlements"
       - path: UsageTrackerWidget/SharedWidgetData.swift
       - path: UsageTrackerWidget/ProviderIconView.swift
+      # Design tokens, OMRing and BarSegment: pure SwiftUI, no AppKit, so the widget
+      # extension can compile them too. Same trick as ProviderIconView.swift above —
+      # the appex is its own module, so "shared" means compiled into both targets.
+      - path: SharedUI
       # The shared logo catalog is deliberately under sources:, not resources: —
       # xcodegen (2.45.4) silently drops resources: entries that live outside a
       # target's source roots, while sources: auto-routes .xcassets to the
@@ -143,6 +147,9 @@ targets:
         excludes:
           - "**/*.entitlements"
           - "Info.plist"
+      # The app's design system (tokens, OMRing, BarSegment) — see the app target's
+      # note on the same path. Colours must come from one usageStatusColor, not a copy.
+      - path: SharedUI
       # Via sources:, not resources: — see the app target's note on the same path.
       - path: SharedAssets/ProviderIcons.xcassets
     settings:
