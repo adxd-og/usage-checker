@@ -55,6 +55,14 @@ final class PassiveSessionScannerTests: XCTestCase {
         """
     }
 
+    /// `YYYY/MM/DD` for a date, in the same local calendar Codex names its partitions
+    /// with. The scan prunes partitions that ended before the window, so a fixture's
+    /// path and its mtime have to agree.
+    private func codexPartition(_ date: Date) -> String {
+        let components = Calendar.current.dateComponents([.year, .month, .day], from: date)
+        return String(format: "%04d/%02d/%02d", components.year ?? 0, components.month ?? 0, components.day ?? 0)
+    }
+
     private func codexRollout(cwd: String, sessionID: String) -> String {
         """
         {"timestamp":"2026-08-06T11:30:14.849Z","type":"session_meta","payload":{"session_id":"\(sessionID)","id":"\(sessionID)","cwd":"\(cwd)","originator":"Codex Desktop"}}
@@ -181,7 +189,7 @@ final class PassiveSessionScannerTests: XCTestCase {
     func testACodexRolloutBecomesAnApproximateSession() throws {
         try write(
             codexRollout(cwd: "/Users/tester/Projects/beta", sessionID: codexSessionID),
-            to: "codex-sessions/2026/09/02/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
+            to: "codex-sessions/\(codexPartition(now))/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
             secondsAgo: 10
         )
 
@@ -196,14 +204,14 @@ final class PassiveSessionScannerTests: XCTestCase {
     }
 
     func testANonRolloutJSONLUnderTheCodexRootIsIgnored() throws {
-        try write("{}\n", to: "codex-sessions/2026/09/02/history.jsonl", secondsAgo: 10)
+        try write("{}\n", to: "codex-sessions/\(codexPartition(now))/history.jsonl", secondsAgo: 10)
         XCTAssertTrue(scan().isEmpty)
     }
 
     func testTheThreadIDComesFromTheFileNameWhenTheHeadIsUnreadable() throws {
         try write(
             "not json at all\n",
-            to: "codex-sessions/2026/09/02/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
+            to: "codex-sessions/\(codexPartition(now))/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
             secondsAgo: 10
         )
         let session = scan().first
@@ -220,6 +228,46 @@ final class PassiveSessionScannerTests: XCTestCase {
         XCTAssertNil(PassiveSessionScanner.codexSessionID(fileName: "history"))
     }
 
+    // MARK: - Codex date-partition pruning
+
+    func testCodexPartitionIsRecentReadsYearMonthAndDay() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let sessionsRoot = URL(fileURLWithPath: "/Users/tester/.codex/sessions", isDirectory: true)
+        let cutoff = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
+        func isRecent(_ relativePath: String) -> Bool {
+            PassiveSessionScanner.codexPartitionIsRecent(
+                URL(fileURLWithPath: sessionsRoot.path + "/" + relativePath, isDirectory: true),
+                root: sessionsRoot, cutoff: cutoff, calendar: calendar
+            )
+        }
+
+        XCTAssertFalse(isRecent("2025"), "the year ended on 2026-01-01, long before the window")
+        XCTAssertTrue(isRecent("2026"), "the year has not ended yet")
+        XCTAssertFalse(isRecent("2026/07"))
+        XCTAssertTrue(isRecent("2026/09"))
+        XCTAssertFalse(isRecent("2026/08/31"), "ended 2026-09-01; even +1 day of slack is before noon on the 2nd")
+        XCTAssertTrue(isRecent("2026/09/01"), "ended 2026-09-02, inside the day of slack")
+        XCTAssertTrue(isRecent("2026/09/02"))
+
+        // Anything we cannot read as a date is walked rather than skipped.
+        XCTAssertTrue(isRecent("archive"))
+        XCTAssertTrue(isRecent("2026/notamonth"))
+        XCTAssertTrue(isRecent("2026/09/02/extra"), "deeper than a day: judged by the day above it")
+        XCTAssertTrue(PassiveSessionScanner.codexPartitionIsRecent(
+            sessionsRoot, root: sessionsRoot, cutoff: cutoff, calendar: calendar
+        ), "the root itself has no date components")
+    }
+
+    func testARolloutUnderAnOldPartitionIsNotScannedEvenWithAFreshMtime() throws {
+        try write(
+            codexRollout(cwd: "/Users/tester/Projects/beta", sessionID: codexSessionID),
+            to: "codex-sessions/\(codexPartition(now.addingTimeInterval(-400 * 86_400)))/rollout-2025-12-11T10-00-00-\(codexSessionID).jsonl",
+            secondsAgo: 10
+        )
+        XCTAssertTrue(scan().isEmpty, "the partition ended more than a year before the window")
+    }
+
     // MARK: - Both roots at once
 
     func testBothProvidersAreScannedInOnePass() throws {
@@ -230,7 +278,7 @@ final class PassiveSessionScannerTests: XCTestCase {
         )
         try write(
             codexRollout(cwd: "/Users/tester/Projects/beta", sessionID: codexSessionID),
-            to: "codex-sessions/2026/09/02/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
+            to: "codex-sessions/\(codexPartition(now))/rollout-2026-09-02T10-00-00-\(codexSessionID).jsonl",
             secondsAgo: 5
         )
 
