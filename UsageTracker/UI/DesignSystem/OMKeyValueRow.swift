@@ -5,6 +5,8 @@ struct OMKeyValueRow: View {
     let label: String
     let value: String
     var barPercent: Double? = nil
+    /// 0…1 fraction of the window already elapsed — the bar's pace tick.
+    var pace: Double? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs) {
@@ -17,7 +19,7 @@ struct OMKeyValueRow: View {
                     .foregroundStyle(.secondary)
             }
             if let barPercent {
-                BarSegment(percent: barPercent, height: 6, showsLabel: false)
+                BarSegment(percent: barPercent, height: 6, showsLabel: false, pace: pace)
             }
         }
         .accessibilityElement(children: .combine)
