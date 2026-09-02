@@ -85,3 +85,19 @@ Provisional notes from the planner's report:
    one-time backup; `removeClaude` must not rewrite when nothing of ours is present.
 5. Unparsable settings.json → status `.conflict(reason)` — accepted.
 6. Tasks 1–3 are independent of packages 1–2 and may be executed first.
+
+## Package 1 — helper + transport (`…-p1-helper-transport.md`) — APPROVED
+
+The first planner run was cut off by a rate limit after Tasks 1–6; the
+orchestrator read Tasks 5–6 in full (server, helper, embedding) and added Task 7
+(`AgentChannel` + `AgentDiagnostics` + AppDelegate wiring) and the self-review.
+Decisions confirmed: POSIX sockets on both sides; `copy: {destination: wrapper,
+subpath: Contents/Helpers}` embedding with `SKIP_INSTALL: YES` on the tool;
+`sysctl` parent walk; oversized `tool_input` shrunk in the helper. Executor notes:
+
+1. Runs in a git worktree on branch `agents/p1-helper-transport`; copy
+   `signing.xcconfig` first; worktree-local DerivedData.
+2. Every `xcodebuild test` carries `ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""`.
+3. If the embed spelling in Task 6 Step 3 does not produce `Contents/Helpers/omelette-hook`
+   with xcodegen's installed version, inspect the generated pbxproj (`dstSubfolderSpec`,
+   `dstPath`) and adjust `copy:` — do not fall back to a Run Script phase.
