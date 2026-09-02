@@ -22,6 +22,9 @@ enum OMFont {
     static let caption = Font.system(size: 11)
     /// Section labels: apply `.textCase(.uppercase)` and `.tracking(0.6)` at the use site (OMSectionHeader does).
     static let micro = Font.system(size: 10, weight: .semibold)
+    /// Dashboard screen titles. The popover's `title` (13 pt) is far too small for a
+    /// 920 pt window, and `.title2` is a dynamic role the rest of the kit doesn't use.
+    static let screenTitle = Font.system(size: 22, weight: .semibold)
     static let heroNumeral = Font.system(size: 21, weight: .bold, design: .rounded)
     static let numeral = Font.system(size: 13, weight: .bold, design: .rounded)
     static let menuNumeral = Font.system(size: 11, weight: .semibold, design: .rounded)
