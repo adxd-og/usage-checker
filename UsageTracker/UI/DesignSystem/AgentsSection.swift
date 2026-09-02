@@ -17,11 +17,15 @@ struct AgentsSection: View {
     let grouped: Bool
     let hooksInstalled: Bool
     var title: String = "Agents"
+    /// `.infinity` means "grow to fit and never scroll" — what a host that already
+    /// scrolls (the dashboard page) needs, since a scroll view inside a scroll view
+    /// swallows the wheel.
+    var maxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
     let onEnable: () -> Void
 
     /// About five rows, or four rows with their group headings — the mockup's
     /// layout. Past this the list scrolls instead of growing the popover.
-    nonisolated static let maxListHeight: CGFloat = 260
+    nonisolated static let defaultMaxListHeight: CGFloat = 260
 
     /// Used only until the list has measured itself once, so the section never
     /// flashes at 1 pt on the first frame.
@@ -77,9 +81,11 @@ struct AgentsSection: View {
                 }
             }
         }
-        .frame(height: min(listHeight > 0 ? listHeight : estimatedHeight, Self.maxListHeight))
-        .scrollIndicators(listHeight > Self.maxListHeight ? .automatic : .never)
-        .scrollDisabled(listHeight <= Self.maxListHeight)
+        // With an infinite cap all three collapse to "exactly the content height,
+        // no indicators, no scrolling" — the list just grows.
+        .frame(height: min(listHeight > 0 ? listHeight : estimatedHeight, maxListHeight))
+        .scrollIndicators(listHeight > maxListHeight ? .automatic : .never)
+        .scrollDisabled(listHeight <= maxListHeight)
     }
 
     private func row(_ session: AgentSession) -> some View {
