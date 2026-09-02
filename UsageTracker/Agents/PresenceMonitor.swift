@@ -18,7 +18,7 @@ final class PresenceMonitor {
     typealias Frontmost = (pid: Int32?, bundleID: String?)
 
     /// Every `NSWorkspace.didActivateApplicationNotification` after `start()`.
-    var onActivation: ((NSRunningApplication) -> Void)?
+    var onActivation: ((Frontmost) -> Void)?
 
     private let frontmost: @MainActor () -> Frontmost?
     private let lockedOrAsleepOverride: (@MainActor () -> Bool)?
@@ -57,8 +57,25 @@ final class PresenceMonitor {
         return false
     }
 
-    func setLocked(_ value: Bool) { locked = value }
-    func setAsleep(_ value: Bool) { asleep = value }
+    /// Unlocking (or the display waking) is an activation in all but name: the app
+    /// that was in front before the lock is in front again, and a request held only
+    /// because the screen was locked must be released now, not at the 120 s expiry.
+    func setLocked(_ value: Bool) {
+        let regained = locked && !value
+        locked = value
+        if regained { reportFrontmost() }
+    }
+
+    func setAsleep(_ value: Bool) {
+        let regained = asleep && !value
+        asleep = value
+        if regained { reportFrontmost() }
+    }
+
+    private func reportFrontmost() {
+        guard !isLockedOrAsleep, let front = frontmost() else { return }
+        onActivation?(front)
+    }
 
     /// Registers the observers once. Observer blocks run on the main queue; the
     /// `@Sendable` closures capture only a weak self and, for activation, pull the
@@ -79,7 +96,7 @@ final class PresenceMonitor {
         observers = [
             workspace.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
                 guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
-                MainActor.assumeIsolated { self?.onActivation?(app) }
+                MainActor.assumeIsolated { self?.onActivation?((app.processIdentifier, app.bundleIdentifier)) }
             },
             workspace.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main, using: flag(asleep: true)),
             workspace.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main, using: flag(asleep: false)),

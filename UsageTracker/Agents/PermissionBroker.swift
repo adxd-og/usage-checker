@@ -73,8 +73,8 @@ final class PermissionBroker: ObservableObject {
         self.presence = presence
         self.featureEnabled = featureEnabled
         self.holdWindow = holdWindow
-        presence.onActivation = { [weak self] app in
-            self?.hostActivated(pid: app.processIdentifier, bundleID: app.bundleIdentifier)
+        presence.onActivation = { [weak self] front in
+            self?.hostActivated(front)
         }
     }
 
@@ -103,6 +103,12 @@ final class PermissionBroker: ObservableObject {
     func register(event: AgentEvent, reply: AgentReply, session: AgentSession?, now: Date = Date()) {
         guard event.kind == .permissionRequested, let id = reply.requestID else {
             reply.send(nil)   // nothing to hold (v1 helper, or a misrouted event)
+            return
+        }
+        // Ids are 128 random bits, so a repeat is a replay or a bug, never a second
+        // question: overwriting the entry would leave a phantom row in `pending`.
+        guard held[id] == nil else {
+            reply.send(nil)
             return
         }
         let host = event.host == .none ? (session?.host ?? .none) : event.host
@@ -178,8 +184,10 @@ final class PermissionBroker: ObservableObject {
         expire(id: id)
     }
 
-    private func hostActivated(pid: Int32, bundleID: String?) {
-        let ids = held.filter { PresenceMonitor.matches(frontmost: (pid, bundleID), host: $0.value.host) }.map(\.key)
+    /// An app came to the front (or the screen unlocked with one already there):
+    /// every hold whose host that is goes back to the terminal.
+    private func hostActivated(_ front: PresenceMonitor.Frontmost) {
+        let ids = held.filter { PresenceMonitor.matches(frontmost: front, host: $0.value.host) }.map(\.key)
         for id in ids { release(id: id) }
     }
 

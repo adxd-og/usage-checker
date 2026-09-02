@@ -173,6 +173,14 @@ struct AgentsSettingsView: View {
             Text("Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes.")
                 .font(OMFont.caption)
                 .foregroundStyle(.secondary)
+            if claude != .installed {
+                // `PermissionBroker.featureIsUsable` holds nothing unless the Claude hooks
+                // match this build's template (the 150 s PermissionRequest cap); a 2.1
+                // install reads "older than this build" above and needs one Update.
+                Text("Inactive until the Claude Code hooks above are installed and up to date.")
+                    .font(OMFont.caption)
+                    .foregroundStyle(.orange)
+            }
             LabeledContent("Pending", value: "\(permissionPending)")
             LabeledContent("Answered", value: "\(permissionAnswered)")
             LabeledContent("Expired", value: "\(permissionExpired)")

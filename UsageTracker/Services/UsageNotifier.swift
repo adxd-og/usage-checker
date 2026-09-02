@@ -377,6 +377,18 @@ final class UsageNotifier: NSObject {
     ) {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
+        // Allow / Deny banners from a previous run have dead buttons: pending
+        // requests live in memory only (design doc, rule 4), so nothing can answer
+        // them any more. Sweep them before anything new is filed.
+        center.getDeliveredNotifications { delivered in
+            // Re-fetched inside: the centre object is not Sendable, and the
+            // callback runs on the framework's own queue.
+            let stale = delivered.map(\.request.identifier)
+                .filter { $0.hasPrefix(AgentNotificationRules.permissionPrefix) }
+            if !stale.isEmpty {
+                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: stale)
+            }
+        }
         center.setNotificationCategories([
             UNNotificationCategory(
                 identifier: Self.agentNeedsYouCategory,
@@ -587,9 +599,12 @@ final class UsageNotifier: NSObject {
     /// `agentNeedsYou`, so `notifiedNeedsYou` and `clearResolvedNeedsYou` keep
     /// working. The broker has already dropped the id, so the veto inside it is off.
     private func permissionResolved(_ pending: PendingPermission, _ resolution: PermissionResolution) {
-        UNUserNotificationCenter.current().removeDeliveredNotifications(
-            withIdentifiers: [AgentNotificationRules.permissionIdentifier(requestID: pending.id)]
-        )
+        // Pending *and* delivered: a request resolved milliseconds after `onPending`
+        // (the helper was already gone) has a banner that is still in the queue.
+        let identifier = AgentNotificationRules.permissionIdentifier(requestID: pending.id)
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
         guard resolution == .expired,
               let session = AgentSessionStore.shared.sessions.first(where: { $0.id == pending.sessionID }),
               session.state == .needsYou

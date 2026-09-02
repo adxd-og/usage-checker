@@ -175,3 +175,31 @@ package-1 manual smoke is deferred until package 2's template bump lands. Execut
 notes: never launch a Debug build from the worktree (it steals the owner's socket and
 helper symlink); never post `com.apple.screenIsLocked` or touch the production socket
 from tests (the plan already avoids both).
+
+## Phase 4 code review (2026-09-02, after both packages merged) — fixed
+
+Verdict was "fix first"; rules 1–4 and 6 held as implemented, the timeout chain is
+correct, `LOCAL_PEERCRED` is checked before any read, `AgentReply` is idempotent.
+Fixed in the follow-up commit: (1) the helper's `OMELETTE_AGENT_SOCKET` /
+`OMELETTE_DECISION_TIMEOUT` overrides are now compiled out of Release (`#if DEBUG`) —
+a same-user listener reachable through the agent's environment could otherwise echo
+`allow` for every request; (2) unlock / display-wake now re-evaluates presence
+(`PresenceMonitor.setLocked/setAsleep` report the frontmost app through
+`onActivation`, whose payload is now a `Frontmost` tuple), so a request held only
+because the screen was locked is released the moment it unlocks; (3) `AgentReply.sendRaw`
+keeps the lock across `write` + `shutdown`, closing the recycled-fd window against
+`closeDescriptor`; (4) a repeated request id is released, not held twice (no phantom
+`pending` row); (5) the server's `poll` retries on `EINTR` instead of reading it as
+"budget exhausted"; (6) `permissionResolved` withdraws pending *and* delivered
+banners, and `startAgentNotifications` sweeps `agent-permission-*` banners left by a
+previous run; (7) the session store no longer clears `pendingPermissionID` on tool
+events — the broker is the only authority, so buttons survive pre-approved calls that
+run alongside the held one; (8) Settings → Agents says the switch is inactive while
+the Claude hooks are missing or outdated. Tests added: unlock/wake activation,
+unlock releases a hold, repeated id, timeout-chain pin, store keeps the id.
+Left for later (minor): a hold with needs-you notifications off (or quiet hours
+without bypass) is silent for two minutes — the pill and popover are the only
+surfaces; switching the feature off does not release holds already in flight;
+a subagent's PermissionRequest is held and bannered under the parent session with
+no row-state change (2.1 already ignored subagent events); the notifier's
+`UNUserNotificationCenter` paths remain manual-checklist only.

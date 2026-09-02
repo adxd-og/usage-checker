@@ -53,10 +53,43 @@ final class PresenceMonitorTests: XCTestCase {
         XCTAssertTrue(monitor.isUserAt(host: iterm))
     }
 
+    func testUnlockAndWakeReportTheFrontmostAppAsAnActivation() {
+        // The app that was in front before the lock is in front again afterwards;
+        // a hold that only existed because of the lock must hear about it.
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") })
+        var seen: [PresenceMonitor.Frontmost] = []
+        monitor.onActivation = { seen.append($0) }
+
+        monitor.setLocked(true)
+        XCTAssertTrue(seen.isEmpty, "locking is not an activation")
+        monitor.setLocked(false)
+        XCTAssertEqual(seen.map(\.pid), [4242])
+        XCTAssertEqual(seen.map(\.bundleID), ["com.googlecode.iterm2"])
+
+        monitor.setAsleep(true)
+        monitor.setAsleep(false)
+        XCTAssertEqual(seen.count, 2)
+
+        monitor.setLocked(false)   // no transition: nothing to report
+        XCTAssertEqual(seen.count, 2)
+    }
+
+    func testUnlockWhileStillAsleepReportsNothing() {
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") })
+        var count = 0
+        monitor.onActivation = { _ in count += 1 }
+        monitor.setAsleep(true)
+        monitor.setLocked(true)
+        monitor.setLocked(false)
+        XCTAssertEqual(count, 0, "the display is still off; nobody is at the terminal yet")
+        monitor.setAsleep(false)
+        XCTAssertEqual(count, 1)
+    }
+
     func testActivationNotificationsReachOnActivationAfterStart() {
         let monitor = PresenceMonitor(frontmost: { nil })
         var seen: [Int32] = []
-        monitor.onActivation = { seen.append($0.processIdentifier) }
+        monitor.onActivation = { seen.append($0.pid ?? -1) }
         monitor.start()
         monitor.start()   // idempotent: no double delivery
         defer { monitor.stop() }

@@ -138,14 +138,18 @@ enum HookMain {
     static func socketPath(environment: [String: String]) -> (path: String, overridden: Bool) {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let production = home.appendingPathComponent("Library/Application Support/UsageTracker/agent.sock").path
+        #if DEBUG
+        // The override exists for the test suite, and only in Debug builds. In a
+        // shipped helper anything that can set an environment variable on the
+        // agent's process (a repo's settings `env`, direnv, a devcontainer) could
+        // otherwise point every PermissionRequest — request id included — at a
+        // same-user listener that echoes "allow": the helper cannot authenticate the
+        // server, so the only safe release-build socket is the production one. The
+        // Debug allowlist (per-user temp dir, Omelette's App Support dir) keeps the
+        // E2E tests off the production socket.
         guard let override = environment[socketEnvironmentKey], !override.isEmpty else {
             return (production, false)
         }
-        // The override exists for the test suite. Anything that can set an
-        // environment variable on the agent's process (direnv, a devcontainer, a
-        // dependency's install script) must not be able to redirect hook payloads —
-        // which include tool inputs — to a socket of its choosing, so only paths in
-        // the per-user temp dir or Omelette's own App Support dir are honoured.
         let candidate = URL(fileURLWithPath: override).standardizedFileURL.path
         let allowedRoots = [
             NSTemporaryDirectory(),
@@ -153,15 +157,22 @@ enum HookMain {
             home.appendingPathComponent("Library/Application Support/UsageTracker").path + "/",
         ]
         return allowedRoots.contains(where: { candidate.hasPrefix($0) }) ? (override, true) : (production, false)
+        #else
+        return (production, false)
+        #endif
     }
 
     /// 140 s, or a shorter value from OMELETTE_DECISION_TIMEOUT when — and only when —
     /// the socket override was honoured (tests). Shorter can only mean "no decision",
     /// so this is not a lever anyone can pull to make us print more.
     static func decisionTimeout(environment: [String: String], overrideAllowed: Bool) -> TimeInterval {
+        #if DEBUG
         guard overrideAllowed, let raw = environment[decisionTimeoutEnvironmentKey],
               let value = TimeInterval(raw), value > 0 else { return decisionTimeout }
         return min(value, decisionTimeout)
+        #else
+        return decisionTimeout
+        #endif
     }
 }
 
