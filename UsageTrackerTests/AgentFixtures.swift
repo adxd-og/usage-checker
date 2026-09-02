@@ -106,3 +106,28 @@ enum AgentSocketTestClient {
         send(Data(line.utf8), to: path, replyTimeout: replyTimeout)
     }
 }
+
+extension AgentFixture {
+    /// An `AgentReply` wired to one end of a socketpair, and the other end for the
+    /// test to read what was written. Close `peer` in the test.
+    static func replyPair(requestID: String? = AgentFixture.requestID) -> (reply: AgentReply, peer: Int32) {
+        var fds: [Int32] = [-1, -1]
+        precondition(socketpair(AF_UNIX, SOCK_STREAM, 0, &fds) == 0, "socketpair failed: \(errno)")
+        var one: Int32 = 1
+        setsockopt(fds[0], SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+        return (AgentReply(requestID: requestID, fd: fds[0]), fds[1])
+    }
+}
+
+extension AgentSocketTestClient {
+    /// Reads one line (without its "\n") from `fd`. nil when nothing arrives within
+    /// `timeout` or the peer closed without sending.
+    static func readLine(_ fd: Int32, timeout: TimeInterval = 1) -> String? {
+        var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        guard poll(&descriptor, 1, Int32(timeout * 1000)) > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let count = read(fd, &buffer, buffer.count)
+        guard count > 0 else { return nil }
+        return String(decoding: buffer[0..<count], as: UTF8.self).trimmingCharacters(in: .newlines)
+    }
+}
