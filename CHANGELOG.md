@@ -10,9 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **An Agents tab in the dashboard.** Live sessions and the run history the app
   has been recording since 2.0.0: a summary strip (sessions, agent time,
-  approvals waited, busiest project) over the range you pick, the live list, and
-  finished sessions grouped by day with their project, start time, duration,
-  turns and how often they stopped for you. Filter by source — All · Claude ·
+  approval requests, busiest project) over the range you pick, the live list, and
+  finished sessions grouped by day with their project, start time, duration
+  and turns. Filter by source — All · Claude ·
   Codex.
 - The agent run history is trimmed to the last 90 days once per launch, so
   `agent-sessions.jsonl` can't grow without a bound.

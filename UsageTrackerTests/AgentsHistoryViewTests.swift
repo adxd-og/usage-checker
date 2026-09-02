@@ -19,17 +19,13 @@ final class OMAgentHistoryRowTests: XCTestCase {
         XCTAssertEqual(OMAgentHistoryRow.turnsText(9), "9 turns")
     }
 
-    func testApprovalsOnlyShowWhenThereWereAny() {
-        XCTAssertNil(OMAgentHistoryRow.approvalsText(0))
-        XCTAssertEqual(OMAgentHistoryRow.approvalsText(1), "1 approval")
-        XCTAssertEqual(OMAgentHistoryRow.approvalsText(3), "3 approvals")
-    }
-
+    /// Approval counts are intentionally absent from rows (they read as an open
+    /// question in a finished session); the summary tile carries the aggregate.
     func testTheSpokenLabelCarriesEverythingTheRowShows() {
         let label = OMAgentHistoryRow.accessibilityLabel(for: record(needsYouCount: 2), startedAt: "09:18")
         XCTAssertEqual(
             label,
-            "Usage tracker, Claude Code, started 09:18, ran 3h 12m, 4 turns, 2 approvals waited"
+            "Usage tracker, Claude Code, started 09:18, ran 3h 12m, 4 turns"
         )
     }
 

@@ -164,7 +164,7 @@ private struct AgentsSummaryStrip: View {
         HStack(alignment: .top, spacing: 12) {
             tile(label: "Sessions", value: "\(summary.sessions)", sub: nil)
             tile(label: "Agent time", value: AgentHistorySummary.duration(summary.agentTime), sub: nil)
-            tile(label: "Approvals waited", value: "\(summary.approvalsWaited)", sub: nil)
+            tile(label: "Approval requests", value: "\(summary.approvalsWaited)", sub: nil)
             tile(
                 label: "Busiest project",
                 value: summary.busiestProject?.name ?? "—",
