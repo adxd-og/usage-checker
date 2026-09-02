@@ -56,6 +56,31 @@ final class WindowRankingTests: XCTestCase {
         XCTAssertNil(WindowRanking.heroBucket(for: claude([])))
     }
 
+    // MARK: detail hero (provider tab)
+
+    /// The provider tab answers "can I keep working right now", so the session
+    /// window is the big ring even when a weekly is further along.
+    func testDetailHeroPrefersTheSessionEvenWhenTheWeeklyIsHotter() {
+        let service = claude([session, weekly, opus])
+        XCTAssertEqual(WindowRanking.heroBucket(for: service)?.id, "seven_day", "the tile hero is unchanged")
+        XCTAssertEqual(WindowRanking.detailHero(for: service)?.id, "five_hour")
+        // The weekly is still a window of the service, so the "Weekly limits"
+        // ring row keeps listing "All models" instead of only the model-scoped one.
+        XCTAssertTrue(service.buckets.contains { $0.id == "seven_day" })
+    }
+
+    func testDetailHeroFallsBackToTheWorstWindowWithoutASession() {
+        XCTAssertEqual(WindowRanking.detailHero(for: claude([weekly, opus]))?.id, "seven_day")
+        XCTAssertNil(WindowRanking.detailHero(for: claude([])))
+    }
+
+    func testDetailHeroIgnoresAPromotionalSession() {
+        let promoSession = Fixture.bucket(
+            id: "five_hour_promotional", label: "Promo session", percent: 99, kind: .session
+        )
+        XCTAssertEqual(WindowRanking.detailHero(for: claude([promoSession, session, weekly]))?.id, "five_hour")
+    }
+
     // MARK: session rows
 
     func testSessionRowsKeepTheSessionWindowWhenTheWeeklyIsHero() {

@@ -327,10 +327,12 @@ private struct ProviderDetail: View {
     /// behind a disclosure row. "All models" stays visible even at zero.
     private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" } }
     private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" } }
-    private var hero: UsageBucket? { WindowRanking.heroBucket(for: service) }
-    /// Session windows that lost the hero contest still get their own row —
-    /// mid-week the weekly is usually the hero, and the 5-hour number is the
-    /// one people check most.
+    /// The session window when the service has one: "can I keep working right
+    /// now" is what this tab is for, and every other window still gets a row
+    /// below. Only a service without a session falls back to the worst window.
+    private var hero: UsageBucket? { WindowRanking.detailHero(for: service) }
+    /// Any *additional* session window — usually none, now that the first one is
+    /// the hero. A second session window would otherwise vanish from the tab.
     private var sessionRows: [UsageBucket] { WindowRanking.sessionRows(for: service, hero: hero) }
     /// Weekly windows other than the one already shown as the hero.
     private var weeklyForRow: [UsageBucket] {
