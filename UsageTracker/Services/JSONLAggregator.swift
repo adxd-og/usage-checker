@@ -1,6 +1,6 @@
 import Foundation
 
-struct CLITurn: Sendable {
+struct CLITurn: Sendable, Codable {
     /// The API message id (`msg_…`). Stable across the 3–4 duplicate log lines Claude
     /// Code writes for one response, so it's the dedup key.
     let id: String
@@ -99,11 +99,52 @@ actor JSONLAggregator: CostLogAggregating {
         var byFamily: [String: Double] = [:]
     }
 
+    /// What one transcript looked like the last time we read it. `offset` stops just
+    /// past the last complete line: a partial tail is deliberately left unconsumed so
+    /// the next poll re-reads it whole rather than dropping the turn it belongs to.
+    /// `size` and `mtime` are the skip key — a file that still looks exactly like this
+    /// holds nothing we haven't already counted, so it is never opened again.
+    private struct FileMark: Codable, Equatable {
+        var offset: UInt64
+        var size: UInt64
+        /// Always whole seconds (`markTime`), so it survives the cache's ISO-8601 round
+        /// trip byte-identical. Without that, every mark restored from disk would
+        /// mismatch the file's nanosecond-precision mtime and the cache would buy
+        /// nothing at all. The blind spot — an in-place edit that lands in the same
+        /// second and leaves the length untouched — cannot happen to an append-only log.
+        var mtime: Date
+    }
+
+    /// A day of spend that has already been folded out of `recentTurns`, in a shape
+    /// `oldDays` can be rebuilt from.
+    private struct DayEntry: Codable {
+        let day: Date
+        let cost: Double
+        let tokens: Int
+        let turns: Int
+        let byFamily: [String: Double]
+    }
+
+    /// Everything a relaunch needs to answer "what did I spend?" without re-reading
+    /// gigabytes of transcripts. Rejected wholesale if it was written by another
+    /// version or for another log root.
+    private struct CostCacheSnapshot: Codable {
+        let version: Int
+        let root: String
+        let savedAt: Date
+        let fileMarks: [String: FileMark]
+        let recentTurns: [CLITurn]
+        let oldDays: [DayEntry]
+        let seenMessageIDs: [UInt64]
+    }
+
+    private static let cacheVersion = 1
+
     private let rootURL: URL
-    /// Byte offset just past the last complete line already parsed, per file. A partial
-    /// tail line is deliberately left unconsumed so the next poll re-reads it whole
-    /// rather than dropping the turn it belongs to.
-    private var fileOffsets: [String: UInt64] = [:]
+    /// Where the cache is kept; nil disables it entirely (the tests that don't care).
+    private let cacheURL: URL?
+    /// Per file, what we already consumed and what the file looked like when we did.
+    private var fileMarks: [String: FileMark] = [:]
     /// Turns young enough to feed the rolling today/week/month figures. Turns
     /// that age past `recentWindow` are folded into `oldDays` and released —
     /// holding every turn of the 90-day window pinned tens of MB permanently.
@@ -127,12 +168,39 @@ actor JSONLAggregator: CostLogAggregating {
     /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
     /// to call per turn.
     private var dayCache: (start: Date, next: Date)?
+    /// How many transcripts the last scan actually opened. Zero is the normal answer
+    /// for a poll with nothing new, and for a relaunch off a warm cache.
+    private(set) var filesParsedInLastScan = 0
+    /// Set whenever this refresh changed something worth persisting. A quiet poll
+    /// leaves it false and the cache file untouched.
+    private var dirty = false
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .iso8601
+        return e
+    }()
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .iso8601
+        return d
+    }()
 
-    /// Injectable log root — the tests point it at a fixture directory instead of
-    /// the real `~/.claude/projects`.
-    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".claude/projects", isDirectory: true)) {
+    /// Not private: it is the default argument of an internal initializer, and a
+    /// default argument may not reference a private member.
+    static var defaultCacheURL: URL {
+        AgentPaths.appSupportURL.appendingPathComponent("cost-cache-claude-v1.json")
+    }
+
+    /// Injectable log root and cache location — the tests point both at a temp
+    /// directory instead of the real `~/.claude/projects` and Application Support.
+    /// A nil `cacheURL` turns persistence off.
+    init(
+        rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".claude/projects", isDirectory: true),
+        cacheURL: URL? = JSONLAggregator.defaultCacheURL
+    ) {
         self.rootURL = rootURL
+        self.cacheURL = cacheURL
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
@@ -142,14 +210,20 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     func refresh() async {
+        loadCache()
         // Runaway backstop: ~250 days of continuous uptime before this trips;
         // after a clear, only forked-session replays could double-count.
         if seenMessageIDs.count > 500_000 {
             seenMessageIDs.removeAll()
+            dirty = true
         }
         scanAndIngest()
         initialized = true
         pruneAndFold()
+        if dirty {
+            saveCache()
+            dirty = false
+        }
     }
 
     func breakdown() -> CLIBreakdown {
@@ -339,10 +413,12 @@ actor JSONLAggregator: CostLogAggregating {
                 if t.timestamp < recentCutoff { fold(t) } else { kept.append(t) }
             }
             recentTurns = kept
+            dirty = true
         }
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
+            dirty = true
         }
     }
 
@@ -369,56 +445,76 @@ actor JSONLAggregator: CostLogAggregating {
     // MARK: - File scanning
 
     private func scanAndIngest() {
+        filesParsedInLastScan = 0
         guard let enumerator = FileManager.default.enumerator(
             at: rootURL,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return }
 
-        let firstScan = !initialized
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
         var seenPaths = Set<String>()
 
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
-            seenPaths.insert(url.path)
+            let path = url.path
+            seenPaths.insert(path)
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            let mtime = values?.contentModificationDate ?? .distantPast
+            // Epoch rather than `.distantPast` for a file whose attributes won't read:
+            // both are far outside the window, but only one survives the cache round trip.
+            let mtime = Self.markTime(values?.contentModificationDate ?? Date(timeIntervalSince1970: 0))
+            let size = UInt64(values?.fileSize ?? 0)
 
-            if firstScan {
-                let size = UInt64(values?.fileSize ?? 0)
+            let start: UInt64
+            if let mark = fileMarks[path] {
+                // Byte-for-byte what we already read — not opened, on this poll or any
+                // relaunch after it. This is the whole point of the cache: 2.3 GB of
+                // transcripts costs one `stat` each instead of a full parse.
+                if size == mark.size, mtime == mark.mtime { continue }
+                // Shorter than what we already consumed: the file was rewritten, so
+                // read it from the top. The `seenMessageIDs` dedupe makes the replay free.
+                start = size < mark.offset ? 0 : mark.offset
+            } else {
+                // Nothing written here for the whole 90-day window is outside every
+                // figure we report; record it consumed rather than reading it.
                 if mtime < cutoff {
-                    fileOffsets[url.path] = size
+                    fileMarks[path] = FileMark(offset: size, size: size, mtime: mtime)
+                    dirty = true
                     continue
                 }
-                fileOffsets[url.path] = 0
-            } else if mtime < cutoff {
+                start = 0
+            }
+
+            // Same length, newer timestamp — a touch, or a rewrite of identical bytes.
+            // Move the mark on so the next poll can skip it, but don't open anything.
+            if size == start {
+                fileMarks[path] = FileMark(offset: start, size: size, mtime: mtime)
+                dirty = true
                 continue
             }
 
+            filesParsedInLastScan += 1
             // One file at a time, drained inside an autorelease pool: the first
             // scan used to buffer every turn from ~1 GB of logs (plus all the
             // JSONSerialization garbage) before deduping, spiking memory past 1 GB.
             autoreleasepool {
-                ingest(parseFile(at: url))
+                ingest(parseFile(at: url, from: start, size: size, mtime: mtime))
             }
         }
 
-        // Offsets for files the enumerator no longer returns — a deleted project, a
-        // cleared session — would otherwise be carried for the life of the process.
-        if fileOffsets.count > seenPaths.count {
-            fileOffsets = fileOffsets.filter { seenPaths.contains($0.key) }
+        // Marks for files the enumerator no longer returns — a deleted project, a
+        // cleared session — would otherwise be carried for the life of the process,
+        // and now for the life of the cache file too.
+        if fileMarks.count > seenPaths.count {
+            fileMarks = fileMarks.filter { seenPaths.contains($0.key) }
+            dirty = true
         }
     }
 
-    private func parseFile(at url: URL) -> [CLITurn] {
+    /// `size` and `mtime` are what the file looked like *before* the read: a write that
+    /// lands while we parse must leave the mark stale, so the next poll comes back for it.
+    private func parseFile(at url: URL, from start: UInt64, size: UInt64, mtime: Date) -> [CLITurn] {
         let path = url.path
-        var start = fileOffsets[path] ?? 0
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
-              let size = attrs[.size] as? UInt64 else { return [] }
-        if size < start { start = 0 }
-        if size == start { return [] }
-
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
         do { try handle.seek(toOffset: start) } catch { return [] }
@@ -451,8 +547,76 @@ actor JSONLAggregator: CostLogAggregating {
         // read again — the turn was lost for good. Leaving the offset short makes the
         // next poll re-read the line whole. Unchanged when the chunk holds no newline
         // at all, which is the same situation stretched over more than one poll.
-        fileOffsets[path] = start + UInt64(consumedInChunk)
+        fileMarks[path] = FileMark(offset: start + UInt64(consumedInChunk), size: size, mtime: mtime)
+        dirty = true
         return turns
+    }
+
+    // MARK: - The on-disk cache
+
+    /// Whole seconds — see `FileMark.mtime`.
+    private static func markTime(_ date: Date) -> Date {
+        Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
+    }
+
+    /// Restores the last run's state, once, before the first scan. Any problem at all —
+    /// no file, unreadable, written by another build or for another log root — just
+    /// leaves the aggregator cold, which costs time and never correctness.
+    private func loadCache() {
+        guard !initialized, let cacheURL else { return }
+        guard let data = try? Data(contentsOf: cacheURL) else { return }
+        let snapshot: CostCacheSnapshot
+        do {
+            snapshot = try decoder.decode(CostCacheSnapshot.self, from: data)
+        } catch {
+            NSLog("[UT] cost cache unreadable, rebuilding from the logs")
+            return
+        }
+        guard snapshot.version == Self.cacheVersion, snapshot.root == rootURL.path else {
+            NSLog("[UT] cost cache is for another version or log root, ignoring")
+            return
+        }
+        fileMarks = snapshot.fileMarks
+        recentTurns = snapshot.recentTurns
+        // Last one wins rather than merged: a day repeated in a hand-edited file is
+        // corruption, and counting it twice would be worse than dropping half of it.
+        var days: [Date: DayAgg] = [:]
+        for entry in snapshot.oldDays {
+            days[entry.day] = DayAgg(
+                cost: entry.cost, tokens: entry.tokens, turns: entry.turns, byFamily: entry.byFamily
+            )
+        }
+        oldDays = days
+        seenMessageIDs = Set(snapshot.seenMessageIDs)
+        NSLog(
+            "[UT] cost cache restored: %ld files, %ld recent turns",
+            fileMarks.count, recentTurns.count
+        )
+    }
+
+    private func saveCache() {
+        guard let cacheURL else { return }
+        let snapshot = CostCacheSnapshot(
+            version: Self.cacheVersion,
+            root: rootURL.path,
+            savedAt: Date(),
+            fileMarks: fileMarks,
+            recentTurns: recentTurns,
+            oldDays: oldDays.map {
+                DayEntry(day: $0.key, cost: $0.value.cost, tokens: $0.value.tokens,
+                         turns: $0.value.turns, byFamily: $0.value.byFamily)
+            },
+            seenMessageIDs: Array(seenMessageIDs)
+        )
+        do {
+            let data = try encoder.encode(snapshot)
+            try FileManager.default.createDirectory(
+                at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try data.write(to: cacheURL, options: [.atomic])
+        } catch {
+            NSLog("[UT] cost cache write failed: %@", String(describing: error))
+        }
     }
 
     private func parseLine(_ data: Data, projectSlug: String) -> CLITurn? {
