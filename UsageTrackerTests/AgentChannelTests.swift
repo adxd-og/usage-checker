@@ -1,0 +1,67 @@
+import XCTest
+@testable import Omelette
+
+@MainActor
+final class AgentChannelTests: XCTestCase {
+    private var socketURL: URL!
+    private var channel: AgentChannel!
+
+    override func setUp() {
+        socketURL = AgentFixture.temporarySocketURL()
+        channel = AgentChannel()
+    }
+
+    override func tearDown() {
+        channel.stop()
+        try? FileManager.default.removeItem(at: socketURL)
+    }
+
+    private func waitOnMain(timeout: TimeInterval = 2, until condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() && Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+        return condition()
+    }
+
+    func testStartBindsTheSocketAndPublishesTheServerForDiagnostics() throws {
+        channel.start(socketURL: socketURL, refreshSymlink: false)
+
+        let server = try XCTUnwrap(channel.server)
+        XCTAssertNil(channel.startError)
+        XCTAssertTrue(AgentDiagnostics.server === server)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: socketURL.path))
+    }
+
+    func testEventsReachTheConsumerOnTheMainActor() throws {
+        var kinds: [AgentEvent.Kind] = []
+        channel.onEvent = { kinds.append($0.kind) }
+        channel.start(socketURL: socketURL, refreshSymlink: false)
+
+        AgentSocketTestClient.send(AgentFixture.envelope(payload: AgentFixture.userPromptSubmit) + Data([0x0A]), to: socketURL.path)
+
+        XCTAssertTrue(waitOnMain { kinds == [.promptSubmitted] }, "got \(kinds)")
+    }
+
+    func testSecondStartIsANoOp() throws {
+        channel.start(socketURL: socketURL, refreshSymlink: false)
+        let first = try XCTUnwrap(channel.server)
+        channel.start(socketURL: socketURL, refreshSymlink: false)
+        XCTAssertTrue(channel.server === first)
+    }
+
+    func testStartFailureIsRecordedNotThrown() {
+        let tooLong = FileManager.default.temporaryDirectory
+            .appendingPathComponent(String(repeating: "x", count: 120) + ".sock")
+        channel.start(socketURL: tooLong, refreshSymlink: false)
+        XCTAssertNil(channel.server)
+        XCTAssertNotNil(channel.startError)
+    }
+
+    func testStopRemovesTheSocketFile() {
+        channel.start(socketURL: socketURL, refreshSymlink: false)
+        channel.stop()
+        XCTAssertNil(channel.server)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: socketURL.path))
+    }
+}
