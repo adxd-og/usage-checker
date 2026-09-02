@@ -43,3 +43,59 @@ enum AgentFixture {
         Data(#"{"v":\#(v),"source":"\#(source)","helper_version":1,"received_at":\#(receivedAt),"host":\#(host),"payload":\#(payload)}"#.utf8)
     }
 }
+
+extension AgentFixture {
+    /// A short, unique socket path in the per-user temp dir (`sun_path` holds 103 chars).
+    static func temporarySocketURL() -> URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent("om-\(UUID().uuidString.prefix(8)).sock")
+    }
+}
+
+/// A blocking POSIX client mirroring what `omelette-hook` does: connect, write the
+/// bytes, optionally wait for one reply line, close. Returns the reply without its
+/// newline, or nil when the connection fails, nothing is written, or no reply arrives
+/// within `replyTimeout` (pass 0 to not wait).
+enum AgentSocketTestClient {
+    @discardableResult
+    static func send(_ line: Data, to path: String, replyTimeout: TimeInterval = 1) -> String? {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var one: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
+
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        let capacity = MemoryLayout.size(ofValue: address.sun_path)
+        withUnsafeMutablePointer(to: &address.sun_path) { tuple in
+            tuple.withMemoryRebound(to: CChar.self, capacity: capacity) { buffer in
+                _ = path.withCString { strlcpy(buffer, $0, capacity) }
+            }
+        }
+        let connected = withUnsafePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        guard connected == 0 else { return nil }
+
+        let written = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        // Half-close like the helper does (it closes outright when it wants no reply):
+        // without it a line that carries no trailing "\n" would only reach the server
+        // when its 1 s per-connection budget expires, i.e. after our own reply timeout.
+        shutdown(fd, SHUT_WR)
+        guard written == line.count, replyTimeout > 0 else { return nil }
+
+        var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        guard poll(&descriptor, 1, Int32(replyTimeout * 1000)) > 0 else { return nil }
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        let count = read(fd, &buffer, buffer.count)
+        guard count > 0 else { return nil }
+        return String(decoding: buffer[0..<count], as: UTF8.self).trimmingCharacters(in: .newlines)
+    }
+
+    @discardableResult
+    static func send(_ line: String, to path: String, replyTimeout: TimeInterval = 1) -> String? {
+        send(Data(line.utf8), to: path, replyTimeout: replyTimeout)
+    }
+}
