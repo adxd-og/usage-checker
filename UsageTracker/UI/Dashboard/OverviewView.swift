@@ -17,7 +17,7 @@ struct OverviewView: View {
                 )
 
                 HStack(alignment: .top, spacing: 16) {
-                    burnCard
+                    heroCard
                     if dashboard.costSource.hasBreakdown { todayCard }
                 }
                 .padding(.horizontal, 24)
@@ -38,6 +38,26 @@ struct OverviewView: View {
         .background(Color(NSColor.windowBackgroundColor))
     }
 
+    /// The provider tab's hero, reused verbatim: the session window when the provider
+    /// has one, otherwise its most-constrained window, with the burn verdict under it.
+    /// A provider with no windows at all (nothing polled yet) keeps the old burn-rate
+    /// wording rather than showing an empty card.
+    @ViewBuilder
+    private var heroCard: some View {
+        if let service, let hero = WindowRanking.detailHero(for: service) {
+            OMHero(
+                hero: hero,
+                verdict: BurnVerdict.make(
+                    burn: dashboard.sessionBurn,
+                    sessionBuckets: service.buckets.filter { $0.kind == .session }
+                )
+            )
+            .dashboardCard(padding: 14)
+        } else {
+            burnCard
+        }
+    }
+
     /// Titled after the window it actually predicts — with several providers a
     /// fixed "5-hour" was wrong for anyone whose leading window isn't five hours.
     private var burnCard: some View {
@@ -55,9 +75,9 @@ struct OverviewView: View {
         return HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(bucket.map { "\($0.label) burn rate" } ?? "Burn rate")
-                    .font(.subheadline)
+                    .font(OMFont.body)
                     .foregroundStyle(.secondary)
-                Text(value).font(.body.weight(.semibold))
+                Text(value).font(OMFont.bodyStrong)
             }
             Spacer()
             OMRing(percent: bucket?.clampedPercent ?? 0, size: .medium)
@@ -73,20 +93,20 @@ struct OverviewView: View {
 
         return VStack(alignment: .leading, spacing: 10) {
             Text("Today's CLI usage")
-                .font(.subheadline)
+                .font(OMFont.body)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "$%.2f", cost))
-                    .font(.title3.weight(.semibold))
+                    .font(OMFont.heroNumeral)
                     .monospacedDigit()
                 Text("·")
                     .foregroundStyle(.tertiary)
                 Text("\(turns) turn\(turns == 1 ? "" : "s")")
-                    .font(.body)
+                    .font(OMFont.body)
                     .foregroundStyle(.secondary)
             }
             Text("\(formatTokens(tokens)) tokens")
-                .font(.caption)
+                .font(OMFont.caption)
                 .foregroundStyle(.tertiary)
         }
         .dashboardCard(padding: 14)
@@ -99,33 +119,25 @@ struct OverviewView: View {
     }
 
     private func bucketsBlock(service: ServiceSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Usage windows".uppercased())
-                .font(.caption2.weight(.semibold))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
+            OMSectionHeader(title: "Usage windows")
             ForEach(service.buckets) { b in
-                HStack {
-                    Text(b.label).font(.subheadline.weight(.medium))
-                    Spacer()
-                    Text("resets \(formatRelative(b.resetsAt))").font(.caption).foregroundStyle(.secondary)
-                }
-                BarSegment(percent: b.clampedPercent, height: 8, showsLabel: true,
-                           pace: b.elapsedFraction())
-                    .padding(.bottom, 4)
+                // Same wording as before ("resets in 2h 15m" / "resets —"), now on the
+                // component: the label, the reset time and the bar are one row.
+                OMKeyValueRow(
+                    label: b.label,
+                    value: "resets \(formatRelative(b.resetsAt))",
+                    barPercent: b.clampedPercent
+                )
             }
         }
         .dashboardCard()
     }
 
     private func cliBlock(cli: CLIBreakdown) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
             HStack {
-                Text((dashboard.costSource.shortName ?? "CLI").uppercased())
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.6)
-                    .foregroundStyle(.secondary)
-                Spacer()
+                OMSectionHeader(title: dashboard.costSource.shortName ?? "CLI")
                 if dashboard.isLoadingCLI {
                     ProgressView().controlSize(.small)
                 }
@@ -138,14 +150,7 @@ struct OverviewView: View {
             if !cli.byModelToday.isEmpty {
                 Divider()
                 ForEach(cli.byModelToday.prefix(5), id: \.model) { entry in
-                    HStack {
-                        Text(entry.model).font(.subheadline)
-                        Spacer()
-                        Text(String(format: "$%.2f", entry.cost))
-                            .font(.subheadline)
-                            .monospacedDigit()
-                            .foregroundStyle(.secondary)
-                    }
+                    OMKeyValueRow(label: entry.model, value: String(format: "$%.2f", entry.cost))
                 }
             }
         }
@@ -154,9 +159,9 @@ struct OverviewView: View {
 
     private func stat(label: String, value: String, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.title3.weight(.semibold)).monospacedDigit()
-            if let sub { Text(sub).font(.caption).foregroundStyle(.tertiary) }
+            Text(label).font(OMFont.caption).foregroundStyle(.secondary)
+            Text(value).font(OMFont.heroNumeral).monospacedDigit()
+            if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
