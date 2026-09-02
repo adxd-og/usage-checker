@@ -10,6 +10,8 @@ struct PopoverView: View {
     /// every layout pass.
     @State private var claudeHooksInstalled = false
     @State private var codexHooksInstalled = false
+    /// The one-time offer to install Claude's hooks, decided from the same read.
+    @State private var hooksPromptVisible = false
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -37,7 +39,10 @@ struct PopoverView: View {
         let helperPath = AgentPaths.helperSymlinkURL.path
         let claudeSettings = AgentPaths.claudeSettingsURL
         let codexConfig = AgentPaths.codexConfigURL
-        let statuses = await Task.detached(priority: .utility) { () -> (Bool, Bool) in
+        // Claude's raw status travels back too: the prompt row and the "Enable
+        // precise status" link are two answers to the same file read, and reading
+        // it twice could disagree with itself.
+        let read = await Task.detached(priority: .utility) { () -> (claude: HookInstallStatus, claudeSatisfied: Bool, codexSatisfied: Bool, claudePresent: Bool) in
             // "Satisfied" = nothing the popover's link could improve: installed,
             // owned by another tool (conflict), or no config file at all because
             // that CLI isn't on this machine. Only "not installed" / "outdated"
@@ -49,13 +54,39 @@ struct PopoverView: View {
                 case .notInstalled: return !FileManager.default.fileExists(atPath: configURL.path)
                 }
             }
+            let claude = AgentHooksInstaller.claudeStatus(settingsURL: claudeSettings, helperPath: helperPath)
             return (
-                satisfied(AgentHooksInstaller.claudeStatus(settingsURL: claudeSettings, helperPath: helperPath), claudeSettings),
-                satisfied(AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath), codexConfig)
+                claude,
+                satisfied(claude, claudeSettings),
+                satisfied(AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath), codexConfig),
+                AgentHooksPrompt.claudeIsPresent()
             )
         }.value
-        claudeHooksInstalled = statuses.0
-        codexHooksInstalled = statuses.1
+        claudeHooksInstalled = read.claudeSatisfied
+        codexHooksInstalled = read.codexSatisfied
+        hooksPromptVisible = AgentHooksPrompt.shouldShow(
+            claudePresent: read.claudePresent,
+            status: read.claude,
+            dismissed: SettingsStore.shared.agentsHooksPromptDismissed
+        )
+    }
+
+    /// The prompt's Enable button. On success the row goes away and precise
+    /// status starts with the next hook event; on failure the offer stands and
+    /// Settings → Agents spells out what stopped it.
+    private func enableClaudeHooks() {
+        do {
+            try AgentHooksPrompt.installClaudeHooks()
+            Task { await refreshHookStatus() }
+        } catch {
+            SettingsStore.shared.agentsHooksPromptDismissed = false
+            openAgentsSettings()
+        }
+    }
+
+    private func dismissHooksPrompt() {
+        SettingsStore.shared.agentsHooksPromptDismissed = true
+        withAnimation(.smooth(duration: 0.2)) { hooksPromptVisible = false }
     }
 
     /// Amber dot on a provider segment while one of its sessions waits for you.
@@ -177,7 +208,12 @@ struct PopoverView: View {
                 service: service,
                 burn: dashboard.burn(for: service.id),
                 hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
-                onEnableAgents: openAgentsSettings
+                // The offer is about Claude's settings.json, so it belongs on
+                // Claude's tab and nowhere else.
+                showsHooksPrompt: hooksPromptVisible && AgentSource(rawValue: service.id) == .claude,
+                onEnableAgents: openAgentsSettings,
+                onEnableHooks: enableClaudeHooks,
+                onDismissHooksPrompt: dismissHooksPrompt
             )
         } else {
             allTab
@@ -203,12 +239,16 @@ struct PopoverView: View {
             if OMCostTile.total(displayedServices) > 0 {
                 OMCostTile(services: displayedServices)
             }
+            if hooksPromptVisible {
+                OMHooksPromptRow(onEnable: enableClaudeHooks, onDismiss: dismissHooksPrompt)
+            }
             AgentsSection(
                 sessions: agents.sessions,
                 grouped: true,
                 // On All the link should appear while either source is still
-                // guessing, so both have to be wired for it to disappear.
-                hooksInstalled: claudeHooksInstalled && codexHooksInstalled,
+                // guessing, so both have to be wired for it to disappear — and
+                // never while the prompt row above already offers the same thing.
+                hooksInstalled: (claudeHooksInstalled && codexHooksInstalled) || hooksPromptVisible,
                 onEnable: openAgentsSettings
             )
         }
@@ -311,7 +351,10 @@ private struct ProviderDetail: View {
     let service: ServiceSnapshot
     let burn: BurnRatePrediction?
     let hooksInstalled: Bool
+    var showsHooksPrompt: Bool = false
     let onEnableAgents: () -> Void
+    var onEnableHooks: () -> Void = {}
+    var onDismissHooksPrompt: () -> Void = {}
 
     @ObservedObject private var agents = AgentSessionStore.shared
 
@@ -390,11 +433,16 @@ private struct ProviderDetail: View {
                 Text("Server responded but returned no usage data.")
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
             }
+            if showsHooksPrompt {
+                OMHooksPromptRow(onEnable: onEnableHooks, onDismiss: onDismissHooksPrompt)
+            }
             if let source = agentSource {
                 AgentsSection(
                     sessions: agents.sessions(for: source),
                     grouped: false,
-                    hooksInstalled: hooksInstalled,
+                    // The prompt row above is the same offer, said better; the
+                    // link would only repeat it.
+                    hooksInstalled: hooksInstalled || showsHooksPrompt,
                     title: "\(service.displayName) agents",
                     onEnable: onEnableAgents
                 )

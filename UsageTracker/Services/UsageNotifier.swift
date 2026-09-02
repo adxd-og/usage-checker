@@ -345,6 +345,10 @@ final class UsageNotifier: NSObject {
 
     static let agentNeedsYouCategory = "AGENT_NEEDS_YOU"
     static let agentOpenAction = "AGENT_OPEN"
+    static let agentHooksPromptCategory = "AGENT_HOOKS_PROMPT"
+    static let agentHooksEnableAction = "AGENT_HOOKS_ENABLE"
+    /// Fixed, because there is only ever one of these.
+    static let agentHooksPromptIdentifier = "agent-hooks-prompt"
 
     /// Installs the notification-centre delegate, registers the agent category and
     /// starts watching the session store. Called once at launch.
@@ -354,8 +358,9 @@ final class UsageNotifier: NSObject {
     /// must find a delegate already installed, including on the launch that tap
     /// causes.
     ///
-    /// Only the "needs you" alert gets a category. "Finished" needs no button — its
-    /// whole body is the action, and a click on the body arrives as
+    /// Two categories carry a button: "needs you" (**Open**) and the one-time
+    /// hooks prompt (**Enable**). "Finished" needs none — its whole body is the
+    /// action, and a click on the body arrives as
     /// `UNNotificationDefaultActionIdentifier`, which `handleAgentResponse` routes
     /// exactly like **Open**.
     func startAgentNotifications(store: AgentSessionStore = .shared) {
@@ -373,7 +378,19 @@ final class UsageNotifier: NSObject {
                 ],
                 intentIdentifiers: [],
                 options: []
-            )
+            ),
+            UNNotificationCategory(
+                identifier: Self.agentHooksPromptCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Self.agentHooksEnableAction,
+                        title: "Enable",
+                        options: [.foreground]
+                    )
+                ],
+                intentIdentifiers: [],
+                options: []
+            ),
         ])
 
         // `AgentSessionStore` and `UsageNotifier` are both `@MainActor`, and the store
@@ -389,6 +406,56 @@ final class UsageNotifier: NSObject {
         // leaving, so the leaving edge is diffed out of the published list.
         agentSessionsObserver = store.$sessions.sink { [weak self] sessions in
             self?.clearResolvedNeedsYou(in: sessions)
+        }
+    }
+
+    /// The soft prompt's other half: one banner, once per install, for someone
+    /// who has been running Claude Code without hooks and has no reason to know
+    /// what they are missing. It never repeats — `agentsHooksPromptNotified` is
+    /// set the moment it is scheduled — and it writes nothing by itself.
+    ///
+    /// Quiet hours skip it *without* burning the one shot: a prompt is not
+    /// urgent, so it waits for a launch at a civilised hour instead.
+    func promptForHooksIfNeeded() {
+        guard !SettingsStore.shared.agentsHooksPromptNotified, !isInQuietHours() else { return }
+        guard AgentHooksPrompt.shouldShow(
+            claudePresent: AgentHooksPrompt.claudeIsPresent(),
+            status: AgentHooksInstaller.claudeStatus(
+                settingsURL: AgentPaths.claudeSettingsURL,
+                helperPath: AgentPaths.helperSymlinkURL.path
+            ),
+            dismissed: SettingsStore.shared.agentsHooksPromptDismissed
+        ) else { return }
+
+        SettingsStore.shared.agentsHooksPromptNotified = true
+        fire(
+            title: "See what your agents are doing",
+            body: "Omelette can show which Claude Code session is working or waiting for you. "
+                + "Enable adds hooks to ~/.claude/settings.json; reversible in Settings → Agents.",
+            identifier: Self.agentHooksPromptIdentifier,
+            category: Self.agentHooksPromptCategory
+        )
+    }
+
+    /// **Enable** on that banner installs the hooks; a click on the body opens the
+    /// popover, where the same offer is a row with a "Not now" next to it.
+    private func handleHooksPromptResponse(action: String) {
+        switch action {
+        case Self.agentHooksEnableAction:
+            do {
+                try AgentHooksPrompt.installClaudeHooks()
+            } catch {
+                // `openSettings()` is a View's environment action and there is no
+                // View here, so the tab request is parked for the next time
+                // Settings opens — where the Agents tab shows what stopped it —
+                // and the popover comes up with the offer still standing.
+                SettingsRoute.shared.pendingTab = SettingsRoute.agentsTab
+                NotificationCenter.default.post(name: .showPopover, object: nil)
+            }
+        case UNNotificationDefaultActionIdentifier:
+            NotificationCenter.default.post(name: .showPopover, object: nil)
+        default:
+            break
         }
     }
 
@@ -440,8 +507,13 @@ final class UsageNotifier: NSObject {
 
     /// Routes a tap on an agent notification to the session it names. A session that
     /// has since ended has nothing to jump to, so the popover — where the remaining
-    /// sessions are — opens instead.
+    /// sessions are — opens instead. The hooks prompt names no session and is
+    /// handled first.
     func handleAgentResponse(identifier: String, action: String) {
+        if identifier == Self.agentHooksPromptIdentifier {
+            handleHooksPromptResponse(action: action)
+            return
+        }
         guard action == UNNotificationDefaultActionIdentifier || action == Self.agentOpenAction,
               let sessionID = AgentNotificationRules.sessionID(fromIdentifier: identifier)
         else { return }
