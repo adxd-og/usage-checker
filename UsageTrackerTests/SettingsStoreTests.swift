@@ -53,6 +53,8 @@ final class SettingsStoreTests: XCTestCase {
         s.agentsNeedsYouBypassQuietHours = !SettingsStore.Defaults.agentsNeedsYouBypassQuietHours
         s.agentsNotifyDone = !SettingsStore.Defaults.agentsNotifyDone
         s.agentsShowInMenuBar = !SettingsStore.Defaults.agentsShowInMenuBar
+        s.agentsHooksPromptDismissed = !SettingsStore.Defaults.agentsHooksPromptDismissed
+        s.agentsHooksPromptNotified = !SettingsStore.Defaults.agentsHooksPromptNotified
 
         // Preferences that live outside this object but are still preferences. Written
         // by key rather than through the state objects, so the scramble doesn't kick off
@@ -95,6 +97,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.agentsNeedsYouBypassQuietHours, SettingsStore.Defaults.agentsNeedsYouBypassQuietHours, message)
         XCTAssertEqual(s.agentsNotifyDone, SettingsStore.Defaults.agentsNotifyDone, message)
         XCTAssertEqual(s.agentsShowInMenuBar, SettingsStore.Defaults.agentsShowInMenuBar, message)
+        XCTAssertEqual(s.agentsHooksPromptDismissed, SettingsStore.Defaults.agentsHooksPromptDismissed, message)
+        XCTAssertEqual(s.agentsHooksPromptNotified, SettingsStore.Defaults.agentsHooksPromptNotified, message)
 
         XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
@@ -182,5 +186,19 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(settings.agentsNeedsYouBypassQuietHours, "a session waiting for approval is the one alert worth waking you")
         XCTAssertFalse(settings.agentsNotifyDone, "a notification per finished turn would be noise")
         XCTAssertTrue(settings.agentsShowInMenuBar)
+    }
+
+    /// The hooks prompt is one-time in both directions: "Not now" is final, and a
+    /// settings reset is the only way back to it.
+    @MainActor
+    func testResettingSettingsOffersTheHooksPromptAgain() {
+        let settings = SettingsStore.shared
+        settings.agentsHooksPromptDismissed = true
+        settings.agentsHooksPromptNotified = true
+
+        settings.resetToDefaults()
+
+        XCTAssertFalse(settings.agentsHooksPromptDismissed)
+        XCTAssertFalse(settings.agentsHooksPromptNotified, "the launch notification may speak once more")
     }
 }
