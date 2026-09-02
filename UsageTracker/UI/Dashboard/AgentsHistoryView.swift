@@ -107,7 +107,10 @@ struct AgentsHistoryView: View {
                         .foregroundStyle(.secondary)
                         .padding(.top, OMSpacing.xs)
                         .accessibilityAddTraits(.isHeader)
-                    ForEach(group.records, id: \.id) { record in
+                    // Keyed on position, not `record.id`: a session archived by
+                    // `pruneStale` and archived again after `claude --resume` writes
+                    // the same id twice, and duplicate ForEach ids drop rows.
+                    ForEach(Array(group.records.enumerated()), id: \.offset) { _, record in
                         OMAgentHistoryRow(record: record)
                     }
                 }
