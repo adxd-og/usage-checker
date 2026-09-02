@@ -29,6 +29,11 @@ final class AppState: ObservableObject {
 
     func bootstrap() {
         observeSystemState()
+        // Package 1's AgentChannel delivers hook events on the main actor; the
+        // session store is its one consumer (replaces the log-only default).
+        AgentChannel.shared.onEvent = { event in
+            AgentSessionStore.shared.apply(event)
+        }
         refreshNow()
         startTimer()
     }
@@ -162,6 +167,22 @@ final class AppState: ObservableObject {
         // that has to include this poll's data point to be current.
         await UsageNotifier.shared.evaluate(snapshot: next)
         NotificationCenter.default.post(name: .snapshotUpdated, object: nil)
+        await scanAgentsPassively()
+    }
+
+    /// Sessions no hook has spoken for, read from the CLIs' own logs. Riding the poll
+    /// tick means it inherits the 60-second cadence and, more importantly, the
+    /// sleep/lock suspension — a laptop with the lid shut walks no log trees. The scan
+    /// itself is file I/O over two directory trees, so it runs off the main actor and
+    /// only the merge comes back.
+    private func scanAgentsPassively() async {
+        let claudeProjects = AgentPaths.claudeProjectsURL
+        let codexSessions = AgentPaths.codexSessionsURL
+        let scanned = await Task.detached(priority: .utility) {
+            PassiveSessionScanner.scan(claudeProjects: claudeProjects, codexSessions: codexSessions)
+        }.value
+        AgentSessionStore.shared.mergePassive(scanned)
+        AgentSessionStore.shared.pruneStale()
     }
 
     /// Pay-as-you-go accounts (Enterprise API billing) get no rate-limit windows from

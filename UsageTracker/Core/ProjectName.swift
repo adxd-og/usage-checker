@@ -45,6 +45,16 @@ enum ProjectName {
         return prettify(path, fallback: slug)
     }
 
+    /// Display name for a real absolute path — an agent session's `cwd`, a hook's
+    /// `cwd` field. Unlike `decode(slug:)` there is nothing lossy to reconstruct, so
+    /// no filesystem walk happens; the prettifying rules are shared so the same
+    /// project reads identically in the cost rows and in the agents list.
+    /// A path that isn't absolute is returned verbatim rather than guessed at.
+    static func display(path: String) -> String {
+        guard path.hasPrefix("/") else { return path }
+        return prettify(path, fallback: path)
+    }
+
     private static func computeDecode(slug: String) -> String {
         let trimmed = slug.hasPrefix("-") ? String(slug.dropFirst()) : slug
         let tokens = trimmed.split(separator: "-", omittingEmptySubsequences: true).map(String.init)
