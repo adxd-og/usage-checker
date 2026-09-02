@@ -311,4 +311,184 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(records.first?.turns, 2)
         XCTAssertEqual(records.first?.needsYouCount, 1)
     }
+
+    // MARK: - Passive fixtures
+
+    private func passive(
+        source: AgentSource = .claude,
+        sessionID: String = "s1",
+        project: String = "Projects / alpha",
+        cwd: String? = "/Users/tester/Projects/alpha",
+        state: AgentState = .idle,
+        at seen: Date? = nil
+    ) -> AgentSession {
+        let seenAt = seen ?? t0
+        return AgentSession(
+            sessionID: sessionID,
+            source: source,
+            projectName: project,
+            cwd: cwd,
+            state: state,
+            activity: nil,
+            stateSince: seenAt,
+            lastEventAt: seenAt,
+            startedAt: seenAt,
+            host: AgentHostInfo(pid: nil, bundleID: nil, tty: nil),
+            isApproximate: true,
+            turns: 0,
+            needsYouCount: 0
+        )
+    }
+
+    // MARK: - mergePassive
+
+    func testAPassiveSessionAppears() {
+        let store = makeStore()
+        store.mergePassive([passive(state: .working, at: t0)], now: t0)
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.id, "claude:s1")
+        XCTAssertEqual(session?.state, .working)
+        XCTAssertEqual(session?.projectName, "Projects / alpha")
+        XCTAssertTrue(session?.isApproximate ?? false)
+    }
+
+    func testAPassiveSessionMirrorsTheScanAndDisappearsWithIt() {
+        let store = makeStore()
+        store.mergePassive([passive(state: .working, at: t0)], now: t0)
+        store.mergePassive([passive(state: .idle, at: at(60))], now: at(60))
+        XCTAssertEqual(store.sessions.first?.state, .idle)
+        XCTAssertEqual(store.sessions.first?.stateSince, at(60))
+        XCTAssertEqual(store.sessions.first?.startedAt, t0, "we keep the earliest sighting")
+
+        store.mergePassive([], now: at(120))
+        XCTAssertTrue(store.sessions.isEmpty, "the log aged out of the scan window")
+    }
+
+    func testAHookTrackedClaudeSessionIgnoresThePassiveReading() {
+        let store = makeStore()
+        store.apply(event(.stop), now: t0)
+        store.mergePassive([passive(state: .working, at: at(60))], now: at(60))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .done, "the hook knows the turn finished; the file mtime does not")
+        XCTAssertEqual(session?.stateSince, t0)
+        XCTAssertEqual(session?.lastEventAt, t0)
+        XCTAssertFalse(session?.isApproximate ?? true)
+    }
+
+    func testAHookTrackedSessionSurvivesDisappearingFromTheScan() {
+        let store = makeStore()
+        store.apply(event(.promptSubmitted), now: t0)
+        store.mergePassive([], now: at(60))
+        XCTAssertEqual(store.sessions.map(\.id), ["claude:s1"])
+    }
+
+    func testAPassiveWorkingUpgradesACodexSessionOnly() {
+        // Codex has no "turn started" event — a rollout file that just changed is the
+        // only evidence the agent is running again.
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive(
+            [passive(source: .codex, sessionID: "t1", project: "Projects / beta",
+                     cwd: "/Users/tester/Projects/beta", state: .working, at: at(60))],
+            now: at(60)
+        )
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .working)
+        XCTAssertEqual(session?.stateSince, at(60))
+        XCTAssertFalse(session?.isApproximate ?? true, "it is still a hook-tracked session")
+    }
+
+    func testAPassiveIdleNeverDowngradesACodexSession() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive(
+            [passive(source: .codex, sessionID: "t1", state: .idle, at: at(60))],
+            now: at(60)
+        )
+        XCTAssertEqual(store.sessions.first?.state, .done)
+    }
+
+    func testAPassiveWorkingNeverTouchesAClaudeNeedsYou() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested), now: t0)
+        store.mergePassive([passive(state: .working, at: at(60))], now: at(60))
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+    }
+
+    func testAHookEventTakesOverAPassiveSession() {
+        let store = makeStore()
+        store.mergePassive([passive(state: .working, at: t0)], now: t0)
+        store.apply(event(.permissionRequested, toolSummary: "Bash: rm -rf build"), now: at(30))
+
+        let session = store.sessions.first
+        XCTAssertEqual(store.sessions.count, 1, "same id, same row")
+        XCTAssertEqual(session?.state, .needsYou)
+        XCTAssertEqual(session?.activity, "Bash: rm -rf build")
+        XCTAssertFalse(session?.isApproximate ?? true)
+
+        // And the scan no longer has any say over it.
+        store.mergePassive([passive(state: .idle, at: at(60))], now: at(60))
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+    }
+
+    func testMergeKeepsTheListSorted() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested, sessionID: "needsYou"), now: t0)
+        store.mergePassive([
+            passive(sessionID: "idle", state: .idle, at: at(10)),
+            passive(sessionID: "working", state: .working, at: at(5)),
+        ], now: at(10))
+
+        XCTAssertEqual(store.sessions.map(\.sessionID), ["needsYou", "working", "idle"])
+    }
+
+    // MARK: - pruneStale
+
+    func testAStaleSessionWithADeadHostIsDropped() throws {
+        let store = makeStore()
+        // Far above the kernel's pid ceiling, so it can never name a live process.
+        store.apply(event(.sessionStart, pid: Int32.max), now: t0)
+        store.apply(event(.promptSubmitted), now: t0)
+        store.pruneStale(now: t0.addingTimeInterval(AgentSessionStore.staleAfter + 1))
+
+        XCTAssertTrue(store.sessions.isEmpty)
+        let records = try AgentHistoryStore(fileURL: historyURL).load()
+        XCTAssertEqual(records.map(\.id), ["claude:s1"], "a pruned session is still a session that ran")
+        XCTAssertEqual(records.first?.turns, 1)
+    }
+
+    func testAStaleSessionWhoseHostIsStillRunningIsKept() {
+        let store = makeStore()
+        store.apply(event(.sessionStart, pid: getpid()), now: t0)
+        store.pruneStale(now: t0.addingTimeInterval(AgentSessionStore.staleAfter + 1))
+        XCTAssertEqual(store.sessions.count, 1, "the terminal is still open — the session may just be quiet")
+    }
+
+    func testASessionWithoutAHostPIDIsDroppedOnceStale() {
+        let store = makeStore()
+        store.apply(event(.sessionStart, pid: nil), now: t0)
+        store.pruneStale(now: t0.addingTimeInterval(AgentSessionStore.staleAfter + 1))
+        XCTAssertTrue(store.sessions.isEmpty)
+    }
+
+    func testAFreshSessionIsNeverPruned() {
+        let store = makeStore()
+        store.apply(event(.sessionStart, pid: Int32.max), now: t0)
+        store.pruneStale(now: t0.addingTimeInterval(AgentSessionStore.staleAfter - 1))
+        XCTAssertEqual(store.sessions.count, 1)
+    }
+
+    func testAPrunedPassiveSessionWritesNoHistory() throws {
+        // Its turns are 0 and its startedAt is only when we first saw the file: a
+        // record would be fiction.
+        let store = makeStore()
+        store.mergePassive([passive(state: .idle, at: t0)], now: t0)
+        store.pruneStale(now: t0.addingTimeInterval(AgentSessionStore.staleAfter + 1))
+
+        XCTAssertTrue(store.sessions.isEmpty)
+        XCTAssertEqual(try AgentHistoryStore(fileURL: historyURL).load(), [])
+    }
 }

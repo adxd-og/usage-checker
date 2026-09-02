@@ -132,6 +132,94 @@ final class AgentSessionStore: ObservableObject {
         }
     }
 
+    // MARK: - Passive scan
+
+    /// Folds one `PassiveSessionScanner` result into the list.
+    ///
+    /// Precedence: a session id a hook has spoken for is never rewritten by a file
+    /// mtime — the hook knows whether the agent is waiting for you, the file only
+    /// knows that bytes were appended. The single exception is Codex, which has no
+    /// "turn started" hook at all: a rollout file that changed in the last 30 seconds
+    /// is the only evidence its agent is running again, so it may lift a Codex session
+    /// out of `done`/`idle` into `working`.
+    ///
+    /// Passive-only sessions mirror the scan exactly: added when they appear, updated
+    /// while they are in it, dropped when they fall out of the 30-minute window.
+    func mergePassive(_ scanned: [AgentSession], now: Date = Date()) {
+        let scannedByID = Dictionary(scanned.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var merged: [AgentSession] = []
+        merged.reserveCapacity(max(sessions.count, scanned.count))
+
+        for existing in sessions {
+            guard existing.isApproximate else {
+                merged.append(upgradedIfCodexIsWorking(existing, scannedByID[existing.id], now: now))
+                continue
+            }
+            guard var fresh = scannedByID[existing.id] else { continue } // gone from the scan
+            fresh.startedAt = min(existing.startedAt, fresh.startedAt)
+            if fresh.state == existing.state {
+                fresh.stateSince = existing.stateSince
+            }
+            merged.append(fresh)
+        }
+
+        let known = Set(sessions.map(\.id))
+        for fresh in scanned where !known.contains(fresh.id) {
+            merged.append(fresh)
+        }
+
+        sessions = merged
+        sortSessions()
+    }
+
+    /// Drops sessions that have gone quiet for `staleAfter` and whose host process is
+    /// no longer running. A session whose terminal is still open is kept however quiet
+    /// it is — the user can see it and would not expect it to vanish.
+    func pruneStale(now: Date = Date()) {
+        var kept: [AgentSession] = []
+        var dropped: [AgentSession] = []
+        for session in sessions {
+            if Self.isStale(session, now: now) {
+                dropped.append(session)
+            } else {
+                kept.append(session)
+            }
+        }
+        guard !dropped.isEmpty else { return }
+        sessions = kept
+        for session in dropped {
+            archive(session, endedAt: session.lastEventAt)
+        }
+    }
+
+    private func upgradedIfCodexIsWorking(
+        _ session: AgentSession, _ scanned: AgentSession?, now: Date
+    ) -> AgentSession {
+        guard session.source == .codex,
+              let scanned, scanned.state == .working,
+              session.state == .done || session.state == .idle
+        else { return session }
+        var upgraded = session
+        upgraded.state = .working
+        upgraded.stateSince = now
+        upgraded.lastEventAt = max(session.lastEventAt, scanned.lastEventAt)
+        return upgraded
+    }
+
+    private static func isStale(_ session: AgentSession, now: Date) -> Bool {
+        guard now.timeIntervalSince(session.lastEventAt) >= staleAfter else { return false }
+        guard let pid = session.host.pid else { return true }
+        return !isProcessAlive(pid)
+    }
+
+    /// `kill(pid, 0)` sends no signal and only reports whether the process exists.
+    /// `EPERM` means it exists but belongs to someone else — still alive.
+    private static func isProcessAlive(_ pid: Int32) -> Bool {
+        guard pid > 0 else { return false }
+        if kill(pid, 0) == 0 { return true }
+        return errno == EPERM
+    }
+
     // MARK: - Private
 
     private func makeSession(from event: AgentEvent, now: Date) -> AgentSession {
