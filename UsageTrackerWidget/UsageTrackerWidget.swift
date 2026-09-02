@@ -199,7 +199,7 @@ struct SmallProviderView: View {
 
     var body: some View {
         ZStack {
-            ringBar
+            OMRing(percent: service.headlineBucket?.percent ?? 0, size: .widget, showsLabel: false)
             VStack(spacing: 0) {
                 Text(service.name)
                     .font(.system(size: 10, weight: .medium))
@@ -227,23 +227,6 @@ struct SmallProviderView: View {
     private var headlineText: String {
         if let bucket = service.headlineBucket { return "\(Int(bucket.percent.rounded()))%" }
         return service.spendLabel.map { $0.replacingOccurrences(of: " last 7 days", with: "") } ?? "—"
-    }
-
-    private var ringBar: some View {
-        let percent = service.headlineBucket?.percent ?? 0
-        return Circle()
-            .trim(from: 0, to: 1)
-            .stroke(.quaternary, lineWidth: 10)
-            .overlay(
-                Circle()
-                    .trim(from: 0, to: max(0.005, percent / 100))
-                    .stroke(
-                        statusColor(percent),
-                        style: StrokeStyle(lineWidth: 10, lineCap: .round)
-                    )
-                    .rotationEffect(.degrees(-90))
-            )
-            .padding(8)
     }
 }
 
@@ -410,7 +393,7 @@ struct WidgetBucketRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            ProgressBar(percent: bucket.percent, height: compact ? 5 : 6)
+            BarSegment(percent: bucket.percent, height: compact ? 5 : 6)
         }
     }
 }
@@ -447,33 +430,6 @@ enum WidgetTime {
     }
 }
 
-struct ProgressBar: View {
-    let percent: Double
-    var height: CGFloat = 6
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule(style: .continuous)
-                    .fill(.quaternary)
-                Capsule(style: .continuous)
-                    .fill(statusColor(percent))
-                    .frame(width: geo.size.width * CGFloat(max(0, min(100, percent)) / 100))
-            }
-        }
-        .frame(height: height)
-    }
-}
-
-/// Battery-style status color, mirrors the main app's usageStatusColor
-/// (OMTokens.swift): green while comfortable, amber from 70 %, red from 90 %.
-/// Kept as a copy because the widget target doesn't compile the app's sources.
-func statusColor(_ percent: Double) -> Color {
-    if percent >= 90 { return .red }
-    if percent >= 70 { return .orange }
-    return .green
-}
-
 #Preview("All providers") {
     AllProvidersWidgetView(snapshot: .placeholder)
         .frame(width: 338, height: 354)
@@ -484,4 +440,24 @@ func statusColor(_ percent: Double) -> Color {
     SmallProviderView(service: WidgetSnapshot.placeholder.services[0])
         .frame(width: 158, height: 158)
         .background(.regularMaterial)
+}
+
+#Preview("Small — dark") {
+    SmallProviderView(service: WidgetSnapshot.placeholder.services[0])
+        .frame(width: 158, height: 158)
+        .background(.regularMaterial)
+        .preferredColorScheme(.dark)
+}
+
+#Preview("Medium") {
+    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date())
+        .frame(width: 338, height: 158)
+        .background(.regularMaterial)
+}
+
+#Preview("Medium — dark") {
+    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date())
+        .frame(width: 338, height: 158)
+        .background(.regularMaterial)
+        .preferredColorScheme(.dark)
 }
