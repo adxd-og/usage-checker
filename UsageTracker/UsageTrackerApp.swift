@@ -58,6 +58,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Delegate and category first: an authorization prompt can be answered, and
         // a notification acted on, before the next statement would have run.
         UsageNotifier.shared.startAgentNotifications()
+        // Once per install, for someone already running Claude Code without hooks:
+        // its Enable action needs the category above to exist first.
+        UsageNotifier.shared.promptForHooksIfNeeded()
         UsageNotifier.shared.requestAuthorizationIfNeeded()
         scheduleOnboardingIfNeeded()
         replayObserver = NotificationCenter.default.addObserver(

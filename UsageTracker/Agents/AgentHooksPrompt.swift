@@ -17,6 +17,17 @@ enum AgentHooksPrompt {
         claudePresent && status == .notInstalled && !dismissed
     }
 
+    /// What both Enable buttons — the popover row and the notification action —
+    /// run, so the two can never install against different paths. The installer
+    /// itself stays pure over its URLs; this is the one place that names the
+    /// real ones.
+    static func installClaudeHooks() throws {
+        try AgentHooksInstaller.installClaude(
+            settingsURL: AgentPaths.claudeSettingsURL,
+            helperPath: AgentPaths.helperSymlinkURL.path
+        )
+    }
+
     /// Has Claude Code ever run here? Its project transcripts or a settings file
     /// of its own are the two traces it leaves whether or not hooks exist.
     static func claudeIsPresent(
