@@ -76,9 +76,9 @@ Full read done. Amendments applied to the plan text: `AgentDiagnostics` is no lo
 1. Template accepted: eight events, `Notification` as two literal-matcher groups
    (`permission_prompt`, `idle_prompt`), `PermissionRequest` sync with `timeout: 5`,
    everything else `async: true` without timeout.
-2. **Cross-package line for package 1:** after `AgentEventServer.start()` the app
-   must set `AgentDiagnostics.server = server` (package 3 owns
-   `AgentDiagnostics`). Package 1's executor gets this as an explicit step.
+2. **`AgentDiagnostics` is owned by package 1** (Task 7 creates the `@MainActor`
+   enum and `AgentChannel` sets `AgentDiagnostics.server` after `start()`);
+   package 3 only reads it. (Earlier wording here said the opposite — superseded.)
 3. `SettingsView.Tab.agents` must be `case agents = "Agents"` (package 4's
    `SettingsRoute` depends on the raw value).
 4. Install pretty-prints `settings.json` (sorted keys) — accepted given the
