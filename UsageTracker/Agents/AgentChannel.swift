@@ -35,9 +35,12 @@ final class AgentChannel {
                 NSLog("[UT] helper symlink refresh failed: %@", String(describing: error))
             }
         }
+        guard server == nil else { return }
+
         // Once per launch, off the main actor: the run history is append-only, and
         // trimming it here is the only thing that keeps `agent-sessions.jsonl` from
-        // growing forever. Detached because a long log must not delay the socket.
+        // growing forever. Detached because a long log must not delay the socket, and
+        // below the guard so a second `start()` doesn't rotate a second time.
         Task.detached(priority: .utility) {
             do {
                 try AgentHistoryStore(fileURL: historyURL).rotate()
@@ -45,7 +48,6 @@ final class AgentChannel {
                 NSLog("[UT] agent history rotation failed: %@", String(describing: error))
             }
         }
-        guard server == nil else { return }
 
         let server = AgentEventServer(socketURL: socketURL) { [weak self] event in
             // AgentEventServer delivers on the main queue by contract (Task 5).
