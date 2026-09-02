@@ -91,6 +91,9 @@ targets:
         # losing it breaks the update chain for every shipped build.
         SUPublicEDKey: "MHnsTPADe6xMrC9FNW2+JGcON46j6J2JSrG/wCqpLDA="
         SUEnableAutomaticChecks: true
+        # Required before macOS will even show the automation prompt: without it a
+        # send is refused with errAEEventNotPermitted (-1743) and no prompt appears.
+        NSAppleEventsUsageDescription: "Omelette brings the terminal tab of an agent session back to the front when you click it."
     settings:
       base:
         PRODUCT_NAME: Omelette

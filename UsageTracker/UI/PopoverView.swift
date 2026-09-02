@@ -3,6 +3,14 @@ import SwiftUI
 struct PopoverView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var dashboard = DashboardState.shared
+    @ObservedObject private var agents = AgentSessionStore.shared
+
+    /// Whether each source's hooks are installed decides one line of copy, so it
+    /// is read once per popover appearance off the main thread instead of on
+    /// every layout pass.
+    @State private var claudeHooksInstalled = false
+    @State private var codexHooksInstalled = false
+
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
@@ -22,6 +30,34 @@ struct PopoverView: View {
         }
         .padding(OMSpacing.l)
         .frame(width: 360)
+        .task { await refreshHookStatus() }
+    }
+
+    private func refreshHookStatus() async {
+        let helperPath = AgentPaths.helperSymlinkURL.path
+        let claudeSettings = AgentPaths.claudeSettingsURL
+        let codexConfig = AgentPaths.codexConfigURL
+        let statuses = await Task.detached(priority: .utility) { () -> (Bool, Bool) in
+            (
+                AgentHooksInstaller.claudeStatus(settingsURL: claudeSettings, helperPath: helperPath) == .installed,
+                AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath) == .installed
+            )
+        }.value
+        claudeHooksInstalled = statuses.0
+        codexHooksInstalled = statuses.1
+    }
+
+    /// Amber dot on a provider segment while one of its sessions waits for you.
+    /// Providers without an agent integration (Antigravity, Grok) never light up.
+    private func hasWaitingSession(_ serviceID: String) -> Bool {
+        guard let source = AgentSource(rawValue: serviceID) else { return false }
+        return agents.sessions(for: source).contains { $0.state == .needsYou }
+    }
+
+    private func openAgentsSettings() {
+        SettingsRoute.shared.pendingTab = SettingsRoute.agentsTab
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
     }
 
     // MARK: - Tab state
@@ -47,8 +83,14 @@ struct PopoverView: View {
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
-                + displayedServices.map {
-                    OMSegmentItem(id: $0.id, title: $0.displayName, serviceID: $0.id, sfFallback: $0.icon)
+                + displayedServices.map { service in
+                    OMSegmentItem(
+                        id: service.id,
+                        title: service.displayName,
+                        serviceID: service.id,
+                        sfFallback: service.icon,
+                        showsDot: hasWaitingSession(service.id)
+                    )
                 },
             selection: Binding(
                 get: { currentTab },
@@ -120,7 +162,12 @@ struct PopoverView: View {
             // are separate persisted choices, so keying off the dashboard meant
             // the verdict either went missing or, worse, described a provider
             // that isn't on screen.
-            ProviderDetail(service: service, burn: dashboard.burn(for: service.id))
+            ProviderDetail(
+                service: service,
+                burn: dashboard.burn(for: service.id),
+                hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
+                onEnableAgents: openAgentsSettings
+            )
         } else {
             allTab
         }
@@ -145,6 +192,14 @@ struct PopoverView: View {
             if OMCostTile.total(displayedServices) > 0 {
                 OMCostTile(services: displayedServices)
             }
+            AgentsSection(
+                sessions: agents.sessions,
+                grouped: true,
+                // On All the link should appear while either source is still
+                // guessing, so both have to be wired for it to disappear.
+                hooksInstalled: claudeHooksInstalled && codexHooksInstalled,
+                onEnable: openAgentsSettings
+            )
         }
     }
 
@@ -244,6 +299,14 @@ struct PopoverView: View {
 private struct ProviderDetail: View {
     let service: ServiceSnapshot
     let burn: BurnRatePrediction?
+    let hooksInstalled: Bool
+    let onEnableAgents: () -> Void
+
+    @ObservedObject private var agents = AgentSessionStore.shared
+
+    /// Only the two sources phase 2 tracks get agent rows; the other providers
+    /// show no section at all rather than an empty one.
+    private var agentSource: AgentSource? { AgentSource(rawValue: service.id) }
 
     @State private var showUnusedWindows = false
 
@@ -313,6 +376,15 @@ private struct ProviderDetail: View {
             if service.state == .ok, nothingToShow {
                 Text("Server responded but returned no usage data.")
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if let source = agentSource {
+                AgentsSection(
+                    sessions: agents.sessions(for: source),
+                    grouped: false,
+                    hooksInstalled: hooksInstalled,
+                    title: "\(service.displayName) agents",
+                    onEnable: onEnableAgents
+                )
             }
         }
     }
@@ -495,7 +567,9 @@ private struct ServiceStateChip: View {
             stateMessage: nil,
             fetchedAt: Date()
         ),
-        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false)
+        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false),
+        hooksInstalled: true,
+        onEnableAgents: {}
     )
     .padding(OMSpacing.l)
     .frame(width: 360)
