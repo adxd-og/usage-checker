@@ -195,10 +195,13 @@ struct AgentsSettingsView: View {
 
     /// The counters live on a plain class, not an ObservableObject, so the tab
     /// re-reads them while it is on screen. `.task` cancels this when it is not.
+    /// The install status is re-read on the same tick — two small file reads — so
+    /// editing settings.json in another window updates the line here.
     private func pollDiagnostics() async {
         while !Task.isCancelled {
             received = AgentDiagnostics.server?.receivedCount ?? 0
             dropped = AgentDiagnostics.server?.droppedCount ?? 0
+            refreshStatus()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
     }
