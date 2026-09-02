@@ -13,8 +13,29 @@ struct OMAgentsPill: View {
     let working: Int
     let total: Int
 
+    /// `SettingsStore` rather than an injected flag: the pill is the only thing the
+    /// `agentsShowInMenuBar` switch controls, and observing it here keeps
+    /// `MenuBarLabel` free of a second reason to re-render.
+    @ObservedObject private var settings = SettingsStore.shared
+
     var body: some View {
-        EmptyView()   // Task 2 draws the capsule.
+        if settings.agentsShowInMenuBar,
+           let look = Appearance.make(needsYou: needsYou, working: working, total: total) {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(look.dot)
+                    .frame(width: 6, height: 6)
+                Text(look.text)
+                    .font(OMFont.menuNumeral)
+                    .monospacedDigit()
+                    .foregroundStyle(look.textColor)
+            }
+            .padding(.horizontal, 6)
+            .frame(height: 15)
+            .background(Capsule(style: .continuous).fill(OMSurface.row))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(look.accessibilityLabel)
+        }
     }
 }
 
@@ -67,4 +88,18 @@ extension OMAgentsPill {
             return "\(sessions), \(needsYou) \(needsYou == 1 ? "needs" : "need") you"
         }
     }
+}
+
+#Preview("Agents pill") {
+    // The dark strip stands in for the menu bar; the pill is drawn on the system
+    // material there, so a white canvas would flatter it dishonestly.
+    VStack(alignment: .leading, spacing: 10) {
+        OMAgentsPill(needsYou: 0, working: 0, total: 3)   // grey "3"
+        OMAgentsPill(needsYou: 0, working: 2, total: 4)   // blue "2"
+        OMAgentsPill(needsYou: 1, working: 2, total: 4)   // amber "1 needs you"
+        OMAgentsPill(needsYou: 0, working: 0, total: 0)   // nothing
+    }
+    .padding()
+    .frame(width: 200, alignment: .leading)
+    .background(Color.black.opacity(0.85))
 }
