@@ -267,4 +267,133 @@ final class AgentHooksInstallerTests: XCTestCase {
             "the backup must still be the file as it was before Omelette first touched it"
         )
     }
+
+    // MARK: - Codex
+
+    func testNotifyLineIsWrittenToAMissingConfig() throws {
+        try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)
+
+        XCTAssertEqual(
+            try text(at: configURL),
+            AgentHooksInstaller.codexNotifyLine(helperPath: helper) + "\n"
+        )
+        XCTAssertEqual(AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .installed)
+    }
+
+    func testNotifyLineIsTheExactShapeCodexExpects() {
+        XCTAssertEqual(
+            AgentHooksInstaller.codexNotifyLine(helperPath: "/tmp/omelette-hook"),
+            #"notify = ["/tmp/omelette-hook", "--codex"]"#
+        )
+        XCTAssertEqual(
+            AgentHooksInstaller.codexNotifyLine(helperPath: #"/tmp/we"ird\path"#),
+            #"notify = ["/tmp/we\"ird\\path", "--codex"]"#,
+            "quotes and backslashes have to survive as TOML escapes"
+        )
+    }
+
+    func testANotifyInsideATableIsNotOursAndOurLineGoesAboveIt() throws {
+        try write("""
+        model = "gpt-5"
+
+        [tui]
+        notify = ["/usr/local/bin/tui-thing"]
+        """, to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .notInstalled,
+            "a notify under [tui] belongs to that table"
+        )
+
+        try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)
+
+        let lines = try text(at: configURL).components(separatedBy: "\n")
+        XCTAssertEqual(lines.first, #"model = "gpt-5""#)
+        let ours = try XCTUnwrap(lines.firstIndex(of: AgentHooksInstaller.codexNotifyLine(helperPath: helper)))
+        let table = try XCTUnwrap(lines.firstIndex(of: "[tui]"))
+        XCTAssertLessThan(ours, table, "our key has to stay top-level")
+        XCTAssertTrue(lines.contains(#"notify = ["/usr/local/bin/tui-thing"]"#), "the table's own key is untouched")
+        XCTAssertEqual(AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .installed)
+    }
+
+    func testACommentedNotifyIsNotOurs() throws {
+        try write("""
+        # notify = ["/usr/local/bin/old"]
+        model = "gpt-5"
+        """, to: configURL)
+
+        XCTAssertEqual(AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .notInstalled)
+
+        try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)
+
+        let lines = try text(at: configURL).components(separatedBy: "\n")
+        XCTAssertEqual(lines.first, #"# notify = ["/usr/local/bin/old"]"#, "the comment stays a comment")
+        XCTAssertTrue(lines.contains(AgentHooksInstaller.codexNotifyLine(helperPath: helper)))
+    }
+
+    func testSomeoneElsesNotifyIsAConflictAndIsNeverOverwritten() throws {
+        let theirs = #"notify = ["/usr/local/bin/other-notifier"]"#
+        let original = """
+        \(theirs)
+        model = "gpt-5"
+        """
+        try write(original, to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper),
+            .conflict(theirs)
+        )
+        XCTAssertThrowsError(try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)) {
+            XCTAssertEqual($0 as? AgentHooksInstaller.Error, .conflict(theirs))
+        }
+        XCTAssertEqual(try text(at: configURL), original, "the file must be byte-identical")
+    }
+
+    func testAnOlderNotifyOfOursIsUpdatedWhereItStands() throws {
+        let stale = #"notify = ["/Users/tester/Library/Application Support/UsageTracker/bin/omelette-hook", "--codex", "--v0"]"#
+        try write("""
+        model = "gpt-5"
+        \(stale)
+
+        [tui]
+        theme = "dark"
+        """, to: configURL)
+
+        XCTAssertEqual(AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .outdated)
+
+        try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)
+
+        let lines = try text(at: configURL).components(separatedBy: "\n")
+        XCTAssertEqual(lines[1], AgentHooksInstaller.codexNotifyLine(helperPath: helper), "replaced in place")
+        XCTAssertFalse(lines.contains(stale))
+        XCTAssertTrue(lines.contains("[tui]"))
+        XCTAssertTrue(lines.contains(#"theme = "dark""#))
+    }
+
+    func testRemoveTakesOurLineAndNothingElse() throws {
+        try write("""
+        model = "gpt-5"
+
+        [tui]
+        notify = ["/usr/local/bin/tui-thing"]
+        """, to: configURL)
+        try AgentHooksInstaller.installCodex(configURL: configURL, helperPath: helper)
+
+        try AgentHooksInstaller.removeCodex(configURL: configURL, helperPath: helper)
+
+        let after = try text(at: configURL)
+        XCTAssertFalse(after.contains(AgentHooksInstaller.codexNotifyLine(helperPath: helper)))
+        XCTAssertTrue(after.contains(#"model = "gpt-5""#))
+        XCTAssertTrue(after.contains(#"notify = ["/usr/local/bin/tui-thing"]"#), "the [tui] key survives")
+        XCTAssertEqual(AgentHooksInstaller.codexStatus(configURL: configURL, helperPath: helper), .notInstalled)
+    }
+
+    func testRemoveLeavesSomeoneElsesNotifyAlone() throws {
+        let original = "notify = [\"/usr/local/bin/other-notifier\"]\n"
+        try write(original, to: configURL)
+
+        try AgentHooksInstaller.removeCodex(configURL: configURL, helperPath: helper)
+
+        XCTAssertEqual(try text(at: configURL), original)
+    }
 }
