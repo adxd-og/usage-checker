@@ -10,5 +10,9 @@
     <array>
         <string>group.com.usagetracker.app</string>
     </array>
+    <!-- Hardened Runtime blocks Apple events to other apps without this; we send
+         them only to Terminal.app and iTerm2 to select the tab of an agent session. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
 </dict>
 </plist>

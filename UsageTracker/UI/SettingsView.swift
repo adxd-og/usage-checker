@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @StateObject private var settings = SettingsStore.shared
     @ObservedObject private var state = AppState.shared
+    @ObservedObject private var route = SettingsRoute.shared
     @State private var selectedTab: Tab = .general
     @State private var adminKeyDraft: String = ""
     @State private var savedAdminKeyMasked: String = ""
@@ -52,7 +53,13 @@ struct SettingsView: View {
                 .tag(Tab.advanced)
         }
         .frame(width: 520, height: 540)
-        .onAppear(perform: updateMaskedView)
+        .onAppear {
+            updateMaskedView()
+            applyPendingTab()
+        }
+        // The window may already be open when the popover asks for a tab, in
+        // which case onAppear has long since fired.
+        .onChange(of: route.pendingTab) { _, _ in applyPendingTab() }
     }
 
     private var generalTab: some View {
@@ -468,6 +475,13 @@ struct SettingsView: View {
         let f = RelativeDateTimeFormatter()
         f.unitsStyle = .short
         return f.localizedString(for: date, relativeTo: Date())
+    }
+
+    /// The popover can ask for a specific tab ("Enable precise status" → Agents).
+    /// An unknown name is ignored, which keeps the request harmless.
+    private func applyPendingTab() {
+        guard let name = route.consumePendingTab(), let tab = Tab(rawValue: name) else { return }
+        selectedTab = tab
     }
 
     private func updateMaskedView() {
