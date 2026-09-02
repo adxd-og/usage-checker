@@ -135,12 +135,12 @@ struct ActivityGridView: View {
 
     private func statCard(_ stat: GridStat) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(stat.label).font(.subheadline).foregroundStyle(.secondary)
+            Text(stat.label).font(OMFont.caption).foregroundStyle(.secondary)
             Text(stat.value)
-                .font(.title3.weight(.semibold))
+                .font(OMFont.heroNumeral)
                 .monospacedDigit()
             if let sub = stat.sub {
-                Text(sub).font(.caption).foregroundStyle(.tertiary)
+                Text(sub).font(OMFont.caption).foregroundStyle(.tertiary)
             }
         }
         .dashboardCard(padding: 12)
@@ -204,26 +204,44 @@ struct ActivityGridView: View {
         // can tell the two apart, so only it draws the difference.
         let unobserved = cache.dimsUnrecordedDays && !day.hasReading
         return RoundedRectangle(cornerRadius: 3)
-            .fill(day.isFuture ? Color.clear : color(for: intensity, unobserved: unobserved))
+            .fill(day.isFuture
+                  ? Color.clear
+                  : Self.cellBase(intensity: intensity, usesStatusColor: cache.usesStatusColor, unobserved: unobserved)
+                      .opacity(Self.cellOpacity(intensity: intensity, unobserved: unobserved)))
             .frame(width: cellSize, height: cellSize)
             .help(day.tooltip)
     }
 
-    private func color(for intensity: Double, unobserved: Bool = false) -> Color {
-        if unobserved { return Color.secondary.opacity(0.05) }
-        if intensity == 0 { return Color.secondary.opacity(0.12) }
-        return Color.accentColor.opacity(0.20 + intensity * 0.80)
+    /// The colour a square is built from. Dollars have no "too much" level, so cost
+    /// stays on one accent ramp; a quota square *is* a utilisation, so it gets the
+    /// battery colours and a day that ran at 95 % reads red.
+    nonisolated static func cellBase(intensity: Double, usesStatusColor: Bool, unobserved: Bool) -> Color {
+        if unobserved { return .secondary }
+        let clamped = max(0, min(1, intensity))
+        if clamped == 0 { return .secondary }
+        return usesStatusColor ? usageStatusColor(clamped * 100) : .accentColor
+    }
+
+    /// A ghost for a day nothing was recorded, the empty-square grey for an observed
+    /// zero, and a 0.20 → 1.00 ramp for everything else.
+    nonisolated static func cellOpacity(intensity: Double, unobserved: Bool) -> Double {
+        if unobserved { return 0.05 }
+        let clamped = max(0, min(1, intensity))
+        if clamped == 0 { return 0.12 }
+        return 0.20 + clamped * 0.80
     }
 
     private func legend(_ c: GridCache) -> some View {
         HStack(spacing: 6) {
-            Text(c.legendLow).font(.caption).foregroundStyle(.secondary)
+            Text(c.legendLow).font(OMFont.caption).foregroundStyle(.secondary)
             ForEach(0..<5, id: \.self) { i in
+                let intensity = Double(i) / 4.0
                 RoundedRectangle(cornerRadius: 3)
-                    .fill(color(for: Double(i) / 4.0))
+                    .fill(Self.cellBase(intensity: intensity, usesStatusColor: c.usesStatusColor, unobserved: false)
+                        .opacity(Self.cellOpacity(intensity: intensity, unobserved: false)))
                     .frame(width: cellSize, height: cellSize)
             }
-            Text(c.legendHigh).font(.caption).foregroundStyle(.secondary)
+            Text(c.legendHigh).font(OMFont.caption).foregroundStyle(.secondary)
         }
     }
 }
@@ -277,6 +295,8 @@ private struct GridCache: Sendable {
     let legendLow: String
     let legendHigh: String
     let dimsUnrecordedDays: Bool
+    /// Whether the squares are a utilisation (battery colours) or dollars (accent ramp).
+    let usesStatusColor: Bool
     let hasData: Bool
 
     // MARK: Cost
@@ -318,6 +338,7 @@ private struct GridCache: Sendable {
             legendLow: "Less",
             legendHigh: "More",
             dimsUnrecordedDays: false,
+            usesStatusColor: false,
             hasData: !dailies.isEmpty
         )
     }
@@ -373,6 +394,7 @@ private struct GridCache: Sendable {
             legendLow: "0%",
             legendHigh: "100%",
             dimsUnrecordedDays: true,
+            usesStatusColor: true,
             hasData: !peaks.isEmpty
         )
     }

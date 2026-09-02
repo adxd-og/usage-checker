@@ -138,27 +138,27 @@ struct SessionHistoryView: View {
     private var peakTable: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Day").font(.subheadline).foregroundStyle(.secondary)
+                Text("Day").font(OMFont.body).foregroundStyle(.secondary)
                     .frame(width: 120, alignment: .leading)
                 Spacer()
-                Text("Window").font(.subheadline).foregroundStyle(.secondary)
+                Text("Window").font(OMFont.body).foregroundStyle(.secondary)
                     .frame(width: 160, alignment: .trailing)
-                Text("Peak").font(.subheadline).foregroundStyle(.secondary)
+                Text("Peak").font(OMFont.body).foregroundStyle(.secondary)
                     .frame(width: 60, alignment: .trailing)
             }
             .padding(.bottom, 6)
             ForEach(quota.peaks.reversed()) { peak in
                 HStack {
-                    Text(peak.day.formatted(date: .abbreviated, time: .omitted)).font(.subheadline)
+                    Text(peak.day.formatted(date: .abbreviated, time: .omitted)).font(OMFont.body)
                         .frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text(quota.label(for: peak.peakBucketID)).font(.subheadline)
+                    Text(quota.label(for: peak.peakBucketID)).font(OMFont.body)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(width: 160, alignment: .trailing)
                     Text(String(format: "%.0f%%", peak.peak))
-                        .font(.subheadline)
+                        .font(OMFont.numeral)
                         .monospacedDigit()
                         .foregroundStyle(usageStatusColor(peak.peak))
                         .frame(width: 60, alignment: .trailing)
@@ -233,21 +233,21 @@ struct SessionHistoryView: View {
     private var table: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Day").font(.subheadline).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
+                Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                Text("Turns").font(.subheadline).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
-                Text("Tokens").font(.subheadline).foregroundStyle(.secondary).frame(width: 100, alignment: .trailing)
-                Text("Cost").font(.subheadline).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                Text("Turns").font(OMFont.body).foregroundStyle(.secondary).frame(width: 60, alignment: .trailing)
+                Text("Tokens").font(OMFont.body).foregroundStyle(.secondary).frame(width: 100, alignment: .trailing)
+                Text("Cost").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
             }
             .padding(.bottom, 6)
             ForEach(data.reversed()) { p in
                 HStack {
-                    Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(.subheadline)
+                    Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(OMFont.body)
                         .frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text("\(p.turns)").font(.subheadline).monospacedDigit().frame(width: 60, alignment: .trailing)
-                    Text(formatTokens(p.tokens)).font(.subheadline).monospacedDigit().frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
-                    Text(String(format: "$%.2f", p.cost)).font(.subheadline).monospacedDigit().frame(width: 80, alignment: .trailing)
+                    Text("\(p.turns)").font(OMFont.numeral).monospacedDigit().frame(width: 60, alignment: .trailing)
+                    Text(formatTokens(p.tokens)).font(OMFont.numeral).monospacedDigit().frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
+                    Text(String(format: "$%.2f", p.cost)).font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }
                 .padding(.vertical, 3)
                 if p.id != data.first?.id { Divider().opacity(0.3) }
