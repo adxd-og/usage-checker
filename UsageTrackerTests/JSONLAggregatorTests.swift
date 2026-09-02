@@ -20,6 +20,14 @@ final class JSONLAggregatorTests: XCTestCase {
 
     override func tearDownWithError() throws {
         try? FileManager.default.removeItem(at: root)
+        try? FileManager.default.removeItem(at: cacheURL)
+    }
+
+    /// The cache file lives beside the log root, never inside it — and never in the
+    /// real Application Support directory, which no test may touch.
+    private var cacheURL: URL {
+        root.deletingLastPathComponent()
+            .appendingPathComponent("\(root.lastPathComponent)-cost-cache.json")
     }
 
     // MARK: - Fixture writing
@@ -77,7 +85,7 @@ final class JSONLAggregatorTests: XCTestCase {
 
     private func loadedAggregator() async throws -> JSONLAggregator {
         try writeStandardFixture()
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         return aggregator
     }
@@ -164,7 +172,7 @@ final class JSONLAggregatorTests: XCTestCase {
     }
 
     func testAnEmptyLogRootProducesNothing() async throws {
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         let breakdown = await aggregator.breakdown()
 
@@ -186,7 +194,7 @@ final class JSONLAggregatorTests: XCTestCase {
             line(id: "msg_cache", minutesAgo: 10, model: "claude-sonnet-4-5", input: 0, cacheRead: 1_000_000),
         ], project: betaSlug)
 
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
 
@@ -213,7 +221,7 @@ final class JSONLAggregatorTests: XCTestCase {
         let first = line(id: "msg_partial", minutesAgo: 10, model: "claude-sonnet-4-5", input: 1_000_000)
         try writeRaw(first, project: alphaSlug) // no trailing newline
 
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         let beforeTerminator = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
         XCTAssertEqual(beforeTerminator.turns, 0, "a half-written line is not a turn yet")
@@ -245,7 +253,7 @@ final class JSONLAggregatorTests: XCTestCase {
             ),
         ], project: alphaSlug)
 
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         // The whole second the fraction-less stamp rounds to, and nothing else.
         let expected = plain.date(from: plain.string(from: stamped))!
@@ -269,7 +277,7 @@ final class JSONLAggregatorTests: XCTestCase {
             line(id: "msg_good", minutesAgo: 10, model: "claude-sonnet-4-5", input: 500_000),
         ], project: alphaSlug)
 
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         // The window reaches forward as well as back: `?? Date()` stamps the turn at
         // whatever moment the parse ran, which is *after* the fixture's `now`, so a
@@ -288,11 +296,153 @@ final class JSONLAggregatorTests: XCTestCase {
             line(id: "msg_synthetic", minutesAgo: 10, model: "<synthetic>", input: 1_000_000),
             line(id: "msg_real", minutesAgo: 10, model: "claude-sonnet-4-5", input: 1_000_000),
         ], project: alphaSlug)
-        let aggregator = JSONLAggregator(rootURL: root)
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
         await aggregator.refresh()
         let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
 
         XCTAssertEqual(usage.turns, 1)
         XCTAssertEqual(usage.cost, 3.0, accuracy: 0.0001)
+    }
+
+    // MARK: - The on-disk cache
+
+    /// Appends bytes to an existing fixture file the way Claude Code does — the size
+    /// and the mtime both move, which is what the scanner keys off.
+    private func append(_ text: String, project: String, file: String = "session.jsonl") throws {
+        let url = root.appendingPathComponent(project, isDirectory: true).appendingPathComponent(file)
+        let handle = try FileHandle(forWritingTo: url)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(text.utf8))
+    }
+
+    private let twoHourWindow = 2.0 * 3600
+
+    func testACachedRelaunchProducesTheSameFiguresWithoutReparsing() async throws {
+        try writeStandardFixture()
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await first.refresh()
+        let firstBreakdown = await first.breakdown()
+        let firstParsed = await first.filesParsedInLastScan
+        XCTAssertEqual(firstParsed, 2, "a cold start reads both transcripts")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheURL.path), "the cache must be written")
+
+        // A relaunch: same logs, same cache, nothing touched in between.
+        let second = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await second.refresh()
+        let secondParsed = await second.filesParsedInLastScan
+        let secondBreakdown = await second.breakdown()
+
+        XCTAssertEqual(secondParsed, 0, "unchanged transcripts must not be opened at all")
+        XCTAssertEqual(secondBreakdown.todayCost, firstBreakdown.todayCost, accuracy: 0.0001)
+        XCTAssertEqual(secondBreakdown.todayTokens, firstBreakdown.todayTokens)
+        XCTAssertEqual(secondBreakdown.todayTurns, firstBreakdown.todayTurns)
+        XCTAssertEqual(secondBreakdown.weekCost, firstBreakdown.weekCost, accuracy: 0.0001)
+        XCTAssertEqual(secondBreakdown.monthCost, firstBreakdown.monthCost, accuracy: 0.0001)
+        XCTAssertEqual(secondBreakdown.projectsWeek.map(\.slug), firstBreakdown.projectsWeek.map(\.slug))
+        XCTAssertEqual(
+            secondBreakdown.projectsWeek.map(\.totalCost),
+            firstBreakdown.projectsWeek.map(\.totalCost)
+        )
+        XCTAssertEqual(secondBreakdown.daily.map(\.turns), firstBreakdown.daily.map(\.turns))
+    }
+
+    func testOnlyTheChangedFileIsReparsedAfterARestart() async throws {
+        try writeStandardFixture()
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await first.refresh()
+        let before = await first.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        // One project keeps working while the app is closed.
+        try append(
+            line(id: "msg_b2", minutesAgo: 20, model: "claude-sonnet-4-5", input: 1_000_000) + "\n",
+            project: betaSlug
+        )
+
+        let second = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await second.refresh()
+        let parsed = await second.filesParsedInLastScan
+        let after = await second.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(parsed, 1, "only the transcript that changed is opened")
+        XCTAssertEqual(after.turns, before.turns + 1)
+        XCTAssertEqual(after.cost, before.cost + 3.0, accuracy: 0.0001)
+        XCTAssertEqual(after.tokens, before.tokens + 1_000_000)
+    }
+
+    func testARewrittenFileIsReparsedWithoutDoubleCounting() async throws {
+        try writeStandardFixture()
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await first.refresh()
+        let before = await first.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        // The session file is rewritten shorter than the offset we recorded — a
+        // compaction, a rollback, a crash mid-write.
+        let a1 = line(id: "msg_a1", minutesAgo: 90, model: "claude-sonnet-4-5", input: 1_000_000)
+        let a2 = line(id: "msg_a2", minutesAgo: 60, model: "claude-opus-4-5", input: 1_000_000)
+        try writeRaw(a1 + "\n" + a2 + "\n", project: alphaSlug)
+
+        let second = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await second.refresh()
+        let parsed = await second.filesParsedInLastScan
+        let after = await second.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(parsed, 1, "a shorter file is read again from the top")
+        XCTAssertEqual(after.turns, before.turns, "the replayed lines are already counted")
+        XCTAssertEqual(after.cost, before.cost, accuracy: 0.0001)
+    }
+
+    func testACorruptOrForeignCacheIsIgnored() async throws {
+        try writeStandardFixture()
+        let uncached = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await uncached.refresh()
+        let expected = await uncached.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        try "{not json".write(to: cacheURL, atomically: true, encoding: .utf8)
+        let afterCorrupt = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await afterCorrupt.refresh()
+        let corruptParsed = await afterCorrupt.filesParsedInLastScan
+        let fromCorrupt = await afterCorrupt.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(corruptParsed, 2, "an unreadable cache means a full rescan")
+        XCTAssertEqual(fromCorrupt.turns, expected.turns)
+        XCTAssertEqual(fromCorrupt.cost, expected.cost, accuracy: 0.0001)
+
+        // Well-formed, but written for somebody else's log root.
+        let foreign: [String: Any] = [
+            "version": 1,
+            "root": "/somewhere/else/projects",
+            "savedAt": "2026-01-01T00:00:00Z",
+            "fileMarks": [String: Any](),
+            "recentTurns": [Any](),
+            "oldDays": [Any](),
+            "seenMessageIDs": [Any](),
+        ]
+        try JSONSerialization.data(withJSONObject: foreign).write(to: cacheURL)
+        let afterForeign = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await afterForeign.refresh()
+        let foreignParsed = await afterForeign.filesParsedInLastScan
+        let fromForeign = await afterForeign.usage(from: now.addingTimeInterval(-twoHourWindow), to: now)
+
+        XCTAssertEqual(foreignParsed, 2, "a cache for another log root means a full rescan")
+        XCTAssertEqual(fromForeign.turns, expected.turns)
+        XCTAssertEqual(fromForeign.cost, expected.cost, accuracy: 0.0001)
+    }
+
+    func testTheCacheIsNotRewrittenOnAQuietPoll() async throws {
+        try writeStandardFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await aggregator.refresh()
+
+        let written = try FileManager.default.attributesOfItem(atPath: cacheURL.path)
+        let writtenAt = try XCTUnwrap(written[.modificationDate] as? Date)
+        let writtenSize = try XCTUnwrap(written[.size] as? Int)
+
+        // The minute poll with nothing new in the logs: no turns, no marks, no write.
+        await aggregator.refresh()
+        let afterPoll = try FileManager.default.attributesOfItem(atPath: cacheURL.path)
+
+        XCTAssertEqual(afterPoll[.modificationDate] as? Date, writtenAt, "a quiet poll must not rewrite the cache")
+        XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
     }
 }
