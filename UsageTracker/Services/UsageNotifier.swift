@@ -1,8 +1,12 @@
+import Combine
 import Foundation
 import UserNotifications
 
+/// `NSObject` only because `UNUserNotificationCenterDelegate` refines
+/// `NSObjectProtocol`: the agent banners need a delegate to route their **Open**
+/// action, and the notification centre will only talk to an Objective-C object.
 @MainActor
-final class UsageNotifier {
+final class UsageNotifier: NSObject {
     static let shared = UsageNotifier()
 
     /// Which threshold each bucket has already fired at, persisted so a restart
@@ -13,6 +17,12 @@ final class UsageNotifier {
     /// Which window (keyed by its reset time) each time-based alert last fired for, so
     /// a 60-second poll doesn't repeat the same nudge — but a *new* window can nudge again.
     private var firedForWindow: [String: Double]
+
+    /// Session ids that currently have a "needs you" banner on screen. Not
+    /// persisted: a banner does not survive a relaunch, so neither should the
+    /// record of it.
+    private var notifiedNeedsYou: Set<String> = []
+    private var agentSessionsObserver: AnyCancellable?
 
     static let firedLevelsKey = "notifierFiredLevels"
     static let firedWindowsKey = "notifierFiredWindows"
@@ -27,9 +37,10 @@ final class UsageNotifier {
     /// inequality would replay the alert on every poll if it did.
     private static let windowMatchTolerance: TimeInterval = 2
 
-    private init() {
+    private override init() {
         lastFiredKey = UserDefaults.standard.dictionary(forKey: Self.firedLevelsKey) as? [String: Int] ?? [:]
         firedForWindow = UserDefaults.standard.dictionary(forKey: Self.firedWindowsKey) as? [String: Double] ?? [:]
+        super.init()
     }
 
     private func rememberFired(_ level: Int, for key: String) {
@@ -330,17 +341,148 @@ final class UsageNotifier {
         }
     }
 
+    // MARK: - Agent sessions
+
+    static let agentNeedsYouCategory = "AGENT_NEEDS_YOU"
+    static let agentOpenAction = "AGENT_OPEN"
+
+    /// Installs the notification-centre delegate, registers the agent category and
+    /// starts watching the session store. Called once at launch.
+    ///
+    /// The delegate comes before `requestAuthorizationIfNeeded()` in
+    /// `applicationDidFinishLaunching` deliberately: a notification the user acts on
+    /// must find a delegate already installed, including on the launch that tap
+    /// causes.
+    ///
+    /// Only the "needs you" alert gets a category. "Finished" needs no button — its
+    /// whole body is the action, and a click on the body arrives as
+    /// `UNNotificationDefaultActionIdentifier`, which `handleAgentResponse` routes
+    /// exactly like **Open**.
+    func startAgentNotifications(store: AgentSessionStore = .shared) {
+        let center = UNUserNotificationCenter.current()
+        center.delegate = self
+        center.setNotificationCategories([
+            UNNotificationCategory(
+                identifier: Self.agentNeedsYouCategory,
+                actions: [
+                    UNNotificationAction(
+                        identifier: Self.agentOpenAction,
+                        title: "Open",
+                        options: [.foreground]
+                    )
+                ],
+                intentIdentifiers: [],
+                options: []
+            )
+        ])
+
+        // `AgentSessionStore` and `UsageNotifier` are both `@MainActor`, and the store
+        // documents these callbacks as delivered on main — so they are plain calls,
+        // no `assumeIsolated` hop needed.
+        store.onNeedsYou = { [weak self] session in
+            self?.agentNeedsYou(session)
+        }
+        store.onDone = { [weak self] session in
+            self?.agentDone(session)
+        }
+        // The store announces a session *entering* `needsYou`; nothing announces it
+        // leaving, so the leaving edge is diffed out of the published list.
+        agentSessionsObserver = store.$sessions.sink { [weak self] sessions in
+            self?.clearResolvedNeedsYou(in: sessions)
+        }
+    }
+
+    private func agentNeedsYou(_ session: AgentSession) {
+        guard AgentNotificationRules.shouldNotifyNeedsYou(
+            notifyEnabled: SettingsStore.shared.agentsNotifyNeedsYou,
+            bypassQuietHours: SettingsStore.shared.agentsNeedsYouBypassQuietHours,
+            isQuietHours: isInQuietHours()
+        ) else { return }
+
+        // Recorded only once the banner is actually scheduled: a suppressed alert
+        // has nothing to withdraw later.
+        notifiedNeedsYou.insert(session.id)
+        fire(
+            title: AgentNotificationRules.title(for: session),
+            body: AgentNotificationRules.body(for: session),
+            identifier: AgentNotificationRules.identifier(for: session),
+            category: Self.agentNeedsYouCategory,
+            timeSensitive: true
+        )
+    }
+
+    private func agentDone(_ session: AgentSession) {
+        guard AgentNotificationRules.shouldNotifyDone(
+            notifyEnabled: SettingsStore.shared.agentsNotifyDone,
+            isQuietHours: isInQuietHours()
+        ) else { return }
+        fire(
+            title: AgentNotificationRules.doneTitle(for: session),
+            body: AgentNotificationRules.doneBody(for: session),
+            identifier: AgentNotificationRules.doneIdentifier(for: session)
+        )
+    }
+
+    /// Takes down banners for sessions that stopped waiting — you approved it in the
+    /// terminal, or the session ended. Nothing else clears them: a notification with
+    /// no identifier of ours is left alone.
+    private func clearResolvedNeedsYou(in sessions: [AgentSession]) {
+        let resolved = AgentNotificationRules.resolvedSessionIDs(
+            notified: notifiedNeedsYou,
+            sessions: sessions
+        )
+        guard !resolved.isEmpty else { return }
+        notifiedNeedsYou.subtract(resolved)
+        UNUserNotificationCenter.current().removeDeliveredNotifications(
+            withIdentifiers: resolved.map { AgentNotificationRules.needsYouPrefix + $0 }
+        )
+    }
+
+    /// Routes a tap on an agent notification to the session it names. A session that
+    /// has since ended has nothing to jump to, so the popover — where the remaining
+    /// sessions are — opens instead.
+    func handleAgentResponse(identifier: String, action: String) {
+        guard action == UNNotificationDefaultActionIdentifier || action == Self.agentOpenAction,
+              let sessionID = AgentNotificationRules.sessionID(fromIdentifier: identifier)
+        else { return }
+        notifiedNeedsYou.remove(sessionID)
+        if let session = AgentSessionStore.shared.sessions.first(where: { $0.id == sessionID }) {
+            SessionActivator.jump(to: session)
+        } else {
+            NotificationCenter.default.post(name: .showPopover, object: nil)
+        }
+    }
+
     // MARK: - Plumbing
 
-    private func fire(title: String, body: String, critical: Bool = false) {
+    /// The identifier defaults to a fresh UUID — a usage alert is a one-off. Agent
+    /// alerts pass a stable one instead, which is what makes a repeat replace the
+    /// banner and lets `clearResolvedNeedsYou` take it down again.
+    private func fire(
+        title: String,
+        body: String,
+        critical: Bool = false,
+        identifier: String? = nil,
+        category: String? = nil,
+        timeSensitive: Bool = false
+    ) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = body
         content.sound = critical ? .defaultCritical : .default
-        if critical {
+        if critical || timeSensitive {
+            // Best effort: without the time-sensitive entitlement the system quietly
+            // treats this as `.active`. The critical usage alerts already ask for it.
             content.interruptionLevel = .timeSensitive
         }
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        if let category {
+            content.categoryIdentifier = category
+        }
+        let request = UNNotificationRequest(
+            identifier: identifier ?? UUID().uuidString,
+            content: content,
+            trigger: nil
+        )
         UNUserNotificationCenter.current().add(request)
     }
 
@@ -352,5 +494,37 @@ final class UsageNotifier {
         f.maximumUnitCount = 2
         f.unitsStyle = .abbreviated
         return f.string(from: delta).map { "in \($0)" } ?? "soon"
+    }
+}
+
+extension UsageNotifier: UNUserNotificationCenterDelegate {
+    /// Tapping the banner, or its **Open** action, jumps to the session.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let identifier = response.notification.request.identifier
+        let action = response.actionIdentifier
+        // Only the two `String`s cross the isolation boundary. The completion handler
+        // is an Objective-C block and is not `Sendable`, so it is called here instead
+        // of being carried into the hop — the system only needs to know we took
+        // delivery promptly, and the jump itself is fire-and-forget UI work.
+        Task { @MainActor in
+            self.handleAgentResponse(identifier: identifier, action: action)
+        }
+        completionHandler()
+    }
+
+    /// Omelette activates itself when you act on a notification (the **Open** action
+    /// is `.foreground`), so without this the next banner would be swallowed as
+    /// "the app is already frontmost" — which for an accessory app the user is not
+    /// even looking at would simply lose the alert.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.banner, .sound])
     }
 }

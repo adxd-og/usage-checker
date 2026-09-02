@@ -12,6 +12,7 @@ final class StatusBarController {
     let statusItem: NSStatusItem
     private let popover: NSPopover
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
+    nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -35,10 +36,22 @@ final class StatusBarController {
         // once per poll, so a wall-clock tick timer on top of it was pure waste
         // (and was never invalidated).
         observeSnapshotForTooltip()
+        // A notification the user acted on can name a session that has already
+        // ended; the popover is where the rest of them are.
+        showPopoverObserver = NotificationCenter.default.addObserver(
+            forName: .showPopover, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.peek()
+            }
+        }
     }
 
     deinit {
         if let observer = snapshotObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = showPopoverObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -147,6 +160,9 @@ final class StatusBarController {
 
 extension Notification.Name {
     static let snapshotUpdated = Notification.Name("com.usagetracker.snapshotUpdated")
+    /// Posted when something outside the status item wants the popover on screen.
+    /// Today that is one caller: an agent notification whose session is gone.
+    static let showPopover = Notification.Name("com.usagetracker.showPopover")
 }
 
 private struct MenuBarHostView: View {
