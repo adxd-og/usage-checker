@@ -40,25 +40,31 @@ final class AgentNotificationGatingTests: XCTestCase {
     func testEveryNeedsYouToggleCombination() {
         // Both toggles against both quiet-hours states. `agentsNeedsYouBypassQuietHours`
         // is the only reason any notification in this app survives quiet hours.
-        let cases: [(notify: Bool, bypass: Bool, quiet: Bool, expected: Bool)] = [
-            (true,  true,  false, true),
-            (true,  true,  true,  true),
-            (true,  false, false, true),
-            (true,  false, true,  false),
-            (false, true,  false, false),
-            (false, true,  true,  false),
-            (false, false, false, false),
-            (false, false, true,  false),
+        // The last column is phase 4: a session with a permission request in flight is
+        // already being asked about by a banner that has Allow and Deny on it.
+        let cases: [(notify: Bool, bypass: Bool, quiet: Bool, pending: Bool, expected: Bool)] = [
+            (true,  true,  false, false, true),
+            (true,  true,  true,  false, true),
+            (true,  false, false, false, true),
+            (true,  false, true,  false, false),
+            (false, true,  false, false, false),
+            (false, true,  true,  false, false),
+            (false, false, false, false, false),
+            (false, false, true,  false, false),
+            // A pending request outranks every "yes" above it.
+            (true,  true,  false, true,  false),
+            (true,  true,  true,  true,  false),
         ]
         for c in cases {
             XCTAssertEqual(
                 AgentNotificationRules.shouldNotifyNeedsYou(
                     notifyEnabled: c.notify,
                     bypassQuietHours: c.bypass,
-                    isQuietHours: c.quiet
+                    isQuietHours: c.quiet,
+                    permissionPending: c.pending
                 ),
                 c.expected,
-                "notify=\(c.notify) bypass=\(c.bypass) quiet=\(c.quiet)"
+                "notify=\(c.notify) bypass=\(c.bypass) quiet=\(c.quiet) pending=\(c.pending)"
             )
         }
     }
@@ -215,5 +221,87 @@ final class AgentNotificationWithdrawalTests: XCTestCase {
                 sessions: [agentSession(id: "claude:a", state: .idle)]
             ).isEmpty
         )
+    }
+}
+
+/// What the Allow / Deny banner says. Only the tool name and the truncated summary
+/// leave the hook payload (design doc, security rule 6).
+final class AgentPermissionNotificationCopyTests: XCTestCase {
+    func testTheTitleNamesTheProjectAndTheTool() {
+        XCTAssertEqual(
+            AgentNotificationRules.permissionTitle(projectName: "Usage tracker", toolName: "Bash"),
+            "Usage tracker wants to run Bash"
+        )
+    }
+
+    func testARequestWithoutAToolNameStillReadsAsASentence() {
+        // The hook payload is not ours to rely on: a PermissionRequest can arrive
+        // with no tool_name at all, and "… wants to run " would read as a bug.
+        XCTAssertEqual(
+            AgentNotificationRules.permissionTitle(projectName: "Orion", toolName: nil),
+            "Orion wants to run a tool"
+        )
+        XCTAssertEqual(
+            AgentNotificationRules.permissionTitle(projectName: "Orion", toolName: "   "),
+            "Orion wants to run a tool"
+        )
+    }
+
+    func testTheBodyIsTheToolSummary() {
+        XCTAssertEqual(
+            AgentNotificationRules.permissionBody(toolSummary: "Bash: rm -rf build/DerivedData"),
+            "Bash: rm -rf build/DerivedData"
+        )
+    }
+
+    func testAMissingSummaryFallsBackToTheWaitingSentence() {
+        XCTAssertEqual(AgentNotificationRules.permissionBody(toolSummary: nil), "Waiting for your approval.")
+        XCTAssertEqual(AgentNotificationRules.permissionBody(toolSummary: " "), "Waiting for your approval.")
+    }
+
+    func testALongSummaryIsCutAtEightyCharacters() {
+        // Tighter than the 120 the other banners use: the spec caps what a permission
+        // request may show at 80.
+        let long = "Bash: " + String(repeating: "x", count: 300)
+        let body = AgentNotificationRules.permissionBody(toolSummary: long)
+        XCTAssertEqual(body.count, 80)
+        XCTAssertEqual(AgentNotificationRules.maxPermissionBodyLength, 80)
+        XCTAssertTrue(body.hasSuffix("…"))
+        XCTAssertTrue(body.hasPrefix("Bash: xxx"))
+    }
+}
+
+/// The identifier is what the app withdraws when the hold ends, and what carries the
+/// request id back from a button press.
+final class AgentPermissionNotificationIdentifierTests: XCTestCase {
+    func testTheIdentifierIsTheRequestIDNotTheSession() {
+        // Two requests from one session are two questions; filing them both under the
+        // session would let the second replace the first and leave one unanswered.
+        XCTAssertEqual(
+            AgentNotificationRules.permissionIdentifier(requestID: "0f1e2d3c"),
+            "agent-permission-0f1e2d3c"
+        )
+        XCTAssertNotEqual(
+            AgentNotificationRules.permissionIdentifier(requestID: "aaaa"),
+            AgentNotificationRules.permissionIdentifier(requestID: "bbbb")
+        )
+    }
+
+    func testTheRequestIDSurvivesTheRoundTrip() {
+        let identifier = AgentNotificationRules.permissionIdentifier(requestID: "0f1e2d3c4b5a")
+        XCTAssertEqual(AgentNotificationRules.requestID(fromIdentifier: identifier), "0f1e2d3c4b5a")
+    }
+
+    func testSomebodyElsesNotificationCarriesNoRequestID() {
+        XCTAssertNil(AgentNotificationRules.requestID(fromIdentifier: UUID().uuidString))
+        XCTAssertNil(AgentNotificationRules.requestID(fromIdentifier: "agent-permission-"))
+        XCTAssertNil(AgentNotificationRules.requestID(fromIdentifier: "agent-needsyou-claude:abc"))
+    }
+
+    func testAPermissionIdentifierIsNeverMistakenForASession() {
+        // `handleAgentResponse` jumps to whatever session an identifier names; a request
+        // id is not one, and answering must not be confused with jumping.
+        let identifier = AgentNotificationRules.permissionIdentifier(requestID: "0f1e2d3c")
+        XCTAssertNil(AgentNotificationRules.sessionID(fromIdentifier: identifier))
     }
 }

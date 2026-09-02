@@ -16,17 +16,58 @@ enum AgentNotificationRules {
     /// A notification body is one line in Notification Centre. The system truncates
     /// past that anyway; our own ellipsis lands on a nicer boundary than theirs.
     static let maxBodyLength = 120
+    /// A permission banner is filed under the *request*, not the session: the app
+    /// answers one request id at most once, and a second request from the same
+    /// session is a different question that must not quietly replace the first.
+    static let permissionPrefix = "agent-permission-"
+    /// Tighter than `maxBodyLength`: a held request may show the tool name and a
+    /// truncated summary and nothing else (design doc, security rule 6).
+    static let maxPermissionBodyLength = 80
 
     /// "Needs you" is the alert the feature exists for, so it gets the one
     /// quiet-hours escape hatch in the app (`agentsNeedsYouBypassQuietHours`,
     /// default on): an agent that blocks at 23:30 blocks until morning otherwise.
+    ///
+    /// `permissionPending` is the phase-4 veto. When a request for that session is
+    /// held, the `AGENT_PERMISSION` banner is already on screen asking the same
+    /// question with Allow and Deny on it; a second banner that says the same thing
+    /// and can do nothing about it is noise, and its withdrawal races the first.
     static func shouldNotifyNeedsYou(
         notifyEnabled: Bool,
         bypassQuietHours: Bool,
-        isQuietHours: Bool
+        isQuietHours: Bool,
+        permissionPending: Bool
     ) -> Bool {
-        guard notifyEnabled else { return false }
+        guard notifyEnabled, !permissionPending else { return false }
         return !isQuietHours || bypassQuietHours
+    }
+
+    static func permissionIdentifier(requestID: String) -> String {
+        permissionPrefix + requestID
+    }
+
+    /// The request id an identifier was built from, or nil when the banner is not a
+    /// permission one. Kept apart from `sessionID(fromIdentifier:)` because the two
+    /// answer different questions: this one says who to answer, that one where to jump.
+    static func requestID(fromIdentifier identifier: String) -> String? {
+        guard identifier.hasPrefix(permissionPrefix) else { return nil }
+        let id = String(identifier.dropFirst(permissionPrefix.count))
+        return id.isEmpty ? nil : id
+    }
+
+    /// "Usage tracker wants to run Bash". The tool name is the one part of the
+    /// payload worth a title; without it the sentence still has to hold together.
+    static func permissionTitle(projectName: String, toolName: String?) -> String {
+        let tool = toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return "\(projectName) wants to run \(tool.isEmpty ? "a tool" : tool)"
+    }
+
+    /// The truncated tool summary — "Bash: rm -rf build/DerivedData". A request that
+    /// carries no summary still has to say what the buttons are for.
+    static func permissionBody(toolSummary: String?) -> String {
+        let summary = toolSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !summary.isEmpty else { return "Waiting for your approval." }
+        return truncate(summary, limit: maxPermissionBodyLength)
     }
 
     /// "Finished" is opt-in and stays inside quiet hours like every usage alert.
