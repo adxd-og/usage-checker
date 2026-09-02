@@ -55,6 +55,18 @@ targets:
       - path: UsageTracker/Resources
     dependencies:
       - target: UsageTrackerWidget
+      # omelette-hook rides inside the app at Contents/Helpers/. `wrapper` +
+      # subpath is the only spelling that lands there (`executables` means
+      # Contents/MacOS). codeSign → CodeSignOnCopy, so the Debug copy carries the
+      # app's identity + hardened runtime; the Developer ID export re-signs it.
+      # link: false — an executable must never reach "Link Binary With Libraries".
+      - target: OmeletteHook
+        embed: true
+        link: false
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - package: Sparkle
       - package: CodexBar
         product: CodexBarCore
@@ -140,3 +152,24 @@ targets:
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO
         SKIP_INSTALL: NO
+
+  # Hook helper: a Foundation-only command-line tool Claude Code / Codex spawn on
+  # every hook event. Embedded into the app (see the app target's dependency).
+  OmeletteHook:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: HookHelper
+    settings:
+      base:
+        PRODUCT_NAME: omelette-hook
+        # signing.xcconfig hands every target the app's bundle id; a nested
+        # executable needs its own code-signing identifier.
+        PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.hook
+        # Without this the tool is also installed to Products/usr/local/bin in
+        # the archive, which turns it into a "Generic Xcode Archive" that
+        # `xcodebuild -exportArchive` (scripts/build_dmg.sh) refuses to export.
+        SKIP_INSTALL: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        DEAD_CODE_STRIPPING: YES
