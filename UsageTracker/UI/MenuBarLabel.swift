@@ -25,6 +25,7 @@ struct MenuBarLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
+            leadingSlot
             if displayServices.isEmpty {
                 Image(systemName: "chart.bar")
                     .imageScale(.small)
@@ -44,6 +45,12 @@ struct MenuBarLabel: View {
         .opacity(snapshot.isStale ? 0.6 : 1.0)
         .animation(.easeInOut(duration: 0.45), value: snapshot.headlinePercent)
     }
+
+    /// Reserved for the phase-2 agents pill (count of live agent sessions).
+    @ViewBuilder
+    private var leadingSlot: some View {
+        EmptyView()
+    }
 }
 
 /// Pay-as-you-go pill: no rate windows to show, so the 7-day local spend is the number.
@@ -54,7 +61,7 @@ private struct MiniCostPill: View {
 
     var body: some View {
         Text(weekCost < 100 ? String(format: "$%.1f", weekCost) : "$\(Int(weekCost.rounded()))")
-            .font(.system(size: 11, weight: .semibold, design: .rounded))
+            .font(OMFont.menuNumeral)
             .monospacedDigit()
             .foregroundStyle(isStale ? Color.secondary : Color.primary)
             .accessibilityLabel("\(service.displayName) spend \(Int(weekCost.rounded())) dollars this week")
@@ -103,7 +110,7 @@ private struct MiniServiceBar: View {
 
             if showsNumber {
                 Text("\(Int(percent.rounded()))")
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                    .font(OMFont.menuNumeral)
                     .monospacedDigit()
                     .foregroundStyle(isStale ? Color.secondary : barColor)
                     .opacity(pulse)
