@@ -110,4 +110,12 @@ final class WindowRankingTests: XCTestCase {
         )
         XCTAssertEqual(OMCostTile.total([Fixture.snapshot(id: "grok", weekCost: nil)]), 0)
     }
+
+    // MARK: hero phrase
+    func testStatusPhraseWording() {
+        XCTAssertEqual(OMHero.statusPhrase(10), "Plenty of headroom")
+        XCTAssertEqual(OMHero.statusPhrase(50), "On track")
+        XCTAssertEqual(OMHero.statusPhrase(70), "Running hot")
+        XCTAssertEqual(OMHero.statusPhrase(90), "Almost at the limit")
+    }
 }
