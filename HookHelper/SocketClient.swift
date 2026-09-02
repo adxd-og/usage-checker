@@ -86,8 +86,15 @@ enum SocketClient {
     }
 
     private static func wait(_ fd: Int32, for events: Int32, until deadline: Date) -> Bool {
-        let remainingMilliseconds = Int32(max(0, deadline.timeIntervalSinceNow * 1000))
-        var descriptor = pollfd(fd: fd, events: Int16(events), revents: 0)
-        return poll(&descriptor, 1, remainingMilliseconds) > 0
+        while true {
+            let remainingMilliseconds = Int32(max(0, deadline.timeIntervalSinceNow * 1000))
+            var descriptor = pollfd(fd: fd, events: Int16(events), revents: 0)
+            let ready = poll(&descriptor, 1, remainingMilliseconds)
+            // A signal during the 140 s decision wait (a stop/continue of the
+            // terminal's process group, say) must not read as "no decision": the
+            // app would still be showing Allow / Deny for a helper that has left.
+            if ready < 0, errno == EINTR { continue }
+            return ready > 0
+        }
     }
 }

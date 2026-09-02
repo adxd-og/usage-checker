@@ -203,3 +203,21 @@ surfaces; switching the feature off does not release holds already in flight;
 a subagent's PermissionRequest is held and bannered under the parent session with
 no row-state change (2.1 already ignored subagent events); the notifier's
 `UNUserNotificationCenter` paths remain manual-checklist only.
+
+## Phase 4 second opinion — Gemini 3.7 Flash (High), 2026-09-03
+
+Bundle: spec + 20 source files. Verdict "ready to ship with one fix". Confirmed the
+hook semantics (decision JSON shape, empty stdout = normal dialog, deny = one refusal,
+subagent requests carry `agent_id`), the fail-closed helper, the peer check, the
+timeout chain and the `AgentReply` state machine. Findings: (1) **Important, fixed** —
+`SocketClient.wait` in the helper did not retry `poll` on `EINTR` (the server side
+was fixed in bf737db; a stop/continue of the process group would have made the helper
+give up while the app still showed Allow/Deny); (2) "Important" but overstated —
+a Claude session in a *background tab* of the frontmost terminal is released at once
+because presence is per process; the user still gets the plain needs-you banner
+exactly as in 2.1, only without Allow/Deny. Tab-aware presence (asking iTerm2 /
+Terminal for the selected tab's tty, as `SessionActivator` already does for jumping)
+is a candidate for a later phase; (3) subagent expiry has no needs-you fallback —
+already in the accepted leftovers; (4) `readDataToEndOfFile` on stdin — covered by
+the 800 ms watchdog, Claude Code closes stdin; (5) single-closure `onActivation` —
+design choice, one consumer.
