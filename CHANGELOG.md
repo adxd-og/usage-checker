@@ -26,6 +26,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it, and how many agent sessions are running — amber when one needs you.
 - The dashboard remembers its last tab, and on the Agents tab ⌘1 · ⌘2 · ⌘3 switch
   the All · Claude · Codex source filter.
+- Cost accounting keeps a cache on disk (`cost-cache-claude-v1.json` in
+  Application Support): relaunching no longer re-reads every Claude Code
+  transcript before the $ figures appear, and the minute poll opens only files
+  that changed.
 
 ## [2.0.0] — 2026-09-02
 
