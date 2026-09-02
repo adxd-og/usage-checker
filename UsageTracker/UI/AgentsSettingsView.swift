@@ -15,6 +15,10 @@ struct AgentsSettingsView: View {
     @State private var failure: String?
     @State private var received = 0
     @State private var dropped = 0
+    @State private var permissionPending = 0
+    @State private var permissionAnswered = 0
+    @State private var permissionExpired = 0
+    @State private var permissionReleased = 0
 
     private var helperPath: String { AgentPaths.helperSymlinkURL.path }
 
@@ -31,6 +35,7 @@ struct AgentsSettingsView: View {
                 }
             }
             alertsSection
+            permissionsSection
             diagnosticsSection
         }
         .formStyle(.grouped)
@@ -160,6 +165,21 @@ struct AgentsSettingsView: View {
         }
     }
 
+    // MARK: - Permissions
+
+    private var permissionsSection: some View {
+        Section("Permissions") {
+            Toggle("Answer permission requests from Omelette", isOn: $settings.agentsAnswerPermissions)
+            Text("Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes.")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+            LabeledContent("Pending", value: "\(permissionPending)")
+            LabeledContent("Answered", value: "\(permissionAnswered)")
+            LabeledContent("Expired", value: "\(permissionExpired)")
+            LabeledContent("Released to terminal", value: "\(permissionReleased)")
+        }
+    }
+
     // MARK: - Diagnostics
 
     private var diagnosticsSection: some View {
@@ -192,7 +212,7 @@ struct AgentsSettingsView: View {
         return formatter.localizedString(for: date, relativeTo: Date())
     }
 
-    /// The counters live on a plain class, not an ObservableObject, so the tab
+    /// The counters live on plain objects, not on an ObservableObject, so the tab
     /// re-reads them while it is on screen. `.task` cancels this when it is not.
     /// The install status is re-read on the same tick — two small file reads — so
     /// editing settings.json in another window updates the line here.
@@ -200,6 +220,11 @@ struct AgentsSettingsView: View {
         while !Task.isCancelled {
             received = AgentDiagnostics.server?.receivedCount ?? 0
             dropped = AgentDiagnostics.server?.droppedCount ?? 0
+            let broker = PermissionBroker.shared
+            permissionPending = broker.pending.count
+            permissionAnswered = broker.answeredCount
+            permissionExpired = broker.expiredCount
+            permissionReleased = broker.releasedForPresenceCount
             refreshStatus()
             try? await Task.sleep(nanoseconds: 2_000_000_000)
         }
