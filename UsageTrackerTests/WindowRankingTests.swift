@@ -92,4 +92,22 @@ final class WindowRankingTests: XCTestCase {
         XCTAssertEqual(WindowRanking.remainingText(until: now.addingTimeInterval(-5), now: now), "resets now")
         XCTAssertNil(WindowRanking.remainingText(until: .distantFuture, now: now))
     }
+
+    // MARK: cost tile
+    func testCostTotalAndBreakdown() {
+        let services = [
+            Fixture.snapshot(id: "claude", displayName: "Claude", weekCost: 15.6),
+            Fixture.snapshot(id: "codex", displayName: "Codex", weekCost: 8.2),
+            Fixture.snapshot(id: "grok", displayName: "Grok", weekCost: nil),
+        ]
+        XCTAssertEqual(OMCostTile.total(services), 23.8, accuracy: 0.001)
+        // The tile formats in the viewer's locale (as the popover already does),
+        // so the wording assertion pins en_US — this machine's own en_LT renders
+        // the same amount as "US$15,60".
+        XCTAssertEqual(
+            OMCostTile.breakdown(services, locale: Locale(identifier: "en_US")),
+            "Claude $15.60 · Codex $8.20"
+        )
+        XCTAssertEqual(OMCostTile.total([Fixture.snapshot(id: "grok", weekCost: nil)]), 0)
+    }
 }
