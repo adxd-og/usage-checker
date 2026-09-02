@@ -77,7 +77,10 @@ enum PassiveSessionScanner {
         root: URL, now: Date, recentWindow: TimeInterval, workingWindow: TimeInterval
     ) -> [AgentSession] {
         var sessions: [AgentSession] = []
-        forEachRecentLog(root: root, now: now, recentWindow: recentWindow, descendInto: { _ in true }) { url, mtime in
+        let cutoff = now.addingTimeInterval(-recentWindow)
+        forEachRecentLog(root: root, now: now, recentWindow: recentWindow, descendInto: {
+            codexPartitionIsRecent($0, root: root, cutoff: cutoff)
+        }) { url, mtime in
             let name = url.deletingPathExtension().lastPathComponent
             guard name.hasPrefix("rollout-") else { return }
             let head = codexHead(url)
@@ -91,6 +94,41 @@ enum PassiveSessionScanner {
             ))
         }
         return sessions
+    }
+
+    /// Whether a directory under the Codex sessions root can still hold a log inside
+    /// the scan window — the tree is date-partitioned, so a year that ended long ago is
+    /// thousands of files the poll never has to walk.
+    ///
+    /// The relative path is read as up to three integers (`YYYY`, `MM`, `DD`); anything
+    /// that is not one of those — an unexpected directory name, the root itself — is
+    /// walked rather than skipped. The partition is compared by its *end* (the start of
+    /// the next year/month/day) plus a day of slack, because the CLI names the directory
+    /// in its own local calendar while the cutoff is an absolute instant.
+    static func codexPartitionIsRecent(
+        _ directory: URL, root: URL, cutoff: Date, calendar: Calendar = .current
+    ) -> Bool {
+        let rootComponents = root.resolvingSymlinksInPath().pathComponents
+        let directoryComponents = directory.resolvingSymlinksInPath().pathComponents
+        guard directoryComponents.count > rootComponents.count,
+              Array(directoryComponents.prefix(rootComponents.count)) == rootComponents else { return true }
+
+        var parts: [Int] = []
+        for component in directoryComponents.dropFirst(rootComponents.count).prefix(3) {
+            guard let value = Int(component) else { return true }
+            parts.append(value)
+        }
+        guard let year = parts.first else { return true }
+
+        let start = DateComponents(
+            year: year,
+            month: parts.count > 1 ? parts[1] : 1,
+            day: parts.count > 2 ? parts[2] : 1
+        )
+        let unit: Calendar.Component = parts.count == 1 ? .year : (parts.count == 2 ? .month : .day)
+        guard let startDate = calendar.date(from: start),
+              let end = calendar.date(byAdding: unit, value: 1, to: startDate) else { return true }
+        return end.addingTimeInterval(86_400) >= cutoff
     }
 
     /// The thread id is the trailing 36 characters of the file name:
