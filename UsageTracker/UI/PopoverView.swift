@@ -174,8 +174,10 @@ struct PopoverView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        VStack(spacing: 10) {
-            Divider().opacity(0.5)
+        VStack(spacing: OMSpacing.s) {
+            Rectangle()
+                .fill(OMSurface.hairline)
+                .frame(height: 0.5)
             HStack(spacing: 8) {
                 GlassGroup(spacing: 6) {
                     HStack(spacing: 6) {
@@ -227,7 +229,7 @@ struct PopoverView: View {
                     NSApp.terminate(nil)
                 } label: {
                     Text("Quit")
-                        .font(.subheadline)
+                        .font(OMFont.caption)
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
