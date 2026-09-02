@@ -174,7 +174,7 @@ struct SessionHistoryView: View {
     /// which of the two this is, so the missing dollars don't read as a bug.
     private var costFootnote: some View {
         Text(dashboard.costSource.reason ?? "")
-            .font(.caption)
+            .font(OMFont.caption)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 24)
@@ -186,7 +186,7 @@ struct SessionHistoryView: View {
             Text("No quota recorded yet for \(dashboard.displayName(for: dashboard.selectedService))")
                 .foregroundStyle(.secondary)
             Text("Windows are recorded on every successful poll — this fills in as the app runs.")
-                .font(.callout)
+                .font(OMFont.body)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -262,7 +262,7 @@ struct SessionHistoryView: View {
             Text("No CLI usage recorded yet")
                 .foregroundStyle(.secondary)
             Text("Run a `claude` session to start collecting data")
-                .font(.callout)
+                .font(OMFont.body)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 220)

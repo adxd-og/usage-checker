@@ -106,7 +106,7 @@ struct OnboardingView: View {
                 OMRing(percent: 37, size: .hero)
             }
             Text("Welcome to Omelette")
-                .font(.title2.weight(.semibold))
+                .font(OMFont.screenTitle)
             Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
@@ -118,7 +118,7 @@ struct OnboardingView: View {
     private var permissionsPage: some View {
         VStack(alignment: .leading, spacing: OMSpacing.l) {
             Text("Two permissions")
-                .font(.title2.weight(.semibold))
+                .font(OMFont.screenTitle)
 
             card {
                 permissionRow(
@@ -175,7 +175,7 @@ struct OnboardingView: View {
     private var agentsPage: some View {
         VStack(alignment: .leading, spacing: OMSpacing.l) {
             Text("Your agents, at a glance")
-                .font(.title2.weight(.semibold))
+                .font(OMFont.screenTitle)
 
             card {
                 permissionRow(
@@ -367,7 +367,7 @@ struct OnboardingView: View {
                 .font(.system(size: 48))
                 .foregroundStyle(.green)
             Text("You're all set!")
-                .font(.title2.weight(.semibold))
+                .font(OMFont.screenTitle)
             card {
                 tip("Click", "menu bar icon to open the popover")
                 tip("Hover", "menu bar icon for a quick summary tooltip")
