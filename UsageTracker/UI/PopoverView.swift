@@ -6,173 +6,77 @@ struct PopoverView: View {
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
 
-    /// Persisted tab selection (service id). Self-heals: when the stored
-    /// provider isn't currently displayed (toggled off, signed out of the
-    /// list, first launch), the first displayed service wins and the stored
-    /// value stays put until the user picks again.
-    @AppStorage("selectedProviderTab") private var selectedProviderTab: String = ""
+    /// Persisted tab selection (a service id, or `WindowRanking.allTab`).
+    /// Self-heals: a stored provider that isn't currently displayed (toggled
+    /// off, signed out of the list, first launch) resolves back to All, and the
+    /// stored value stays put until the user picks again.
+    @AppStorage("selectedProviderTab") private var selectedProviderTab: String = WindowRanking.allTab
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
             header
+            if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
+            if showsSegments { segments }
             content
             footer
         }
-        .padding(16)
+        .padding(OMSpacing.l)
         .frame(width: 360)
     }
 
-    // MARK: - Provider tabs
+    // MARK: - Tab state
 
-    private var displayedServices: [ServiceSnapshot] {
-        state.snapshot.services
+    private var displayedServices: [ServiceSnapshot] { state.snapshot.services }
+
+    private var showsSegments: Bool { displayedServices.count > 1 }
+
+    /// With a single service there is no segmented control, so that service's
+    /// tab is the only thing to show; with several, the stored value decides
+    /// and an id that isn't on screen falls back to All.
+    private var currentTab: String {
+        showsSegments
+            ? WindowRanking.resolveTab(stored: selectedProviderTab, displayed: displayedServices)
+            : (displayedServices.first?.id ?? WindowRanking.allTab)
     }
 
-    private var showsTabBar: Bool { displayedServices.count > 1 }
-
+    /// nil on the All tab.
     private var selectedService: ServiceSnapshot? {
-        displayedServices.first { $0.id == selectedProviderTab } ?? displayedServices.first
+        displayedServices.first { $0.id == currentTab }
     }
 
-    private var tabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(displayedServices) { service in
-                providerTab(service)
-            }
-            Spacer()
-        }
-    }
-
-    private func providerTab(_ service: ServiceSnapshot) -> some View {
-        let isSelected = service.id == selectedService?.id
-        return Button {
-            selectedProviderTab = service.id
-        } label: {
-            ZStack(alignment: .topTrailing) {
-                ProviderIconView(serviceID: service.id, sfFallback: service.icon)
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                Circle()
-                    .fill(tabDotColor(service))
-                    .frame(width: 5, height: 5)
-                    .offset(x: 3, y: -2)
-            }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                Capsule().fill(isSelected ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear))
+    private var segments: some View {
+        OMSegmentedControl(
+            items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
+                + displayedServices.map {
+                    OMSegmentItem(id: $0.id, title: $0.displayName, serviceID: $0.id, sfFallback: $0.icon)
+                },
+            selection: Binding(
+                get: { currentTab },
+                set: { selectedProviderTab = $0 }
             )
-        }
-        .buttonStyle(.plain)
-        // The popover hands keyboard focus to its first control, which used to
-        // paint a stray focus ring around the first tab. Selection is already
-        // shown by the capsule; keyboard users still switch via mouse-equivalent
-        // full keyboard access, so hiding the ring loses nothing.
-        .focusEffectDisabled()
-        .help(service.displayName)
-        .accessibilityLabel("\(service.displayName) tab")
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        )
     }
 
-    /// Battery-style dot: worst percent when healthy; gray when the provider
-    /// can't report right now (the card's state badge explains why).
-    private func tabDotColor(_ service: ServiceSnapshot) -> Color {
-        service.state == .ok ? usageStatusColor(service.headlinePercent) : .secondary
-    }
-
-    // MARK: - Hero header
-
-    /// The most-constrained window across the services the hero represents —
-    /// the one that answers "can I keep working right now?". Ties resolve to
-    /// the first in API order (the 5-hour session), so an all-zero account
-    /// leads with the session. Promotional pools don't compete (a free bonus
-    /// running low isn't "almost at the limit"); an Enterprise spend limit
-    /// does. Promo windows only lead when they're all the account has.
-    /// Model-scoped windows don't compete either — they inform their own card row.
-    /// With tabs visible the hero speaks for the SELECTED provider only.
-    private var heroServices: [ServiceSnapshot] {
-        if showsTabBar, let selected = selectedService { return [selected] }
-        return state.snapshot.services
-    }
-
-    private var heroBucket: UsageBucket? {
-        var candidates = heroServices.flatMap { service in
-            service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
-        }
-        for service in heroServices {
-            if let extra = service.extraUsage, extra.isEnabled {
-                candidates.append(UsageBucket(
-                    id: "\(service.id)_extra_usage",
-                    label: extraUsageTitle(plan: service.plan),
-                    utilization: extra.utilization,
-                    resetsAt: .distantFuture,
-                    kind: .other
-                ))
-            }
-        }
-        if candidates.isEmpty {
-            candidates = heroServices.flatMap { service in
-                service.buckets.filter { !$0.isPromotional }
-            }
-        }
-        if candidates.isEmpty {
-            candidates = heroServices.flatMap(\.buckets)
-        }
-        return candidates.enumerated().max { a, b in
-            if a.element.clampedPercent != b.element.clampedPercent {
-                return a.element.clampedPercent < b.element.clampedPercent
-            }
-            return a.offset > b.offset
-        }?.element
-    }
-
-    /// The hero ring answers "how close am I to MY limit" — unambiguous only
-    /// while a single provider is on screen. With several providers the number
-    /// used to be anonymous (whose 33%?); tabs resolve that, so in multi-
-    /// provider mode the ring speaks for the selected tab when it has data.
-    private var showsHero: Bool {
-        if showsTabBar {
-            return selectedService.map { !$0.buckets.isEmpty || $0.weekCost != nil } ?? false
-        }
-        return state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }.count == 1
-    }
+    // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 12) {
-            if showsHero, let hero = heroBucket {
-                UsageRing(percent: hero.clampedPercent, size: 52)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(statusPhrase(hero.clampedPercent))
-                        .font(.headline)
-                    Text(heroDetail(hero))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help(hero.resetsAt < .distantFuture
-                              ? "Resets \(hero.resetsAt.formatted(date: .abbreviated, time: .shortened))"
-                              : "")
-                    // Only the relative "Updated Xs ago" text needs a clock tick —
-                    // keep the periodic timeline off the rest of the header.
-                    TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                        Text(metaLine(now: ctx.date))
-                    }
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+        HStack(spacing: 9) {
+            // The real app icon, not a drawn stand-in — matches the welcome
+            // tour and tracks icon updates for free.
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Omelette")
+                    .font(OMFont.title)
+                // Only the relative "Updated Xs ago" text needs a clock tick —
+                // keep the periodic timeline off the rest of the header.
+                TimelineView(.periodic(from: .now, by: 5)) { ctx in
+                    Text(metaLine(now: ctx.date))
                 }
-            } else {
-                // The real app icon, not a drawn stand-in — matches the
-                // welcome tour and tracks icon updates for free.
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .interpolation(.high)
-                    .frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Omelette")
-                        .font(.headline)
-                    TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                        Text(updatedText(now: ctx.date))
-                    }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                }
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
             }
             Spacer()
             if state.isLoading {
@@ -182,26 +86,9 @@ struct PopoverView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func statusPhrase(_ percent: Double) -> String {
-        if percent >= 90 { return "Almost at the limit" }
-        if percent >= 70 { return "Running hot" }
-        if percent >= 50 { return "On track" }
-        return "Plenty of headroom"
-    }
-
-    private func heroDetail(_ hero: UsageBucket) -> String {
-        if hero.resetsAt < .distantFuture {
-            return "\(hero.label) · resets \(formatReset(hero.resetsAt))"
-        }
-        return hero.label
-    }
-
     private func metaLine(now: Date) -> String {
         let updated = updatedText(now: now)
-        let plan = showsTabBar
-            ? selectedService?.plan
-            : state.snapshot.services.compactMap(\.plan).first
-        if let plan { return "\(plan) · \(updated)" }
+        if let plan = selectedService?.plan { return "\(plan) · \(updated)" }
         return updated
     }
 
@@ -219,41 +106,55 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        Divider().opacity(0.5)
-        if state.snapshot.isStale && state.snapshot.hasAnyData {
-            noticeRow(
-                icon: "wifi.exclamationmark", tint: .orange,
-                text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
-            )
-            .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
-        }
-        if state.snapshot.services.isEmpty {
+        if displayedServices.isEmpty {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading…")
-                    .font(.system(size: 12))
+                    .font(OMFont.body)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, 4)
+            .padding(.vertical, OMSpacing.xs)
+        } else if let service = selectedService {
+            // This tab's own burn rate, not the dashboard's selection. The two
+            // are separate persisted choices, so keying off the dashboard meant
+            // the verdict either went missing or, worse, described a provider
+            // that isn't on screen.
+            ProviderDetail(service: service, burn: dashboard.burn(for: service.id))
         } else {
-            VStack(alignment: .leading, spacing: 14) {
-                if showsTabBar {
-                    tabBar
-                }
-                if let service = selectedService {
-                    ServiceSection(
-                        service: service,
-                        // This tab's own burn rate, not the dashboard's selection.
-                        // The two are separate persisted choices, so keying off the
-                        // dashboard meant the verdict either went missing or, worse,
-                        // described a provider that isn't on screen.
-                        burn: dashboard.burn(for: service.id),
-                        showsHeader: service.state != .ok || showsTabBar
-                    )
+            allTab
+        }
+    }
+
+    /// Every provider at a glance; tapping a tile is the same as picking its tab.
+    private var allTab: some View {
+        VStack(alignment: .leading, spacing: OMSpacing.s) {
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: OMSpacing.s),
+                    GridItem(.flexible(), spacing: OMSpacing.s),
+                ],
+                spacing: OMSpacing.s
+            ) {
+                ForEach(displayedServices) { service in
+                    OMProviderTile(service: service) {
+                        withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
+                    }
                 }
             }
+            if OMCostTile.total(displayedServices) > 0 {
+                OMCostTile(services: displayedServices)
+            }
         }
+    }
+
+    /// Last-good data stays on screen; this row says why it isn't moving.
+    private var staleNotice: some View {
+        noticeRow(
+            icon: "wifi.exclamationmark", tint: .orange,
+            text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+        )
+        .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
     }
 
     private func noticeRow(icon: String, tint: Color, text: String) -> some View {
@@ -336,105 +237,115 @@ struct PopoverView: View {
     }
 }
 
-// MARK: - Per-service section
+// MARK: - Provider tab
 
-private struct ServiceSection: View {
+private struct ProviderDetail: View {
     let service: ServiceSnapshot
     let burn: BurnRatePrediction?
-    let showsHeader: Bool
 
     @State private var showUnusedWindows = false
-    @State private var showsStateHelp = false
 
-    private var sessionBuckets: [UsageBucket] {
-        service.buckets.filter { $0.kind == .session }
-    }
-
-    private var weeklyBuckets: [UsageBucket] {
-        service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific }
-    }
-
+    private var sessionBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .session } }
+    private var weeklyBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } }
     /// Untouched model-specific windows are noise most of the day — fold them
     /// behind a disclosure row. "All models" stays visible even at zero.
-    private var visibleWeekly: [UsageBucket] {
-        weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" }
+    private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" } }
+    private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" } }
+    private var hero: UsageBucket? { WindowRanking.heroBucket(for: service) }
+    /// Weekly windows other than the one already shown as the hero.
+    private var weeklyForRow: [UsageBucket] {
+        let shown = visibleWeekly + (showUnusedWindows ? unusedWeekly : (unusedWeekly.count == 1 ? unusedWeekly : []))
+        return shown.filter { $0.id != hero?.id }
     }
-
-    private var unusedWeekly: [UsageBucket] {
-        weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" }
+    private var nothingToShow: Bool {
+        service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if showsHeader {
-                sectionHeader
-            }
-
-            switch service.state {
-            case .ok:
-                if !sessionBuckets.isEmpty {
-                    sessionBlock
-                }
-                if !weeklyBuckets.isEmpty {
-                    weeklyBlock
-                }
-                if let extra = service.extraUsage, extra.isEnabled {
-                    extraBlock(extra)
-                }
-                if let week = service.weekCost, week > 0 {
-                    weekCostBlock(week)
-                }
-                if service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0 {
-                    Text("Server responded but returned no usage data.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            case .notSignedIn, .notRunning, .error:
-                if let msg = service.stateMessage, !msg.isEmpty {
-                    Text(msg)
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-                // Last-good data retained through a transient failure: keep showing
-                // the numbers — the state badge already says what's wrong.
-                if !service.buckets.isEmpty {
-                    if !sessionBuckets.isEmpty { sessionBlock }
-                    if !weeklyBuckets.isEmpty { weeklyBlock }
-                    if let extra = service.extraUsage, extra.isEnabled {
-                        extraBlock(extra)
-                    }
-                    if let week = service.weekCost, week > 0 {
-                        weekCostBlock(week)
-                    }
-                }
-            }
-        }
-    }
-
-    private var sectionHeader: some View {
-        HStack(spacing: 8) {
-            ProviderIconView(serviceID: service.id, sfFallback: service.icon)
-                .foregroundStyle(.tint)
-                .frame(width: 18)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(service.displayName)
-                    .font(.subheadline.weight(.semibold))
-                if let plan = service.plan {
-                    Text(plan)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
             if service.state != .ok {
-                stateBadge
+                HStack {
+                    if let msg = service.stateMessage, !msg.isEmpty {
+                        Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
+                    Spacer()
+                    ServiceStateChip(service: service)
+                }
+            }
+            // Last-good data is retained through a transient failure, so the
+            // numbers below stay on screen whatever the state chip says.
+            if let hero {
+                OMHero(hero: hero, verdict: BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets))
+            } else if service.state == .ok, let cost = service.weekCost, cost > 0 {
+                // Pay-as-you-go without windows: the 7-day spend is the headline.
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
+            }
+            if !weeklyForRow.isEmpty {
+                OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
+                OMRingRow(buckets: weeklyForRow)
+                unusedToggle
+            } else if unusedWeekly.count > 1 {
+                unusedToggle
+            }
+            if let extra = service.extraUsage, extra.isEnabled {
+                OMKeyValueRow(
+                    label: extraUsageTitle(plan: service.plan),
+                    value: "\(OMCostTile.money(extra.usedCredits)) / \(extra.monthlyLimit.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
+                    barPercent: extra.utilization
+                )
+            }
+            if hero != nil, let week = service.weekCost, week > 0 {
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week))
+            }
+            if service.state == .ok, nothingToShow {
+                Text("Server responded but returned no usage data.")
+                    .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
     }
 
-    private var stateBadge: some View {
+    /// "resets in 2d 4h" for the all-models weekly; nil when unknown.
+    private var weeklyReset: String? {
+        guard let weekly = weeklyBuckets.first(where: { $0.id == "seven_day" }) ?? weeklyBuckets.first,
+              let text = WindowRanking.remainingText(until: weekly.resetsAt) else { return nil }
+        // Past the reset time the helper already says "resets now".
+        guard text.hasSuffix(" left") else { return text }
+        return "resets in \(text.replacingOccurrences(of: " left", with: ""))"
+    }
+
+    // A toggle row costs as much space as a ring row, so only fold when there
+    // are at least two untouched windows (a single one is shown inline).
+    @ViewBuilder
+    private var unusedToggle: some View {
+        if unusedWeekly.count > 1 {
+            Button {
+                withAnimation(.smooth(duration: 0.2)) { showUnusedWindows.toggle() }
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 8, weight: .bold))
+                        .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
+                    Text(showUnusedWindows ? "Hide unused windows" : "\(unusedWeekly.count) unused windows")
+                        .font(OMFont.caption)
+                }
+                .foregroundStyle(.secondary)
+                .frame(minHeight: 22)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+}
+
+// MARK: - State chip with recovery help
+
+/// The capsule reads as a button, so it must act like one: clicking walks the
+/// user through fixing the state instead of doing nothing.
+private struct ServiceStateChip: View {
+    let service: ServiceSnapshot
+    @State private var showsStateHelp = false
+
+    var body: some View {
         let (text, color): (String, Color) = {
             switch service.state {
             case .notSignedIn: return ("Sign in", .orange)
@@ -443,28 +354,13 @@ private struct ServiceSection: View {
             case .ok: return ("OK", .green)
             }
         }()
-        let label = Text(text)
-            .font(.caption2.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(color)
-            .liquidGlass(in: Capsule(), tint: color)
-
-        // The capsule reads as a button, so it must act like one: clicking walks
-        // the user through fixing the state instead of doing nothing.
-        return Group {
+        Group {
             if let help = stateHelp {
-                Button {
-                    showsStateHelp.toggle()
-                } label: {
-                    label
-                }
-                .buttonStyle(.plain)
-                .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) {
-                    stateHelpContent(help)
-                }
+                Button { showsStateHelp.toggle() } label: { OMChip(text: text, tint: color) }
+                    .buttonStyle(.plain)
+                    .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) { stateHelpContent(help) }
             } else {
-                label
+                OMChip(text: text, tint: color)
             }
         }
     }
@@ -551,188 +447,14 @@ private struct ServiceSection: View {
         .padding(14)
         .frame(width: 280, alignment: .leading)
     }
-
-    // MARK: Session
-
-    private var sessionBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            blockTitle("Current session")
-            ForEach(sessionBuckets) { bucket in
-                bucketRow(bucket)
-            }
-            if let verdict = burnVerdict {
-                HStack(spacing: 6) {
-                    Image(systemName: verdict.willHit ? "flame.fill" : "checkmark.circle")
-                        .font(.caption)
-                        .symbolRenderingMode(.hierarchical)
-                        .foregroundStyle(verdict.willHit ? Color.orange : Color.secondary)
-                    Text(verdict.text)
-                        .font(.caption)
-                        .foregroundStyle(verdict.willHit ? Color.primary : Color.secondary)
-                    Spacer()
-                }
-            }
-        }
-    }
-
-    /// Answers the question the burn rate is actually for: will I hit the limit
-    /// before the window resets, or can I keep going at this pace?
-    private var burnVerdict: (willHit: Bool, text: String)? {
-        guard let burn, !burn.isStale,
-              let secs = burn.secondsToLimit,
-              let bucket = sessionBuckets.first(where: { $0.id == burn.bucketId })
-        else { return nil }
-        if bucket.resetsAt < .distantFuture, secs >= bucket.resetsAt.timeIntervalSinceNow {
-            return (false, "At this pace you won't hit the limit before reset")
-        }
-        return (true, "At this pace, limit in ~\(formatBurn(secs))")
-    }
-
-    private func formatBurn(_ secs: TimeInterval) -> String {
-        let h = Int(secs / 3600)
-        let m = Int((secs.truncatingRemainder(dividingBy: 3600)) / 60)
-        if h > 24 { return "\(h / 24)d" }
-        if h > 0 { return "\(h)h \(m)m" }
-        return "\(m)m"
-    }
-
-    // MARK: Weekly
-
-    private var weeklyBlock: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            blockTitle("Weekly limits")
-            ForEach(visibleWeekly) { bucket in
-                bucketRow(bucket)
-            }
-            // A toggle row costs as much space as a single bucket row, so only
-            // fold when there are at least two untouched windows.
-            if unusedWeekly.count == 1, let only = unusedWeekly.first {
-                bucketRow(only)
-            } else if unusedWeekly.count > 1 {
-                Button {
-                    withAnimation(.smooth(duration: 0.2)) { showUnusedWindows.toggle() }
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 8, weight: .bold))
-                            .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
-                        Text(showUnusedWindows
-                             ? "Hide unused windows"
-                             : "\(unusedWeekly.count) unused windows")
-                            .font(.caption)
-                    }
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: 22)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                if showUnusedWindows {
-                    ForEach(unusedWeekly) { bucket in
-                        bucketRow(bucket)
-                    }
-                }
-            }
-        }
-    }
-
-    private func blockTitle(_ title: String) -> some View {
-        Text(title.uppercased())
-            .font(.caption2.weight(.semibold))
-            .tracking(0.6)
-            .foregroundStyle(.secondary)
-            .padding(.top, 2)
-    }
-
-    private func bucketRow(_ bucket: UsageBucket) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(bucket.label)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                if bucket.resetsAt < Date.distantFuture {
-                    Text("resets \(formatReset(bucket.resetsAt))")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help("Resets \(bucket.resetsAt.formatted(date: .abbreviated, time: .shortened))")
-                } else if bucket.clampedPercent == 0 {
-                    Text(emptyHint(for: bucket))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            if let pace = bucket.elapsedFraction() {
-                BarSegment(percent: bucket.clampedPercent, height: 7, showsLabel: true, pace: pace)
-                    .help("\(Int((pace * 100).rounded()))% of this window has elapsed — the tick marks even pace")
-            } else {
-                BarSegment(percent: bucket.clampedPercent, height: 7, showsLabel: true)
-            }
-        }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(bucket.label), \(Int(bucket.clampedPercent.rounded())) percent used")
-    }
-
-    private func emptyHint(for bucket: UsageBucket) -> String {
-        if bucket.id == "seven_day_oauth_apps" { return "No OAuth apps yet" }
-        guard bucket.kind == .modelSpecific else { return "" }
-        // "Opus only" → "You haven't used Opus yet"; works for any bucket label.
-        var name = bucket.label
-        if name.hasSuffix(" only") { name.removeLast(" only".count) }
-        return "You haven't used \(name) yet"
-    }
-
-    private var extraUsageLabel: String { extraUsageTitle(plan: service.plan) }
-
-    private func extraBlock(_ extra: ExtraUsage) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(extraUsageLabel)
-                    .font(.subheadline.weight(.medium))
-                Spacer()
-                Text("\(Self.money(extra.usedCredits)) / \(Self.money(extra.monthlyLimit, decimals: 0))")
-                    .font(.subheadline)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            BarSegment(percent: extra.utilization, height: 6, showsLabel: false)
-        }
-        .padding(.top, 2)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(extraUsageLabel), \(Self.money(extra.usedCredits)) of \(Self.money(extra.monthlyLimit, decimals: 0)) used")
-    }
-
-    private func weekCostBlock(_ amount: Double) -> some View {
-        HStack {
-            Text("Last 7 days")
-                .font(.subheadline.weight(.medium))
-            Spacer()
-            Text(Self.money(amount))
-                .font(.subheadline.weight(.medium))
-                .monospacedDigit()
-                .foregroundStyle(.primary)
-        }
-        .padding(.top, 2)
-    }
-
-    /// "$1,564.20" — grouped thousands so Enterprise-scale figures stay readable.
-    private static func money(_ value: Double, decimals: Int = 2) -> String {
-        value.formatted(.currency(code: "USD").precision(.fractionLength(decimals)))
-    }
 }
 
-// MARK: - Shared formatting
-
-private func formatReset(_ date: Date) -> String {
-    let delta = date.timeIntervalSinceNow
-    if delta <= 0 { return "now" }
-    let f = DateComponentsFormatter()
-    f.allowedUnits = [.day, .hour, .minute]
-    f.maximumUnitCount = 2
-    f.unitsStyle = .abbreviated
-    return f.string(from: delta).map { "in \($0)" } ?? "—"
+#Preview("Popover — All") {
+    PopoverView(state: AppState.shared)
 }
 
-#Preview("Service section") {
-    ServiceSection(
+#Preview("Provider detail") {
+    ProviderDetail(
         service: ServiceSnapshot(
             id: "claude",
             displayName: "Claude",
@@ -753,9 +475,8 @@ private func formatReset(_ date: Date) -> String {
             stateMessage: nil,
             fetchedAt: Date()
         ),
-        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false),
-        showsHeader: true
+        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false)
     )
-    .padding(16)
+    .padding(OMSpacing.l)
     .frame(width: 360)
 }
