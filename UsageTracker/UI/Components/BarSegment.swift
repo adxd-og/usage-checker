@@ -45,31 +45,3 @@ struct BarSegment: View {
         .accessibilityValue("\(Int(clamped.rounded())) percent used")
     }
 }
-
-/// Circular gauge for the headline "how close am I to a limit" number.
-struct UsageRing: View {
-    let percent: Double
-    var size: CGFloat = 52
-    var lineWidth: CGFloat = 5
-
-    private var clamped: Double { max(0, min(100, percent)) }
-    private var color: Color { usageStatusColor(clamped) }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .stroke(.quaternary, lineWidth: lineWidth)
-            Circle()
-                .trim(from: 0, to: max(0.004, clamped / 100))
-                .stroke(color, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            Text("\(Int(clamped.rounded()))%")
-                .font(.system(size: size * 0.27, weight: .semibold, design: .rounded))
-                .monospacedDigit()
-        }
-        .frame(width: size, height: size)
-        .animation(.smooth(duration: 0.35), value: clamped)
-        .accessibilityElement(children: .ignore)
-        .accessibilityValue("\(Int(clamped.rounded())) percent used")
-    }
-}
