@@ -222,9 +222,13 @@ final class DashboardState: ObservableObject {
             await self.refreshHistory()
             await self.refreshCLI()
             await self.refreshDerived()
-            // Last: the usage charts are what the window opens on, and the agent log
-            // is a separate file nothing else on screen is waiting for.
-            await self.refreshAgentHistory()
+        }
+        // The agent log is a separate small file that nothing else on screen waits
+        // for, so it loads on its own task: chained after the usage refresh it was
+        // starved at launch — every snapshot cancels and restarts the chain above,
+        // and the CLI cost ingest ahead of it can take minutes on a cold cache.
+        Task { [weak self] in
+            await self?.refreshAgentHistory()
         }
     }
 
@@ -423,12 +427,14 @@ final class DashboardState: ObservableObject {
     /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation
     /// alone, not `canPublish(_:)`: the log is not provider-scoped, so a pass started
     /// under another provider's tab still holds the right answer.
+    /// Not guarded by `refreshGeneration`: agent runs are not provider-scoped, and
+    /// a load is never made wrong by a usage refresh that started after it. With
+    /// the guard, launch-time snapshot churn threw every load away and the tab
+    /// stayed empty until a hook event re-keyed the view's task.
     func refreshAgentHistory(historyURL: URL = AgentPaths.historyURL) async {
-        let generation = refreshGeneration
         let loaded = await Task.detached(priority: .utility) { () -> [AgentSessionRecord] in
             (try? AgentHistoryStore(fileURL: historyURL).load()) ?? []
         }.value
-        guard refreshGeneration == generation, !Task.isCancelled else { return }
         agentRecords = loaded
     }
 }
