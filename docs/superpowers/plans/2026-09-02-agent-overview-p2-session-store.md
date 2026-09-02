@@ -17,7 +17,8 @@
 - Contract names are fixed and must not be renamed: `AgentSessionStore`, `AgentSessionStore.shared`, `sessions`, `lastEventAt`, `needsYouCount`, `workingCount`, `apply(_:now:)`, `mergePassive(_:now:)`, `pruneStale(now:)`, `sessions(for:)`, `onNeedsYou`, `onDone`, `PassiveSessionScanner.scan(claudeProjects:codexSessions:now:recentWindow:workingWindow:)`, `AgentHistoryStore(fileURL:)`, `append(_:)`, `load()`, `AgentSessionRecord`.
 - New source files are picked up by xcodegen from `sources: - path: UsageTracker` and `- path: UsageTrackerTests`; run `xcodegen generate` after adding a file and before building. `UsageTracker.xcodeproj/` is generated and gitignored — never `git add` it.
 - Build: `xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug -derivedDataPath build/DerivedData build`.
-  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). If local signing of the test host fails, append `CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO`.
+  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). **The two overrides are mandatory on every `xcodebuild test`** — the hardened runtime from `signing.xcconfig` otherwise hangs the test runner for ~6 min; every test command in the tasks below is to be read with them appended.
+- **Package 1 owns the socket server's lifetime** through `AgentChannel` (`UsageTracker/Agents/AgentChannel.swift`, `@MainActor`, `static let shared`, `var onEvent: (AgentEvent) -> Void`, started by `AppDelegate` right after `AppState.shared.bootstrap()`). This package never constructs or starts an `AgentEventServer`; it only assigns `AgentChannel.shared.onEvent` (Task 6).
 - Tests must never touch the real `~/Library/Application Support/UsageTracker`, `~/.claude` or `~/.codex`: `FileManager.urls(for: .applicationSupportDirectory, …)` ignores `$HOME`, so every directory is injected explicitly (`AgentSessionStore(historyURL:)`, `AgentHistoryStore(fileURL:)`, `PassiveSessionScanner.scan(claudeProjects:codexSessions:)`).
 - No hook payload content is ever persisted: `AgentSessionRecord` carries only `{id, source, project, startedAt, endedAt, turns, needsYouCount}` — no tool names, no tool inputs, no `cwd`.
 - Commits end with the trailer lines
@@ -1814,53 +1815,32 @@ The socket feeds `apply`; the existing 60 s poll feeds `mergePassive` + `pruneSt
 - Modify: `UsageTracker/Core/AppState.swift` (add a stored property near line 26, a call in `bootstrap()` at line 30-34, one new private method, and one call at the end of `performRefresh()` around line 164)
 
 **Interfaces:**
-- Consumes: `AgentEventServer(socketURL:onEvent:)`, `AgentEventServer.start()`, `AgentPaths.socketURL`, `AgentPaths.claudeProjectsURL`, `AgentPaths.codexSessionsURL` (package 1); `AgentSessionStore.shared`, `apply(_:now:)`, `mergePassive(_:now:)`, `pruneStale(now:)` (tasks 3-4); `PassiveSessionScanner.scan(claudeProjects:codexSessions:)` (task 5).
+- Consumes: `AgentChannel.shared.onEvent` (package 1, Task 7), `AgentPaths.claudeProjectsURL`, `AgentPaths.codexSessionsURL` (package 1); `AgentSessionStore.shared`, `apply(_:now:)`, `mergePassive(_:now:)`, `pruneStale(now:)` (tasks 3-4); `PassiveSessionScanner.scan(claudeProjects:codexSessions:)` (task 5).
 - Produces: nothing other packages call — this task only connects existing pieces.
 
-- [ ] **Step 1: Check whether package 1 already starts the server**
+- [ ] **Step 1: Confirm package 1's channel is in place**
 
-Run: `grep -rn "AgentEventServer(" UsageTracker`
-Expected: exactly one hit, the declaration in `UsageTracker/Agents/AgentEventServer.swift`.
-If a second hit shows package 1 already constructing and starting a server somewhere (e.g. in `AppDelegate`), do **not** add a second one: instead set that instance's event handler to the closure from step 2 and skip the `startAgentChannel()` half of this task. Everything about the passive scan (steps 3-4) still applies.
+Run: `grep -rn "AgentEventServer(" UsageTracker; grep -n "AgentChannel.shared.start()" UsageTracker/UsageTrackerApp.swift`
+Expected: `AgentEventServer(` is constructed only inside `UsageTracker/Agents/AgentChannel.swift` (plus its declaration), and `AppDelegate.applicationDidFinishLaunching` calls `AgentChannel.shared.start()` right after `AppState.shared.bootstrap()`. If either is missing, package 1 is not merged — stop and report; do not construct a server here.
 
-- [ ] **Step 2: Start the socket and feed the store**
+- [ ] **Step 2: Feed the store from the channel**
 
-In `UsageTracker/Core/AppState.swift`, add the stored property directly after `private var suspensionObservers: [NSObjectProtocol] = []` (line 26):
-
-```swift
-    /// Hook events arrive here from the `omelette-hook` helper. Held for the life of
-    /// the app; the socket file is recreated on every launch.
-    private var agentEventServer: AgentEventServer?
-```
-
-and change `bootstrap()` (lines 30-34) to:
+In `UsageTracker/Core/AppState.swift`, change `bootstrap()` (lines 30-34) to:
 
 ```swift
     func bootstrap() {
         observeSystemState()
-        startAgentChannel()
+        // Package 1's AgentChannel delivers hook events on the main actor; the
+        // session store is its one consumer (replaces the log-only default).
+        AgentChannel.shared.onEvent = { event in
+            AgentSessionStore.shared.apply(event)
+        }
         refreshNow()
         startTimer()
     }
-
-    /// Opens the hook socket. A failure here is not fatal — without it the Agents
-    /// section falls back to the passive scan, which is exactly the pre-opt-in
-    /// experience the spec describes.
-    private func startAgentChannel() {
-        guard agentEventServer == nil else { return }
-        let server = AgentEventServer(socketURL: AgentPaths.socketURL) { event in
-            Task { @MainActor in
-                AgentSessionStore.shared.apply(event)
-            }
-        }
-        do {
-            try server.start()
-            agentEventServer = server
-        } catch {
-            NSLog("[UT] agent event server failed to start: %@", String(describing: error))
-        }
-    }
 ```
+
+No stored property and no server construction here — `AgentChannel` owns the socket for the app's lifetime and `AppDelegate` starts it after `bootstrap()` returns, so the assignment is in place before the first event can arrive.
 
 - [ ] **Step 3: Run the passive scan on the poll tick**
 
@@ -1895,8 +1875,8 @@ and add this method directly after `performRefresh()` (before `applyPayAsYouGo`)
 Run: `xcodegen generate && xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug -derivedDataPath build/DerivedData build`
 Expected: BUILD SUCCEEDED.
 
-Run: `grep -n "scanAgentsPassively\|startAgentChannel\|AgentSessionStore.shared" UsageTracker/Core/AppState.swift`
-Expected: `startAgentChannel` twice (call + definition), `scanAgentsPassively` twice, `AgentSessionStore.shared` three times (apply, mergePassive, pruneStale).
+Run: `grep -n "scanAgentsPassively\|AgentChannel.shared.onEvent\|AgentSessionStore.shared" UsageTracker/Core/AppState.swift`
+Expected: `AgentChannel.shared.onEvent` once (in `bootstrap()`), `scanAgentsPassively` twice (call + definition), `AgentSessionStore.shared` three times (apply, mergePassive, pruneStale).
 
 - [ ] **Step 5: Run the whole test suite**
 

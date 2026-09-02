@@ -31,9 +31,9 @@ on this machine: `signing.xcconfig` enables the hardened runtime, which blocks t
 does not help. Plain `xcodebuild build` keeps the real settings. Treat this as
 part of every package plan's Global Constraints.
 
-## Package 2 — session store + passive scan (`…-p2-session-store.md`) — PENDING full read
+## Package 2 — session store + passive scan (`…-p2-session-store.md`) — APPROVED (amended)
 
-Provisional notes from the planner's report (to be confirmed against the text):
+Full read done. Amendments applied to the plan text: Task 6 no longer constructs/starts a server — it assigns `AgentChannel.shared.onEvent = { AgentSessionStore.shared.apply($0) }` in `AppState.bootstrap()`; Global Constraints carry the test override. Notes:
 
 1. **Server ownership must be settled with package 1:** P2's Task 6 wires
    `startAgentChannel()` into `AppState.bootstrap()`. Package 1 also wires the
@@ -49,9 +49,9 @@ Provisional notes from the planner's report (to be confirmed against the text):
    manual Codex test and add a mapping in `mergePassive` if it fails.
 5. `ProjectName.display(path:)` addition accepted.
 
-## Package 4 — popover agents + jump (`…-p4-popover-agents.md`) — PENDING full read
+## Package 4 — popover agents + jump (`…-p4-popover-agents.md`) — APPROVED (amended)
 
-Decisions on the planner's open questions:
+Full read done. Amendments applied to the plan text: `AgentRowText.subtitle(for:showsState:)` with the provider-tab prefix rule (+1 test); `activate(from: .current, options: [.activateAllWindows])`; the session fixture moves to `UsageTrackerTests/AgentSessionFixtures.swift` (package 1 owns `AgentFixtures.swift`); test override in Global Constraints. Decisions:
 
 1. **Row subtitle:** All tab (grouped — the heading already says the state):
    `activity ?? statePhrase`. Provider tab (flat): `"\(statePhrase) · \(activity)"`
@@ -69,9 +69,9 @@ Decisions on the planner's open questions:
 5. Apple Events entitlement + `NSAppleEventsUsageDescription` in `project.yml`
    `info.properties` — accepted; the build-step verification stays.
 
-## Package 3 — installer + Settings → Agents (`…-p3-installer-settings.md`) — PENDING full read
+## Package 3 — installer + Settings → Agents (`…-p3-installer-settings.md`) — APPROVED (amended)
 
-Provisional notes from the planner's report:
+Full read done. Amendments applied to the plan text: `AgentDiagnostics` is no longer declared here (package 1 creates it, `@MainActor`); the diagnostics block also shows `AgentChannel.shared.startError`; test override in Global Constraints. Notes:
 
 1. Template accepted: eight events, `Notification` as two literal-matcher groups
    (`permission_prompt`, `idle_prompt`), `PermissionRequest` sync with `timeout: 5`,

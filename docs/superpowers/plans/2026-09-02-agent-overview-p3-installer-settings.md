@@ -15,7 +15,8 @@
 - Deployment target macOS 14.0; Swift 6 with `SWIFT_STRICT_CONCURRENCY: minimal` (set in `project.yml`). Follow the existing `@StateObject private var settings = SettingsStore.shared` / `@ObservedObject private var state = AppState.shared` pattern from `SettingsView.swift:5-6` rather than inventing concurrency annotations.
 - New source files are picked up by xcodegen from `sources: - path: UsageTracker`; run `xcodegen generate` after adding a file and before building. `UsageTracker.xcodeproj/` is generated and gitignored — never `git add` it.
 - Build: `xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug -derivedDataPath build/DerivedData build`.
-  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). If local signing of the test host fails, append `CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO`.
+  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""` (add `-only-testing:UsageTrackerTests/<Class>` for a single class). **The two overrides are mandatory on every `xcodebuild test`** — the hardened runtime from `signing.xcconfig` otherwise hangs the test runner for ~6 min; every test command in the tasks below is to be read with them appended.
+- **`AgentDiagnostics` is created by package 1** (`UsageTracker/Agents/AgentDiagnostics.swift`: `@MainActor enum AgentDiagnostics { static weak var server: AgentEventServer? }`, set by `AgentChannel` after `start()`). This package does not declare it; Task 4 only reads it. `AgentChannel.shared.startError` (package 1) is the socket-failure text to show in diagnostics.
 - Commits end with the trailer lines
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and
   `Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X`.
@@ -1061,31 +1062,19 @@ Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X"
 - Reference (read only): `UsageTracker/UI/SettingsView.swift:183-235` (Form/Section/Toggle house style), `:293-321` (a Section with a button, a trailing status string and a caption)
 
 **Interfaces:**
-- Consumes: `AgentHooksInstaller` (Tasks 1–2), `SettingsStore` (Task 3), `AgentPaths.claudeSettingsURL / codexConfigURL / helperSymlinkURL / socketURL / helperVersion` (package 1), `AgentEventServer.receivedCount / droppedCount` (package 1), `AgentSessionStore.shared.lastEventAt` (package 2).
+- Consumes: `AgentHooksInstaller` (Tasks 1–2), `SettingsStore` (Task 3), `AgentPaths.claudeSettingsURL / codexConfigURL / helperSymlinkURL / socketURL / helperVersion` (package 1), `AgentDiagnostics.server?.receivedCount / droppedCount` and `AgentChannel.shared.startError` (package 1, Task 7), `AgentSessionStore.shared.lastEventAt` (package 2).
 - Produces:
   ```swift
-  enum AgentDiagnostics {
-      /// Set by whoever starts the socket server (package 1) right after `start()`;
-      /// weak, so Settings never keeps a dead server alive.
-      nonisolated(unsafe) static weak var server: AgentEventServer?
-  }
   struct AgentsSettingsView: View {}                 // the whole tab
   extension SettingsView.Tab { case agents }         // new case, rawValue "Agents", icon "bolt.horizontal.circle"
   ```
-  **Wiring note for package 1:** one line at the end of its server setup — `AgentDiagnostics.server = server`. Without it the diagnostics block shows `0 received · 0 dropped` forever. Say so in the package-1 handover if it has not landed yet.
+  `AgentDiagnostics` already exists (package 1) — do not redeclare it.
 
 - [ ] **Step 1: Write the view**
 
 ```swift
 // UsageTracker/UI/AgentsSettingsView.swift
 import SwiftUI
-
-/// Handle on the running socket server so Settings can read its counters. The
-/// server is owned by the app's agent wiring; this is the one place the UI
-/// looks for it, and it stays nil until that wiring sets it.
-enum AgentDiagnostics {
-    nonisolated(unsafe) static weak var server: AgentEventServer?
-}
 
 /// Settings → Agents: turn the hooks on and off per source, with the exact text
 /// that will be written shown before anything is written, plus the alert
@@ -1260,6 +1249,11 @@ struct AgentsSettingsView: View {
                     .truncationMode(.head)
             }
             LabeledContent("Helper", value: "omelette-hook v\(AgentPaths.helperVersion)")
+            if let startError = AgentChannel.shared.startError {
+                LabeledContent("Socket status") {
+                    Text(startError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                }
+            }
             LabeledContent("Events", value: "\(received) received · \(dropped) dropped")
             LabeledContent("Last event", value: lastEventText)
             Text("Received counts messages the helper delivered; dropped counts messages the socket could not decode. Zero received with hooks installed usually means Omelette was restarted after the last session started — the next prompt re-registers it.")

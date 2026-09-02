@@ -29,7 +29,8 @@
 - User-visible strings introduced here are exactly: `Agents`, `Claude agents`, `Codex agents`, `N sessions` / `1 session`, `Needs you`, `Working`, `Done`, `Idle`, `Needs approval`, `No agent sessions`, `Enable precise status`.
 - New source files are picked up by xcodegen from `sources: - path: UsageTracker`; run `xcodegen generate` after adding files and before building. `UsageTracker.xcodeproj/` is generated and gitignored — never `git add` it.
 - Build: `xcodebuild -project UsageTracker.xcodeproj -scheme UsageTracker -configuration Debug -derivedDataPath build/DerivedData build`.
-  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData` (add `-only-testing:UsageTrackerTests/<Class>` for one class). If local signing of the test host fails, append `CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO`.
+  Tests: `xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""` (add `-only-testing:UsageTrackerTests/<Class>` for one class). **The two overrides are mandatory on every `xcodebuild test`** — the hardened runtime from `signing.xcconfig` otherwise hangs the test runner for ~6 min; every test command in the tasks below is to be read with them appended.
+- `UsageTrackerTests/AgentFixtures.swift` belongs to package 1 (hook JSON fixtures + socket test client). This package's `Fixture.agentSession(...)` lives in its own file `UsageTrackerTests/AgentSessionFixtures.swift`.
 - Commits end with the trailer lines
   `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` and
   `Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X`.
@@ -54,7 +55,7 @@ UsageTracker/
   UsageTracker.entitlements     + com.apple.security.automation.apple-events                                   (Task 1)
 project.yml                     + NSAppleEventsUsageDescription in the app target's info.properties            (Task 1)
 UsageTrackerTests/
-  AgentFixtures.swift           Fixture.agentSession(...) builder                                              (Task 2)
+  AgentSessionFixtures.swift    Fixture.agentSession(...) builder                                              (Task 2)
   AgentRowTextTests.swift       subtitle / elapsed / accessibility label                                       (Task 2)
   AgentsSectionTests.swift      groups / flat / caption / titles / colours / opacity                           (Task 3)
   SessionActivatorTests.swift   AppleScript source for Terminal + iTerm2, escaping, unknown apps               (Task 1)
@@ -161,10 +162,10 @@ enum SessionActivator {
     @MainActor
     static func jump(to session: AgentSession) {
         if let pid = session.host.pid, let app = NSRunningApplication(processIdentifier: pid) {
-            // `.activateIgnoringOtherApps` is soft-deprecated on macOS 14 in favour
-            // of `[.activateAllWindows]`; a background terminal is exactly the case
-            // the old option exists for, so it stays until it stops working.
-            app.activate(options: [.activateIgnoringOtherApps])
+            // macOS 14 activation model: hand Omelette's own activation to the
+            // terminal — the user just clicked a row, so we are the active app and
+            // may pass that on. (`.activateIgnoringOtherApps` is deprecated on 14.)
+            app.activate(from: .current, options: [.activateAllWindows])
             if let bundleID = app.bundleIdentifier,
                let tty = session.host.tty, !tty.isEmpty,
                let source = script(for: bundleID, tty: tty) {
@@ -302,7 +303,7 @@ Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X"
 
 **Files:**
 - Create: `UsageTracker/UI/DesignSystem/OMAgentRow.swift`
-- Create: `UsageTrackerTests/AgentFixtures.swift`
+- Create: `UsageTrackerTests/AgentSessionFixtures.swift`
 - Create: `UsageTrackerTests/AgentRowTextTests.swift`
 
 **Interfaces:**
@@ -310,7 +311,7 @@ Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X"
 - Produces:
   ```swift
   enum AgentRowText {
-      static func subtitle(for session: AgentSession) -> String
+      static func subtitle(for session: AgentSession, showsState: Bool = false) -> String   // showsState: "Needs approval · Bash: …" (provider tab)
       static func statePhrase(_ state: AgentState) -> String
       static func elapsed(since: Date, now: Date = Date(), state: AgentState) -> String
       static func spokenElapsed(since: Date, now: Date = Date(), state: AgentState) -> String
@@ -321,12 +322,12 @@ Claude-Session: https://claude.ai/code/session_013fBYuPqFyH6qKR5tcnXc8X"
   // DEBUG only, shared with AgentsSection's previews:
   enum AgentPreviewData { static func session(...) -> AgentSession; static var mixed: [AgentSession] }
   ```
-  Test-side: `Fixture.agentSession(...)` in `UsageTrackerTests/AgentFixtures.swift`.
+  Test-side: `Fixture.agentSession(...)` in `UsageTrackerTests/AgentSessionFixtures.swift`.
 
 - [ ] **Step 1: Write the test fixture**
 
 ```swift
-// UsageTrackerTests/AgentFixtures.swift
+// UsageTrackerTests/AgentSessionFixtures.swift
 import Foundation
 @testable import Omelette
 
@@ -405,6 +406,16 @@ final class AgentRowTextTests: XCTestCase {
         XCTAssertEqual(AgentRowText.subtitle(for: Fixture.agentSession(state: .idle, isApproximate: true)), "≈ Idle")
     }
 
+    /// Provider-tab rows have no group heading above them, so the state is spelled
+    /// out in front of the activity (mockup: "Needs approval · Bash: xcodegen generate").
+    func testProviderTabRowsPrefixTheStateToTheActivity() {
+        let session = Fixture.agentSession(state: .needsYou, activity: "Bash: xcodegen generate")
+        XCTAssertEqual(AgentRowText.subtitle(for: session, showsState: true), "Needs approval · Bash: xcodegen generate")
+        XCTAssertEqual(AgentRowText.subtitle(for: Fixture.agentSession(state: .working), showsState: true), "Working")
+        let scanned = Fixture.agentSession(state: .working, activity: "Edit: A.swift", isApproximate: true)
+        XCTAssertEqual(AgentRowText.subtitle(for: scanned, showsState: true), "≈ Working · Edit: A.swift")
+    }
+
     // MARK: elapsed
 
     func testElapsedForLiveStatesIsADuration() {
@@ -478,9 +489,17 @@ enum AgentRowText {
     /// otherwise the state itself. Log-scanned sessions get "≈ " — their state is
     /// inferred from file mtimes, not reported by a hook, and the row should not
     /// pretend otherwise.
-    static func subtitle(for session: AgentSession) -> String {
+    static func subtitle(for session: AgentSession, showsState: Bool = false) -> String {
         let activity = session.activity?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let text = activity.isEmpty ? statePhrase(session.state) : activity
+        let text: String
+        if activity.isEmpty {
+            text = statePhrase(session.state)
+        } else if showsState {
+            // Provider tab: no group heading says the state, so the row does.
+            text = "\(statePhrase(session.state)) · \(activity)"
+        } else {
+            text = activity
+        }
         return session.isApproximate ? "≈ \(text)" : text
     }
 
@@ -579,7 +598,7 @@ struct OMAgentRow: View {
                         .font(OMFont.bodyStrong)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Text(AgentRowText.subtitle(for: session))
+                    Text(AgentRowText.subtitle(for: session, showsState: !showsProviderIcon))
                         .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -750,7 +769,7 @@ private func agentRowPreviewStack(showsProviderIcon: Bool) -> some View {
 - [ ] **Step 5: Run the tests to verify they pass**
 
 Run: `xcodegen generate && xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData -only-testing:UsageTrackerTests/AgentRowTextTests`
-Expected: PASS (10 tests).
+Expected: PASS (11 tests).
 
 - [ ] **Step 6: Review the previews in Xcode**
 
@@ -760,7 +779,7 @@ Expected: five rows each; in the "icons" previews the provider logo carries a sm
 - [ ] **Step 7: Commit**
 
 ```bash
-git add UsageTracker/UI/DesignSystem/OMAgentRow.swift UsageTrackerTests/AgentFixtures.swift UsageTrackerTests/AgentRowTextTests.swift
+git add UsageTracker/UI/DesignSystem/OMAgentRow.swift UsageTrackerTests/AgentSessionFixtures.swift UsageTrackerTests/AgentRowTextTests.swift
 git commit -m "Design system: OMAgentRow with tested copy and elapsed-time rules
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
@@ -1439,4 +1458,5 @@ Record the result in the final commit message (`Popover agents: manual checklist
 - **Interface additions beyond the contract**, all listed under their task's *Produces*: `AgentRowText` (5 statics), `AgentGroup`, `AgentsSection.groups/flat/sessionsCaption/groupTitle/groupColor/rowOpacity/maxListHeight`, the defaulted `AgentsSection.title` (the contract's 4-argument call site still compiles), `SessionActivator.script(for:tty:)` + the two bundle-id constants + `@MainActor` on `jump`, `SettingsRoute`, `AgentPreviewData` (DEBUG only), `Fixture.agentSession` (tests only). No contract name is renamed.
 - **Type consistency.** `OMSectionHeader(title:trailing:)` is the phase-1 memberwise label — not the shorthand `OMSectionHeader("Agents", …)` used in prose. `TimelineView(.periodic(from:by:))` needs the `from:` argument. `OMSegmentItem` field order is `id, title, serviceID, sfFallback, showsDot`. `ProviderIconView(serviceID:sfFallback:size:)` takes a `String` fallback symbol. `AgentSource.rawValue` is `"claude"` / `"codex"`, which is exactly the service id used by the popover tabs, so `AgentSource(rawValue: service.id)` is the whole provider mapping.
 - **Swift 6 pitfalls avoided.** Measurement uses `.task(id:)` rather than `onPreferenceChange` (whose action is `@Sendable`); the detached hook-status task returns `(Bool, Bool)` rather than the non-`Sendable` `HookInstallStatus`; `NSAppleScript` and `NSRunningApplication` are only touched from `@MainActor` code.
-- **Known warning.** `NSApplicationActivationOptions.activateIgnoringOtherApps` is deprecated on macOS 14; the plan keeps it (the spec asks for it and it is still the behaviour we want for a background terminal) and documents `[.activateAllWindows]` as the drop-in replacement if the warning is ever cleaned up.
+- **Activation API.** `NSRunningApplication.activate(from:options:)` (macOS 14+) is used instead of the deprecated `.activateIgnoringOtherApps`; it transfers Omelette's activation to the terminal, which is exactly the "user clicked, bring that app forward" case. Build must stay warning-free here.
+- **Row subtitle on the provider tab** (orchestrator decision): flat rows prefix the state — "Needs approval · Bash: xcodegen generate" — because there is no group heading to say it; grouped rows show the activity alone. `AgentRowText.subtitle(for:showsState:)` carries the flag and `OMAgentRow` passes `showsState: !showsProviderIcon`.
