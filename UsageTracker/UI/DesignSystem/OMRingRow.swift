@@ -26,10 +26,22 @@ struct OMRingRow: View {
     }
 
     private func helpText(_ bucket: UsageBucket) -> String {
+        // An untouched window can't say anything about pace, so its tooltip
+        // explains the empty ring instead of repeating the label.
+        let title = bucket.clampedPercent == 0 ? emptyHint(for: bucket) : bucket.label
         if bucket.resetsAt < .distantFuture {
-            return "\(bucket.label) · resets \(bucket.resetsAt.formatted(date: .abbreviated, time: .shortened))"
+            return "\(title) · resets \(bucket.resetsAt.formatted(date: .abbreviated, time: .shortened))"
         }
-        return bucket.label
+        return title
+    }
+
+    private func emptyHint(for bucket: UsageBucket) -> String {
+        if bucket.id == "seven_day_oauth_apps" { return "No OAuth apps yet" }
+        guard bucket.kind == .modelSpecific else { return bucket.label }
+        // "Opus only" → "You haven't used Opus yet"; works for any bucket label.
+        var name = bucket.label
+        if name.hasSuffix(" only") { name.removeLast(" only".count) }
+        return "You haven't used \(name) yet"
     }
 }
 
