@@ -66,6 +66,8 @@ final class SettingsStore: ObservableObject {
         static let agentsNeedsYouBypassQuietHours = true
         static let agentsNotifyDone = false
         static let agentsShowInMenuBar = true
+        static let agentsHooksPromptDismissed = false
+        static let agentsHooksPromptNotified = false
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -124,6 +126,12 @@ final class SettingsStore: ObservableObject {
     @AppStorage("agentsNotifyDone") var agentsNotifyDone: Bool = Defaults.agentsNotifyDone
     /// The agents pill in the menu bar (count of live sessions).
     @AppStorage("agentsShowInMenuBar") var agentsShowInMenuBar: Bool = Defaults.agentsShowInMenuBar
+    /// "Not now" on the one-time hooks prompt. Hooks stay opt-in, so the answer
+    /// is remembered and the row never asks again — a settings reset is the way back.
+    @AppStorage("agentsHooksPromptDismissed") var agentsHooksPromptDismissed: Bool = Defaults.agentsHooksPromptDismissed
+    /// The launch notification for that prompt has been delivered. One per install,
+    /// ever — separate from the row, which the popover can show until it is answered.
+    @AppStorage("agentsHooksPromptNotified") var agentsHooksPromptNotified: Bool = Defaults.agentsHooksPromptNotified
 
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
@@ -161,6 +169,8 @@ final class SettingsStore: ObservableObject {
         agentsNeedsYouBypassQuietHours = Defaults.agentsNeedsYouBypassQuietHours
         agentsNotifyDone = Defaults.agentsNotifyDone
         agentsShowInMenuBar = Defaults.agentsShowInMenuBar
+        agentsHooksPromptDismissed = Defaults.agentsHooksPromptDismissed
+        agentsHooksPromptNotified = Defaults.agentsHooksPromptNotified
 
         // Choices that live in the views and state objects rather than in a property
         // here. They are still preferences, so a reset that leaves them behind isn't
