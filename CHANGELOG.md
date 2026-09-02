@@ -27,7 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and diagnostics (socket, helper version, events received/dropped, last event).
   The welcome tour gained one optional card for the same switch.
 - Without hooks, sessions are still listed from the CLIs' own logs (marked
-  "≈", never "needs you"); hook data wins once installed.
+  "≈", never "needs you"); hook data wins once installed. If Claude Code is on
+  the machine and the hooks are not, the popover offers them once (Enable /
+  Not now) and a single notification does the same at launch; nothing is
+  written without a click.
 - A tiny `omelette-hook` helper ships inside the app and talks to it over a
   local Unix socket (0600, 64 KB cap). It sends only session id, tool name, a
   truncated tool summary, folder and host process info — never prompts or
