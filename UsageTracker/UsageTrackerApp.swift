@@ -77,6 +77,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (ECONNREFUSED on a stale path would still be within budget, but a
         // missing file is the cleaner signal).
         AgentChannel.shared.stop()
+        flushCostCache()
+    }
+
+    /// The cost cache is written at most every five minutes, so up to five minutes of
+    /// turns are usually still only in memory when the app quits — re-parsing them
+    /// costs the next launch the very seconds the cache exists to save.
+    ///
+    /// The wait blocks the main thread, which is the only way the write lands: nothing
+    /// after `applicationWillTerminate` returns is guaranteed to run. `JSONLAggregator`
+    /// is a plain actor with no main-actor hop anywhere in its save path, so the task
+    /// makes progress on the cooperative pool while we wait and cannot deadlock against
+    /// us. Two seconds is the budget — encoding the largest cache measured here takes
+    /// about 350 ms — and expiring it only means a colder next launch.
+    ///
+    /// `willTerminateNotification` fires at the same moment and would need the same
+    /// blocking wait, so it buys nothing over doing it where the rest of the teardown
+    /// already lives.
+    private func flushCostCache() {
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            await JSONLAggregator.shared.flushCache()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 2) == .timedOut {
+            NSLog("[UT] cost cache flush did not finish within 2s; skipping it")
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

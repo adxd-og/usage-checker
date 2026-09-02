@@ -174,6 +174,12 @@ actor JSONLAggregator: CostLogAggregating {
     /// Set whenever this refresh changed something worth persisting. A quiet poll
     /// leaves it false and the cache file untouched.
     private var dirty = false
+    /// The snapshot runs to tens of MB on a busy machine, so a poll that ingests one
+    /// turn must not rewrite the whole file. Writes are batched to this interval; the
+    /// first one in the process is immediate, so a crash early on still leaves
+    /// something warm behind, and `flushCache()` ignores the throttle at quit.
+    private let saveInterval: TimeInterval
+    private var lastSavedAt: Date?
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
@@ -197,10 +203,12 @@ actor JSONLAggregator: CostLogAggregating {
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true),
-        cacheURL: URL? = JSONLAggregator.defaultCacheURL
+        cacheURL: URL? = JSONLAggregator.defaultCacheURL,
+        saveInterval: TimeInterval = 300
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
+        self.saveInterval = saveInterval
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
@@ -220,10 +228,15 @@ actor JSONLAggregator: CostLogAggregating {
         scanAndIngest()
         initialized = true
         pruneAndFold()
-        if dirty {
-            saveCache()
-            dirty = false
-        }
+        saveIfDue()
+    }
+
+    /// Writes the cache now, throttle and all, if anything is waiting to be written.
+    /// The app calls this on the way out so a session's last few minutes of turns
+    /// survive the quit instead of being re-parsed on the next launch.
+    func flushCache() {
+        guard dirty else { return }
+        save()
     }
 
     func breakdown() -> CLIBreakdown {
@@ -594,8 +607,24 @@ actor JSONLAggregator: CostLogAggregating {
         )
     }
 
-    private func saveCache() {
-        guard let cacheURL else { return }
+    /// Nothing to write, or written too recently to be worth the tens of MB again.
+    private func saveIfDue() {
+        guard dirty else { return }
+        if let lastSavedAt, Date().timeIntervalSince(lastSavedAt) < saveInterval { return }
+        save()
+    }
+
+    /// The timestamp moves even when the write fails, so a cache we can't write —
+    /// a full disk, a revoked sandbox — is retried on the same interval rather than
+    /// on every poll.
+    private func save() {
+        lastSavedAt = Date()
+        if saveCache() { dirty = false }
+    }
+
+    @discardableResult
+    private func saveCache() -> Bool {
+        guard let cacheURL else { return true }
         let snapshot = CostCacheSnapshot(
             version: Self.cacheVersion,
             root: rootURL.path,
@@ -614,8 +643,10 @@ actor JSONLAggregator: CostLogAggregating {
                 at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true
             )
             try data.write(to: cacheURL, options: [.atomic])
+            return true
         } catch {
             NSLog("[UT] cost cache write failed: %@", String(describing: error))
+            return false
         }
     }
 
