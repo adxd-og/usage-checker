@@ -52,6 +52,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard !AppEnvironment.isRunningTests else { return }
         self.statusBar = StatusBarController()
         AppState.shared.bootstrap()
+        // Hook → app channel: helper symlink + Unix socket. Started after bootstrap
+        // so a hook that fires during launch never beats the poll's first snapshot.
+        AgentChannel.shared.start()
         UsageNotifier.shared.requestAuthorizationIfNeeded()
         scheduleOnboardingIfNeeded()
         replayObserver = NotificationCenter.default.addObserver(
@@ -61,6 +64,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.openOnboarding()
             }
         }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Unlinks the socket file so a helper spawned after we quit fails fast
+        // (ECONNREFUSED on a stale path would still be within budget, but a
+        // missing file is the cleaner signal).
+        AgentChannel.shared.stop()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
