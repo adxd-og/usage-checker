@@ -62,7 +62,7 @@ struct OMAgentHistoryRow: View {
 
     /// VoiceOver reads the glyphs and the columns as one sentence.
     nonisolated static func accessibilityLabel(for record: AgentSessionRecord, startedAt: String) -> String {
-        var parts = [
+        let parts = [
             record.project,
             AgentRowText.sourceName(record.source),
             "started \(startedAt)",
