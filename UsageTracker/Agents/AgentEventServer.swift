@@ -32,6 +32,10 @@ final class AgentEventServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "com.usagetracker.agent-socket")
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
+    /// Identity of the file this instance bound. A second Omelette instance takes the
+    /// path over (see `startOnQueue`); when this one then quits, the file at the path
+    /// is no longer ours and must survive our `stop()`.
+    private var boundIdentity: FileIdentity?
 
     /// Diagnostics (Settings → Agents, package 3). Main queue only.
     private(set) var receivedCount = 0
@@ -48,14 +52,31 @@ final class AgentEventServer: @unchecked Sendable {
         try queue.sync { try startOnQueue() }
     }
 
+    /// Idempotent. Removes the socket file only when it is still the one we bound.
     func stop() {
         queue.sync {
             guard let source = acceptSource else { return }
             source.cancel()           // the cancel handler closes the fd
             acceptSource = nil
             listenFD = -1
+            let ours = boundIdentity
+            boundIdentity = nil
+            guard let ours, Self.identity(ofFileAt: socketURL.path) == ours else { return }
             unlink(socketURL.path)
         }
+    }
+
+    // MARK: - Socket file identity
+
+    private struct FileIdentity: Equatable {
+        let device: dev_t
+        let inode: ino_t
+    }
+
+    private static func identity(ofFileAt path: String) -> FileIdentity? {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        return FileIdentity(device: info.st_dev, inode: info.st_ino)
     }
 
     // MARK: - Listening
@@ -92,6 +113,9 @@ final class AgentEventServer: @unchecked Sendable {
             close(fd)
             throw Error.posix(call: "bind", errno: code)
         }
+        // bind() created the file; remember which file it is so stop() can tell it apart
+        // from one a later instance bound to the same path.
+        let identity = Self.identity(ofFileAt: path)
         // Before listen(): nobody can connect yet, so the mode is 0600 from the first
         // moment a connection is possible.
         guard chmod(path, 0o600) == 0 else {
@@ -113,6 +137,7 @@ final class AgentEventServer: @unchecked Sendable {
         source.resume()
         listenFD = fd
         acceptSource = source
+        boundIdentity = identity
     }
 
     private static func address(for path: String) -> sockaddr_un {

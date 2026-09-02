@@ -156,6 +156,41 @@ final class AgentEventServerTests: XCTestCase {
         server.stop()
     }
 
+    /// A second instance takes the path over while the first is still running; the
+    /// first one quitting must leave the live socket alone.
+    func testStopKeepsASocketReboundByAnotherInstance() throws {
+        let first = AgentEventServer(socketURL: socketURL) { _ in }
+        try first.start()
+        let second = AgentEventServer(socketURL: socketURL) { _ in }
+        try second.start()          // unlinks the first file and binds its own
+        self.server = second
+
+        first.stop()
+        first.stop()                // still idempotent
+
+        XCTAssertEqual(try mode(of: socketURL) & S_IFMT, S_IFSOCK)
+        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path), #"{"v":1,"decision":null}"#)
+        XCTAssertTrue(waitOnMain { second.receivedCount == 1 }, "received \(second.receivedCount)")
+    }
+
+    /// Same guard for the already-stopped instance: its own stop() removed the file,
+    /// a later instance created a new one, and stop() must not remove that one.
+    func testStopOfAnAlreadyStoppedInstanceKeepsALaterSocket() throws {
+        let first = AgentEventServer(socketURL: socketURL) { _ in }
+        try first.start()
+        first.stop()
+        XCTAssertFalse(FileManager.default.fileExists(atPath: socketURL.path))
+
+        let second = AgentEventServer(socketURL: socketURL) { _ in }
+        try second.start()
+        self.server = second
+
+        first.stop()
+
+        XCTAssertEqual(try mode(of: socketURL) & S_IFMT, S_IFSOCK)
+        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path), #"{"v":1,"decision":null}"#)
+    }
+
     func testOverlongPathIsReportedNotBound() {
         let long = FileManager.default.temporaryDirectory.appendingPathComponent(String(repeating: "x", count: 120) + ".sock")
         let server = AgentEventServer(socketURL: long) { _ in }
