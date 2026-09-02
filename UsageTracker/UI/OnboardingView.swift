@@ -9,9 +9,11 @@ struct OnboardingView: View {
     /// explicitly — here on first run, or from Settings later.
     @State private var keychainGranted = ClaudeCredentialsCache.load() != nil
     @State private var keychainError: String?
+    @State private var agentHooks: HookInstallStatus = .notInstalled
+    @State private var agentHooksError: String?
     let onFinish: () -> Void
 
-    private let totalPages = 3
+    private let totalPages = 4
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,6 +76,7 @@ struct OnboardingView: View {
         switch page {
         case 0: welcomePage
         case 1: permissionsPage
+        case 2: agentsPage
         default: readyPage
         }
     }
@@ -154,6 +157,99 @@ struct OnboardingView: View {
             Spacer()
         }
         .task { await refreshNotificationStatus() }
+    }
+
+    /// The one card that is an offer rather than a requirement: agent status is
+    /// opt-in, works on Claude Code only from here, and is fully reversible in
+    /// Settings → Agents (which also handles Codex).
+    private var agentsPage: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Your agents, at a glance")
+                .font(.title2.weight(.semibold))
+
+            permissionRow(
+                icon: "bolt.horizontal.circle",
+                title: "Agent status (optional)",
+                description: "Omelette can also show which Claude Code sessions are running, which one is **waiting for your approval**, and take you back to it in one click. Turning this on adds eight hooks to `~/.claude/settings.json` that call a small helper inside Omelette. They send the session id, the tool name and the folder — never your prompts or your files — and Claude Code never waits on them. Settings → Agents shows the exact JSON, adds Codex, and removes all of it again."
+            )
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(agentHooksColor)
+                    .frame(width: 8, height: 8)
+                Text(agentHooksLabel)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(agentHooksButtonLabel) {
+                    enableAgentHooks()
+                }
+                .buttonStyle(.bordered)
+                .disabled(agentHooksInstalled)
+            }
+            .padding(.top, 4)
+
+            if let agentHooksError {
+                Text(agentHooksError)
+                    .font(.system(size: 10))
+                    .foregroundStyle(.orange)
+                    .textSelection(.enabled)
+            }
+
+            Spacer()
+        }
+        .onAppear(perform: refreshAgentHooks)
+    }
+
+    private var agentHooksInstalled: Bool {
+        if case .installed = agentHooks { return true }
+        return false
+    }
+
+    private var agentHooksLabel: String {
+        switch agentHooks {
+        case .installed: return "Hooks installed"
+        case .outdated: return "Hooks installed — older than this build"
+        case .notInstalled: return "Not enabled"
+        case .conflict(let reason): return reason
+        }
+    }
+
+    private var agentHooksColor: Color {
+        switch agentHooks {
+        case .installed: return .green
+        case .outdated: return .orange
+        case .notInstalled: return .secondary
+        case .conflict: return .red
+        }
+    }
+
+    private var agentHooksButtonLabel: String {
+        switch agentHooks {
+        case .installed: return "Enabled"
+        case .outdated: return "Update"
+        case .notInstalled, .conflict: return "Enable"
+        }
+    }
+
+    private func refreshAgentHooks() {
+        agentHooks = AgentHooksInstaller.claudeStatus(
+            settingsURL: AgentPaths.claudeSettingsURL,
+            helperPath: AgentPaths.helperSymlinkURL.path
+        )
+    }
+
+    private func enableAgentHooks() {
+        do {
+            try AgentHooksInstaller.installClaude(
+                settingsURL: AgentPaths.claudeSettingsURL,
+                helperPath: AgentPaths.helperSymlinkURL.path
+            )
+            agentHooksError = nil
+        } catch {
+            agentHooksError = "Couldn't write ~/.claude/settings.json: \(error.localizedDescription)"
+        }
+        refreshAgentHooks()
     }
 
     private var notificationStatusColor: Color {
