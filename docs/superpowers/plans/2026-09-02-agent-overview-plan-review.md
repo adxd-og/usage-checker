@@ -115,3 +115,19 @@ uses `_exit`; Claude passive scan accepts only `<uuid>.jsonl`. Phase-4 server /
 helper prerequisites recorded in the roadmap. Left for later: `stop()` inode guard,
 Codex date-partition pruning, `mergePassive` no-op guard, status refresh while the
 Agents tab is open.
+
+## Phase 3 code review (2026-09-02, after packages 1–3 merged)
+
+No critical findings. Fixed in a follow-up: `AgentChannelTests` rotating the real
+log (temp `historyURL`), `rotate`/`append` race (flock on a sidecar lock file),
+duplicate `ForEach` ids in the history list, the Overview burn-rate line missing
+when there is no verdict, the 260 pt `AgentsSection` cap inside the dashboard,
+reload keyed on `lastEventAt`, once-per-launch rotation guard, VoiceOver on the
+summary tiles, remaining `.caption`/`.callout`/`.title2` stragglers.
+Left for later (minor): day titles go stale at midnight in an open dashboard; the
+cost bar gradient in `SessionHistoryView`; `OMSegmentedControl` a11y label says
+"Provider" on the Agents tab; `DashboardAgentRecordsTests` use the shared
+singleton; `OnboardingView.init(page:onFinish:)` is preview-only API in
+production; Settings keychain status auto-clear can wipe a newer message; the
+widget ring's 110 pt assumes WidgetKit's 16 pt content margins; a few test gaps
+(`inRange` at the exact cutoff, `days([])`, `content(maxRows: 0)`).
