@@ -52,7 +52,9 @@ enum PassiveSessionScanner {
             guard url.deletingLastPathComponent().deletingLastPathComponent()
                 .resolvingSymlinksInPath().path == rootPath else { return }
             let sessionID = url.deletingPathExtension().lastPathComponent
-            guard !sessionID.isEmpty else { return }
+            // Claude names transcripts after the session uuid; anything else at
+            // this level (a stray export, a tool's side file) is not a session.
+            guard UUID(uuidString: sessionID) != nil else { return }
             let cwd = firstString(forKey: "cwd", in: url)
             sessions.append(makeSession(
                 source: .claude,

@@ -49,6 +49,15 @@ widgets. Each surface is its own plan step; old and new styles never mix on one 
 answer it. Needs a security pass (who may answer, timeouts, what happens when the
 app quits mid-request).
 
+Prerequisites recorded by the phase-2 code review (hook config needs no change,
+the app/helper shape does): `AgentEventServer.serve` handles one connection at a
+time on a serial queue with a 1 s read budget and replies inline — holding a
+`PermissionRequest` connection open while the user decides would block every
+other hook, so `serve` must become per-connection-concurrent and event-kind-aware;
+the helper's 500 ms reply wait / 800 ms watchdog must become conditional on
+`PermissionRequest` (the hook is registered with `timeout: 5`); the reply line
+gains a `decision` payload the helper prints to stdout only for that event.
+
 ### Phase 5 — Rules inventory
 Read-only map of what shapes a session: CLAUDE.md chain, hooks, MCP servers,
 skills, permissions. "Open file" only, no editing.

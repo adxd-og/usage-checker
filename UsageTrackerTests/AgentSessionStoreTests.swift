@@ -445,6 +445,27 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.map(\.sessionID), ["needsYou", "working", "idle"])
     }
 
+    func testAPassiveScanDoesNotResurrectAnEndedSession() {
+        let store = makeStore()
+        store.apply(event(.promptSubmitted), now: t0)
+        store.apply(event(.sessionEnd), now: at(1))
+        store.mergePassive([passive(state: .idle, at: at(2))], now: at(2))
+        XCTAssertTrue(store.sessions.isEmpty, "the transcript is still on disk, but the hook said the session ended")
+
+        let later = at(AgentSessionStore.endedTombstoneTTL + 3)
+        store.mergePassive([passive(state: .idle, at: later)], now: later)
+        XCTAssertEqual(store.sessions.count, 1, "once the tombstone expires the file counts as a session again")
+    }
+
+    func testAHookEventAfterSessionEndClearsTheTombstone() {
+        let store = makeStore()
+        store.apply(event(.sessionEnd), now: t0)
+        store.apply(event(.promptSubmitted), now: at(1))
+        XCTAssertEqual(store.sessions.count, 1)
+        store.mergePassive([passive(state: .idle, at: at(2))], now: at(2))
+        XCTAssertEqual(store.sessions.first?.state, .working, "a live hook session is never overruled by the scan")
+    }
+
     // MARK: - pruneStale
 
     func testAStaleSessionWithADeadHostIsDropped() throws {

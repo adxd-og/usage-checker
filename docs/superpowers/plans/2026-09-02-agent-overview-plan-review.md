@@ -101,3 +101,17 @@ subpath: Contents/Helpers}` embedding with `SKIP_INSTALL: YES` on the tool;
 3. If the embed spelling in Task 6 Step 3 does not produce `Contents/Helpers/omelette-hook`
    with xcodegen's installed version, inspect the generated pbxproj (`dstSubfolderSpec`,
    `dstPath`) and adjust `copy:` — do not fall back to a Run Script phase.
+
+## Phase 2 code review (2026-09-02, after all five packages merged) — fixed
+
+Critical: Claude hook `command` is a shell string and the helper path contains
+a space → now shell-quoted (`AgentHooksInstaller.shellQuoted`, tested through
+`/bin/sh`). Important, fixed: `OMELETTE_AGENT_SOCKET` override honoured only under
+the temp dir / App Support dir; `SessionEnd` tombstones stop the passive scan from
+resurrecting an ended session for 30 min; the All-tab "Enable precise status" link
+counts a missing CLI config or a conflict as satisfied; `AgentHistoryStore.append`
+no longer overwrites the log when the file merely fails to open; helper watchdog
+uses `_exit`; Claude passive scan accepts only `<uuid>.jsonl`. Phase-4 server /
+helper prerequisites recorded in the roadmap. Left for later: `stop()` inode guard,
+Codex date-partition pruning, `mergePassive` no-op guard, status refresh while the
+Agents tab is open.

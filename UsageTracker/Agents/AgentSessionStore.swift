@@ -34,6 +34,14 @@ final class AgentSessionStore: ObservableObject {
 
     private let history: AgentHistoryStore
 
+    /// Sessions a `SessionEnd` hook has closed, with when. The transcript stays
+    /// inside the passive scan's window for a while after the CLI quits; without
+    /// this the next poll would resurrect the row as "≈ Idle".
+    private var endedIDs: [String: Date] = [:]
+    /// Matches the passive scan's `recentWindow`: once the file has aged out of
+    /// the scan there is nothing left to suppress.
+    static let endedTombstoneTTL: TimeInterval = 30 * 60
+
     /// Injectable history location — the tests point it at a temp file instead of
     /// `~/Library/Application Support/UsageTracker/agent-sessions.jsonl`.
     init(historyURL: URL = AgentPaths.historyURL) {
@@ -66,6 +74,7 @@ final class AgentSessionStore: ObservableObject {
         let id = Self.identifier(source: event.source, sessionID: event.sessionID)
 
         if case .sessionEnd = event.kind {
+            endedIDs[id] = now
             guard let index = sessions.firstIndex(where: { $0.id == id }) else { return }
             let ended = sessions.remove(at: index)
             archive(ended, endedAt: now)
@@ -163,8 +172,9 @@ final class AgentSessionStore: ObservableObject {
             merged.append(fresh)
         }
 
+        endedIDs = endedIDs.filter { now.timeIntervalSince($0.value) < Self.endedTombstoneTTL }
         let known = Set(sessions.map(\.id))
-        for fresh in scanned where !known.contains(fresh.id) {
+        for fresh in scanned where !known.contains(fresh.id) && endedIDs[fresh.id] == nil {
             merged.append(fresh)
         }
 

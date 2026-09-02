@@ -46,9 +46,18 @@ enum AgentHooksInstaller {
     /// phase 4 can answer it without anyone re-installing hooks. The two
     /// `Notification` entries are literal matchers rather than one alternation,
     /// so each notification type we listen to is separately visible in the file.
+    /// A Claude Code hook `command` is a shell command line, not an argv path,
+    /// and the helper lives under "Application Support" — unquoted, the shell
+    /// would try to run `/Users/…/Library/Application`. Single quotes survive
+    /// every character except the quote itself, which becomes `'\''`.
+    static func shellQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
     static func claudeTemplate(helperPath: String) -> [String: Any] {
-        let fireAndForget: [String: Any] = ["type": "command", "command": helperPath, "async": true]
-        let blocking: [String: Any] = ["type": "command", "command": helperPath, "timeout": 5]
+        let command = shellQuoted(helperPath)
+        let fireAndForget: [String: Any] = ["type": "command", "command": command, "async": true]
+        let blocking: [String: Any] = ["type": "command", "command": command, "timeout": 5]
         func group(_ matcher: String, _ entry: [String: Any]) -> [String: Any] {
             ["matcher": matcher, "hooks": [entry]]
         }
