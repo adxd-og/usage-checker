@@ -10,10 +10,13 @@ import Foundation
 final class AgentChannel {
     static let shared = AgentChannel()
 
-    /// The single consumer. The default logs the event kind and a session-id
-    /// prefix — never a payload, cwd or tool summary (spec, "Security and privacy").
-    var onEvent: (AgentEvent) -> Void = { event in
+    /// The single consumer. The default logs the event kind and a session-id prefix —
+    /// never a payload, cwd or tool summary (spec, "Security and privacy") — and
+    /// releases a held permission request, so a helper never waits on a consumer
+    /// nobody installed.
+    var onEvent: (AgentEvent, AgentReply) -> Void = { event, reply in
         NSLog("[UT] agent event %@ session=%@", String(describing: event.kind), String(event.sessionID.prefix(8)))
+        reply.send(nil)
     }
 
     private(set) var server: AgentEventServer?
@@ -49,9 +52,12 @@ final class AgentChannel {
             }
         }
 
-        let server = AgentEventServer(socketURL: socketURL) { [weak self] event in
-            // AgentEventServer delivers on the main queue by contract (Task 5).
-            MainActor.assumeIsolated { self?.onEvent(event) }
+        let server = AgentEventServer(socketURL: socketURL) { [weak self] event, reply in
+            // AgentEventServer delivers on the main queue by contract (Task 5 of phase 2).
+            MainActor.assumeIsolated {
+                guard let self else { reply.send(nil); return }   // channel gone: release the helper
+                self.onEvent(event, reply)
+            }
         }
         do {
             try server.start()

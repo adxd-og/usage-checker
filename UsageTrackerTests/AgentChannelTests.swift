@@ -44,7 +44,7 @@ final class AgentChannelTests: XCTestCase {
 
     func testEventsReachTheConsumerOnTheMainActor() throws {
         var kinds: [AgentEvent.Kind] = []
-        channel.onEvent = { kinds.append($0.kind) }
+        channel.onEvent = { event, _ in kinds.append(event.kind) }
         channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
 
         AgentSocketTestClient.send(AgentFixture.envelope(payload: AgentFixture.userPromptSubmit) + Data([0x0A]), to: socketURL.path)
@@ -100,5 +100,37 @@ final class AgentChannelTests: XCTestCase {
 
         // The rotation is detached, so poll the main run loop instead of assuming it ran.
         XCTAssertTrue(waitOnMain { ((try? store.load()) ?? []).map(\.id) == ["claude:fresh"] })
+    }
+
+    func testTheDefaultConsumerAnswersAHeldPermissionWithNoDecision() throws {
+        // Nobody assigned onEvent (a unit test, or bootstrap not yet run): a held
+        // helper must still be released rather than wait out the 140 s budget.
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
+        let line = AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit, requestID: AgentFixture.requestID) + Data([0x0A])
+        let fd = try XCTUnwrap(AgentSocketTestClient.open(line, to: socketURL.path))
+        defer { close(fd) }
+
+        var reply: String?
+        // Read only until something arrives: waitOnMain re-checks the condition after
+        // its loop, and a second readLine on the consumed line would see EOF.
+        XCTAssertTrue(waitOnMain {
+            if reply == nil { reply = AgentSocketTestClient.readLine(fd, timeout: 0.05) }
+            return reply != nil
+        })
+        XCTAssertEqual(reply, #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":null}"#)
+    }
+
+    func testAHeldPermissionReachesTheConsumerWithAnUnsettledReply() throws {
+        var replies: [AgentReply] = []
+        channel.onEvent = { _, reply in replies.append(reply) }
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: historyURL)
+        let line = AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit, requestID: AgentFixture.requestID) + Data([0x0A])
+        let fd = try XCTUnwrap(AgentSocketTestClient.open(line, to: socketURL.path))
+        defer { close(fd) }
+
+        XCTAssertTrue(waitOnMain { replies.count == 1 })
+        XCTAssertEqual(replies.first?.isSettled, false)
+        replies.first?.send(.deny)
+        XCTAssertEqual(AgentSocketTestClient.readLine(fd), #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":"deny"}"#)
     }
 }
