@@ -3,10 +3,13 @@ import SwiftUI
 struct DashboardWindow: View {
     @ObservedObject var appState: AppState
     @StateObject private var dashboard = DashboardState.shared
-    @State private var selection: Tab = .overview
+    /// Survives a relaunch. `Tab` is `String`-backed, so a raw value that no longer
+    /// exists (a tab removed in a later release) falls back to `.overview` on its own.
+    @AppStorage("dashboardTab") private var selection: Tab = .overview
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
+        case agents = "Agents"
         case activity = "Activity"
         case history = "History"
         case insights = "Insights"
@@ -15,6 +18,7 @@ struct DashboardWindow: View {
         var icon: String {
             switch self {
             case .overview: return "chart.bar.doc.horizontal"
+            case .agents: return "bolt.horizontal.circle"
             case .activity: return "square.grid.4x3.fill"
             case .history: return "clock"
             case .insights: return "lightbulb"
@@ -69,6 +73,8 @@ struct DashboardWindow: View {
         switch selection {
         case .overview:
             OverviewView(appState: appState, dashboard: dashboard)
+        case .agents:
+            AgentsHistoryView(dashboard: dashboard)
         case .activity:
             ActivityGridView(dashboard: dashboard)
         case .history:
@@ -85,6 +91,9 @@ struct DashboardHeader: View {
     let title: String
     let subtitle: String?
     var trailing: AnyView? = nil
+    /// The Agents tab is not about one provider, so it hides the picker rather than
+    /// showing a control that changes nothing on screen.
+    var showsServicePicker: Bool = true
 
     @ObservedObject private var dashboard = DashboardState.shared
 
@@ -92,15 +101,17 @@ struct DashboardHeader: View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.title2.weight(.semibold))
+                    .font(OMFont.screenTitle)
                 if let subtitle {
                     Text(subtitle)
-                        .font(.callout)
+                        .font(OMFont.body)
                         .foregroundStyle(.secondary)
                 }
             }
             Spacer()
-            ServicePicker(dashboard: dashboard)
+            if showsServicePicker {
+                ServicePicker(dashboard: dashboard)
+            }
             trailing
         }
         .padding(.horizontal, 24)

@@ -64,4 +64,29 @@ final class AgentChannelTests: XCTestCase {
         XCTAssertNil(channel.server)
         XCTAssertFalse(FileManager.default.fileExists(atPath: socketURL.path))
     }
+
+    func testStartRotatesTheSessionLogInTheBackground() throws {
+        let logURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("AgentChannelRotation-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: logURL) }
+
+        let store = AgentHistoryStore(fileURL: logURL)
+        // 2024-01-01 — years outside any 90-day window.
+        try store.append(AgentSessionRecord(
+            id: "claude:ancient", source: .claude, project: "Ancient",
+            startedAt: Date(timeIntervalSince1970: 1_704_100_000),
+            endedAt: Date(timeIntervalSince1970: 1_704_103_600),
+            turns: 2, needsYouCount: 0
+        ))
+        try store.append(AgentSessionRecord(
+            id: "claude:fresh", source: .claude, project: "Fresh",
+            startedAt: Date().addingTimeInterval(-3600), endedAt: Date(),
+            turns: 2, needsYouCount: 0
+        ))
+
+        channel.start(socketURL: socketURL, refreshSymlink: false, historyURL: logURL)
+
+        // The rotation is detached, so poll the main run loop instead of assuming it ran.
+        XCTAssertTrue(waitOnMain { ((try? store.load()) ?? []).map(\.id) == ["claude:fresh"] })
+    }
 }

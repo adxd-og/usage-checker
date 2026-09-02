@@ -22,13 +22,27 @@ final class AgentChannel {
 
     init() {}
 
-    func start(socketURL: URL = AgentPaths.socketURL, refreshSymlink: Bool = true) {
+    func start(
+        socketURL: URL = AgentPaths.socketURL,
+        refreshSymlink: Bool = true,
+        historyURL: URL = AgentPaths.historyURL
+    ) {
         if refreshSymlink {
             do {
                 try AgentPaths.refreshHelperSymlink()
             } catch {
                 // Hooks keep pointing at the old symlink target; Settings → Agents shows "outdated".
                 NSLog("[UT] helper symlink refresh failed: %@", String(describing: error))
+            }
+        }
+        // Once per launch, off the main actor: the run history is append-only, and
+        // trimming it here is the only thing that keeps `agent-sessions.jsonl` from
+        // growing forever. Detached because a long log must not delay the socket.
+        Task.detached(priority: .utility) {
+            do {
+                try AgentHistoryStore(fileURL: historyURL).rotate()
+            } catch {
+                NSLog("[UT] agent history rotation failed: %@", String(describing: error))
             }
         }
         guard server == nil else { return }
