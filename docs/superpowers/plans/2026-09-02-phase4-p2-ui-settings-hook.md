@@ -677,11 +677,23 @@ cd "<repo>" && grep -n "featureEnabled" UsageTracker/Agents/PermissionBroker.swi
 ```
 
 Two possible outcomes:
-- The call already reads `featureEnabled: SettingsStore.shared.agentsAnswerPermissions` — package 1 wrote it against this contract. Nothing to change; note it and move on.
+- The init's default is `PermissionBroker.featureIsUsable`, a static function that returns `SettingsStore.shared.agentsAnswerPermissions && AgentHooksInstaller.claudeStatus(…) == .installed` — package 1 wrote it against this contract (the hooks must match this build's template, or a 2.1 install's 5 s cap would kill the helper mid-hold). Nothing to change; note it and move on.
 - It passes a literal (`true`) or a placeholder. Replace that argument with:
 
 ```swift
-            featureEnabled: SettingsStore.shared.agentsAnswerPermissions,
+            featureEnabled: PermissionBroker.featureIsUsable,
+```
+
+and if `featureIsUsable` does not exist, add it to `PermissionBroker`:
+
+```swift
+    static func featureIsUsable() -> Bool {
+        SettingsStore.shared.agentsAnswerPermissions
+            && AgentHooksInstaller.claudeStatus(
+                settingsURL: AgentPaths.claudeSettingsURL,
+                helperPath: AgentPaths.helperSymlinkURL.path
+            ) == .installed
+    }
 ```
 
 Do not change `shouldHold` itself — its signature belongs to package 1.
@@ -1327,7 +1339,7 @@ EOF
 
 ## Manual checklist
 
-Nothing below is reachable from XCTest — the notification centre, the presence rule and a real Claude Code session all live outside the test bundle. Run these against a Debug build and report each as verified / not verified, with what you saw.
+Nothing below is reachable from XCTest — the notification centre, the presence rule and a real Claude Code session all live outside the test bundle. Run these against a Debug build and report each as verified / not verified, with what you saw. **Item 8 comes first in practice**: the broker holds nothing until the installed hooks match this build's template (`PermissionBroker.featureIsUsable`), so click **Update** in Settings → Agents before expecting any banner.
 
 1. **Hold and allow from the banner.** In a terminal that is *not* frontmost, make Claude Code ask for a permission (e.g. a `Bash` command outside the allowlist). Expect a banner titled "<project> wants to run Bash" with **Allow** / **Deny**. Press **Allow** (unlock if macOS asks): the tool runs, the banner goes away, Settings → Agents shows Answered +1, and **Omelette does not come to the front**.
 2. **Deny.** Same setup, press **Deny**: Claude Code reports the refusal and carries on with its turn; Answered +1.

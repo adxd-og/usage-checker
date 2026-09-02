@@ -151,3 +151,27 @@ package 1 (the broker reads it) — Task 3 keeps the tests and adds the key only
 (4) settings caption reworded ("Allow / Deny appear … only while the terminal … isn't in
 front"; Omelette itself never answers). Risk to watch in review: the nine `OMAgentRow`
 call sites must pass `action:` by label.
+
+## Phase 4 · Package 1 — protocol / helper / server / broker (`…-phase4-p1-protocol-server-broker.md`) — APPROVED (amended)
+
+3020 lines, 8 tasks; the coordinator's four contract changes (`PermissionResolution`,
+register-before-apply with tests, `event.host` first, settings key owned here) are in.
+Verified against the code: every fixture and helper the tests lean on exists
+(`AgentFixture.hostJSON/permissionRequestEdit/preToolUseBash/stop/claude/envelope/
+temporarySocketURL`, `Fixture.agentSession`, `AgentSessionStore(historyURL:)`,
+`AgentSession.makeID`, `waitOnMain`/`waitForEvents`); `HookInstallStatus` is Equatable;
+the helper rewrite keeps every current symbol (`HostProcess.describe`, `readPayload`,
+`shrinkingToolInput`, the socket-override allowlist). The design holds: `AgentReply` is
+a real `Sendable` behind `OSAllocatedUnfairLock`, `send` = write + `shutdown(SHUT_RDWR)`
+which both delivers the line and wakes the parked `poll`; the 800 ms watchdog is swapped
+for 145 s only after a listening Omelette accepted the line; `LOCAL_PEERCRED` checked
+right after `accept`; expiry per request via a main-actor `Task`; `onResolved` after
+removal (asserted through `pending.count == 0` inside the callback). Amended: the
+production feature flag is `PermissionBroker.featureIsUsable` = switch on **and**
+`claudeStatus == .installed` — a 2.1 install (`timeout: 5`) would have Claude Code kill
+the helper five seconds into a hold, leaving a banner that vanishes on its own; with the
+gate those users get the old terminal prompt until they click Update. Consequence: the
+package-1 manual smoke is deferred until package 2's template bump lands. Executor
+notes: never launch a Debug build from the worktree (it steals the owner's socket and
+helper symlink); never post `com.apple.screenIsLocked` or touch the production socket
+from tests (the plan already avoids both).
