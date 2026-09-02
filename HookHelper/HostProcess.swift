@@ -85,7 +85,9 @@ struct ProcessRecord {
     private static func executablePath(_ pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
-        return length > 0 ? String(cString: buffer) : nil
+        guard length > 0 else { return nil }
+        // proc_pidpath returns the byte count, so no NUL hunting is needed.
+        return String(decoding: buffer[..<Int(length)].map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 
     /// `/Applications/Visual Studio Code.app/Contents/Frameworks/Code Helper (Plugin).app/…`

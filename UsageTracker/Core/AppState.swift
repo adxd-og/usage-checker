@@ -41,7 +41,9 @@ final class AppState: ObservableObject {
     private func observeSystemState() {
         let workspace = NSWorkspace.shared.notificationCenter
         let distributed = DistributedNotificationCenter.default()
-        func handler(asleep: Bool? = nil, locked: Bool? = nil) -> (Notification) -> Void {
+        // @Sendable because NotificationCenter hands the block to its own queue;
+        // it captures only two Bools and a weak main-actor reference.
+        func handler(asleep: Bool? = nil, locked: Bool? = nil) -> @Sendable (Notification) -> Void {
             { [weak self] _ in
                 Task { @MainActor [weak self] in
                     self?.setSuspension(asleep: asleep, locked: locked)
