@@ -50,6 +50,16 @@ final class PermissionBrokerTests: XCTestCase {
         AgentSocketTestClient.readLine(peer, timeout: timeout)
     }
 
+    // MARK: - The timeout chain (spec rule 5)
+
+    func testTheAppGivesUpBeforeTheHelperAndTheHook() {
+        // The helper's own 140 s and the hook's 150 s live in other targets and in the
+        // installer template; this pins the app-side half of the chain so a later
+        // edit cannot quietly make the app the last to give up.
+        XCTAssertLessThan(PermissionBroker.holdWindow, AgentEventServer.defaultHoldTimeout)
+        XCTAssertLessThan(AgentEventServer.defaultHoldTimeout, 150)
+    }
+
     // MARK: - The pure rule
 
     func testShouldHoldTable() {
@@ -267,16 +277,52 @@ final class PermissionBrokerTests: XCTestCase {
         XCTAssertNil(line(b.1))
     }
 
+    func testUnlockingWithTheHostAlreadyInFrontReleasesTheHold() {
+        // Locked with iTerm in front: the request is held (spec table). Unlocking
+        // puts iTerm back in front, so the hold ends now — not at the 120 s expiry.
+        frontmost = (4242, "com.googlecode.iterm2")
+        presence.setLocked(true)
+        let broker = makeBroker()
+        var resolved: [PermissionResolution] = []
+        broker.onResolved = { resolved.append($1) }
+        let (reply, peer) = reply()
+        broker.register(event: event(), reply: reply, session: nil, now: t0)
+        XCTAssertEqual(broker.pending.count, 1)
+
+        presence.setLocked(false)
+
+        XCTAssertTrue(broker.pending.isEmpty)
+        XCTAssertEqual(resolved, [.releasedForPresence])
+        XCTAssertEqual(broker.releasedForPresenceCount, 1)
+        XCTAssertEqual(line(peer), #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":null}"#)
+    }
+
+    func testARepeatedRequestIDIsReleasedNotHeldTwice() {
+        // 128 random bits never repeat by accident; a repeat is a replay. Overwriting
+        // the entry would leave a phantom row in `pending` that nothing can resolve.
+        let broker = makeBroker()
+        let first = reply()
+        let second = reply()
+        broker.register(event: event(sessionID: "s1"), reply: first.0, session: nil, now: t0)
+        broker.register(event: event(sessionID: "s2"), reply: second.0, session: nil, now: t0)
+
+        XCTAssertEqual(broker.pending.map(\.sessionID), ["claude:s1"])
+        XCTAssertNotNil(line(second.1), "the newcomer is released without a decision")
+        XCTAssertNil(line(first.1), "the original hold is untouched")
+
+        broker.answer(id: AgentFixture.requestID, .deny)
+        XCTAssertTrue(broker.pending.isEmpty, "no phantom row survives the answer")
+    }
+
     func testActivatingTheHostAppReleasesItsSessions() {
         let broker = makeBroker()
-        // Our own process stands in for the terminal: NSRunningApplication.current is the only one a test can hand over.
-        let mine = AgentHostInfo(pid: getpid(), bundleID: Bundle.main.bundleIdentifier, tty: nil)
+        let mine = AgentHostInfo(pid: 777, bundleID: "com.apple.Terminal", tty: nil)
         let a = reply("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         let b = reply("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
         broker.register(event: event(host: mine, sessionID: "s1", requestID: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), reply: a.0, session: nil, now: t0)
         broker.register(event: event(sessionID: "s2", requestID: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), reply: b.0, session: nil, now: t0)
 
-        presence.onActivation?(NSRunningApplication.current)
+        presence.onActivation?((777, "com.apple.Terminal"))
 
         XCTAssertEqual(broker.pending.map(\.sessionID), ["claude:s2"])
         XCTAssertEqual(broker.releasedForPresenceCount, 1)
@@ -326,7 +372,10 @@ final class PermissionBrokerTests: XCTestCase {
         broker.register(event: event(), reply: reply, session: nil, now: t0)
 
         reply.peerClosed()   // what the server calls when it reads EOF from the helper
-        try await Task.sleep(nanoseconds: 100_000_000)
+        // One main-actor hop away; poll instead of trusting a fixed sleep.
+        for _ in 0..<100 where !broker.pending.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
 
         XCTAssertTrue(broker.pending.isEmpty)
         XCTAssertEqual(resolved, [.expired])

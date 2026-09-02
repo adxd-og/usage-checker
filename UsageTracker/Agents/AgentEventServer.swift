@@ -284,8 +284,14 @@ final class AgentEventServer: @unchecked Sendable {
 
     /// Blocks the socket queue until `fd` is ready for `events` or `deadline` passes.
     private static func wait(_ fd: Int32, for events: Int32, until deadline: Date) -> Bool {
-        let remainingMilliseconds = Int32(max(0, deadline.timeIntervalSinceNow * 1000))
-        var descriptor = pollfd(fd: fd, events: Int16(events), revents: 0)
-        return poll(&descriptor, 1, remainingMilliseconds) > 0
+        while true {
+            let remainingMilliseconds = Int32(max(0, deadline.timeIntervalSinceNow * 1000))
+            var descriptor = pollfd(fd: fd, events: Int16(events), revents: 0)
+            let ready = poll(&descriptor, 1, remainingMilliseconds)
+            // A signal interrupting a 140 s hold must not read as "budget exhausted":
+            // that would release the helper while the broker still shows the buttons.
+            if ready < 0, errno == EINTR { continue }
+            return ready > 0
+        }
     }
 }

@@ -346,16 +346,23 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
     }
 
-    func testPendingPermissionClearsWhenTheSessionLeavesNeedsYou() {
-        let leaving: [(AgentEvent.Kind, String)] = [
+    func testPendingPermissionSurvivesEveryEventUntilTheBrokerClearsIt() {
+        // Claude Code runs pre-approved tool calls alongside the one that is waiting,
+        // so tool events land *during* a hold. The row's buttons must stay until the
+        // broker — the only authority on the hold — clears the id, whatever the
+        // state did in between.
+        let during: [(AgentEvent.Kind, String)] = [
             (.toolStarted, "tool started"), (.toolFinished, "tool finished"), (.promptSubmitted, "prompt"),
             (.stop, "stop"), (.notificationIdle, "idle"), (.sessionStart, "session start"),
         ]
-        for (kind, label) in leaving {
+        for (kind, label) in during {
             let store = makeStore()
             store.apply(event(.permissionRequested), now: t0)
             store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
             store.apply(event(kind), now: at(1))
+            XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID, label)
+
+            store.setPendingPermission(id: nil, for: "claude:s1")
             XCTAssertNil(store.sessions.first?.pendingPermissionID, label)
             // And it stays cleared: a later apply must not resurrect it from the map.
             store.apply(event(.permissionRequested), now: at(2))

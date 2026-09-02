@@ -149,11 +149,11 @@ final class AgentSessionStore: ObservableObject {
         if session.state == .needsYou, previousState != .needsYou {
             session.needsYouCount += 1
         }
-        // A held permission is moot once the session moved on (the user answered in
-        // the terminal, or the hook was released): the buttons must go with it.
-        if session.state != .needsYou {
-            pendingPermissionIDs.removeValue(forKey: id)
-        }
+        // The broker is the only authority on a held permission: it clears the id when
+        // the hold ends, whatever the terminal did. Tool events can arrive *during* a
+        // hold (Claude Code runs pre-approved calls alongside the one that is waiting),
+        // and the buttons must not vanish while the banner is still up. Only
+        // `sessionEnd` (above) forgets the id on its own.
         session.pendingPermissionID = pendingPermissionIDs[id]
         upsert(session)
         sortSessions()

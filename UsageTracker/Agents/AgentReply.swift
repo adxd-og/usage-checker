@@ -46,17 +46,20 @@ final class AgentReply: Sendable {
     /// Writes `line` verbatim if nothing has been sent yet. Tests use it to forge
     /// replies (wrong id, garbage) and prove the helper ignores them.
     func sendRaw(_ line: Data) {
-        let fd: Int32? = state.withLock { state in
-            guard !state.settled else { return nil }
+        // The write and the shutdown stay under the lock: `closeDescriptor` on the
+        // connection queue takes the same lock, so the number can never be closed —
+        // and recycled for another hook — between reading it and using it. The fd
+        // is non-blocking and the line is under 100 bytes, so nothing here waits.
+        state.withLock { state in
+            guard !state.settled else { return }
             state.settled = true
-            return state.fd >= 0 ? state.fd : nil
+            guard state.fd >= 0 else { return }
+            _ = line.withUnsafeBytes { write(state.fd, $0.baseAddress, $0.count) }
+            // Delivers EOF after the line and wakes the connection queue's poll so it
+            // releases the descriptor. EPIPE on a helper that already left is harmless:
+            // SO_NOSIGPIPE is inherited from the listening socket.
+            shutdown(state.fd, SHUT_RDWR)
         }
-        guard let fd else { return }
-        _ = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
-        // Delivers EOF after the line and wakes the connection queue's poll so it
-        // releases the descriptor. EPIPE on a helper that already left is harmless:
-        // SO_NOSIGPIPE is inherited from the listening socket.
-        shutdown(fd, SHUT_RDWR)
     }
 
     /// Runs `handler` once if the helper disconnects before any decision was sent —
