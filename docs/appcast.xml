@@ -6,6 +6,41 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.0.0</title>
+      <pubDate>Wed, 02 Sep 2026 11:15:58 +0300</pubDate>
+      <sparkle:version>30</sparkle:version>
+      <sparkle:shortVersionString>2.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Agent Overview.</b> The popover lists your live Claude Code and Codex sessions — grouped *Needs you / Working / Done / Idle* on the All tab, flat on a provider tab — with the project, what the agent is doing, and how long it has been in that state. Clicking a row brings its terminal tab back to the front (Terminal.app and iTerm2 select the exact tab; other hosts are activated; sessions without a host open their folder in Finder).</li>
+<li>A menu-bar <b>agents pill</b>: grey with the session count when quiet, blue while agents work, amber "N needs you" when one waits for approval. Toggle in Settings → Agents.</li>
+<li><b>Notifications</b> when a session needs your approval (with an <b>Open</b> action, replaces rather than stacks, withdrawn once you answer; ignores quiet hours by default) and, opt-in, when a turn finishes.</li>
+<li><b>Settings → Agents</b>: one-click install/remove of the Claude Code hooks in <code>~/.claude/settings.json</code> and the Codex <code>notify</code> line in <code>~/.codex/config.toml</code>, with the exact JSON/TOML shown first, foreign entries preserved, a one-time <code>.omelette-backup</code>, a conflict state when another tool owns Codex's <code>notify</code>, and diagnostics (socket, helper version, events received/dropped, last event). The welcome tour gained one optional card for the same switch.</li>
+<li>Without hooks, sessions are still listed from the CLIs' own logs (marked "≈", never "needs you"); hook data wins once installed. If Claude Code is on the machine and the hooks are not, the popover offers them once (Enable / Not now) and a single notification does the same at launch; nothing is written without a click.</li>
+<li>A tiny <code>omelette-hook</code> helper ships inside the app and talks to it over a local Unix socket (0600, 64 KB cap). It sends only session id, tool name, a truncated tool summary, folder and host process info — never prompts or file contents — and always exits 0 within 0.8 s, so agents never wait on it.</li>
+<li>Finished sessions are summarised to <code>agent-sessions.jsonl</code> (project, start, end, turns, approvals) for the upcoming dashboard history.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>New popover: an <b>All</b> tab with a tile per provider (ring for the leading window, bar for the weekly, plan) and a 7-day cost tile; provider tabs with a large ring for the most-constrained window, the other session window as a row, weekly windows as rings, extra usage and cost rows. <code>All</code> is the default tab. With more than four providers the segments go icon-only.</li>
+<li>Design system (<code>UI/DesignSystem/</code>): tokens, ring gauge with pace marker, segmented control, tiles, hero, section headers, chips.</li>
+<li>Usage colours are now battery-style everywhere — popover, dashboard, menu-bar pills and the desktop widgets: green while comfortable, amber from 70 %, red from 90 % (was accent blue below 70 %).</li>
+</ul>
+<h3>Internal</h3>
+<ul>
+<li><code>WindowRanking</code> and <code>BurnVerdict</code> extracted from the popover and unit-tested.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.0.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.0.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="IjxRIdTnVPN+r+gtobU3NvWTsKlKrQcZAl+VgQzMQn4EtbTlH6qI1T2A5F5Hnph+s8WI4YQ6Xf6LH0Bb30PpDw=="
+        length="16360045"/>
+    </item>
+    <item>
       <title>Omelette v1.13.1</title>
       <pubDate>Mon, 31 Aug 2026 23:14:02 +0300</pubDate>
       <sparkle:version>29</sparkle:version>
