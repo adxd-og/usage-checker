@@ -409,7 +409,8 @@ private struct ProviderDetail: View {
                 OMKeyValueRow(
                     label: bucket.label,
                     value: Self.sessionRowValue(bucket),
-                    barPercent: bucket.clampedPercent
+                    barPercent: bucket.clampedPercent,
+                    pace: bucket.elapsedFraction()
                 )
             }
             if !weeklyForRow.isEmpty {

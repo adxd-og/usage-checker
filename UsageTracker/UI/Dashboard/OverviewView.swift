@@ -127,7 +127,8 @@ struct OverviewView: View {
                 OMKeyValueRow(
                     label: b.label,
                     value: "resets \(formatRelative(b.resetsAt))",
-                    barPercent: b.clampedPercent
+                    barPercent: b.clampedPercent,
+                    pace: b.elapsedFraction()
                 )
             }
         }
