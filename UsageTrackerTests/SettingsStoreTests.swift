@@ -53,6 +53,7 @@ final class SettingsStoreTests: XCTestCase {
         s.agentsNeedsYouBypassQuietHours = !SettingsStore.Defaults.agentsNeedsYouBypassQuietHours
         s.agentsNotifyDone = !SettingsStore.Defaults.agentsNotifyDone
         s.agentsShowInMenuBar = !SettingsStore.Defaults.agentsShowInMenuBar
+        s.agentsAnswerPermissions = !SettingsStore.Defaults.agentsAnswerPermissions
         s.agentsHooksPromptDismissed = !SettingsStore.Defaults.agentsHooksPromptDismissed
         s.agentsHooksPromptNotified = !SettingsStore.Defaults.agentsHooksPromptNotified
 
@@ -97,6 +98,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.agentsNeedsYouBypassQuietHours, SettingsStore.Defaults.agentsNeedsYouBypassQuietHours, message)
         XCTAssertEqual(s.agentsNotifyDone, SettingsStore.Defaults.agentsNotifyDone, message)
         XCTAssertEqual(s.agentsShowInMenuBar, SettingsStore.Defaults.agentsShowInMenuBar, message)
+        XCTAssertEqual(s.agentsAnswerPermissions, SettingsStore.Defaults.agentsAnswerPermissions, message)
         XCTAssertEqual(s.agentsHooksPromptDismissed, SettingsStore.Defaults.agentsHooksPromptDismissed, message)
         XCTAssertEqual(s.agentsHooksPromptNotified, SettingsStore.Defaults.agentsHooksPromptNotified, message)
 
@@ -186,6 +188,10 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertTrue(settings.agentsNeedsYouBypassQuietHours, "a session waiting for approval is the one alert worth waking you")
         XCTAssertFalse(settings.agentsNotifyDone, "a notification per finished turn would be noise")
         XCTAssertTrue(settings.agentsShowInMenuBar)
+        XCTAssertTrue(
+            settings.agentsAnswerPermissions,
+            "the presence rule is what makes this safe to default on: a request is only held when the terminal isn't in front"
+        )
     }
 
     /// The hooks prompt is one-time in both directions: "Not now" is final, and a
