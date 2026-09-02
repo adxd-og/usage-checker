@@ -5,10 +5,13 @@ import SwiftUI
 /// fraction of the window already elapsed — usage ahead of the dot is "hot").
 struct OMRing: View {
     enum Size {
+        /// The desktop widget's small family: one ring filling the tile.
+        case widget
         case hero, medium, small, mini
 
         var diameter: CGFloat {
             switch self {
+            case .widget: 110
             case .hero: 84
             case .medium: 52
             case .small: 44
@@ -17,6 +20,7 @@ struct OMRing: View {
         }
         var lineWidth: CGFloat {
             switch self {
+            case .widget: 10
             case .hero: 9
             case .medium: 6
             case .small: 5
@@ -25,6 +29,7 @@ struct OMRing: View {
         }
         var labelFont: Font? {
             switch self {
+            case .widget: OMFont.heroNumeral
             case .hero: OMFont.heroNumeral
             case .medium: OMFont.numeral
             case .small: Font.system(size: 11, weight: .bold, design: .rounded)
@@ -37,6 +42,9 @@ struct OMRing: View {
     var size: Size = .medium
     var pace: Double? = nil
     var color: Color? = nil
+    /// The widget draws its own centre stack over the ring; `false` stops OMRing
+    /// from stacking a second numeral underneath it.
+    var showsLabel: Bool = true
 
     private var clamped: Double { max(0, min(100, percent)) }
     private var arcColor: Color { color ?? usageStatusColor(clamped) }
@@ -56,7 +64,7 @@ struct OMRing: View {
                     .offset(y: -(size.diameter / 2))
                     .rotationEffect(.degrees(pace * 360))
             }
-            if let font = size.labelFont {
+            if showsLabel, let font = size.labelFont {
                 Text("\(Int(clamped.rounded()))%")
                     .font(font)
                     .monospacedDigit()
@@ -88,4 +96,12 @@ struct OMRing: View {
     }
     .padding()
     .preferredColorScheme(.dark)
+}
+
+#Preview("Ring — widget size") {
+    HStack(spacing: 16) {
+        OMRing(percent: 42, size: .widget)
+        OMRing(percent: 42, size: .widget, showsLabel: false)
+    }
+    .padding()
 }
