@@ -38,3 +38,25 @@ final class OMAgentHistoryRowTests: XCTestCase {
         XCTAssertEqual(label, "Usage tracker, Claude Code, started 09:18, ran 3h 12m, 1 turn")
     }
 }
+
+/// The persisted source filter. The stored value is a raw string, so it has to
+/// survive a value written by a future build (or a hand-edited defaults plist).
+final class AgentsHistorySourceTests: XCTestCase {
+    func testAllMeansNoFilter() {
+        XCTAssertNil(AgentsHistoryView.selectedSource("all"))
+    }
+
+    func testAProviderIdSelectsThatSource() {
+        XCTAssertEqual(AgentsHistoryView.selectedSource("claude"), .claude)
+        XCTAssertEqual(AgentsHistoryView.selectedSource("codex"), .codex)
+    }
+
+    func testAnUnknownStoredValueFallsBackToAll() {
+        XCTAssertNil(AgentsHistoryView.selectedSource("antigravity"))
+        XCTAssertNil(AgentsHistoryView.selectedSource(""))
+    }
+
+    func testTheStoredKeyIsTheOneTheSpecFixed() {
+        XCTAssertEqual(AgentsHistoryView.sourceKey, "agentsHistorySource")
+    }
+}
