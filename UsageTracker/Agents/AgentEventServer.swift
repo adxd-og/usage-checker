@@ -6,11 +6,18 @@ import Foundation
 /// file's mode, does not unlink a stale file and leaves the file behind on cancel;
 /// here the file is `chmod 0600` before `listen()`, so there is never a moment when
 /// another local user could connect. One connection carries one message: read until
-/// "\n" / EOF / 64 KB / 1 s, decode, answer with the one-line reply, close.
+/// "\n" / EOF / 64 KB / 1 s, decode, answer, close.
 ///
-/// Threading: accept and reads run on `queue` (serial — hooks from one session are
-/// handed over in accept order); `onEvent` and both counters run on the main queue.
-/// The owner calls `stop()`; it is deliberately not called from `deinit`.
+/// Phase 4: every accepted peer is authenticated with `LOCAL_PEERCRED` (same uid or
+/// closed unanswered), and each connection is served on its own serial queue. A
+/// `PermissionRequest` that carries a request id is *held*: `onEvent` receives an
+/// unsettled `AgentReply`, and the connection's queue parks in `poll` until the reply
+/// is sent, the helper leaves, or `holdTimeout` passes — nothing else waits on it.
+/// Every other event is answered with `reply` on the spot, before `onEvent` runs.
+///
+/// Threading: accept runs on `queue` (serial); reads and holds on a per-connection
+/// queue; `onEvent` and the counters on the main queue. The owner calls `stop()`; it
+/// is deliberately not called from `deinit`.
 final class AgentEventServer: @unchecked Sendable {
     enum Error: Swift.Error, Equatable {
         case pathTooLong(Int)
@@ -23,12 +30,28 @@ final class AgentEventServer: @unchecked Sendable {
     /// Read budget per connection. The helper writes immediately after connecting;
     /// a client that stalls longer than this is counted as dropped.
     static let connectionTimeout: TimeInterval = 1.0
-    /// Sent after every message; the helper reads it only for PermissionRequest and
-    /// ignores its content in phase 2 (phase 4 will carry a decision here).
+    /// How long a held `PermissionRequest` connection may wait for `AgentReply.send`.
+    /// The helper gives up at the same 140 s; the broker's 120 s window sits inside
+    /// both (spec rule 5), so in practice this only fires if the broker is bypassed.
+    static let defaultHoldTimeout: TimeInterval = 140
+    /// Sent immediately for every event that is not held; the helper reads it only
+    /// for a `PermissionRequest` it did not tag with a request id (a v1 helper).
     static let reply = Data("{\"v\":1,\"decision\":null}\n".utf8)
 
+    /// Effective uid of the process on the other end of an accepted Unix socket, or
+    /// nil when the kernel will not say (not a socket, unsupported family).
+    static let localPeerUID: @Sendable (Int32) -> uid_t? = { fd in
+        var credentials = xucred()
+        var length = socklen_t(MemoryLayout<xucred>.size)
+        guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERCRED, &credentials, &length) == 0,
+              credentials.cr_version == UInt32(XUCRED_VERSION) else { return nil }
+        return credentials.cr_uid
+    }
+
     let socketURL: URL
-    private let onEvent: @Sendable (AgentEvent) -> Void
+    let holdTimeout: TimeInterval
+    private let peerUID: @Sendable (Int32) -> uid_t?
+    private let onEvent: @Sendable (AgentEvent, AgentReply) -> Void
     private let queue = DispatchQueue(label: "com.usagetracker.agent-socket")
     private var listenFD: Int32 = -1
     private var acceptSource: DispatchSourceRead?
@@ -37,12 +60,22 @@ final class AgentEventServer: @unchecked Sendable {
     /// is no longer ours and must survive our `stop()`.
     private var boundIdentity: FileIdentity?
 
-    /// Diagnostics (Settings → Agents, package 3). Main queue only.
+    /// Diagnostics (Settings → Agents). Main queue only. `rejectedPeerCount` is the
+    /// subset of `droppedCount` that failed the uid check.
     private(set) var receivedCount = 0
     private(set) var droppedCount = 0
+    private(set) var rejectedPeerCount = 0
 
-    init(socketURL: URL, onEvent: @escaping @Sendable (AgentEvent) -> Void) {
+    /// `peerUID` exists so tests can simulate a foreign peer; production uses `localPeerUID`.
+    init(
+        socketURL: URL,
+        holdTimeout: TimeInterval = AgentEventServer.defaultHoldTimeout,
+        peerUID: @escaping @Sendable (Int32) -> uid_t? = AgentEventServer.localPeerUID,
+        onEvent: @escaping @Sendable (AgentEvent, AgentReply) -> Void
+    ) {
         self.socketURL = socketURL
+        self.holdTimeout = holdTimeout
+        self.peerUID = peerUID
         self.onEvent = onEvent
     }
 
@@ -153,19 +186,27 @@ final class AgentEventServer: @unchecked Sendable {
         return address
     }
 
-    /// Drains every queued connection (the listening fd is non-blocking).
+    /// Drains every queued connection (the listening fd is non-blocking). Each one is
+    /// authenticated here and then handed to its own queue, so a held request never
+    /// stands between the next hook and its reply.
     private func acceptPending() {
         while listenFD >= 0 {
             let client = accept(listenFD, nil, nil)
             guard client >= 0 else { return }   // EAGAIN: nothing more queued
-            // SO_NOSIGPIPE comes from the listening socket by inheritance (see start).
-            serve(client)
-            close(client)
+            // SO_NOSIGPIPE and O_NONBLOCK come from the listening socket by inheritance.
+            guard peerUID(client) == getuid() else {
+                close(client)
+                rejectPeer()
+                continue
+            }
+            let connection = DispatchQueue(label: "com.usagetracker.agent-conn")
+            connection.async { [self] in serve(client) }
         }
     }
 
     // MARK: - One connection
 
+    /// Runs on the connection's own queue; owns `fd` until it returns.
     private func serve(_ fd: Int32) {
         var buffer = Data()
         var chunk = [UInt8](repeating: 0, count: 4096)
@@ -178,6 +219,7 @@ final class AgentEventServer: @unchecked Sendable {
             buffer.append(chunk, count: count)
             if buffer.count > Self.maxMessageBytes {
                 drop(reason: "over \(Self.maxMessageBytes / 1024) KB")
+                close(fd)
                 return
             }
             newline = buffer.firstIndex(of: 0x0A)
@@ -186,19 +228,53 @@ final class AgentEventServer: @unchecked Sendable {
         let message = newline.map { buffer.subdata(in: buffer.startIndex..<$0) } ?? buffer
         guard !message.isEmpty else {
             drop(reason: "empty")
+            close(fd)
             return
         }
         do {
             let event = try AgentEventDecoder.decode(message)
+            if event.kind == .permissionRequested, let requestID = event.requestID {
+                hold(fd, event: event, requestID: requestID)
+                return
+            }
             DispatchQueue.main.async { [self] in
                 receivedCount += 1
-                onEvent(event)
+                onEvent(event, AgentReply(requestID: nil))
             }
         } catch {
             // Error cases name a field at most — never the payload.
             drop(reason: String(describing: error))
         }
         _ = Self.reply.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        close(fd)
+    }
+
+    /// Parks this connection's queue — only this one — until the app answers, the
+    /// helper goes away, or the hold budget runs out. `AgentReply.send` shuts the
+    /// socket down, which is what wakes the poll; the descriptor is released here and
+    /// nowhere else.
+    private func hold(_ fd: Int32, event: AgentEvent, requestID: String) {
+        let reply = AgentReply(requestID: requestID, fd: fd)
+        DispatchQueue.main.async { [self] in
+            receivedCount += 1
+            onEvent(event, reply)
+        }
+        if Self.wait(fd, for: POLLIN, until: Date().addingTimeInterval(holdTimeout)) {
+            var byte: UInt8 = 0
+            _ = read(fd, &byte, 1)
+            reply.peerClosed()   // no-op when the wake-up was our own send()
+        } else {
+            reply.send(nil)      // budget exhausted: let the helper go without a decision
+        }
+        reply.closeDescriptor()
+    }
+
+    private func rejectPeer() {
+        NSLog("[UT] agent connection rejected: peer uid is not ours")
+        DispatchQueue.main.async { [self] in
+            droppedCount += 1
+            rejectedPeerCount += 1
+        }
     }
 
     private func drop(reason: String) {

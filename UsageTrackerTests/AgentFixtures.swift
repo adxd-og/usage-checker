@@ -58,16 +58,12 @@ extension AgentFixture {
     }
 }
 
-/// A blocking POSIX client mirroring what `omelette-hook` does: connect, write the
-/// bytes, optionally wait for one reply line, close. Returns the reply without its
-/// newline, or nil when the connection fails, nothing is written, or no reply arrives
-/// within `replyTimeout` (pass 0 to not wait).
+/// A blocking POSIX client mirroring what `omelette-hook` does.
 enum AgentSocketTestClient {
-    @discardableResult
-    static func send(_ line: Data, to path: String, replyTimeout: TimeInterval = 1) -> String? {
+    /// Connects to `path`. nil when nothing listens there.
+    private static func connect(to path: String) -> Int32? {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
-        defer { close(fd) }
         var one: Int32 = 1
         setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, socklen_t(MemoryLayout<Int32>.size))
 
@@ -81,29 +77,45 @@ enum AgentSocketTestClient {
         }
         let connected = withUnsafePointer(to: &address) { pointer in
             pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
+                Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size))
             }
         }
-        guard connected == 0 else { return nil }
+        guard connected == 0 else { close(fd); return nil }
+        return fd
+    }
 
+    /// Fire-and-forget or one-shot request: connect, write, half-close, optionally wait
+    /// for one reply line. Returns the reply without its newline, or nil when the
+    /// connection fails, nothing is written, or no reply arrives within `replyTimeout`
+    /// (pass 0 to not wait).
+    @discardableResult
+    static func send(_ line: Data, to path: String, replyTimeout: TimeInterval = 1) -> String? {
+        guard let fd = connect(to: path) else { return nil }
+        defer { close(fd) }
         let written = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
         // Half-close like the helper does (it closes outright when it wants no reply):
         // without it a line that carries no trailing "\n" would only reach the server
         // when its 1 s per-connection budget expires, i.e. after our own reply timeout.
         shutdown(fd, SHUT_WR)
         guard written == line.count, replyTimeout > 0 else { return nil }
-
-        var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
-        guard poll(&descriptor, 1, Int32(replyTimeout * 1000)) > 0 else { return nil }
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        let count = read(fd, &buffer, buffer.count)
-        guard count > 0 else { return nil }
-        return String(decoding: buffer[0..<count], as: UTF8.self).trimmingCharacters(in: .newlines)
+        return readLine(fd, timeout: replyTimeout)
     }
 
     @discardableResult
     static func send(_ line: String, to path: String, replyTimeout: TimeInterval = 1) -> String? {
         send(Data(line.utf8), to: path, replyTimeout: replyTimeout)
+    }
+
+    /// A held request: connect, write the line (which must end in "\n") and keep the
+    /// connection open exactly like the helper does for a `PermissionRequest` — no
+    /// half-close, because an EOF after the line is what "the helper left" looks like
+    /// to the server. Read the reply with `readLine`; close the fd yourself.
+    static func open(_ line: Data, to path: String) -> Int32? {
+        precondition(line.last == 0x0A, "a held line must end in a newline")
+        guard let fd = connect(to: path) else { return nil }
+        let written = line.withUnsafeBytes { write(fd, $0.baseAddress, $0.count) }
+        guard written == line.count else { close(fd); return nil }
+        return fd
     }
 }
 

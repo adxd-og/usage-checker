@@ -5,7 +5,7 @@ import XCTest
 /// so `AgentPaths.bundledHelperURL` (`Bundle.main/Contents/Helpers/omelette-hook`) is the
 /// binary the Embed Dependencies phase just copied and signed — no environment lookup needed.
 final class OmeletteHookEndToEndTests: XCTestCase {
-    private final class Box: @unchecked Sendable { var events: [AgentEvent] = [] }
+    private final class Box: @unchecked Sendable { var events: [AgentEvent] = []; var replies: [AgentReply] = [] }
 
     private var socketURL: URL!
     private var server: AgentEventServer?
@@ -27,7 +27,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
 
     private func startServer() throws {
         let box = self.box
-        let server = AgentEventServer(socketURL: socketURL) { box.events.append($0) }
+        let server = AgentEventServer(socketURL: socketURL) { event, reply in box.events.append(event); box.replies.append(reply) }
         try server.start()
         self.server = server
     }
