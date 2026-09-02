@@ -19,7 +19,9 @@ enum HookMain {
     static func run() -> Never {
         // Watchdog first: whatever blocks below, the agent gets its process back on time.
         DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(totalBudgetMilliseconds)) {
-            exit(0)
+            // _exit, not exit: the main thread may be blocked inside Foundation
+            // holding a lock, and atexit handlers would wait on it forever.
+            _exit(0)
         }
         let receivedAt = Date().timeIntervalSince1970
 
@@ -99,11 +101,23 @@ enum HookMain {
     }
 
     static func socketPath() -> String {
-        if let override = ProcessInfo.processInfo.environment[socketEnvironmentKey], !override.isEmpty {
-            return override
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        let production = home.appendingPathComponent("Library/Application Support/UsageTracker/agent.sock").path
+        guard let override = ProcessInfo.processInfo.environment[socketEnvironmentKey], !override.isEmpty else {
+            return production
         }
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Application Support/UsageTracker/agent.sock").path
+        // The override exists for the test suite. Anything that can set an
+        // environment variable on the agent's process (direnv, a devcontainer, a
+        // dependency's install script) must not be able to redirect hook payloads —
+        // which include tool inputs — to a socket of its choosing, so only paths in
+        // the per-user temp dir or Omelette's own App Support dir are honoured.
+        let candidate = URL(fileURLWithPath: override).standardizedFileURL.path
+        let allowedRoots = [
+            NSTemporaryDirectory(),
+            "/private" + NSTemporaryDirectory(),
+            home.appendingPathComponent("Library/Application Support/UsageTracker").path + "/",
+        ]
+        return allowedRoots.contains(where: { candidate.hasPrefix($0) }) ? override : production
     }
 }
 

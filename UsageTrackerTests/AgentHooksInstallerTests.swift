@@ -6,6 +6,8 @@ import XCTest
 final class AgentHooksInstallerTests: XCTestCase {
     private var root: URL!
     private let helper = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette-hook"
+    /// What the installer actually writes as the hook `command` (shell-quoted).
+    private var quotedHelper: String { AgentHooksInstaller.shellQuoted(helper) }
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -70,7 +72,7 @@ final class AgentHooksInstallerTests: XCTestCase {
         for event in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"] {
             let entry = try templateEntry(template, event)
             XCTAssertEqual(entry["type"] as? String, "command", event)
-            XCTAssertEqual(entry["command"] as? String, helper, event)
+            XCTAssertEqual(entry["command"] as? String, AgentHooksInstaller.shellQuoted(helper), event)
             XCTAssertEqual(entry["async"] as? Bool, true, "\(event) must never make Claude Code wait")
             XCTAssertNil(entry["timeout"], "\(event) is fire-and-forget; a timeout would be meaningless")
         }
@@ -84,6 +86,28 @@ final class AgentHooksInstallerTests: XCTestCase {
         let notification = try XCTUnwrap(template["Notification"] as? [[String: Any]])
         XCTAssertEqual(notification.compactMap { $0["matcher"] as? String }, ["permission_prompt", "idle_prompt"])
         XCTAssertEqual(try templateEntry(template, "Notification", matcher: "idle_prompt")["async"] as? Bool, true)
+    }
+
+    /// The hook `command` goes through `/bin/sh`, and the helper path contains a
+    /// space ("Application Support"). This runs the emitted command through a real
+    /// shell and checks the path comes out in one piece — the assertion that would
+    /// have caught an unquoted path.
+    func testTheEmittedCommandSurvivesTheShell() throws {
+        let weird = "/Users/o'brien/Library/Application Support/UsageTracker/bin/omelette-hook"
+        let entry = try templateEntry(AgentHooksInstaller.claudeTemplate(helperPath: weird), "Stop")
+        let command = try XCTUnwrap(entry["command"] as? String)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "printf '%s' \(command)"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        let output = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), weird)
     }
 
     func testPreviewIsTheJSONWeActuallyWrite() throws {
@@ -102,8 +126,8 @@ final class AgentHooksInstallerTests: XCTestCase {
         try AgentHooksInstaller.installClaude(settingsURL: settingsURL, helperPath: helper)
 
         let hooks = try hooksJSON(at: settingsURL)
-        XCTAssertEqual(commands(hooks, "SessionStart"), [helper])
-        XCTAssertEqual(commands(hooks, "Notification"), [helper, helper])
+        XCTAssertEqual(commands(hooks, "SessionStart"), [quotedHelper])
+        XCTAssertEqual(commands(hooks, "Notification"), [quotedHelper, quotedHelper])
         XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: AgentHooksInstaller.backupURL(for: settingsURL).path),
@@ -141,9 +165,9 @@ final class AgentHooksInstallerTests: XCTestCase {
         XCTAssertEqual(file["model"] as? String, "opus")
         XCTAssertNotNil(file["permissions"], "keys we know nothing about survive untouched")
         let hooks = try XCTUnwrap(file["hooks"] as? [String: Any])
-        XCTAssertEqual(commands(hooks, "PreToolUse"), ["/usr/local/bin/audit", helper], "different event, same event — both keep their owner")
-        XCTAssertEqual(commands(hooks, "SessionEnd"), ["/usr/local/bin/cleanup", helper])
-        XCTAssertEqual(commands(hooks, "Stop"), [helper])
+        XCTAssertEqual(commands(hooks, "PreToolUse"), ["/usr/local/bin/audit", quotedHelper], "different event, same event — both keep their owner")
+        XCTAssertEqual(commands(hooks, "SessionEnd"), ["/usr/local/bin/cleanup", quotedHelper])
+        XCTAssertEqual(commands(hooks, "Stop"), [quotedHelper])
         XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
     }
 
@@ -172,10 +196,10 @@ final class AgentHooksInstallerTests: XCTestCase {
 
         let hooks = try hooksJSON(at: settingsURL)
         XCTAssertEqual(
-            commands(hooks, "PreToolUse"), ["/usr/local/bin/audit", helper],
+            commands(hooks, "PreToolUse"), ["/usr/local/bin/audit", quotedHelper],
             "exactly one copy of ours; the foreign hook that shared the group is still there"
         )
-        XCTAssertEqual(commands(hooks, "Stop"), [helper])
+        XCTAssertEqual(commands(hooks, "Stop"), [quotedHelper])
         XCTAssertEqual(AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helper), .installed)
     }
 

@@ -38,9 +38,20 @@ struct PopoverView: View {
         let claudeSettings = AgentPaths.claudeSettingsURL
         let codexConfig = AgentPaths.codexConfigURL
         let statuses = await Task.detached(priority: .utility) { () -> (Bool, Bool) in
-            (
-                AgentHooksInstaller.claudeStatus(settingsURL: claudeSettings, helperPath: helperPath) == .installed,
-                AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath) == .installed
+            // "Satisfied" = nothing the popover's link could improve: installed,
+            // owned by another tool (conflict), or no config file at all because
+            // that CLI isn't on this machine. Only "not installed" / "outdated"
+            // earn the "Enable precise status" link.
+            func satisfied(_ status: HookInstallStatus, _ configURL: URL) -> Bool {
+                switch status {
+                case .installed, .conflict: return true
+                case .outdated: return false
+                case .notInstalled: return !FileManager.default.fileExists(atPath: configURL.path)
+                }
+            }
+            return (
+                satisfied(AgentHooksInstaller.claudeStatus(settingsURL: claudeSettings, helperPath: helperPath), claudeSettings),
+                satisfied(AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath), codexConfig)
             )
         }.value
         claudeHooksInstalled = statuses.0

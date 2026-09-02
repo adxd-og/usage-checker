@@ -48,11 +48,15 @@ final class AgentHistoryStore {
         if !fm.fileExists(atPath: directory.path) {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         }
-        guard let handle = try? FileHandle(forWritingTo: fileURL) else {
+        guard fm.fileExists(atPath: fileURL.path) else {
             // No file yet: one atomic write creates it with this first record.
             try data.write(to: fileURL, options: [.atomic])
             return
         }
+        // Any other open failure (EMFILE, permissions, an immutable flag) must
+        // propagate — falling back to the atomic write above would replace the
+        // whole log with a single record.
+        let handle = try FileHandle(forWritingTo: fileURL)
         defer { try? handle.close() }
         try handle.seekToEnd()
         try handle.write(contentsOf: data)
