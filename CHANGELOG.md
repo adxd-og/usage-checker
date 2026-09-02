@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.14.0] — unreleased
 
+### Added
+- **Agent Overview.** The popover lists your live Claude Code and Codex
+  sessions — grouped *Needs you / Working / Done / Idle* on the All tab, flat
+  on a provider tab — with the project, what the agent is doing, and how long
+  it has been in that state. Clicking a row brings its terminal tab back to
+  the front (Terminal.app and iTerm2 select the exact tab; other hosts are
+  activated; sessions without a host open their folder in Finder).
+- A menu-bar **agents pill**: grey with the session count when quiet, blue
+  while agents work, amber "N needs you" when one waits for approval. Toggle
+  in Settings → Agents.
+- **Notifications** when a session needs your approval (with an **Open**
+  action, replaces rather than stacks, withdrawn once you answer; ignores
+  quiet hours by default) and, opt-in, when a turn finishes.
+- **Settings → Agents**: one-click install/remove of the Claude Code hooks in
+  `~/.claude/settings.json` and the Codex `notify` line in `~/.codex/config.toml`,
+  with the exact JSON/TOML shown first, foreign entries preserved, a one-time
+  `.omelette-backup`, a conflict state when another tool owns Codex's `notify`,
+  and diagnostics (socket, helper version, events received/dropped, last event).
+  The welcome tour gained one optional card for the same switch.
+- Without hooks, sessions are still listed from the CLIs' own logs (marked
+  "≈", never "needs you"); hook data wins once installed.
+- A tiny `omelette-hook` helper ships inside the app and talks to it over a
+  local Unix socket (0600, 64 KB cap). It sends only session id, tool name, a
+  truncated tool summary, folder and host process info — never prompts or
+  file contents — and always exits 0 within 0.8 s, so agents never wait on it.
+- Finished sessions are summarised to `agent-sessions.jsonl` (project, start,
+  end, turns, approvals) for the upcoming dashboard history.
+
 ### Changed
 - New popover: an **All** tab with a tile per provider (ring for the leading
   window, bar for the weekly, plan) and a 7-day cost tile; provider tabs with a
