@@ -163,6 +163,44 @@ final class AgentHistoryStoreTests: XCTestCase {
         XCTAssertEqual(try store.load(), [])
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path), "an empty log is still a log")
     }
+
+    // MARK: - Rotation vs. append
+
+    /// The real shape of the race: rotation runs detached at launch while sessions
+    /// keep ending on the main actor. Unserialised, an append that lands between
+    /// rotation's read and its atomic rename is silently dropped — and a handle
+    /// opened before the rename writes into the unlinked inode.
+    func testAnAppendIsNeverLostToAConcurrentRotation() throws {
+        let url = fileURL
+        let store = AgentHistoryStore(fileURL: url)
+        // 2024-01-01: outside any 90-day window, so every rotation has something to
+        // drop and actually rewrites the file. The rewrite is the race.
+        let ancient = Date(timeIntervalSince1970: 1_704_100_000)
+        try store.append(record(id: "claude:ancient", endedAt: ancient))
+
+        let appendsDone = DispatchSemaphore(value: 0)
+        let group = DispatchGroup()
+        DispatchQueue.global(qos: .utility).async(group: group) {
+            // Its own store, exactly like the detached rotation at launch.
+            let rotator = AgentHistoryStore(fileURL: url)
+            let deadline = Date().addingTimeInterval(2) // safety net, never reached
+            while appendsDone.wait(timeout: .now()) == .timedOut, Date() < deadline {
+                try? rotator.rotate(keepDays: 90)
+            }
+        }
+
+        for i in 0..<50 {
+            try store.append(record(id: "claude:fresh\(i)", endedAt: Date()))
+            try store.append(record(id: "claude:old\(i)", endedAt: ancient))
+        }
+        appendsDone.signal()
+        group.wait()
+
+        // One last rotation so the assertion doesn't depend on which iteration the
+        // background loop stopped at.
+        try store.rotate(keepDays: 90)
+        XCTAssertEqual(try store.load().map(\.id), (0..<50).map { "claude:fresh\($0)" })
+    }
 }
 
 private extension String {
