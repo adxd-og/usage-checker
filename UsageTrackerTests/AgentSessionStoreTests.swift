@@ -313,6 +313,83 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(records.first?.needsYouCount, 1)
     }
 
+    // MARK: - Pending permission (phase 4)
+
+    func testSetPendingPermissionPatchesTheRowAndPublishes() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested), now: t0)
+        var emissions = 0
+        let cancellable = store.$sessions.dropFirst().sink { _ in emissions += 1 }
+        defer { cancellable.cancel() }
+
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
+        XCTAssertEqual(emissions, 1)
+
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        XCTAssertEqual(emissions, 1, "same value, no redraw")
+
+        store.setPendingPermission(id: nil, for: "claude:s1")
+        XCTAssertNil(store.sessions.first?.pendingPermissionID)
+        XCTAssertEqual(emissions, 2)
+    }
+
+    func testPendingPermissionSetBeforeTheSessionExistsLandsOnTheRow() {
+        // Bootstrap registers with the broker before applying the event, so the very
+        // first thing the store hears about a session can be its pending id.
+        let store = makeStore()
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        XCTAssertTrue(store.sessions.isEmpty, "remembering an id does not invent a row")
+
+        store.apply(event(.permissionRequested), now: t0)
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+        XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
+    }
+
+    func testPendingPermissionClearsWhenTheSessionLeavesNeedsYou() {
+        let leaving: [(AgentEvent.Kind, String)] = [
+            (.toolStarted, "tool started"), (.toolFinished, "tool finished"), (.promptSubmitted, "prompt"),
+            (.stop, "stop"), (.notificationIdle, "idle"), (.sessionStart, "session start"),
+        ]
+        for (kind, label) in leaving {
+            let store = makeStore()
+            store.apply(event(.permissionRequested), now: t0)
+            store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+            store.apply(event(kind), now: at(1))
+            XCTAssertNil(store.sessions.first?.pendingPermissionID, label)
+            // And it stays cleared: a later apply must not resurrect it from the map.
+            store.apply(event(.permissionRequested), now: at(2))
+            XCTAssertNil(store.sessions.first?.pendingPermissionID, "\(label): stale id came back")
+        }
+    }
+
+    func testPendingPermissionSurvivesEventsThatStayInNeedsYou() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested), now: t0)
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        store.apply(event(.notificationPermission), now: at(1))
+        XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
+        store.apply(event(.unknown("PreCompact")), now: at(2))
+        XCTAssertEqual(store.sessions.first?.pendingPermissionID, AgentFixture.requestID)
+    }
+
+    func testSessionEndForgetsThePendingPermission() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested), now: t0)
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        store.apply(event(.sessionEnd), now: at(1))
+        store.apply(event(.permissionRequested), now: at(2))
+        XCTAssertNil(store.sessions.first?.pendingPermissionID)
+    }
+
+    func testSetPendingPermissionForAnUnknownSessionIsHarmless() {
+        let store = makeStore()
+        store.setPendingPermission(id: nil, for: "claude:never")
+        store.setPendingPermission(id: "x", for: "claude:never")
+        store.setPendingPermission(id: nil, for: "claude:never")
+        XCTAssertTrue(store.sessions.isEmpty)
+    }
+
     // MARK: - Passive fixtures
 
     private func passive(
