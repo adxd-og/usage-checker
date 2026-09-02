@@ -45,13 +45,21 @@ struct OverviewView: View {
     @ViewBuilder
     private var heroCard: some View {
         if let service, let hero = WindowRanking.detailHero(for: service) {
-            OMHero(
-                hero: hero,
-                verdict: BurnVerdict.make(
-                    burn: dashboard.sessionBurn,
-                    sessionBuckets: service.buckets.filter { $0.kind == .session }
-                )
+            let verdict = BurnVerdict.make(
+                burn: dashboard.sessionBurn,
+                sessionBuckets: service.buckets.filter { $0.kind == .session }
             )
+            VStack(alignment: .leading, spacing: OMSpacing.xs) {
+                OMHero(hero: hero, verdict: verdict)
+                if verdict == nil {
+                    // Stale, absent or too-flat to extrapolate: the hero would say
+                    // nothing at all about the burn rate, so the burn card's own line
+                    // goes here instead.
+                    Text(Self.burnLine(burn: dashboard.sessionBurn, bucket: dashboard.burnBucket))
+                        .font(OMFont.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
             .dashboardCard(padding: 14)
         } else {
             burnCard
@@ -61,28 +69,39 @@ struct OverviewView: View {
     /// Titled after the window it actually predicts — with several providers a
     /// fixed "5-hour" was wrong for anyone whose leading window isn't five hours.
     private var burnCard: some View {
-        let burn = dashboard.sessionBurn
         let bucket = dashboard.burnBucket
-        let value: String = {
-            guard let burn else { return "Not enough data" }
-            guard let secs = burn.secondsToLimit else {
-                if burn.percentPerMinute > 0 { return "Stable" }
-                return "Idle"
-            }
-            return "Hit limit in \(formatDuration(secs))"
-        }()
-
         return HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(bucket.map { "\($0.label) burn rate" } ?? "Burn rate")
+                Text(Self.burnTitle(bucket))
                     .font(OMFont.body)
                     .foregroundStyle(.secondary)
-                Text(value).font(OMFont.bodyStrong)
+                Text(Self.burnValue(dashboard.sessionBurn)).font(OMFont.bodyStrong)
             }
             Spacer()
             OMRing(percent: bucket?.clampedPercent ?? 0, size: .medium)
         }
         .dashboardCard(padding: 14)
+    }
+
+    // MARK: - Burn-rate wording (pure, unit-tested)
+
+    /// Names the window the prediction is for; a provider with no ranked window
+    /// still gets an honest heading.
+    nonisolated static func burnTitle(_ bucket: UsageBucket?) -> String {
+        bucket.map { "\($0.label) burn rate" } ?? "Burn rate"
+    }
+
+    nonisolated static func burnValue(_ burn: BurnRatePrediction?) -> String {
+        guard let burn else { return "Not enough data" }
+        guard let secs = burn.secondsToLimit else {
+            return burn.percentPerMinute > 0 ? "Stable" : "Idle"
+        }
+        return "Hit limit in \(formatDuration(secs))"
+    }
+
+    /// The two lines of `burnCard` as one caption, for under the hero.
+    nonisolated static func burnLine(burn: BurnRatePrediction?, bucket: UsageBucket?) -> String {
+        "\(burnTitle(bucket)) · \(burnValue(burn))"
     }
 
     private var todayCard: some View {
@@ -167,7 +186,7 @@ struct OverviewView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func formatDuration(_ secs: TimeInterval) -> String {
+    nonisolated static func formatDuration(_ secs: TimeInterval) -> String {
         let s = max(0, secs)
         let h = Int(s / 3600)
         let m = Int((s.truncatingRemainder(dividingBy: 3600)) / 60)
@@ -183,6 +202,6 @@ struct OverviewView: View {
     private func formatRelative(_ date: Date) -> String {
         let delta = date.timeIntervalSinceNow
         if delta <= 0 || date >= Date.distantFuture.addingTimeInterval(-1) { return "—" }
-        return "in \(formatDuration(delta))"
+        return "in \(Self.formatDuration(delta))"
     }
 }

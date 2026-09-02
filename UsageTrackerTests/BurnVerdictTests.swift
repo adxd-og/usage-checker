@@ -36,3 +36,35 @@ final class BurnVerdictTests: XCTestCase {
         XCTAssertNil(BurnVerdict.make(burn: Fixture.prediction(secondsToLimit: 60, bucketId: "five_hour", isStale: true), sessionBuckets: [session], now: now))
     }
 }
+
+/// The line the Overview hero falls back to when `BurnVerdict.make` returns nil —
+/// stale prediction, no prediction, or growth too flat to extrapolate. Its wording is
+/// the pre-hero burn card's, verbatim, so those states stay visible.
+final class OverviewBurnLineTests: XCTestCase {
+    func testTheLineNamesTheWindowItPredicts() {
+        let bucket = Fixture.bucket(id: "five_hour", label: "5-hour", kind: .session)
+        XCTAssertEqual(
+            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: nil, percentPerMinute: 1), bucket: bucket),
+            "5-hour burn rate · Stable"
+        )
+    }
+
+    func testFlatGrowthReadsAsIdle() {
+        XCTAssertEqual(
+            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: nil, percentPerMinute: 0), bucket: nil),
+            "Burn rate · Idle"
+        )
+    }
+
+    func testNoPredictionAtAllSaysSo() {
+        XCTAssertEqual(OverviewView.burnLine(burn: nil, bucket: nil), "Burn rate · Not enough data")
+    }
+
+    func testAPredictedLimitKeepsTheOldWording() {
+        let bucket = Fixture.bucket(id: "five_hour", label: "Session", kind: .session)
+        XCTAssertEqual(
+            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: 2 * 3600 + 15 * 60), bucket: bucket),
+            "Session burn rate · Hit limit in 2h 15m"
+        )
+    }
+}
