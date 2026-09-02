@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widgets now share the app's ring and bar code instead of keeping their own.
 - The floating window shows the leading window as a ring with the next two under
   it, and how many agent sessions are running — amber when one needs you.
+- The dashboard remembers its last tab, and on the Agents tab ⌘1 · ⌘2 · ⌘3 switch
+  the All · Claude · Codex source filter.
 
 ## [2.0.0] — 2026-09-02
 
