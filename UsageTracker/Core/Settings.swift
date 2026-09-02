@@ -66,6 +66,7 @@ final class SettingsStore: ObservableObject {
         static let agentsNeedsYouBypassQuietHours = true
         static let agentsNotifyDone = false
         static let agentsShowInMenuBar = true
+        static let agentsAnswerPermissions = true
         static let agentsHooksPromptDismissed = false
         static let agentsHooksPromptNotified = false
 
@@ -126,6 +127,9 @@ final class SettingsStore: ObservableObject {
     @AppStorage("agentsNotifyDone") var agentsNotifyDone: Bool = Defaults.agentsNotifyDone
     /// The agents pill in the menu bar (count of live sessions).
     @AppStorage("agentsShowInMenuBar") var agentsShowInMenuBar: Bool = Defaults.agentsShowInMenuBar
+    /// Phase 4: hold a Claude Code permission request and offer Allow / Deny from
+    /// Omelette while the hosting terminal is not in front. Read by `PermissionBroker`.
+    @AppStorage("agentsAnswerPermissions") var agentsAnswerPermissions: Bool = Defaults.agentsAnswerPermissions
     /// "Not now" on the one-time hooks prompt. Hooks stay opt-in, so the answer
     /// is remembered and the row never asks again — a settings reset is the way back.
     @AppStorage("agentsHooksPromptDismissed") var agentsHooksPromptDismissed: Bool = Defaults.agentsHooksPromptDismissed
@@ -169,6 +173,7 @@ final class SettingsStore: ObservableObject {
         agentsNeedsYouBypassQuietHours = Defaults.agentsNeedsYouBypassQuietHours
         agentsNotifyDone = Defaults.agentsNotifyDone
         agentsShowInMenuBar = Defaults.agentsShowInMenuBar
+        agentsAnswerPermissions = Defaults.agentsAnswerPermissions
         agentsHooksPromptDismissed = Defaults.agentsHooksPromptDismissed
         agentsHooksPromptNotified = Defaults.agentsHooksPromptNotified
 
