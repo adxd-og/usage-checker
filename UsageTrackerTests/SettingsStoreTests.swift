@@ -49,6 +49,10 @@ final class SettingsStoreTests: XCTestCase {
         s.menuBarHiddenServicesRaw = "codex,gemini"
         s.menuBarNumberMode = .never
         s.hasSeenOnboarding = !SettingsStore.Defaults.hasSeenOnboarding
+        s.agentsNotifyNeedsYou = !SettingsStore.Defaults.agentsNotifyNeedsYou
+        s.agentsNeedsYouBypassQuietHours = !SettingsStore.Defaults.agentsNeedsYouBypassQuietHours
+        s.agentsNotifyDone = !SettingsStore.Defaults.agentsNotifyDone
+        s.agentsShowInMenuBar = !SettingsStore.Defaults.agentsShowInMenuBar
 
         // Preferences that live outside this object but are still preferences. Written
         // by key rather than through the state objects, so the scramble doesn't kick off
@@ -87,6 +91,10 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.menuBarHiddenServicesRaw, SettingsStore.Defaults.menuBarHiddenServicesRaw, message)
         XCTAssertEqual(s.menuBarNumberMode, SettingsStore.Defaults.menuBarNumberMode, message)
         XCTAssertEqual(s.hasSeenOnboarding, SettingsStore.Defaults.hasSeenOnboarding, message)
+        XCTAssertEqual(s.agentsNotifyNeedsYou, SettingsStore.Defaults.agentsNotifyNeedsYou, message)
+        XCTAssertEqual(s.agentsNeedsYouBypassQuietHours, SettingsStore.Defaults.agentsNeedsYouBypassQuietHours, message)
+        XCTAssertEqual(s.agentsNotifyDone, SettingsStore.Defaults.agentsNotifyDone, message)
+        XCTAssertEqual(s.agentsShowInMenuBar, SettingsStore.Defaults.agentsShowInMenuBar, message)
 
         XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
@@ -163,5 +171,16 @@ final class SettingsStoreTests: XCTestCase {
         settings.setShownInMenuBar("codex", true)
         XCTAssertTrue(settings.isShownInMenuBar("codex"))
         XCTAssertEqual(settings.menuBarHiddenServicesRaw, "")
+    }
+
+    @MainActor
+    func testTheAgentDefaultsAreTheOnesTheAgentsTabPromises() {
+        let settings = SettingsStore.shared
+        settings.resetToDefaults()
+
+        XCTAssertTrue(settings.agentsNotifyNeedsYou)
+        XCTAssertTrue(settings.agentsNeedsYouBypassQuietHours, "a session waiting for approval is the one alert worth waking you")
+        XCTAssertFalse(settings.agentsNotifyDone, "a notification per finished turn would be noise")
+        XCTAssertTrue(settings.agentsShowInMenuBar)
     }
 }
