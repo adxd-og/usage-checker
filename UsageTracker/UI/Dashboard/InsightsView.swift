@@ -200,10 +200,7 @@ struct InsightsView: View {
     }
 
     private func sectionLabel(_ text: String) -> some View {
-        Text(text.uppercased())
-            .font(.caption2.weight(.semibold))
-            .tracking(0.5)
-            .foregroundStyle(.secondary)
+        OMSectionHeader(title: text)
     }
 
     /// Answers "why is my session at 90%?" with what actually ran while the window
@@ -212,29 +209,23 @@ struct InsightsView: View {
     /// logs at all. The empty state says so rather than implying nothing happened.
     private func sessionWindowBlock(_ window: WindowUsage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Current session window")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("since \(window.start.formatted(date: .omitted, time: .shortened))")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            OMSectionHeader(
+                title: "Current session window",
+                trailing: "since \(window.start.formatted(date: .omitted, time: .shortened))"
+            )
 
             if window.isEmpty {
                 Text("No Claude Code activity in this window. Whatever the session limit is showing came from somewhere else — the Claude apps, or another machine on this account.")
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(String(format: "$%.2f", window.cost))
-                        .font(.title2.weight(.semibold))
+                        .font(OMFont.heroNumeral)
                         .monospacedDigit()
                     Text("\(window.turns) turns")
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.tertiary)
                 }
 
@@ -242,7 +233,7 @@ struct InsightsView: View {
                     Text(window.models.prefix(3)
                         .map { "\($0.model) " + String(format: "$%.2f", $0.cost) }
                         .joined(separator: "  ·  "))
-                        .font(.caption)
+                        .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                 }
 
@@ -258,26 +249,28 @@ struct InsightsView: View {
     private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("This week vs last week")
-                .font(.subheadline)
+                .font(OMFont.body)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(String(format: "$%.2f", wow.thisWeek))
-                    .font(.title2.weight(.semibold))
+                    .font(OMFont.heroNumeral)
                     .monospacedDigit()
                 if let delta = wow.deltaPercent, wow.lastWeek > 0 {
                     HStack(spacing: 2) {
                         Image(systemName: delta >= 0 ? "arrow.up.right" : "arrow.down.right")
                             .font(.system(size: 10, weight: .bold))
                         Text("\(abs(Int(delta.rounded())))%")
-                            .font(.subheadline.weight(.semibold))
+                            .font(OMFont.bodyStrong)
                             .monospacedDigit()
                     }
+                    // A direction, not a utilisation: up is more spend than last week,
+                    // which is not the same thing as being close to a limit.
                     .foregroundStyle(delta >= 0 ? Color.orange : Color.green)
                 }
             }
             HStack(spacing: 4) {
                 Text("Last week: " + String(format: "$%.2f", wow.lastWeek))
-                    .font(.caption)
+                    .font(OMFont.caption)
                     .foregroundStyle(.tertiary)
             }
         }
@@ -286,28 +279,19 @@ struct InsightsView: View {
 
     private func card(title: String, value: String, sub: String?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(.subheadline).foregroundStyle(.secondary)
+            Text(title).font(OMFont.body).foregroundStyle(.secondary)
             Text(value)
-                .font(.title2.weight(.semibold))
+                .font(OMFont.heroNumeral)
                 .lineLimit(2)
                 .truncationMode(.tail)
-            if let sub { Text(sub).font(.caption).foregroundStyle(.tertiary) }
+            if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
         }
         .dashboardCard()
     }
 
     private func projectsBlock(projects: [ProjectSummary]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Projects · last 30 days")
-                    .font(.caption2.weight(.semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Text("\(projects.count) total")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
+            OMSectionHeader(title: "Projects · last 30 days", trailing: "\(projects.count) total")
 
             let maxCost = projects.first?.totalCost ?? 1
             ForEach(projects.prefix(10)) { p in
@@ -321,12 +305,12 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text(p.displayName)
-                    .font(.subheadline.weight(.medium))
+                    .font(OMFont.bodyStrong)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
                 Text(String(format: "$%.2f", p.totalCost))
-                    .font(.subheadline.weight(.semibold))
+                    .font(OMFont.numeral)
                     .monospacedDigit()
             }
             HStack(spacing: 8) {
@@ -334,6 +318,8 @@ struct InsightsView: View {
                     ZStack(alignment: .leading) {
                         Capsule(style: .continuous)
                             .fill(.quaternary)
+                        // Dollars, not utilisation: the accent colour, never the
+                        // battery ramp — a big spend is not a warning.
                         Capsule(style: .continuous)
                             .fill(Color.accentColor)
                             .frame(width: geo.size.width * CGFloat(p.totalCost / max(maxCost, 0.01)))

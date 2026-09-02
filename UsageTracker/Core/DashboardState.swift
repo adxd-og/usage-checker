@@ -83,6 +83,10 @@ final class DashboardState: ObservableObject {
     @Published private(set) var quotaBuckets: [QuotaBucketInfo] = []
     @Published private(set) var isLoadingCLI = false
     @Published private(set) var isLoadingHistory = false
+    /// Finished agent sessions, for the dashboard's Agents tab. Not provider-scoped —
+    /// an agent run belongs to Claude Code or Codex, not to the usage provider the
+    /// picker is on — so switching providers neither clears nor reloads it.
+    @Published private(set) var agentRecords: [AgentSessionRecord] = []
     /// The provider picker's options — see `availableServices(recorded:snapshot:disabled:)`.
     @Published private(set) var availableServices: [String] = []
 
@@ -111,7 +115,8 @@ final class DashboardState: ObservableObject {
         }
     }
 
-    /// Everything on screen that belongs to one provider and no other.
+    /// Everything on screen that belongs to one provider and no other. `agentRecords`
+    /// is deliberately absent: agent runs are not a provider's data.
     private func clearProviderScopedState() {
         cliBreakdown = nil
         sessionWindow = nil
@@ -217,6 +222,9 @@ final class DashboardState: ObservableObject {
             await self.refreshHistory()
             await self.refreshCLI()
             await self.refreshDerived()
+            // Last: the usage charts are what the window opens on, and the agent log
+            // is a separate file nothing else on screen is waiting for.
+            await self.refreshAgentHistory()
         }
     }
 
@@ -410,5 +418,17 @@ final class DashboardState: ObservableObject {
         let usage = await aggregator.usage(from: start, to: end)
         guard canPublish(pass) else { return }
         sessionWindow = usage
+    }
+
+    /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation
+    /// alone, not `canPublish(_:)`: the log is not provider-scoped, so a pass started
+    /// under another provider's tab still holds the right answer.
+    func refreshAgentHistory(historyURL: URL = AgentPaths.historyURL) async {
+        let generation = refreshGeneration
+        let loaded = await Task.detached(priority: .utility) { () -> [AgentSessionRecord] in
+            (try? AgentHistoryStore(fileURL: historyURL).load()) ?? []
+        }.value
+        guard refreshGeneration == generation, !Task.isCancelled else { return }
+        agentRecords = loaded
     }
 }
