@@ -92,6 +92,77 @@ final class AgentHistoryStoreTests: XCTestCase {
         try store.append(record())
         XCTAssertEqual(try store.load().count, 1)
     }
+
+    // MARK: - Rotation
+
+    /// 2026-09-02 12:00:00 UTC.
+    private var rotationNow: Date { Date(timeIntervalSince1970: 1_788_350_400) }
+
+    func testRotationKeepsRecordsInsideTheWindow() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        // 2026-08-01 12:00 UTC — 32 days old, comfortably inside 90.
+        try store.append(record(id: "claude:recent", endedAt: Date(timeIntervalSince1970: 1_785_585_600)))
+        try store.rotate(keepDays: 90, now: rotationNow)
+        XCTAssertEqual(try store.load().map(\.id), ["claude:recent"])
+    }
+
+    func testRotationDropsRecordsOlderThanTheWindow() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        // 2026-01-01 12:00 UTC — 244 days old.
+        try store.append(record(id: "claude:ancient", endedAt: Date(timeIntervalSince1970: 1_767_268_800)))
+        try store.append(record(id: "claude:recent", endedAt: Date(timeIntervalSince1970: 1_785_585_600)))
+        try store.rotate(keepDays: 90, now: rotationNow)
+        XCTAssertEqual(try store.load().map(\.id), ["claude:recent"])
+    }
+
+    func testRotationIsMeasuredFromEndedAt() {
+        // A session that started before the window but ended inside it is kept.
+        let store = AgentHistoryStore(fileURL: fileURL)
+        XCTAssertNoThrow(try store.append(record(
+            id: "claude:marathon",
+            startedAt: Date(timeIntervalSince1970: 1_767_268_800),
+            endedAt: Date(timeIntervalSince1970: 1_788_000_000)
+        )))
+        XCTAssertNoThrow(try store.rotate(keepDays: 90, now: rotationNow))
+        XCTAssertEqual(try? store.load().map(\.id), ["claude:marathon"])
+    }
+
+    func testRotationDropsACorruptLineWithoutLosingTheGoodOnes() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        try store.append(record(id: "claude:good1", endedAt: Date(timeIntervalSince1970: 1_785_585_600)))
+        try "{not json at all\n".appendTo(fileURL)
+        try store.append(record(id: "claude:good2", endedAt: Date(timeIntervalSince1970: 1_785_589_200)))
+
+        try store.rotate(keepDays: 90, now: rotationNow)
+
+        let text = try String(contentsOf: fileURL, encoding: .utf8)
+        XCTAssertFalse(text.contains("not json"), "the rewrite is what finally clears it out")
+        XCTAssertEqual(try store.load().map(\.id), ["claude:good1", "claude:good2"])
+    }
+
+    func testRotationLeavesAHealthyLogByteIdentical() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        try store.append(record(id: "claude:recent", endedAt: Date(timeIntervalSince1970: 1_785_585_600)))
+        let before = try Data(contentsOf: fileURL)
+
+        try store.rotate(keepDays: 90, now: rotationNow)
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), before, "nothing to drop means nothing to write")
+    }
+
+    func testRotatingAMissingLogDoesNothingAndCreatesNoFile() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        XCTAssertNoThrow(try store.rotate(keepDays: 90, now: rotationNow))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: fileURL.path))
+    }
+
+    func testRotationCanEmptyTheLogEntirely() throws {
+        let store = AgentHistoryStore(fileURL: fileURL)
+        try store.append(record(id: "claude:ancient", endedAt: Date(timeIntervalSince1970: 1_767_268_800)))
+        try store.rotate(keepDays: 90, now: rotationNow)
+        XCTAssertEqual(try store.load(), [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path), "an empty log is still a log")
+    }
 }
 
 private extension String {
