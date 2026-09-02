@@ -20,7 +20,8 @@ struct OMRingRow: View {
                 .opacity(bucket.clampedPercent == 0 ? 0.55 : 1)
                 .help(helpText(bucket))
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(bucket.label), \(Int(bucket.clampedPercent.rounded())) percent used")
+                // The tooltip carries the reset time / empty hint; VoiceOver gets it too.
+                .accessibilityLabel("\(helpText(bucket)), \(Int(bucket.clampedPercent.rounded())) percent used")
             }
         }
     }

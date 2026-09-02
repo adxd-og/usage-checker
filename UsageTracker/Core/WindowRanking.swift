@@ -34,6 +34,14 @@ enum WindowRanking {
         return worst(of: rest)
     }
 
+    /// Session windows to list under the hero on a provider tab: every
+    /// `.session` bucket that is not the hero itself. Mid-week the weekly often
+    /// wins the hero contest, and the 5-hour window is the number people check
+    /// most — it must never vanish just because it is the calmer of the two.
+    static func sessionRows(for service: ServiceSnapshot, hero: UsageBucket?) -> [UsageBucket] {
+        service.buckets.filter { $0.kind == .session && $0.id != hero?.id }
+    }
+
     /// "All models" → "All", "Opus only" → "Opus"; other labels untouched.
     static func shortWindowLabel(_ label: String) -> String {
         if label == "All models" { return "All" }
@@ -56,6 +64,11 @@ enum WindowRanking {
         f.allowedUnits = [.day, .hour, .minute]
         f.maximumUnitCount = 2
         f.unitsStyle = .abbreviated
+        // The app's strings are English; pinning the locale keeps "2h 15m" stable
+        // on non-English machines (and makes the unit test deterministic).
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = Locale(identifier: "en_US_POSIX")
+        f.calendar = calendar
         return f.string(from: delta).map { "\($0) left" }
     }
 

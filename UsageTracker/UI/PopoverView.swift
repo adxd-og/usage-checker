@@ -254,6 +254,10 @@ private struct ProviderDetail: View {
     private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" } }
     private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" } }
     private var hero: UsageBucket? { WindowRanking.heroBucket(for: service) }
+    /// Session windows that lost the hero contest still get their own row —
+    /// mid-week the weekly is usually the hero, and the 5-hour number is the
+    /// one people check most.
+    private var sessionRows: [UsageBucket] { WindowRanking.sessionRows(for: service, hero: hero) }
     /// Weekly windows other than the one already shown as the hero.
     private var weeklyForRow: [UsageBucket] {
         let shown = visibleWeekly + (showUnusedWindows ? unusedWeekly : (unusedWeekly.count == 1 ? unusedWeekly : []))
@@ -282,6 +286,13 @@ private struct ProviderDetail: View {
                 // Pay-as-you-go without windows: the 7-day spend is the headline.
                 OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
             }
+            ForEach(sessionRows) { bucket in
+                OMKeyValueRow(
+                    label: bucket.label,
+                    value: Self.sessionRowValue(bucket),
+                    barPercent: bucket.clampedPercent
+                )
+            }
             if !weeklyForRow.isEmpty {
                 OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
                 OMRingRow(buckets: weeklyForRow)
@@ -304,6 +315,13 @@ private struct ProviderDetail: View {
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
             }
         }
+    }
+
+    /// "37% · 2h 15m left" — the row's trailing text for a non-hero session window.
+    nonisolated private static func sessionRowValue(_ bucket: UsageBucket) -> String {
+        let percent = "\(Int(bucket.clampedPercent.rounded()))%"
+        guard let remaining = WindowRanking.remainingText(until: bucket.resetsAt) else { return percent }
+        return "\(percent) · \(remaining)"
     }
 
     /// "resets in 2d 4h" for the all-models weekly; nil when unknown.

@@ -5,20 +5,19 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [1.14.0] — unreleased
 
 ### Changed
 - New popover: an **All** tab with a tile per provider (ring for the leading
   window, bar for the weekly, plan) and a 7-day cost tile; provider tabs with a
-  large session ring, weekly windows as rings, extra usage and cost rows. `All`
-  is the default tab.
+  large ring for the most-constrained window, the other session window as a
+  row, weekly windows as rings, extra usage and cost rows. `All` is the default
+  tab. With more than four providers the segments go icon-only.
 - Design system (`UI/DesignSystem/`): tokens, ring gauge with pace marker,
   segmented control, tiles, hero, section headers, chips.
-- Usage colours are now battery-style: green while comfortable, amber from 70 %,
-  red from 90 % (was accent blue below 70 %).
-- Dashboard overview ring and menu-bar pills use the same components/colours.
+- Usage colours are now battery-style everywhere — popover, dashboard, menu-bar
+  pills and the desktop widgets: green while comfortable, amber from 70 %, red
+  from 90 % (was accent blue below 70 %).
 
 ### Internal
 - `WindowRanking` and `BurnVerdict` extracted from the popover and unit-tested.

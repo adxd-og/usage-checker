@@ -465,11 +465,13 @@ struct ProgressBar: View {
     }
 }
 
-/// Battery-style status color, mirrors the main app's usageStatusColor.
+/// Battery-style status color, mirrors the main app's usageStatusColor
+/// (OMTokens.swift): green while comfortable, amber from 70 %, red from 90 %.
+/// Kept as a copy because the widget target doesn't compile the app's sources.
 func statusColor(_ percent: Double) -> Color {
     if percent >= 90 { return .red }
     if percent >= 70 { return .orange }
-    return .accentColor
+    return .green
 }
 
 #Preview("All providers") {

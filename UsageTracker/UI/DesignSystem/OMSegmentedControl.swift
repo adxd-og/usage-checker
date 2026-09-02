@@ -9,11 +9,15 @@ struct OMSegmentItem: Identifiable, Equatable {
 }
 
 /// Capsule segmented control ("All · Claude · Codex …"). The selected item is a
-/// glass capsule inside a GlassGroup so selection morphs between items on
-/// macOS 26; on 14+ it is a quiet material capsule.
+/// glass capsule inside a GlassGroup (a cross-fade between items on macOS 26);
+/// on 14+ it is a quiet material capsule. With more than four items the
+/// provider names no longer fit 360 pt, so those segments go icon-only — the
+/// name stays in the tooltip and the accessibility label.
 struct OMSegmentedControl: View {
     let items: [OMSegmentItem]
     @Binding var selection: String
+
+    private var showsTitles: Bool { items.count <= 4 }
 
     var body: some View {
         GlassGroup(spacing: 2) {
@@ -39,9 +43,12 @@ struct OMSegmentedControl: View {
                 if let serviceID = item.serviceID {
                     ProviderIconView(serviceID: serviceID, sfFallback: item.sfFallback, size: 12)
                 }
-                Text(item.title)
-                    .font(OMFont.caption.weight(.semibold))
-                    .lineLimit(1)
+                // "All" has no icon, so it always keeps its word.
+                if showsTitles || item.serviceID == nil {
+                    Text(item.title)
+                        .font(OMFont.caption.weight(.semibold))
+                        .lineLimit(1)
+                }
             }
             .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, 10)
