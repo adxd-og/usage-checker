@@ -13,7 +13,12 @@ actor CodexProvider: UsageProvider {
     /// would otherwise construct a fresh instance per refresh).
     static let shared = CodexProvider()
 
-    nonisolated let serviceID = "codex"
+    /// The id of every snapshot this provider builds. The popover maps a provider tab
+    /// to its agent rows with `AgentSource(rawValue: service.id)`, so this string has
+    /// to stay equal to `AgentSource.codex.rawValue` (AgentSourceServiceIDTests).
+    static let serviceID = "codex"
+
+    nonisolated var serviceID: String { CodexProvider.serviceID }
 
     /// Used as the default for the settings toggle: on for machines that have
     /// signed into the Codex CLI at least once, off otherwise.
@@ -89,7 +94,7 @@ actor CodexProvider: UsageProvider {
         let identity = usage.identity(for: .codex)
         NSLog("[UT] Codex fetch ok: %d window(s), plan=%@", buckets.count, identity?.loginMethod ?? "?")
         return ServiceSnapshot(
-            id: "codex",
+            id: CodexProvider.serviceID,
             displayName: "Codex",
             icon: icon,
             plan: identity?.loginMethod.map { "Codex \($0.capitalized)" } ?? "Codex",

@@ -174,7 +174,12 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     /// the past is the first thing a server-side filter would reject.
     static let userAgent = "claude-code/2.1.247"
 
-    let serviceID = "claude"
+    /// The id of every snapshot this provider builds. The popover maps a provider tab
+    /// to its agent rows with `AgentSource(rawValue: service.id)`, so this string has
+    /// to stay equal to `AgentSource.claude.rawValue` (AgentSourceServiceIDTests).
+    static let serviceID = "claude"
+
+    var serviceID: String { ClaudeOAuthProvider.serviceID }
     private let http: HTTPClient
     private let betaHeader: String
 
@@ -531,7 +536,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 extension ServiceSnapshot {
     static func notSignedIn(message: String, at date: Date) -> ServiceSnapshot {
         ServiceSnapshot(
-            id: "claude",
+            id: ClaudeOAuthProvider.serviceID,
             displayName: "Claude",
             icon: "sparkles",
             plan: nil,
@@ -547,7 +552,7 @@ extension ServiceSnapshot {
 
     static func errorState(message: String, at date: Date, retryAfter: TimeInterval? = nil) -> ServiceSnapshot {
         ServiceSnapshot(
-            id: "claude",
+            id: ClaudeOAuthProvider.serviceID,
             displayName: "Claude",
             icon: "sparkles",
             plan: nil,
