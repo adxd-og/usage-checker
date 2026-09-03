@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.2.1</title>
+      <pubDate>Thu, 03 Sep 2026 11:43:47 +0300</pubDate>
+      <sparkle:version>33</sparkle:version>
+      <sparkle:shortVersionString>2.2.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li>The <code>omelette-hook</code> helper retries its wait when a signal interrupts it during the decision window (a stop/continue of the terminal's process group, say). It could otherwise give up and hand the prompt back to the terminal while Omelette still showed <b>Allow</b> / <b>Deny</b>.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.2.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.2.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="j1TASsAMmP7oCJy/05G+/LSNCUKDdaKbmSph0a3RckRLeqNKuqvQuQGMs3T/CcWskCOC6SEH6tzrSaERF2q9CA=="
+        length="16050193"/>
+    </item>
+    <item>
       <title>Omelette v2.2.0</title>
       <pubDate>Wed, 02 Sep 2026 23:02:07 +0300</pubDate>
       <sparkle:version>32</sparkle:version>
