@@ -77,7 +77,7 @@ final class StatusBarController {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            AppState.shared.refreshNow()
+            AppState.shared.refreshForPopover()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
