@@ -2,7 +2,7 @@
 
 ![Omelette — AI usage at a glance](docs/banner.png)
 
-A native macOS menu bar widget that tracks your **AI coding limits** in real time — Claude session and weekly windows, Codex (OpenAI) limits, Antigravity/Gemini quotas, Enterprise spend limits, and local $ cost accounting. Built in SwiftUI with Liquid Glass styling for macOS 26 Tahoe.
+A native macOS menu bar widget that tracks your **AI coding limits** in real time — Claude session and weekly windows, Codex (OpenAI) limits, Antigravity/Gemini quotas, Grok (xAI) usage, Enterprise spend limits, and local $ cost accounting. Built in SwiftUI with Liquid Glass styling for macOS 26 Tahoe.
 
 > **Why "Omelette"?** While reverse-engineering the usage API we found that
 > Anthropic's internal codename for Claude Design is `omelette` (the weekly
@@ -37,6 +37,8 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
   local $ cost accounting from its session logs
 - **Antigravity / Gemini** — model-pool quotas from a running Antigravity
   (the Gemini-quota path for personal Google accounts), or Gemini CLI daily quotas
+- **Grok (xAI)** — billing-period credit usage from the local Grok CLI, falling
+  back to grok.com web billing when the CLI is unavailable
 - **Pay-as-you-go mode** — accounts without rate windows get a "$ spent" pill and
   an optional weekly budget with percentage bars and alerts
 - **Native notifications** at 80% and 95% (configurable thresholds) with quiet-hours support
@@ -55,15 +57,18 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
 
 ## How it works
 
-Reads the OAuth token that **Claude Code** stores in your macOS Keychain (item name `Claude Code-credentials`) and calls `https://api.anthropic.com/api/oauth/usage` — the same undocumented endpoint Claude Code itself uses for its `/usage` command and status line. Other providers are read the same reuse-what's-already-there way: the local Codex CLI's RPC server, a running Antigravity's local language server, or the Gemini CLI's Google sign-in.
+Reads the OAuth token that **Claude Code** stores in your macOS Keychain (item name `Claude Code-credentials`) and calls `https://api.anthropic.com/api/oauth/usage` — the same undocumented endpoint Claude Code itself uses for its `/usage` command and status line. Omelette never refreshes that token itself — Claude Code owns its own refresh cycle. Other providers are read the same reuse-what's-already-there way: the local Codex CLI's RPC server, a running Antigravity's local language server, the Gemini CLI's Google sign-in, or the local Grok CLI (with a grok.com fallback).
 
 The widget:
 - Uses **only your own credentials**, already obtained by the tools themselves — it never asks you to log in anywhere
-- Talks only to: `api.anthropic.com` / `console.anthropic.com` (usage + token refresh), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `github.com` + `adxd-og.github.io` (Sparkle update feed & DMG download), and localhost RPC for Codex/Antigravity
+- Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost reports if you add an Admin API key), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `grok.com` (Grok web-billing fallback, only if enabled), `github.com` + `adxd-og.github.io` (Sparkle update feed & DMG download), and local RPC to the Codex CLI or Antigravity's language server
 - Agent status comes from a tiny `omelette-hook` helper inside the app that Claude Code / Codex
   run on their hook events; it talks to Omelette over a local Unix socket (0600, 64 KB cap) and
   forwards only the session id, tool name, a truncated tool summary, folder and host process —
-  never prompts or file contents — and always exits 0 within 0.8 s, so agents never wait on it
+  never prompts or file contents. Every hook exits within 0.8 s except a Claude Code permission
+  request: since 2.2 the helper holds that one open for up to 140 s so Omelette can answer
+  Allow/Deny (or the terminal answers first), and it still fails safe — no reply from Omelette
+  ever means no decision reaches Claude Code
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
 - Open source end to end — audit anything above
@@ -73,7 +78,7 @@ The widget:
 - macOS 14 (Sonoma) or newer — Liquid Glass activates on macOS 26 Tahoe+
 - [Claude Code](https://docs.anthropic.com/claude-code) installed and signed in (`claude login`)
 - Works with Pro / Max / Team / Enterprise subscriptions **and** pay-as-you-go Enterprise accounts
-- Optional: Codex CLI (ChatGPT sign-in) and/or Antigravity for their providers
+- Optional: Codex CLI (ChatGPT sign-in), Gemini CLI or Antigravity (Google sign-in), and/or Grok CLI (xAI sign-in) for their providers
 
 ## Install
 
@@ -92,8 +97,8 @@ The widget:
 
 Open via the popover's gear icon (or `⌘,`):
 
-- **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity), update check
-- **Notifications** — threshold alerts, quiet hours, daily summary
+- **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity / Grok), update check
+- **Notifications** — threshold alerts, session-timing (burn-fast / reset-soon) alerts, quiet hours, daily summary
 - **Agents** — enable/remove the Claude Code hooks and the Codex `notify` line (with the exact
   JSON/TOML shown first), agent alert toggles, menu-bar pill toggle, the switch for answering
   permission requests with its pending / answered / expired counts, socket diagnostics
