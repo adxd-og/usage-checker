@@ -95,7 +95,12 @@ caption and the settings tests.
 Presence: `PresenceMonitor` (`UsageTracker/Agents/PresenceMonitor.swift`) observes
 `NSWorkspace.didActivateApplicationNotification`, screen lock/unlock and
 `NSWorkspace.screensDidSleepNotification`; exposes `func isUserAt(host: AgentHostInfo) -> Bool`
-(frontmost app's pid == host.pid, or bundle id match when pid is nil; false when locked/asleep)
+(frontmost app's pid == host.pid, or bundle id match when pid is nil; false when locked/asleep;
+**2.2.3:** also false when that app has no ordinary window on screen — minimised, hidden with ⌘H
+or on another Space — read from `CGWindowListCopyWindowInfo(.optionOnScreenOnly)` by owner pid
+and layer 0, failing open to "visible" if the list is unreadable. Because un-minimising fires no
+NSWorkspace notification, the broker re-asks `isUserAt` once a second while anything is held
+and releases holds whose terminal became visible.)
 and `var onActivation: ((NSRunningApplication) -> Void)?` that the broker uses to
 `releaseAll(for:)` sessions hosted by the activated app. Pure decision:
 `PermissionBroker.shouldHold(userAtHost: Bool, featureEnabled: Bool, hasHost: Bool) -> Bool`.

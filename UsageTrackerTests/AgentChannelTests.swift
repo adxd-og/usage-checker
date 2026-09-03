@@ -138,7 +138,7 @@ final class AgentChannelTests: XCTestCase {
 
     private func makeStoreAndBroker(userAway: Bool = true) -> (AgentSessionStore, PermissionBroker) {
         let store = AgentSessionStore(historyURL: historyURL)
-        let presence = PresenceMonitor(frontmost: { userAway ? (1, "com.other") : (4242, "com.googlecode.iterm2") })
+        let presence = PresenceMonitor(frontmost: { userAway ? (1, "com.other") : (4242, "com.googlecode.iterm2") }, hostHasVisibleWindow: { _ in true })
         let broker = PermissionBroker(store: store, presence: presence, featureEnabled: { true })
         return (store, broker)
     }

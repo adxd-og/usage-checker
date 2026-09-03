@@ -27,7 +27,7 @@ final class PresenceMonitorTests: XCTestCase {
     }
 
     func testIsUserAtHostIsFalseWhenLockedOrAsleep() {
-        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") })
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") }, hostHasVisibleWindow: { _ in true })
         XCTAssertTrue(monitor.isUserAt(host: iterm))
         monitor.setLocked(true)
         XCTAssertFalse(monitor.isUserAt(host: iterm), "a locked screen means nobody is at the terminal")
@@ -39,7 +39,7 @@ final class PresenceMonitorTests: XCTestCase {
     }
 
     func testInjectedLockStateWinsOverTheTrackedOne() {
-        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") }, isLockedOrAsleep: { true })
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") }, isLockedOrAsleep: { true }, hostHasVisibleWindow: { _ in true })
         XCTAssertTrue(monitor.isLockedOrAsleep)
         XCTAssertFalse(monitor.isUserAt(host: iterm))
     }
@@ -47,7 +47,7 @@ final class PresenceMonitorTests: XCTestCase {
     func testFrontmostIsReadAtCallTimeNotAtInit() {
         final class Front: @unchecked Sendable { var value: PresenceMonitor.Frontmost? = (1, "com.other") }
         let front = Front()
-        let monitor = PresenceMonitor(frontmost: { front.value })
+        let monitor = PresenceMonitor(frontmost: { front.value }, hostHasVisibleWindow: { _ in true })
         XCTAssertFalse(monitor.isUserAt(host: iterm))
         front.value = (4242, "com.googlecode.iterm2")
         XCTAssertTrue(monitor.isUserAt(host: iterm))
@@ -56,7 +56,7 @@ final class PresenceMonitorTests: XCTestCase {
     func testUnlockAndWakeReportTheFrontmostAppAsAnActivation() {
         // The app that was in front before the lock is in front again afterwards;
         // a hold that only existed because of the lock must hear about it.
-        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") })
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") }, hostHasVisibleWindow: { _ in true })
         var seen: [PresenceMonitor.Frontmost] = []
         monitor.onActivation = { seen.append($0) }
 
@@ -75,7 +75,7 @@ final class PresenceMonitorTests: XCTestCase {
     }
 
     func testUnlockWhileStillAsleepReportsNothing() {
-        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") })
+        let monitor = PresenceMonitor(frontmost: { (4242, "com.googlecode.iterm2") }, hostHasVisibleWindow: { _ in true })
         var count = 0
         monitor.onActivation = { _ in count += 1 }
         monitor.setAsleep(true)
@@ -84,6 +84,40 @@ final class PresenceMonitorTests: XCTestCase {
         XCTAssertEqual(count, 0, "the display is still off; nobody is at the terminal yet")
         monitor.setAsleep(false)
         XCTAssertEqual(count, 1)
+    }
+
+    func testAFrontmostHostWithNoWindowOnScreenDoesNotCountAsPresent() {
+        // Minimised, hidden with ⌘H, or on another Space: iTerm2 is still the
+        // frontmost *application*, but the user cannot see the terminal.
+        final class Visibility { var on = false }
+        let visibility = Visibility()
+        let monitor = PresenceMonitor(
+            frontmost: { (4242, "com.googlecode.iterm2") },
+            hostHasVisibleWindow: { _ in visibility.on }
+        )
+        XCTAssertFalse(monitor.isUserAt(host: iterm))
+        visibility.on = true
+        XCTAssertTrue(monitor.isUserAt(host: iterm))
+    }
+
+    func testVisibilityIsAskedForTheHostPIDOrElseTheFrontmostOne() {
+        final class Asked { var pids: [Int32] = [] }
+        let asked = Asked()
+        let monitor = PresenceMonitor(
+            frontmost: { (77, "com.apple.Terminal") },
+            hostHasVisibleWindow: { asked.pids.append($0); return true }
+        )
+        XCTAssertTrue(monitor.isUserAt(host: AgentHostInfo(pid: 77, bundleID: nil, tty: nil)))
+        XCTAssertTrue(monitor.isUserAt(host: AgentHostInfo(pid: nil, bundleID: "com.apple.Terminal", tty: nil)))
+        XCTAssertEqual(asked.pids, [77, 77], "a bundle-only host is checked through the frontmost app's pid")
+        XCTAssertFalse(monitor.isUserAt(host: AgentHostInfo(pid: 1, bundleID: nil, tty: nil)))
+        XCTAssertEqual(asked.pids.count, 2, "no window check for a host that is not in front at all")
+    }
+
+    func testTheSystemWindowCheckReportsNoWindowForAPidThatOwnsNone() {
+        // The test host runs with a window server, so the list is readable and a
+        // pid that certainly exists nowhere owns nothing on screen.
+        XCTAssertFalse(PresenceMonitor.systemHasVisibleWindow(pid: Int32.max))
     }
 
     func testActivationNotificationsReachOnActivationAfterStart() {

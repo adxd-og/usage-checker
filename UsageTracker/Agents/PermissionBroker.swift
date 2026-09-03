@@ -55,10 +55,12 @@ final class PermissionBroker: ObservableObject {
         var expiry: Task<Void, Never>?
     }
     private var held: [String: Held] = [:]
+    private var presenceRecheck: Task<Void, Never>?
     private let store: AgentSessionStore
     private let presence: PresenceMonitor
     private let featureEnabled: @MainActor () -> Bool
     private let holdWindow: TimeInterval
+    private let recheckInterval: TimeInterval
 
     /// `featureEnabled` is `@MainActor` so the default (a static of this class) and
     /// test closures reading main-actor state pass without losing the actor; it is
@@ -67,12 +69,14 @@ final class PermissionBroker: ObservableObject {
         store: AgentSessionStore = .shared,
         presence: PresenceMonitor = .shared,
         featureEnabled: @escaping @MainActor () -> Bool = PermissionBroker.featureIsUsable,
-        holdWindow: TimeInterval = PermissionBroker.holdWindow
+        holdWindow: TimeInterval = PermissionBroker.holdWindow,
+        recheckInterval: TimeInterval = 1
     ) {
         self.store = store
         self.presence = presence
         self.featureEnabled = featureEnabled
         self.holdWindow = holdWindow
+        self.recheckInterval = recheckInterval
         presence.onActivation = { [weak self] front in
             self?.hostActivated(front)
         }
@@ -143,7 +147,28 @@ final class PermissionBroker: ObservableObject {
             self?.expire(id: id)
         }
         NSLog("[UT] permission held request=%@ session=%@", String(id.prefix(8)), String(event.sessionID.prefix(8)))
+        startPresenceRecheckIfNeeded()
         onPending?(request)
+    }
+
+    /// Activation is the fast path; this is the slow one. Un-minimising a window,
+    /// un-hiding the app with ⌘H or switching Spaces changes nothing NSWorkspace
+    /// announces, so while anything is held the presence rule is asked again once
+    /// a second and a hold whose terminal became visible goes back to it.
+    private func startPresenceRecheckIfNeeded() {
+        guard presenceRecheck == nil else { return }
+        presenceRecheck = Task { [weak self, recheckInterval] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: UInt64(recheckInterval * 1_000_000_000))
+                guard !Task.isCancelled else { return }
+                self?.recheckPresence()
+            }
+        }
+    }
+
+    private func recheckPresence() {
+        let ids = held.filter { presence.isUserAt(host: $0.value.host) }.map(\.key)
+        for id in ids { release(id: id) }
     }
 
     /// User action. Idempotent: a second click, or a click after expiry, does nothing.
@@ -200,6 +225,10 @@ final class PermissionBroker: ObservableObject {
         entry.reply.send(decision)
         let request = pending.remove(at: index)
         store.setPendingPermission(id: nil, for: request.sessionID)
+        if held.isEmpty {
+            presenceRecheck?.cancel()
+            presenceRecheck = nil
+        }
         NSLog("[UT] permission resolved request=%@ %@", String(id.prefix(8)), String(describing: resolution))
         onResolved?(request, resolution)
     }

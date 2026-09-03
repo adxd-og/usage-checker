@@ -5,6 +5,15 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.3] — unreleased
+
+### Fixed
+- A minimised or hidden terminal (or one on another Space) now counts as "not in
+  front": macOS still calls it the frontmost app, so a permission request used to
+  go straight back to a terminal you could not see. While a request is held,
+  Omelette re-checks once a second and releases it the moment the terminal
+  becomes visible again.
+
 ## [2.2.2] — 2026-09-03
 
 ### Changed
