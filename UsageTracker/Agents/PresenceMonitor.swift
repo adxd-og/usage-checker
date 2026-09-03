@@ -22,16 +22,19 @@ final class PresenceMonitor {
 
     private let frontmost: @MainActor () -> Frontmost?
     private let lockedOrAsleepOverride: (@MainActor () -> Bool)?
+    private let hostHasVisibleWindow: @MainActor (Int32) -> Bool
     private var locked = false
     private var asleep = false
     private var observers: [NSObjectProtocol] = []
 
     init(
         frontmost: @escaping @MainActor () -> Frontmost? = PresenceMonitor.systemFrontmost,
-        isLockedOrAsleep: (@MainActor () -> Bool)? = nil
+        isLockedOrAsleep: (@MainActor () -> Bool)? = nil,
+        hostHasVisibleWindow: @escaping @MainActor (Int32) -> Bool = PresenceMonitor.systemHasVisibleWindow
     ) {
         self.frontmost = frontmost
         self.lockedOrAsleepOverride = isLockedOrAsleep
+        self.hostHasVisibleWindow = hostHasVisibleWindow
     }
 
     static func systemFrontmost() -> Frontmost? {
@@ -39,13 +42,35 @@ final class PresenceMonitor {
         return (app.processIdentifier, app.bundleIdentifier)
     }
 
+    /// Whether `pid` owns at least one ordinary window that is on screen right now.
+    /// Minimising the terminal, hiding it with ⌘H or leaving it on another Space
+    /// keeps the app *frontmost* as far as NSWorkspace is concerned, yet the user
+    /// cannot see it — and a request released into an invisible terminal just
+    /// stalls. Window owner and layer are public window-list fields (no screen
+    /// recording permission involved). If the list cannot be read at all, the
+    /// answer is "visible": the old, release-happy behaviour, never a stuck hold.
+    static func systemHasVisibleWindow(pid: Int32) -> Bool {
+        guard let windows = CGWindowListCopyWindowInfo(
+            [.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID
+        ) as? [[String: Any]] else { return true }
+        return windows.contains { info in
+            (info[kCGWindowOwnerPID as String] as? NSNumber)?.int32Value == pid
+                && (info[kCGWindowLayer as String] as? NSNumber)?.intValue == 0
+        }
+    }
+
     var isLockedOrAsleep: Bool { lockedOrAsleepOverride?() ?? (locked || asleep) }
 
     /// Spec: frontmost app's pid == host.pid, or bundle id match when the host has no
-    /// pid; false whenever the screen is locked or asleep.
+    /// pid; false whenever the screen is locked or asleep — and, since 2.2.3, false
+    /// when that frontmost app has no window on screen (minimised, hidden, other
+    /// Space). A host without any pid is taken at its word.
     func isUserAt(host: AgentHostInfo) -> Bool {
         guard !isLockedOrAsleep else { return false }
-        return Self.matches(frontmost: frontmost(), host: host)
+        let front = frontmost()
+        guard Self.matches(frontmost: front, host: host) else { return false }
+        guard let pid = host.pid ?? front?.pid else { return true }
+        return hostHasVisibleWindow(pid)
     }
 
     /// The pure rule. A pid, when the host reported one, must match exactly — the

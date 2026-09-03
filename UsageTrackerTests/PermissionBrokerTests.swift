@@ -9,6 +9,7 @@ final class PermissionBrokerTests: XCTestCase {
     private var presence: PresenceMonitor!
     private var frontmost: PresenceMonitor.Frontmost? = (1, "com.other.app")   // "the user is elsewhere"
     private var featureEnabled = true
+    private var hostVisible = true
     private var peers: [Int32] = []
     private let t0 = Date(timeIntervalSince1970: 1_800_000_000)
     private let iterm = AgentHostInfo(pid: 4242, bundleID: "com.googlecode.iterm2", tty: "/dev/ttys004")
@@ -20,7 +21,7 @@ final class PermissionBrokerTests: XCTestCase {
             .appendingPathComponent("PermissionBrokerTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         store = AgentSessionStore(historyURL: directory.appendingPathComponent("agent-sessions.jsonl"))
-        presence = PresenceMonitor(frontmost: { [weak self] in self?.frontmost })
+        presence = PresenceMonitor(frontmost: { [weak self] in self?.frontmost }, hostHasVisibleWindow: { [weak self] _ in self?.hostVisible ?? true })
     }
 
     override func tearDown() async throws {
@@ -29,8 +30,8 @@ final class PermissionBrokerTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
-    private func makeBroker(holdWindow: TimeInterval = PermissionBroker.holdWindow) -> PermissionBroker {
-        PermissionBroker(store: store, presence: presence, featureEnabled: { [weak self] in self?.featureEnabled ?? true }, holdWindow: holdWindow)
+    private func makeBroker(holdWindow: TimeInterval = PermissionBroker.holdWindow, recheckInterval: TimeInterval = 1) -> PermissionBroker {
+        PermissionBroker(store: store, presence: presence, featureEnabled: { [weak self] in self?.featureEnabled ?? true }, holdWindow: holdWindow, recheckInterval: recheckInterval)
     }
 
     private func event(host: AgentHostInfo? = nil, sessionID: String = "s1", requestID: String = AgentFixture.requestID) -> AgentEvent {
@@ -312,6 +313,31 @@ final class PermissionBrokerTests: XCTestCase {
 
         broker.answer(id: AgentFixture.requestID, .deny)
         XCTAssertTrue(broker.pending.isEmpty, "no phantom row survives the answer")
+    }
+
+    func testAMinimisedTerminalIsHeldAndUnminimisingReleasesOnTheRecheck() async throws {
+        // iTerm2 is frontmost the whole time; only its window comes and goes.
+        frontmost = (4242, "com.googlecode.iterm2")
+        hostVisible = false
+        let broker = makeBroker(recheckInterval: 0.05)
+        var resolved: [PermissionResolution] = []
+        broker.onResolved = { resolved.append($1) }
+        let (reply, peer) = reply()
+        broker.register(event: event(), reply: reply, session: nil, now: t0)
+        XCTAssertEqual(broker.pending.count, 1, "no window on screen: the user is not at the terminal")
+
+        try await Task.sleep(nanoseconds: 150_000_000)
+        XCTAssertEqual(broker.pending.count, 1, "still hidden: the recheck leaves the hold alone")
+
+        hostVisible = true
+        for _ in 0..<40 where !broker.pending.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertTrue(broker.pending.isEmpty, "the terminal is visible again: released without a decision")
+        XCTAssertEqual(resolved, [.releasedForPresence])
+        XCTAssertEqual(broker.releasedForPresenceCount, 1)
+        XCTAssertEqual(line(peer), #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":null}"#)
     }
 
     func testActivatingTheHostAppReleasesItsSessions() {
