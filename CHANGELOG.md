@@ -5,9 +5,14 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.2.3] — unreleased
+## [2.2.3] — 2026-09-03
 
 ### Fixed
+- **Codex showed as signed out with Codex CLI 0.149 and newer.** The CLI dropped
+  the `untrusted` approval policy that the usage probe passed on its command
+  line, so the probe died before saying hello. The probe no longer passes an
+  approval policy at all (it only reads rate limits). The fix lives in a small
+  fork of CodexBarCore pinned by the app until the next upstream bump.
 - A minimised or hidden terminal (or one on another Space) now counts as "not in
   front": macOS still calls it the frontmost app, so a permission request used to
   go straight back to a terminal you could not see. While a request is held,

@@ -15,12 +15,16 @@ packages:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.6.0
   # CodexBar's UI-free core (MIT, Peter Steinberger) — multi-strategy provider
-  # fetchers + models.dev pricing. Pinned to the v0.41.0 commit: 0.x APIs break
-  # without notice, and a tag pin is impossible anyway (their graph contains a
-  # branch-based dependency, which SPM forbids under stable-version consumers).
+  # fetchers + models.dev pricing. Temporarily pinned to adxd-og/CodexBar, branch
+  # omelette-2.2 = upstream a83a83fa (v0.41.0) + one commit that drops the
+  # `-a untrusted` argument Codex CLI 0.149+ rejects (same fix as upstream #3118).
+  # Provenance: diff vs a83a83fa is 2 files, +3/-5 lines, nothing else. Next step
+  # is a real bump to upstream main, after which this fork goes away. 0.x APIs
+  # break without notice, and a tag pin is impossible anyway (their graph
+  # contains a branch-based dependency, which SPM forbids under stable consumers).
   CodexBar:
-    url: https://github.com/steipete/CodexBar
-    revision: a83a83fa4131bfbfbb62a1a8fc565fcb597ba173
+    url: https://github.com/adxd-og/CodexBar
+    revision: 548a2f81287e7865217ad8a397f7748e8720b81b
   # Global hotkey recording + dispatch. Already in CodexBar's own graph, so the
   # resolved version is shared rather than duplicated.
   KeyboardShortcuts:
@@ -101,8 +105,8 @@ targets:
     settings:
       base:
         PRODUCT_NAME: Omelette
-        MARKETING_VERSION: "2.2.2"
-        CURRENT_PROJECT_VERSION: "34"
+        MARKETING_VERSION: "2.2.3"
+        CURRENT_PROJECT_VERSION: "35"
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: NO
@@ -156,8 +160,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "2.2.2"
-        CURRENT_PROJECT_VERSION: "34"
+        MARKETING_VERSION: "2.2.3"
+        CURRENT_PROJECT_VERSION: "35"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO
