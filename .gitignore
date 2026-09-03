@@ -59,3 +59,7 @@ notarization/
 
 # Superpowers SDD scratch (briefs, reports, progress ledger)
 .superpowers/
+
+# Internal planning docs (specs, plans, review notes) stay local; only the
+# update feed and the README banner are published under docs/.
+docs/superpowers/
