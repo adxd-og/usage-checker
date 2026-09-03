@@ -6,6 +6,27 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.2.3</title>
+      <pubDate>Thu, 03 Sep 2026 14:15:16 +0300</pubDate>
+      <sparkle:version>35</sparkle:version>
+      <sparkle:shortVersionString>2.2.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Codex showed as signed out with Codex CLI 0.149 and newer.</b> The CLI dropped the <code>untrusted</code> approval policy that the usage probe passed on its command line, so the probe died before saying hello. The probe no longer passes an approval policy at all (it only reads rate limits). The fix lives in a small fork of CodexBarCore pinned by the app until the next upstream bump.</li>
+<li>A minimised or hidden terminal (or one on another Space) now counts as "not in front": macOS still calls it the frontmost app, so a permission request used to go straight back to a terminal you could not see. While a request is held, Omelette re-checks once a second and releases it the moment the terminal becomes visible again.</li>
+<li>Opening the popover no longer forces a fresh poll if the last one is under ten seconds old, and it now respects a server <code>Retry-After</code>. Opening it a few times in a row could drive Anthropic's usage endpoint into a burst of 429s.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.2.3">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.2.3/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="p7+N32FSMH/IqTEH1QjDvNYt2ktD7IwHzGrWRd5cVP5/bp0BoECoWFfFb5gGmaAIS1smc7jruyWLSAlxmVsRDw=="
+        length="16059873"/>
+    </item>
+    <item>
       <title>Omelette v2.2.2</title>
       <pubDate>Thu, 03 Sep 2026 12:33:50 +0300</pubDate>
       <sparkle:version>34</sparkle:version>
