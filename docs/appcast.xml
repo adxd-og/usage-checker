@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.2.2</title>
+      <pubDate>Thu, 03 Sep 2026 12:33:50 +0300</pubDate>
+      <sparkle:version>34</sparkle:version>
+      <sparkle:shortVersionString>2.2.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Changed</h3>
+<ul>
+<li><b>Install this one by hand.</b> The project moved to <code>github.com/adxd-og/usage-checker</code> and its update feed to <code>adxd-og.github.io</code>; GitHub does not redirect the old feed address, so builds up to 2.2.1 can no longer see new versions. Download the DMG once — from 2.2.2 on, automatic updates work again.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.2.2">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.2.2/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="KzRmVsr1OneFLksKD69BrMrGYQA9AKkvUUDvGcUiPU9QydbHDOYs9lr4UHcQ/E1u5T2hzsd0FpCaLhohtHvbBQ=="
+        length="16044975"/>
+    </item>
+    <item>
       <title>Omelette v2.2.1</title>
       <pubDate>Thu, 03 Sep 2026 11:43:47 +0300</pubDate>
       <sparkle:version>33</sparkle:version>
