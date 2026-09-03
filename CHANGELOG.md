@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   go straight back to a terminal you could not see. While a request is held,
   Omelette re-checks once a second and releases it the moment the terminal
   becomes visible again.
+- Opening the popover no longer forces a fresh poll if the last one is under ten
+  seconds old, and it now respects a server `Retry-After`. Opening it a few times
+  in a row could drive Anthropic's usage endpoint into a burst of 429s.
 
 ## [2.2.2] — 2026-09-03
 

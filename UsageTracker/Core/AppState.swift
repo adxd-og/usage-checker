@@ -80,6 +80,24 @@ final class AppState: ObservableObject {
     /// (one deliberate request isn't a hammer — a re-enabled provider used to
     /// stay invisible for up to the backoff/interval because of this). The
     /// timer passes `userInitiated: false` and keeps honoring the backoff.
+    /// Opening the popover is not a reason to ignore a 429 backoff or to hit the
+    /// usage endpoint again seconds after the last poll: opening and closing it a
+    /// few times while debugging is exactly how the endpoint was driven into a
+    /// burst of 429s on 2026-09-03. Ten seconds keeps "open = fresh" true in
+    /// practice (the timer runs every 60 s) without letting clicks multiply calls.
+    nonisolated static let popoverRefreshFloor: TimeInterval = 10
+
+    nonisolated static func shouldRefreshOnPopoverOpen(lastRefreshAt: Date, now: Date) -> Bool {
+        now.timeIntervalSince(lastRefreshAt) >= popoverRefreshFloor
+    }
+
+    /// The popover's entry point: a poll only if the last one is old enough, and
+    /// even then subject to the server's Retry-After like the timer's polls.
+    func refreshForPopover() {
+        guard Self.shouldRefreshOnPopoverOpen(lastRefreshAt: lastRefreshAt, now: Date()) else { return }
+        refreshNow(userInitiated: false)
+    }
+
     func refreshNow(userInitiated: Bool = true) {
         if inflight != nil {
             if userInitiated { pendingUserRefresh = true }
