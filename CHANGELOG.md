@@ -5,6 +5,14 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.1] — 2026-09-03
+
+### Fixed
+- The `omelette-hook` helper retries its wait when a signal interrupts it during
+  the decision window (a stop/continue of the terminal's process group, say).
+  It could otherwise give up and hand the prompt back to the terminal while
+  Omelette still showed **Allow** / **Deny**.
+
 ## [2.2.0] — 2026-09-02
 
 ### Added
