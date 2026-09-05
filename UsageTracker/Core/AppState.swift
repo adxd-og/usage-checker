@@ -55,16 +55,45 @@ final class AppState: ObservableObject {
                 // The poll started in the same turn may already have landed; fresh
                 // data always wins over the file.
                 guard !stored.isEmpty, !self.snapshot.hasAnyData else { return }
-                self.snapshot = Self.seededSnapshot(from: stored)
+                self.snapshot = Self.seededSnapshot(from: stored, enabledServiceIDs: self.enabledServiceIDs)
             }
         }
+    }
+
+    /// The providers this launch will actually poll, by service id — the same
+    /// decisions `performRefresh` hands `ProviderCoordinator.snapshot`, read one turn
+    /// earlier. The file remembers every provider that ever reported, so without this
+    /// a provider the user has since switched off flashes back onto the All tab at
+    /// launch and disappears when the first poll lands.
+    private var enabledServiceIDs: Set<String> {
+        // Claude is not behind a toggle: the coordinator always fetches it.
+        var ids: Set<String> = ["claude"]
+        let settings = SettingsStore.shared
+        if settings.codexProviderEnabled { ids.insert("codex") }
+        if settings.geminiProviderEnabled { ids.insert("gemini") }
+        if settings.antigravityProviderEnabled { ids.insert("antigravity") }
+        if settings.grokProviderEnabled { ids.insert("grok") }
+        // The admin provider exists only while there is a key to call it with.
+        if let key = KeychainStore.loadAdminKey(), !key.isEmpty { ids.insert("anthropic-admin") }
+        return ids
     }
 
     /// Stored readings as a snapshot: the numbers, no state message, and the quiet
     /// `.notRunning` chip — nothing has been polled yet this session. `fetchedAt` is
     /// the newest stored reading, so the header says "Updated 3h ago" rather than
     /// claiming the app just refreshed.
-    nonisolated static func seededSnapshot(from stored: [String: LastKnownService]) -> UsageSnapshot {
+    ///
+    /// `enabledServiceIDs` is the set this launch will poll; a stored provider outside
+    /// it is dropped rather than shown for a second. nil means "don't filter" — the
+    /// seeding call always passes a set, and the default keeps the rule callable on
+    /// its own terms in a test.
+    nonisolated static func seededSnapshot(
+        from stored: [String: LastKnownService],
+        enabledServiceIDs: Set<String>? = nil
+    ) -> UsageSnapshot {
+        let stored = enabledServiceIDs.map { enabled in
+            stored.filter { enabled.contains($0.key) }
+        } ?? stored
         guard !stored.isEmpty else { return .empty }
         let services = stored
             .sorted { ($0.value.order, $0.key) < ($1.value.order, $1.key) }

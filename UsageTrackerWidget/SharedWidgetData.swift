@@ -27,9 +27,18 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
     /// still decodes. nil for subscription accounts.
     var spendLabel: String? = nil
     /// The provider stopped reporting and these are its last known numbers, so the
-    /// widget dims them like every other surface. Optional (and defaulted) so a file
-    /// written by an older build still decodes.
+    /// widget dims them like every other surface. A property default is not a
+    /// *decoding* default for a non-optional field — the synthesized `init(from:)`
+    /// would throw `keyNotFound` on a file an older build wrote — so the decoder
+    /// below is what actually makes an old snapshot readable.
     var isRetained: Bool = false
+
+    /// Spelled out rather than synthesized: the custom decoder below needs them, and
+    /// pinning the names here means a renamed property can't silently orphan a key
+    /// that is already on disk.
+    enum CodingKeys: String, CodingKey {
+        case id, name, icon, plan, buckets, spendLabel, isRetained
+    }
 
     /// A provider with neither windows nor spend has nothing to draw.
     var hasContent: Bool { !buckets.isEmpty || spendLabel != nil }
@@ -47,6 +56,31 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
 
     var sessionBuckets: [WidgetBucket] { buckets.filter(\.isSession) }
     var nonSessionBuckets: [WidgetBucket] { buckets.filter { !$0.isSession } }
+}
+
+/// Reading a file an older build wrote. The widget extension and the app ship
+/// together, but the shared file outlives both across an update: the extension can
+/// be asked for a timeline before the new app has ever published, and the snapshot
+/// it finds is whatever the previous version left there. Anything added to
+/// `WidgetService` therefore has to decode as absent, not as a failure — one
+/// `keyNotFound` empties every widget on the user's desktop.
+///
+/// The extension is deliberately in place of the property default: `var isRetained:
+/// Bool = false` only supplies a value to the *memberwise* initializer, and the
+/// synthesized `init(from:)` still calls `decode(Bool.self, forKey: .isRetained)`.
+/// Declaring this in an extension rather than in the struct body keeps the
+/// memberwise initializer that `WidgetBridge` builds services with.
+extension WidgetService {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try c.decode(String.self, forKey: .id)
+        self.name = try c.decode(String.self, forKey: .name)
+        self.icon = try c.decode(String.self, forKey: .icon)
+        self.plan = try c.decodeIfPresent(String.self, forKey: .plan)
+        self.buckets = try c.decodeIfPresent([WidgetBucket].self, forKey: .buckets) ?? []
+        self.spendLabel = try c.decodeIfPresent(String.self, forKey: .spendLabel)
+        self.isRetained = try c.decodeIfPresent(Bool.self, forKey: .isRetained) ?? false
+    }
 }
 
 /// Shared between the main app (writer) and the widget extension (reader).

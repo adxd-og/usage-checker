@@ -76,6 +76,44 @@ final class LastKnownRetentionTests: XCTestCase {
         XCTAssertEqual(AppState.seededSnapshot(from: [:]), .empty)
     }
 
+    // MARK: - seededSnapshot honours the provider toggles
+
+    func testAProviderTheUserTurnedOffIsNotSeeded() {
+        // The file remembers every provider that ever reported. Seeding all of them
+        // would flash a switched-off provider onto the All tab for one poll cycle.
+        let seeded = AppState.seededSnapshot(
+            from: [
+                "claude": entry(id: "claude", percent: 20, order: 0),
+                "grok": entry(id: "grok", percent: 44, order: 1),
+                "antigravity": entry(id: "antigravity", percent: 62, order: 2),
+            ],
+            enabledServiceIDs: ["claude", "antigravity"]
+        )
+
+        XCTAssertEqual(seeded.services.map(\.id), ["claude", "antigravity"],
+                       "a disabled provider must not appear before the first poll")
+    }
+
+    func testClaudeIsSeededBecauseItIsAlwaysPolled() throws {
+        let seeded = AppState.seededSnapshot(
+            from: ["claude": entry(id: "claude", percent: 20, order: 0)],
+            enabledServiceIDs: ["claude"]
+        )
+
+        let service = try XCTUnwrap(seeded.services.first)
+        XCTAssertEqual(service.id, "claude")
+        XCTAssertEqual(service.buckets.first?.utilization, 20)
+    }
+
+    func testEverythingBeingDisabledSeedsNothingAtAll() {
+        let seeded = AppState.seededSnapshot(
+            from: ["grok": entry(id: "grok", percent: 44, order: 0)],
+            enabledServiceIDs: ["claude"]
+        )
+
+        XCTAssertEqual(seeded, .empty, "no enabled provider has stored numbers: nothing to seed")
+    }
+
     // MARK: - retainingLastGoodServices
 
     func testThisSessionsOwnPollWinsOverTheFile() throws {
