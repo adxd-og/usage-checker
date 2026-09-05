@@ -78,6 +78,10 @@ final class StatusBarController {
             popover.performClose(nil)
         } else {
             AppState.shared.refreshForPopover()
+            // Same moment, same reasoning as the refresh: the user is looking at the
+            // app, so this is when an update is worth noticing. Throttled to once an
+            // hour inside the updater.
+            Updater.shared.checkInBackgroundIfDue()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
