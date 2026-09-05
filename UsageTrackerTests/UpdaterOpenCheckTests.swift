@@ -29,4 +29,25 @@ final class UpdaterOpenCheckTests: XCTestCase {
     func testTheIntervalIsAnHour() {
         XCTAssertEqual(Updater.openCheckInterval, 3600)
     }
+
+    // MARK: - Both clocks have to agree
+
+    func testANeverCheckedSparkleDateDoesNotCheckOnEveryOpen() {
+        // Sparkle's `lastUpdateCheckDate` stays nil until a check *completes* — a
+        // machine that has never been online keeps it nil forever. On its own that
+        // made every popover open fire a check.
+        XCTAssertTrue(Updater.shouldCheck(sparkleLast: nil, ownLast: nil, now: now))
+        XCTAssertFalse(Updater.shouldCheck(sparkleLast: nil, ownLast: now.addingTimeInterval(-60), now: now))
+        XCTAssertTrue(Updater.shouldCheck(sparkleLast: nil, ownLast: now.addingTimeInterval(-3600), now: now))
+    }
+
+    func testARecentSparkleCheckStillWins() {
+        XCTAssertFalse(Updater.shouldCheck(sparkleLast: now.addingTimeInterval(-60), ownLast: nil, now: now))
+    }
+
+    func testBothOldMeansDue() {
+        XCTAssertTrue(Updater.shouldCheck(
+            sparkleLast: now.addingTimeInterval(-7200), ownLast: now.addingTimeInterval(-7200), now: now
+        ))
+    }
 }
