@@ -377,4 +377,81 @@ final class CodexUsageAggregatorTests: XCTestCase {
         // than inventing a directory for it.
         XCTAssertEqual(usage.projects.map(\.displayName), ["rollout-nowhere"])
     }
+
+    // MARK: - breakdown()
+
+    func testBreakdownFillsTheShapeTheDashboardRenders() async throws {
+        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
+        // into yesterday whenever the suite runs between 00:00 and 00:10.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 60),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
+            tokenCount(secondsAgo: 1, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ], named: "rollout-today.jsonl")
+        try write([
+            sessionMeta(cwd: betaCwd, secondsAgo: 2 * 24 * 3600),
+            turnContext(model: model, cwd: betaCwd, secondsAgo: 2 * 24 * 3600),
+            tokenCount(secondsAgo: 2 * 24 * 3600, input: 500, cached: 0, output: 50, reasoning: 0),
+        ], day: "2026/09/03", named: "rollout-old.jsonl")
+
+        let breakdown = await loaded().breakdown()
+        XCTAssertEqual(breakdown.todayCost, 0.0018, accuracy: 1e-12)
+        XCTAssertEqual(breakdown.todayTokens, 1_100)
+        XCTAssertEqual(breakdown.todayTurns, 1)
+        XCTAssertEqual(breakdown.weekCost, 0.002925, accuracy: 1e-12)
+        XCTAssertEqual(breakdown.monthCost, 0.002925, accuracy: 1e-12)
+
+        // `todayTokens` and the card's breakdown are the same tokens.
+        XCTAssertEqual(breakdown.todayTokenBreakdown.total, breakdown.todayTokens)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.input, 600)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.cacheRead, 400)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.output, 100)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.thinking, 30)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.cost?.total ?? -1, 0.0018, accuracy: 1e-12)
+
+        XCTAssertEqual(breakdown.byModelToday.map(\.model), ["GPT 5.6 Terra"])
+        XCTAssertEqual(breakdown.byModelToday[0].tokens, 1_100)
+        XCTAssertEqual(breakdown.byModelToday[0].breakdown.cacheRead, 400)
+
+        // Two calendar days, oldest first; each daily row's totalTokens is its
+        // breakdown's total.
+        XCTAssertEqual(breakdown.daily.count, 2)
+        for day in breakdown.daily {
+            XCTAssertEqual(day.totalTokens, day.tokens.total)
+        }
+        XCTAssertEqual(breakdown.daily.last?.tokens.output, 100)
+        XCTAssertEqual(breakdown.projectsWeek.map(\.displayName), [alphaName, betaName])
+    }
+
+    func testATurnOlderThanTheRecentWindowStillHasItsDay() async throws {
+        // 40 days back: folded into `oldDays` and released from `recentTurns`, but the
+        // History chart still has to be able to draw it.
+        let old: Double = 40 * 24 * 3600
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: old),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: old),
+            tokenCount(secondsAgo: old, input: 1_000, cached: 0, output: 100, reasoning: 0),
+        ], day: "2026/07/27", named: "rollout-ancient.jsonl")
+
+        let breakdown = await loaded().breakdown()
+        XCTAssertEqual(breakdown.daily.count, 1)
+        XCTAssertEqual(breakdown.daily[0].totalTokens, 1_100)
+        XCTAssertEqual(breakdown.daily[0].tokens.input, 1_000)
+        XCTAssertEqual(breakdown.daily[0].tokens.output, 100)
+        XCTAssertEqual(breakdown.daily[0].totalCost, 0.00225, accuracy: 1e-12)
+        XCTAssertEqual(breakdown.daily[0].turns, 1)
+        XCTAssertEqual(breakdown.weekCost, 0, "40 days ago is in no rolling window")
+        XCTAssertEqual(breakdown.monthCost, 0)
+        XCTAssertEqual(breakdown.todayCost, 0)
+    }
+
+    func testTheProtocolIsSatisfied() async throws {
+        // The dashboard reaches every aggregator through this protocol; conformance is
+        // the whole point of the package.
+        let aggregator: any CostLogAggregating = CodexUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+        let breakdown = await aggregator.breakdown()
+        XCTAssertEqual(breakdown.weekCost, 0)
+        XCTAssertTrue(breakdown.daily.isEmpty)
+    }
 }

@@ -14,7 +14,7 @@ import Foundation
 /// Codex's `input_tokens` *includes* cached input, so fresh input is `input − cached`;
 /// `reasoning_output_tokens` is a subset of `output_tokens` and never joins the total.
 /// OpenAI doesn't bill cache writes — the count is still shown.
-actor CodexUsageAggregator {
+actor CodexUsageAggregator: CostLogAggregating {
     static let shared = CodexUsageAggregator()
 
     /// One `token_count` delta: what the model call added to the session.
@@ -103,6 +103,92 @@ actor CodexUsageAggregator {
             if t.timestamp >= startOfDay { today += t.cost }
         }
         return (week, today)
+    }
+
+    func breakdown() -> CLIBreakdown {
+        let now = Date()
+        let startOfDay = Calendar.current.startOfDay(for: now)
+        let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
+        let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
+
+        var todayCost = 0.0
+        var todayTokens = 0
+        var todayTurns = 0
+        var todayBreakdown = TokenBreakdown.zero
+        var weekCost = 0.0
+        var monthCost = 0.0
+        var byModelToday: [String: (cost: Double, tokens: Int, breakdown: TokenBreakdown)] = [:]
+        var dailyAcc = oldDays
+        var projectsWeekAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
+        var projectsMonthAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
+
+        for t in recentTurns {
+            if t.timestamp >= startOfDay {
+                todayCost += t.cost
+                todayTokens += t.tokens.total
+                todayTurns += 1
+                todayBreakdown += t.tokens
+                if let display = ModelPricing.displayName(for: t.model) {
+                    var m = byModelToday[display] ?? (0, 0, .zero)
+                    m.cost += t.cost
+                    m.tokens += t.tokens.total
+                    m.breakdown += t.tokens
+                    byModelToday[display] = m
+                }
+            }
+            if t.timestamp >= weekAgo {
+                weekCost += t.cost
+                var pw = projectsWeekAcc[t.projectSlug] ?? (0, 0, 0, t.timestamp)
+                pw.cost += t.cost
+                pw.tokens += t.tokens.total
+                pw.turns += 1
+                pw.lastActivity = max(pw.lastActivity, t.timestamp)
+                projectsWeekAcc[t.projectSlug] = pw
+            }
+            if t.timestamp >= monthAgo {
+                monthCost += t.cost
+                var pm = projectsMonthAcc[t.projectSlug] ?? (0, 0, 0, t.timestamp)
+                pm.cost += t.cost
+                pm.tokens += t.tokens.total
+                pm.turns += 1
+                pm.lastActivity = max(pm.lastActivity, t.timestamp)
+                projectsMonthAcc[t.projectSlug] = pm
+            }
+
+            let day = dayStart(for: t.timestamp)
+            var bucket = dailyAcc[day] ?? DayAgg()
+            bucket.cost += t.cost
+            bucket.tokens += t.tokens.total
+            bucket.turns += 1
+            bucket.breakdown += t.tokens
+            bucket.byFamily[ModelPricing.family(for: t.model), default: 0] += t.cost
+            dailyAcc[day] = bucket
+        }
+
+        let daily = dailyAcc.map { (k, v) in
+            CLIDailySummary(
+                day: k, totalCost: v.cost, totalTokens: v.tokens, tokens: v.breakdown,
+                turns: v.turns, byFamily: v.byFamily
+            )
+        }.sorted { $0.day < $1.day }
+
+        let modelsToday = byModelToday
+            .map { ($0.key, $0.value.cost, $0.value.tokens, $0.value.breakdown) }
+            .sorted { $0.1 > $1.1 }
+
+        return CLIBreakdown(
+            todayCost: todayCost,
+            todayTokens: todayTokens,
+            todayTokenBreakdown: todayBreakdown,
+            todayTurns: todayTurns,
+            weekCost: weekCost,
+            monthCost: monthCost,
+            byModelToday: modelsToday,
+            daily: daily,
+            projectsWeek: Self.summaries(projectsWeekAcc),
+            projectsMonth: Self.summaries(projectsMonthAcc),
+            updatedAt: now
+        )
     }
 
     func usage(from start: Date, to end: Date) -> WindowUsage {
