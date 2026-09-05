@@ -393,6 +393,56 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertNil(store.sessions.first?.pendingPermissionID)
     }
 
+    func testAHeldPermissionKeepsTheTextTheButtonsAreAbout() {
+        // Claude Code runs pre-approved calls during a hold, and a parallel subagent
+        // shares the session id. The banner and the two buttons are about *this*
+        // request, so the row must keep saying what it is holding.
+        let store = makeStore()
+        store.apply(event(.permissionRequested, toolName: "Edit", toolSummary: "Edit WalletView.swift",
+                          toolDetail: "/Users/me/WalletView.swift"), now: t0)
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+
+        store.apply(event(.toolStarted, toolName: "Read", toolSummary: "Read A.swift",
+                          toolDetail: "/tmp/A.swift"), now: at(5))
+        store.apply(event(.toolFinished, toolName: "Bash", toolSummary: "swift test",
+                          toolDetail: "swift test"), now: at(6))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.activity, "Edit WalletView.swift")
+        XCTAssertEqual(session?.activityDetail, "/Users/me/WalletView.swift")
+        XCTAssertEqual(session?.state, .needsYou, "a tool call is not an answer to the request")
+        XCTAssertEqual(session?.stateSince, t0)
+    }
+
+    func testAHeldPermissionKeepsItsAttentionToo() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: t0)
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+
+        // The PostToolUse that ends a question is the answer to *that* tool call;
+        // while a request is held it belongs to whatever else is running.
+        store.apply(event(.toolFinished, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?"), now: at(5))
+
+        XCTAssertEqual(store.sessions.first?.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+    }
+
+    func testTheRowMovesAgainOnceTheBrokerReleasesTheHold() {
+        let store = makeStore()
+        store.apply(event(.permissionRequested, toolName: "Edit", toolSummary: "Edit WalletView.swift",
+                          toolDetail: "/Users/me/WalletView.swift"), now: t0)
+        store.setPendingPermission(id: AgentFixture.requestID, for: "claude:s1")
+        store.setPendingPermission(id: nil, for: "claude:s1")
+
+        store.apply(event(.toolStarted, toolName: "Read", toolSummary: "Read A.swift",
+                          toolDetail: "/tmp/A.swift"), now: at(7))
+
+        XCTAssertEqual(store.sessions.first?.activity, "Read A.swift", "the hold was a hold, not a freeze")
+        XCTAssertEqual(store.sessions.first?.state, .working)
+    }
+
     func testSetPendingPermissionForAnUnknownSessionIsHarmless() {
         let store = makeStore()
         store.setPendingPermission(id: nil, for: "claude:never")

@@ -131,6 +131,11 @@ final class AgentSessionStore: ObservableObject {
             session.attention = nil
             transition(&session, to: .working, now: now)
         case .toolStarted, .toolFinished:
+            // A held request owns the row the same way an open question does. Tool
+            // calls arrive *during* a hold — Claude Code runs pre-approved ones, and
+            // a parallel subagent shares the session id — and rewriting the row would
+            // leave Allow and Deny sitting under somebody else's text.
+            if pendingPermissionIDs[id] != nil { break }
             if event.kind == .toolFinished, Self.clearsAttention(event.toolName) {
                 // The answer has been typed. The row stops asking and goes quiet
                 // until the next tool starts.
