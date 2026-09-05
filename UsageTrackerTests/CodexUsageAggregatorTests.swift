@@ -293,4 +293,46 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(usage.tokens, 0)
         XCTAssertEqual(usage.breakdown, .zero)
     }
+
+    // MARK: - Unpriced models
+
+    func testAnUnpricedModelKeepsItsTokensAtZeroCost() async throws {
+        // Nothing in the seeded table matches this id at any suffix depth, so
+        // `dynamicLookup` returns nil.
+        let unknown = "no-such-model-xyz"
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: unknown, cwd: alphaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ])
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 1, "an unpriceable turn is still activity")
+        XCTAssertEqual(usage.tokens, 1_100)
+        XCTAssertEqual(usage.breakdown.input, 600)
+        XCTAssertEqual(usage.breakdown.cacheRead, 400)
+        XCTAssertEqual(usage.breakdown.output, 100)
+        XCTAssertEqual(usage.cost, 0, accuracy: 1e-12)
+        XCTAssertNil(usage.breakdown.cost, "no rates, so no per-category dollars to invent")
+        XCTAssertEqual(usage.models.map(\.model), ["No Such Model Xyz"])
+        XCTAssertNil(usage.models.first?.breakdown.cost)
+    }
+
+    func testAPricedAndAnUnpricedTurnTogetherReportNoCategorySplit() async throws {
+        // `TokenBreakdown.+` drops `cost` when either side has none: a total that
+        // silently omitted the unpriced half would be worse than no split at all.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+            turnContext(model: "no-such-model-xyz", cwd: alphaCwd, secondsAgo: 500),
+            tokenCount(secondsAgo: 400, input: 1_500, cached: 400, output: 150, reasoning: 30),
+        ], named: "rollout-mixed.jsonl")
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 2)
+        XCTAssertEqual(usage.cost, 0.0018, accuracy: 1e-12, "only the priced turn has dollars")
+        XCTAssertNil(usage.breakdown.cost)
+        XCTAssertEqual(usage.tokens, 1_650)
+    }
 }
