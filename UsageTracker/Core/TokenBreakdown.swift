@@ -20,9 +20,22 @@ struct TokenBreakdown: Sendable, Codable, Equatable {
 
     static let zero = TokenBreakdown()
 
-    var cacheWrite: Int { cacheWrite5m + cacheWrite1h }
+    var cacheWrite: Int { saturating(cacheWrite5m, cacheWrite1h) }
 
-    var total: Int { input + output + cacheRead + cacheWrite5m + cacheWrite1h }
+    var total: Int {
+        [output, cacheRead, cacheWrite5m, cacheWrite1h].reduce(input, saturating)
+    }
+
+    /// The counters are read out of log files nobody validates, so a corrupt or
+    /// hand-edited line can carry any number at all. Overflow clamps rather than
+    /// traps: a wrong total is a wrong number on screen, a trap is a dead app.
+    private func saturating(_ lhs: Int, _ rhs: Int) -> Int { TokenBreakdown.saturating(lhs, rhs) }
+
+    static func saturating(_ lhs: Int, _ rhs: Int) -> Int {
+        let (sum, overflowed) = lhs.addingReportingOverflow(rhs)
+        guard overflowed else { return sum }
+        return rhs > 0 ? .max : .min
+    }
 
     /// Context tokens that came from cache, as a share of all input-side tokens (input +
     /// cacheRead + cacheWrite). nil when there is no input at all.
@@ -57,12 +70,12 @@ struct TokenBreakdown: Sendable, Codable, Equatable {
 
     static func + (lhs: Self, rhs: Self) -> Self {
         var sum = TokenBreakdown(
-            input: lhs.input + rhs.input,
-            output: lhs.output + rhs.output,
-            cacheRead: lhs.cacheRead + rhs.cacheRead,
-            cacheWrite5m: lhs.cacheWrite5m + rhs.cacheWrite5m,
-            cacheWrite1h: lhs.cacheWrite1h + rhs.cacheWrite1h,
-            thinking: lhs.thinking + rhs.thinking
+            input: saturating(lhs.input, rhs.input),
+            output: saturating(lhs.output, rhs.output),
+            cacheRead: saturating(lhs.cacheRead, rhs.cacheRead),
+            cacheWrite5m: saturating(lhs.cacheWrite5m, rhs.cacheWrite5m),
+            cacheWrite1h: saturating(lhs.cacheWrite1h, rhs.cacheWrite1h),
+            thinking: saturating(lhs.thinking, rhs.thinking)
         )
         if let l = lhs.cost, let r = rhs.cost {
             sum.cost = l + r

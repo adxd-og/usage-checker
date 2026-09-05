@@ -129,6 +129,27 @@ final class TokenBreakdownTests: XCTestCase {
         XCTAssertEqual(parts.reduce(0, +), priced.cost?.total ?? 0, accuracy: 1e-9)
     }
 
+    func testASumPastIntMaxClampsRatherThanTrapping() {
+        // The counters come out of a log file. A hand-edited or corrupt one can put
+        // any number in there, and a poll that traps takes the whole app with it.
+        let huge = TokenBreakdown(
+            input: .max, output: .max, cacheRead: .max,
+            cacheWrite5m: .max, cacheWrite1h: .max, thinking: .max
+        )
+        let one = TokenBreakdown(input: 1, output: 1, cacheRead: 1, cacheWrite5m: 1, cacheWrite1h: 1, thinking: 1)
+
+        let sum = huge + one
+
+        XCTAssertEqual(sum.input, .max)
+        XCTAssertEqual(sum.output, .max)
+        XCTAssertEqual(sum.cacheRead, .max)
+        XCTAssertEqual(sum.cacheWrite5m, .max)
+        XCTAssertEqual(sum.cacheWrite1h, .max)
+        XCTAssertEqual(sum.thinking, .max)
+        XCTAssertEqual(sum.cacheWrite, .max, "the derived sums saturate too")
+        XCTAssertEqual(sum.total, .max)
+    }
+
     func testFormatTokens() {
         XCTAssertEqual(TokenFormat.formatTokens(0), "0")
         XCTAssertEqual(TokenFormat.formatTokens(999), "999")
