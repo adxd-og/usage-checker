@@ -139,8 +139,9 @@ final class DashboardState: ObservableObject {
     var costSource: CostSource { Self.costSource(for: selectedService) }
 
     /// Every provider either writes a local per-turn cost log or has a specific reason
-    /// it can't be costed. Lumping them all under "Claude only" was both wrong (the Grok
-    /// CLI does log dollars) and unhelpful (Antigravity never will).
+    /// it can't be costed. Claude Code, the Codex CLI and the Grok CLI all write one;
+    /// Gemini and Antigravity keep no per-turn token log at all, and saying so is more
+    /// use than telling their users to switch to Claude.
     nonisolated static func costSource(for serviceID: String) -> CostSource {
         switch serviceID {
         case "claude":
@@ -148,7 +149,7 @@ final class DashboardState: ObservableObject {
         case "grok":
             return .log(shortName: "Grok CLI", longName: "the Grok CLI's session logs")
         case "codex":
-            return .unavailable(reason: "The Codex CLI's logs only give running totals here — today's and the last 7 days' spend show in the menu bar popover. A day-by-day breakdown isn't wired up yet.")
+            return .log(shortName: "Codex CLI", longName: "the Codex CLI's session logs")
         case "antigravity":
             return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
         case "gemini":
@@ -162,6 +163,7 @@ final class DashboardState: ObservableObject {
     nonisolated static func costAggregator(for serviceID: String) -> (any CostLogAggregating)? {
         switch serviceID {
         case "claude": return JSONLAggregator.shared
+        case "codex": return CodexUsageAggregator.shared
         case "grok": return GrokUsageAggregator.shared
         default: return nil
         }
