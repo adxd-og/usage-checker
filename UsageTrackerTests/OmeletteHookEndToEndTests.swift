@@ -407,4 +407,84 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         }
         if let tty = host.tty { XCTAssertTrue(tty.hasPrefix("/dev/tty"), tty) }
     }
+
+    // MARK: - Codex hooks
+
+    func testCodexHookStdinPayloadReachesTheServer() throws {
+        try startServer()
+
+        let run = try runHelper(stdin: AgentFixture.codexHookPreToolUseBash, arguments: ["--codex-hook"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.isEmpty, "a PreToolUse must never print")
+        XCTAssertTrue(waitForEvents(1))
+        let event = try XCTUnwrap(box.events.first)
+        XCTAssertEqual(event.source, .codex)
+        XCTAssertEqual(event.kind, .toolStarted)
+        XCTAssertEqual(event.sessionID, AgentFixture.codexSessionUUID)
+        XCTAssertEqual(event.cwd, "/Users/me/Desktop/Orion Gate")
+        XCTAssertEqual(event.toolName, "Bash")
+        XCTAssertNil(event.requestID)
+        XCTAssertLessThan(run.elapsed, 0.8)
+    }
+
+    func testEveryCodexHookEventRoundTrips() throws {
+        try startServer()
+        let cases: [(payload: String, kind: AgentEvent.Kind)] = [
+            (AgentFixture.codexHookSessionStart, .sessionStart),
+            (AgentFixture.codexHookPreToolUseBash, .toolStarted),
+            (AgentFixture.codexHookStop, .stop),
+        ]
+
+        for entry in cases {
+            XCTAssertEqual(try runHelper(stdin: entry.payload, arguments: ["--codex-hook"]).status, 0)
+        }
+
+        XCTAssertTrue(waitForEvents(cases.count))
+        XCTAssertEqual(box.events.map(\.kind), cases.map(\.kind))
+        XCTAssertEqual(Set(box.events.map(\.source)), [.codex])
+    }
+
+    func testACodexHookPermissionRequestIsHeldAndAnswered() throws {
+        try startServer()
+        let launched = try launchHelper(
+            stdin: AgentFixture.codexHookPermissionRequestApplyPatch, arguments: ["--codex-hook"]
+        )
+
+        let reply = try XCTUnwrap(waitForReply())
+        XCTAssertEqual(box.events.first?.source, .codex)
+        XCTAssertEqual(box.events.first?.kind, .permissionRequested)
+        XCTAssertEqual(box.events.first?.toolName, "apply_patch")
+        XCTAssertEqual(reply.requestID?.count, 32)
+        XCTAssertEqual(box.events.first?.requestID, reply.requestID)
+        reply.send(.allow)
+
+        let run = finish(launched)
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(
+            String(decoding: run.stdout, as: UTF8.self), Self.allowJSON,
+            "Codex reads the same hookSpecificOutput line Claude Code does"
+        )
+    }
+
+    func testTheCodexNotifyTransportStillGetsNoRequestID() throws {
+        try startServer()
+
+        let run = try runHelper(arguments: ["--codex", AgentFixture.codexTurnComplete])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(waitForEvents(1))
+        XCTAssertEqual(box.events.first?.kind, .codexTurnComplete)
+        XCTAssertNil(box.events.first?.requestID, "notify is one-shot; there is nothing to hold")
+    }
+
+    func testCodexHookWithGarbageOnStdinExitsZeroWithoutAnEvent() throws {
+        try startServer()
+
+        XCTAssertEqual(try runHelper(stdin: "not json", arguments: ["--codex-hook"]).status, 0)
+        XCTAssertEqual(try runHelper(stdin: "", arguments: ["--codex-hook"]).status, 0)
+
+        XCTAssertFalse(waitForEvents(1, timeout: 0.3))
+        XCTAssertEqual(server?.droppedCount, 0)
+    }
 }

@@ -1,8 +1,8 @@
 import Foundation
 
-// omelette-hook — forwards one Claude Code hook payload (stdin) or one Codex notify
-// payload (`--codex '<json>'`) to Omelette over its Unix socket, and for a Claude
-// `PermissionRequest` waits for Omelette's decision.
+// omelette-hook — forwards one hook payload (stdin: Claude Code, or Codex with
+// `--codex-hook`) or one Codex notify payload (`--codex '<json>'`) to Omelette over
+// its Unix socket, and for a hook `PermissionRequest` waits for Omelette's decision.
 //
 // Contract with the agents that spawn us: exit 0 no matter what; never block past
 // 800 ms unless Omelette is actually listening and this is a PermissionRequest
@@ -43,10 +43,12 @@ enum HookMain {
             ] as [String: Any],
             "payload": input.payload,
         ]
+        if let transport = input.transport { envelope["transport"] = transport }
 
-        // Only a Claude PermissionRequest gets an id and waits for a decision. No id
-        // (the random source failed) degrades to phase-2 behaviour: sent, not held.
-        let isPermissionRequest = input.source == "claude"
+        // Only a hook `PermissionRequest` gets an id and waits for a decision —
+        // Claude's, or Codex's, but never the one-shot `notify` payload. No id (the
+        // random source failed) degrades to phase-2 behaviour: sent, not held.
+        let isPermissionRequest = (input.source == "claude" || input.transport == "hook")
             && (input.payload["hook_event_name"] as? String) == "PermissionRequest"
         let requestID = isPermissionRequest ? makeRequestID() : nil
         if let requestID { envelope["request_id"] = requestID }
@@ -94,15 +96,24 @@ enum HookMain {
         return bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    /// `--codex '<json>'` (Codex `notify`) or the Claude hook JSON on stdin. nil unless
-    /// the payload is a JSON object — nothing else is worth a connection.
-    static func readPayload(_ arguments: [String]) -> (source: String, payload: [String: Any])? {
+    /// `--codex-hook` (a Codex hook payload on stdin), `--codex '<json>'` (the Codex
+    /// `notify` argv line), or the Claude hook JSON on stdin. nil unless the payload
+    /// is a JSON object — nothing else is worth a connection.
+    ///
+    /// `transport` rides on the envelope because a Codex hook payload is shaped like
+    /// Claude's and nothing like the `notify` one, and the app has to tell them
+    /// apart. Claude sends none, so an older app reads its events exactly as before.
+    static func readPayload(_ arguments: [String]) -> (source: String, transport: String?, payload: [String: Any])? {
+        if arguments.count >= 2, arguments[1] == "--codex-hook" {
+            guard let object = parseObject(FileHandle.standardInput.readDataToEndOfFile()) else { return nil }
+            return ("codex", "hook", object)
+        }
         if arguments.count >= 2, arguments[1] == "--codex" {
             guard arguments.count >= 3, let object = parseObject(Data(arguments[2].utf8)) else { return nil }
-            return ("codex", object)
+            return ("codex", "notify", object)
         }
         guard let object = parseObject(FileHandle.standardInput.readDataToEndOfFile()) else { return nil }
-        return ("claude", object)
+        return ("claude", nil, object)
     }
 
     static func parseObject(_ data: Data) -> [String: Any]? {
