@@ -33,6 +33,36 @@ enum AgentFixture {
     /// Codex `notify` argument: kebab-case keys, only `agent-turn-complete` exists today.
     static let codexTurnComplete = #"{"type":"agent-turn-complete","thread-id":"thr-9","turn-id":"turn-2","cwd":"/Users/me/Desktop/Orion Gate","input-messages":["ship it"],"last-assistant-message":"Done."}"#
 
+    /// The uuid Codex names its rollout file after. A hook sends the same string as
+    /// `session_id`, which is what makes the hook row and the passively scanned row
+    /// one `codex:<uuid>` session.
+    static let codexSessionUUID = "019fd6d6-94a9-7611-a007-3c094955e537"
+    static let codexRolloutFileName = "rollout-2026-09-06T09-12-44-019fd6d6-94a9-7611-a007-3c094955e537"
+
+    /// One Codex CLI hook payload (`~/.codex/hooks.json`, Codex 0.153.4) — the same
+    /// field names Claude Code uses. `extra` is appended verbatim inside the object.
+    static func codexHook(
+        _ event: String,
+        sessionID: String = AgentFixture.codexSessionUUID,
+        cwd: String = "/Users/me/Desktop/Orion Gate",
+        extra: String = ""
+    ) -> String {
+        let tail = extra.isEmpty ? "" : "," + extra
+        return #"{"session_id":"\#(sessionID)","cwd":"\#(cwd)","permission_mode":"default","hook_event_name":"\#(event)"\#(tail)}"#
+    }
+
+    static let codexHookSessionStart = codexHook("SessionStart")
+    static let codexHookPreToolUseBash = codexHook(
+        "PreToolUse",
+        extra: #""tool_name":"Bash","tool_input":{"command":"cargo test","description":"Run the tests"},"tool_use_id":"call_01""#
+    )
+    /// Codex's editor tool: the patch itself travels in `command`.
+    static let codexHookPermissionRequestApplyPatch = codexHook(
+        "PermissionRequest",
+        extra: #""tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Update File: src/main.rs\n@@\n-old\n+new\n*** End Patch"},"tool_use_id":"call_02""#
+    )
+    static let codexHookStop = codexHook("Stop")
+
     /// A 128-bit request id as the helper prints it: 32 lowercase hex characters.
     static let requestID = "0123456789abcdef0123456789abcdef"
 
@@ -44,10 +74,12 @@ enum AgentFixture {
         v: Int = 2,
         receivedAt: Double = 1_756_800_000.123,
         host: String = AgentFixture.hostJSON,
-        requestID: String? = nil
+        requestID: String? = nil,
+        transport: String? = nil
     ) -> Data {
         let id = requestID.map { #","request_id":"\#($0)""# } ?? ""
-        return Data(#"{"v":\#(v),"source":"\#(source)","helper_version":\#(v),"received_at":\#(receivedAt),"host":\#(host)\#(id),"payload":\#(payload)}"#.utf8)
+        let wire = transport.map { #","transport":"\#($0)""# } ?? ""
+        return Data(#"{"v":\#(v),"source":"\#(source)","helper_version":\#(v),"received_at":\#(receivedAt),"host":\#(host)\#(id)\#(wire),"payload":\#(payload)}"#.utf8)
     }
 }
 

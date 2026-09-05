@@ -30,6 +30,8 @@ enum AgentPaths {
     static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
     static var claudeProjectsURL: URL { home.appendingPathComponent(".claude/projects", isDirectory: true) }
     static var codexConfigURL: URL { home.appendingPathComponent(".codex/config.toml") }
+    /// ~/.codex/hooks.json — Codex CLI 0.153.4 reads hooks from here, in Claude's shape.
+    static var codexHooksURL: URL { home.appendingPathComponent(".codex/hooks.json") }
     static var codexSessionsURL: URL { home.appendingPathComponent(".codex/sessions", isDirectory: true) }
 
     /// Bumped together with the helper: 2 = phase 4 (request ids + decisions).

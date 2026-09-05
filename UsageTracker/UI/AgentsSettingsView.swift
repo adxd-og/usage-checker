@@ -12,6 +12,9 @@ struct AgentsSettingsView: View {
     @State private var codex: HookInstallStatus = .notInstalled
     @State private var claudePreviewShown = false
     @State private var codexPreviewShown = false
+    @State private var codexHooks: HookInstallStatus = .notInstalled
+    @State private var codexTrust: AgentHooksInstaller.CodexTrustStatus = .awaitingTrust(untrusted: [])
+    @State private var codexHooksPreviewShown = false
     @State private var failure: String?
     @State private var received = 0
     @State private var dropped = 0
@@ -69,6 +72,39 @@ struct AgentsSettingsView: View {
 
     private var codexSection: some View {
         Section {
+            Text("Hooks — approvals, tools and turns")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+            statusRow(codexHooks)
+            actionRow(
+                status: codexHooks,
+                fileURL: AgentPaths.codexHooksURL,
+                openTitle: "Open hooks.json",
+                install: { try AgentHooksInstaller.installCodexHooks(hooksURL: AgentPaths.codexHooksURL, helperPath: helperPath) },
+                remove: { try AgentHooksInstaller.removeCodexHooks(hooksURL: AgentPaths.codexHooksURL, helperPath: helperPath) }
+            )
+            preview(
+                isExpanded: $codexHooksPreviewShown,
+                text: AgentHooksInstaller.codexHooksPreviewJSON(helperPath: helperPath)
+            )
+            if codexHooks != .notInstalled {
+                let trust = AgentsSettingsText.codexTrustLine(codexTrust)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: trust.isTrusted ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    Text(trust.text).textSelection(.enabled)
+                }
+                .font(OMFont.caption)
+                .foregroundStyle(trust.isTrusted ? Color.green : Color.orange)
+            }
+            Text("Seven hooks in `~/.codex/hooks.json` — the same helper, the same fields and the same Allow / Deny as Claude Code's. Codex runs a hook only after you trust it once: type `/hooks` inside Codex.")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Text("Notify — finished turns")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
             statusRow(codex)
             actionRow(
                 status: codex,
@@ -96,7 +132,7 @@ struct AgentsSettingsView: View {
                     .buttonStyle(.link)
                 }
             }
-            Text("Codex reports one event, `agent-turn-complete`, so its sessions show as working or done and never as \"needs you\". The line goes above the first `[table]` so it stays a top-level key.")
+            Text("`notify` reports a finished turn, which the hooks do not cover. The line goes above the first `[table]` so it stays a top-level key.")
                 .font(OMFont.caption)
                 .foregroundStyle(.secondary)
         } header: {
@@ -170,14 +206,17 @@ struct AgentsSettingsView: View {
     private var permissionsSection: some View {
         Section("Permissions") {
             Toggle("Answer permission requests from Omelette", isOn: $settings.agentsAnswerPermissions)
-            Text("Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes.")
+            Text("Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code or Codex asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes.")
                 .font(OMFont.caption)
                 .foregroundStyle(.secondary)
-            if claude != .installed {
-                // `PermissionBroker.featureIsUsable` holds nothing unless the Claude hooks
-                // match this build's template (the 150 s PermissionRequest cap); a 2.1
-                // install reads "older than this build" above and needs one Update.
-                Text("Inactive until the Claude Code hooks above are installed and up to date.")
+            if let caption = AgentsSettingsText.permissionsInactiveCaption(
+                claude: claude, codexHooks: codexHooks, codexTrust: codexTrust
+            ) {
+                // `PermissionBroker.featureIsUsable` holds nothing unless one agent's
+                // hooks match this build's template (the 150 s PermissionRequest cap);
+                // a 2.1 install reads "older than this build" above and needs one
+                // Update, and a Codex hook needs its one-time trust.
+                Text(caption)
                     .font(OMFont.caption)
                     .foregroundStyle(.orange)
             }
@@ -253,6 +292,8 @@ struct AgentsSettingsView: View {
     private func refreshStatus() {
         claude = AgentHooksInstaller.claudeStatus(settingsURL: AgentPaths.claudeSettingsURL, helperPath: helperPath)
         codex = AgentHooksInstaller.codexStatus(configURL: AgentPaths.codexConfigURL, helperPath: helperPath)
+        codexHooks = AgentHooksInstaller.codexHooksStatus(hooksURL: AgentPaths.codexHooksURL, helperPath: helperPath)
+        codexTrust = AgentHooksInstaller.codexTrust(configURL: AgentPaths.codexConfigURL, hooksURL: AgentPaths.codexHooksURL)
     }
 
     private func describe(_ error: Swift.Error) -> String {
@@ -267,23 +308,9 @@ struct AgentsSettingsView: View {
         }
     }
 
-    private func label(_ status: HookInstallStatus) -> String {
-        switch status {
-        case .installed: return "Installed"
-        case .outdated: return "Installed — older than this build"
-        case .notInstalled: return "Not installed"
-        case .conflict: return "Can't write — something else owns this"
-        }
-    }
+    private func label(_ status: HookInstallStatus) -> String { AgentsSettingsText.hookStatusLabel(status) }
 
-    private func tint(_ status: HookInstallStatus) -> Color {
-        switch status {
-        case .installed: return .green
-        case .outdated: return .orange
-        case .notInstalled: return .secondary
-        case .conflict: return .red
-        }
-    }
+    private func tint(_ status: HookInstallStatus) -> Color { AgentsSettingsText.hookStatusTint(status) }
 }
 
 #if DEBUG

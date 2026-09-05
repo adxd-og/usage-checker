@@ -63,6 +63,15 @@ enum AgentNotificationRules {
         "\(projectName) · \(AgentRowText.sourceName(source))"
     }
 
+    /// The agent's name as a banner says it. `AgentRowText.sourceName` says the same
+    /// words in the popover; a test pins the two together so they cannot drift.
+    static func sourceName(for source: AgentSource) -> String {
+        switch source {
+        case .claude: return "Claude Code"
+        case .codex: return "Codex"
+        }
+    }
+
     /// "Wants to run Bash", "Wants to use Notion". An MCP tool's name is a wire
     /// identifier — the server is the part a person recognises. A request that *is* a
     /// question or a plan says so instead: Allow there means "go ahead and ask me in

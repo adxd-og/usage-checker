@@ -23,11 +23,13 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
   **Open** button. Powered by Claude Code hooks you enable with one click
   (Settings → Agents shows the exact JSON first and removes it again); without
   hooks, sessions are still read from the CLIs' own logs
-- **Approve or deny from Omelette (2.2)** — when a Claude Code session asks for
-  permission and its terminal isn't in front, the notification and the session's
+- **Approve or deny from Omelette (2.2)** — when a Claude Code or Codex session asks
+  for permission and its terminal isn't in front, the notification and the session's
   popover row both offer **Allow** / **Deny**. The request is held for two minutes,
   answered once, and released to the terminal if you don't answer; when the terminal
-  is in front, Claude Code asks there as usual
+  is in front, the CLI asks there as usual. Codex runs Omelette's hooks only after
+  you trust them once with `/hooks` inside Codex — Settings → Agents says when that
+  is still outstanding
 - **All tab** — one tile per provider with a ring for the leading window, and
   provider tabs with a large session ring and weekly windows as rings
 - **Compact menu bar pill per provider** — no Dock icon, no clutter
@@ -65,10 +67,10 @@ The widget:
 - Agent status comes from a tiny `omelette-hook` helper inside the app that Claude Code / Codex
   run on their hook events; it talks to Omelette over a local Unix socket (0600, 64 KB cap) and
   forwards only the session id, tool name, a truncated tool summary, folder and host process —
-  never prompts or file contents. Every hook exits within 0.8 s except a Claude Code permission
+  never prompts or file contents. Every hook exits within 0.8 s except a permission
   request: since 2.2 the helper holds that one open for up to 140 s so Omelette can answer
   Allow/Deny (or the terminal answers first), and it still fails safe — no reply from Omelette
-  ever means no decision reaches Claude Code
+  ever means no decision reaches the CLI
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
 - Open source end to end — audit anything above
@@ -99,9 +101,10 @@ Open via the popover's gear icon (or `⌘,`):
 
 - **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity / Grok), update check
 - **Notifications** — threshold alerts, session-timing (burn-fast / reset-soon) alerts, quiet hours, daily summary
-- **Agents** — enable/remove the Claude Code hooks and the Codex `notify` line (with the exact
-  JSON/TOML shown first), agent alert toggles, menu-bar pill toggle, the switch for answering
-  permission requests with its pending / answered / expired counts, socket diagnostics
+- **Agents** — enable/remove the Claude Code hooks, the Codex hooks and the Codex
+  `notify` line (with the exact JSON/TOML shown first), the Codex trust status, agent
+  alert toggles, menu-bar pill toggle, the switch for answering permission requests
+  with its pending / answered / expired counts, socket diagnostics
 - **Account** — subscription tier, re-request keychain access, optional Admin API key, pay-as-you-go weekly budget
 - **Advanced** — override the `anthropic-beta` OAuth header, reset settings
 

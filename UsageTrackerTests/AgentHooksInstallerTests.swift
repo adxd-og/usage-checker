@@ -455,4 +455,299 @@ final class AgentHooksInstallerTests: XCTestCase {
 
         XCTAssertEqual(try text(at: configURL), original)
     }
+
+    // MARK: - Codex hooks
+
+    private var hooksURL: URL { root.appendingPathComponent("hooks.json") }
+
+    /// `~/.codex/hooks.json` as it is on a machine that runs rtk — the entry every
+    /// merge, update and removal has to leave exactly where it is.
+    private static let rtkHooksJSON = """
+    {
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "rtk hook claude"
+              }
+            ]
+          }
+        ]
+      }
+    }
+    """
+
+    /// What the installer writes as a Codex hook `command`.
+    private var codexHookCommand: String { quotedHelper + " --codex-hook" }
+
+    func testCodexTemplateRegistersTheEventsCodexFires() throws {
+        let template = AgentHooksInstaller.codexHooksTemplate(helperPath: helper)
+
+        XCTAssertEqual(Set(template.keys), [
+            "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+            "PermissionRequest", "Stop", "SessionEnd",
+        ])
+        XCTAssertNil(template["Notification"], "Codex has no Notification event")
+        XCTAssertEqual(Set(AgentHooksInstaller.codexHookEvents), Set(template.keys))
+
+        for event in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"] {
+            let entry = try templateEntry(template, event)
+            XCTAssertEqual(entry["type"] as? String, "command", event)
+            XCTAssertEqual(entry["command"] as? String, codexHookCommand, event)
+            XCTAssertEqual(entry["async"] as? Bool, true, "\(event) must never make Codex wait")
+            XCTAssertNil(entry["timeout"], event)
+        }
+
+        let permission = try templateEntry(template, "PermissionRequest")
+        XCTAssertEqual(permission["command"] as? String, codexHookCommand)
+        XCTAssertEqual(permission["timeout"] as? Int, 150, "same outer ring as Claude's chain")
+        XCTAssertNil(permission["async"])
+    }
+
+    func testCodexHooksMergeKeepsTheRtkEntry() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(
+            commands(hooks, "PreToolUse"), ["rtk hook claude", codexHookCommand],
+            "rtk owned this event first and keeps its place"
+        )
+        XCTAssertEqual(commands(hooks, "PermissionRequest"), [codexHookCommand])
+        XCTAssertEqual(commands(hooks, "SessionEnd"), [codexHookCommand])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+        XCTAssertEqual(
+            try text(at: AgentHooksInstaller.backupURL(for: hooksURL)), Self.rtkHooksJSON,
+            "the backup holds hooks.json as rtk left it"
+        )
+    }
+
+    func testCodexHooksInstallIsIdempotent() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(commands(hooks, "PreToolUse"), ["rtk hook claude", codexHookCommand])
+        XCTAssertEqual(commands(hooks, "Stop"), [codexHookCommand])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+    }
+
+    func testAnOlderCodexHookReadsAsOutdatedAndUpdateReplacesOnlyOurs() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        // Put our PermissionRequest entry back the way an earlier build wrote it.
+        var file = try json(at: hooksURL)
+        var hooks = try XCTUnwrap(file["hooks"] as? [String: Any])
+        var groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        var entries = try XCTUnwrap(groups[0]["hooks"] as? [[String: Any]])
+        entries[0]["timeout"] = 5
+        groups[0]["hooks"] = entries
+        hooks["PermissionRequest"] = groups
+        file["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: file).write(to: hooksURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .outdated
+        )
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let after = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(try templateEntry(after, "PermissionRequest")["timeout"] as? Int, 150)
+        XCTAssertEqual(commands(after, "PermissionRequest").count, 1, "Update replaces, never adds")
+        XCTAssertEqual(commands(after, "PreToolUse"), ["rtk hook claude", codexHookCommand])
+    }
+
+    func testRemoveCodexHooksLeavesTheRtkEntry() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        try AgentHooksInstaller.removeCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(Array(hooks.keys), ["PreToolUse"], "events that were only ours are gone, not left as []")
+        XCTAssertEqual(commands(hooks, "PreToolUse"), ["rtk hook claude"])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .notInstalled
+        )
+    }
+
+    func testCodexHooksAreWrittenToAMissingFile() throws {
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .notInstalled
+        )
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let file = try json(at: hooksURL)
+        XCTAssertNotNil(file["hooks"] as? [String: Any], "a missing file becomes a hooks object")
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+    }
+
+    func testUnparsableCodexHooksAreNeverOverwritten() throws {
+        let broken = "{ not json at all"
+        try write(broken, to: hooksURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper),
+            .conflict(AgentHooksInstaller.hooksUnparsableReason)
+        )
+        XCTAssertThrowsError(try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper))
+        XCTAssertEqual(try text(at: hooksURL), broken, "the file must be byte-identical")
+    }
+
+    func testCodexHooksPreviewIsTheJSONWeActuallyWrite() throws {
+        let preview = AgentHooksInstaller.codexHooksPreviewJSON(helperPath: helper)
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(preview.utf8)) as? [String: Any])
+        XCTAssertNotNil(parsed["hooks"] as? [String: Any])
+        XCTAssertTrue(preview.contains("--codex-hook"))
+        XCTAssertTrue(preview.contains(helper), "the preview shows the real helper path, unescaped")
+    }
+
+    // MARK: - Codex trust
+
+    /// `~/.codex/config.toml` as Codex 0.153.4 writes it: one table per trusted
+    /// hook, keyed by path : snake-cased event : entry index : hook index, with a
+    /// `trusted_hash` under it. `hooksPath` is the temp hooks.json this test wrote,
+    /// and the entry indices are the ones a merge into the rtk file produces —
+    /// PreToolUse is 1 because rtk owns 0.
+    private func trustedConfig(hooksPath: String, skipping missing: String = "", disabling disabled: String = "") -> String {
+        let entries: [(event: String, index: Int)] = [
+            ("permission_request", 0), ("session_start", 0), ("user_prompt_submit", 0),
+            ("pre_tool_use", 1), ("post_tool_use", 0), ("stop", 0), ("session_end", 0),
+        ]
+        var text = """
+        model = "gpt-5"
+
+        [hooks.state]
+
+        [hooks.state."\(hooksPath):pre_tool_use:0:0"]
+        trusted_hash = "sha256:611801ec2e3d969b804521d5f231f6581b43d6af10a5b6406fab874286644e3b"
+
+        [hooks.state."claude-security@claude-plugins-official:hooks/hooks.json:post_tool_use:0:0"]
+        trusted_hash = "sha256:716985315b89e4d24ba99cea79db3ee2640c35385f61e8e93429f86177b1c5b2"
+
+        """
+        for entry in entries where entry.event != missing {
+            text += """
+
+            [hooks.state."\(hooksPath):\(entry.event):\(entry.index):0"]
+            trusted_hash = "sha256:ff051adf363232a355758bbc96941b87ab8b38bd47e6c5940b1232827a68b6d6"
+            """
+            if entry.event == disabled { text += "\nenabled = false" }
+            text += "\n"
+        }
+        text += """
+
+        [tui.model_availability_nux]
+        gpt-6-astra = 1
+        """
+        return text
+    }
+
+    private func installedIntoRtkHooks() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+    }
+
+    func testSnakeCasingMatchesTheSpellingCodexWrites() {
+        let expected = [
+            "PermissionRequest": "permission_request",
+            "PreToolUse": "pre_tool_use",
+            "PostToolUse": "post_tool_use",
+            "SessionStart": "session_start",
+            "SessionEnd": "session_end",
+            "UserPromptSubmit": "user_prompt_submit",
+            "Stop": "stop",
+        ]
+        for event in AgentHooksInstaller.codexHookEvents {
+            XCTAssertEqual(AgentHooksInstaller.snakeCasedEvent(event), expected[event], event)
+        }
+    }
+
+    func testTrustKeyIsThePathEventAndBothIndices() {
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrustKey(
+                hooksPath: "/Users/me/.codex/hooks.json", event: "PreToolUse", entryIndex: 1, hookIndex: 0
+            ),
+            "/Users/me/.codex/hooks.json:pre_tool_use:1:0"
+        )
+    }
+
+    func testEveryInstalledHookTrustedReadsAsTrusted() throws {
+        try installedIntoRtkHooks()
+        try write(trustedConfig(hooksPath: hooksURL.path), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL), .trusted
+        )
+    }
+
+    func testAMissingTableLeavesThatEventUntrusted() throws {
+        try installedIntoRtkHooks()
+        try write(trustedConfig(hooksPath: hooksURL.path, skipping: "permission_request"), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: ["PermissionRequest"])
+        )
+    }
+
+    func testEnabledFalseCountsAsUntrusted() throws {
+        try installedIntoRtkHooks()
+        try write(trustedConfig(hooksPath: hooksURL.path, disabling: "pre_tool_use"), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: ["PreToolUse"])
+        )
+    }
+
+    func testNoConfigAtAllMeansNothingIsTrusted() throws {
+        try installedIntoRtkHooks()
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents)
+        )
+    }
+
+    func testHooksThatAreNotInstalledAreNotTrustedEither() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try write(trustedConfig(hooksPath: hooksURL.path), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents),
+            "nothing of ours is in the file, so nothing of ours is trusted"
+        )
+    }
+
+    func testAForeignTrustTableIsNotOurs() throws {
+        try installedIntoRtkHooks()
+        // Every key is someone else's plugin: same events, different owner.
+        let foreign = """
+        [hooks.state."security-guidance@claude-plugins-official:hooks/hooks.json:permission_request:0:0"]
+        trusted_hash = "sha256:ff051adf363232a355758bbc96941b87ab8b38bd47e6c5940b1232827a68b6d6"
+        """
+        try write(foreign, to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents)
+        )
+    }
 }

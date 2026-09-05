@@ -35,6 +35,7 @@ final class AgentPathsTests: XCTestCase {
         XCTAssertEqual(AgentPaths.claudeSettingsURL.pathComponents.suffix(2), [".claude", "settings.json"])
         XCTAssertEqual(AgentPaths.claudeProjectsURL.pathComponents.suffix(2), [".claude", "projects"])
         XCTAssertEqual(AgentPaths.codexConfigURL.pathComponents.suffix(2), [".codex", "config.toml"])
+        XCTAssertEqual(AgentPaths.codexHooksURL.pathComponents.suffix(2), [".codex", "hooks.json"])
         XCTAssertEqual(AgentPaths.codexSessionsURL.pathComponents.suffix(2), [".codex", "sessions"])
     }
 
