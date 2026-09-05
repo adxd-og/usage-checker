@@ -8,7 +8,7 @@ final class CostSourceTests: XCTestCase {
 
     // MARK: - Which providers can be costed
 
-    func testClaudeAndGrokHaveALocalCostLog() {
+    func testEveryCLIWithATurnLogHasALocalCostSource() {
         let claude = DashboardState.costSource(for: "claude")
         XCTAssertTrue(claude.hasBreakdown)
         XCTAssertEqual(claude.shortName, "Claude Code CLI")
@@ -32,12 +32,12 @@ final class CostSourceTests: XCTestCase {
         )
     }
 
-    func testCodexSaysItsBreakdownIsNotWiredUpYet() {
-        // Verbatim for the same reason as Antigravity's: this string IS the empty state.
-        XCTAssertEqual(
-            DashboardState.costSource(for: "codex"),
-            .unavailable(reason: "The Codex CLI's logs only give running totals here — today's and the last 7 days' spend show in the menu bar popover. A day-by-day breakdown isn't wired up yet.")
-        )
+    func testCodexHasALocalCostLog() {
+        let codex = DashboardState.costSource(for: "codex")
+        XCTAssertTrue(codex.hasBreakdown)
+        XCTAssertEqual(codex.shortName, "Codex CLI")
+        XCTAssertEqual(codex.longName, "the Codex CLI's session logs")
+        XCTAssertNil(codex.reason, "the old 'running totals' empty state is retired")
     }
 
     func testGeminiSaysItIsNotSupportedYet() {
