@@ -127,9 +127,18 @@ enum AgentToolSummary {
     /// Host plus path, without the scheme or the query string. A URL we cannot
     /// parse is shown as it arrived — better a long line than a blank row.
     static func shortURL(_ raw: String) -> String {
-        guard let components = URLComponents(string: raw), let host = components.host else { return raw }
+        guard let components = parsed(raw), let host = components.host, !host.isEmpty else { return raw }
         let path = components.path
         return path.isEmpty || path == "/" ? host : host + path
+    }
+
+    /// Agents paste bare hosts — "example.com/hooks?tab=json" — which URLComponents
+    /// reads as one long path with no host at all. Parsing it again as https tells
+    /// the two apart; the scheme is for the parser only and is never shown.
+    private static func parsed(_ raw: String) -> URLComponents? {
+        guard let components = URLComponents(string: raw) else { return nil }
+        guard components.scheme == nil else { return components }
+        return URLComponents(string: "https://" + raw)
     }
 
     /// The agent asked something. The headline is the first question, the detail is
@@ -276,9 +285,12 @@ enum AgentToolSummary {
         let markers = [("*** Update File:", "Edit"), ("*** Add File:", "Create"), ("*** Delete File:", "Delete")]
         var out: [(verb: String, path: String)] = []
         for raw in patch.components(separatedBy: "\n") {
-            let line = raw.trimmingCharacters(in: .whitespaces)
+            // `.whitespacesAndNewlines`, not `.whitespaces`: a patch written on
+            // Windows ends every line with a carriage return, and it would otherwise
+            // become the last character of the filename.
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
             for (marker, verb) in markers where line.hasPrefix(marker) {
-                let path = line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
+                let path = line.dropFirst(marker.count).trimmingCharacters(in: .whitespacesAndNewlines)
                 if !path.isEmpty { out.append((verb, path)) }
             }
         }

@@ -81,6 +81,17 @@ final class AgentToolSummaryTests: XCTestCase {
         XCTAssertEqual(AgentToolSummary.make(toolName: "WebFetch", toolInput: ["url": "https://example.com/"])?.headline, "example.com")
     }
 
+    func testAURLWithoutASchemeIsStillHostAndPath() {
+        // Agents paste bare hosts. "example.com/hooks?tab=json" is not a URL as far
+        // as URLComponents is concerned, and the row showed the query string with it.
+        XCTAssertEqual(AgentToolSummary.shortURL("example.com/hooks?tab=json"), "example.com/hooks")
+        XCTAssertEqual(AgentToolSummary.shortURL("docs.example.com"), "docs.example.com")
+    }
+
+    func testSomethingThatIsNotAURLIsShownAsItArrived() {
+        XCTAssertEqual(AgentToolSummary.shortURL("not a url at all"), "not a url at all")
+    }
+
     func testWebSearchUsesTheQueryAndHasNoDetail() {
         let summary = AgentToolSummary.make(toolName: "WebSearch", toolInput: ["query": "swift 6 strict concurrency minimal"])
         XCTAssertEqual(summary?.headline, "swift 6 strict concurrency minimal")
@@ -248,6 +259,11 @@ final class AgentToolSummaryTests: XCTestCase {
         let patch = "*** Begin Patch\n*** Update File: a.swift\n@@\n-x\n+y\n*** End Patch"
         let summary = try XCTUnwrap(applyPatch(patch))
         XCTAssertEqual(summary.detail, patch, "the detail is the patch, newlines and all")
+    }
+
+    func testACRLFPatchDoesNotCarryTheCarriageReturnIntoTheName() {
+        let patch = "*** Begin Patch\r\n*** Update File: src/main.rs\r\n@@\r\n-x\r\n+y\r\n*** End Patch\r\n"
+        XCTAssertEqual(applyPatch(patch)?.headline, "Edit main.rs")
     }
 
     func testApplyPatchWithNothingToName() {
