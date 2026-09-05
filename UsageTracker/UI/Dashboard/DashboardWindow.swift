@@ -98,25 +98,72 @@ struct DashboardHeader: View {
     @ObservedObject private var dashboard = DashboardState.shared
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(OMFont.screenTitle)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(OMFont.body)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-            if showsServicePicker {
-                ServicePicker(dashboard: dashboard)
-            }
-            trailing
+        // The header has to fit whatever width the window has, never the other way
+        // round: a provider row plus a chart-mode switch plus a range picker is wider
+        // than the default window, and a fixed-width HStack used to push the window
+        // past the screen edge and squeeze the title to nothing. Widest layout that
+        // fits wins; the title and subtitle always keep their line.
+        ViewThatFits(in: .horizontal) {
+            oneRow
+            twoRows
+            threeRows
         }
         .padding(.horizontal, 24)
         .padding(.top, 24)
         .padding(.bottom, 12)
+    }
+
+    private var titleBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(OMFont.screenTitle)
+                .lineLimit(1)
+            if let subtitle {
+                Text(subtitle)
+                    .font(OMFont.body)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    @ViewBuilder
+    private var picker: some View {
+        if showsServicePicker {
+            ServicePicker(dashboard: dashboard)
+        }
+    }
+
+    /// Title · provider row · controls, all on one line.
+    private var oneRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            titleBlock
+            Spacer(minLength: 12)
+            picker
+            trailing
+        }
+    }
+
+    /// Title with the controls on its right, the provider row underneath.
+    private var twoRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                titleBlock
+                Spacer(minLength: 12)
+                trailing
+            }
+            picker
+        }
+    }
+
+    /// Title, then the provider row, then the controls — for a window near its minimum.
+    private var threeRows: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            titleBlock
+            picker
+            trailing
+        }
     }
 }
 
