@@ -167,9 +167,10 @@ enum ModelPricing {
         return line
     }
 
-    /// "gpt-5.1-codex-max" → "gpt-5.1-codex", "gpt-4.1-mini" → "gpt-4.1", "o4-mini" →
-    /// "o4". Only the version survives, plus `codex` where the id carries it: Codex is a
-    /// line of its own, while the size and tier words a line ships under ("-max",
+    /// "gpt-5.1-codex-max" → "gpt-5.1-codex", "gpt-4.1-mini" → "gpt-4.1", "gpt-4o-mini"
+    /// → "gpt-4o", "o4-mini" → "o4". The version survives, along with the two things
+    /// OpenAI names a *line* with rather than a tier — a letter attached to the version
+    /// ("4o") and `codex` — while the size and tier words a line ships under ("-max",
     /// "-mini", "-latest") and any trailing date are noise in a per-line cost split.
     /// nil for ids without a version right after the prefix ("gpt-image-1").
     private static func openAILine(_ lowerID: String) -> String? {
@@ -180,7 +181,10 @@ enum ModelPricing {
             if let minorR = Range(m.range(at: 2), in: lowerID) {
                 line += ".\(lowerID[minorR])"
             }
-            if m.range(at: 3).location != NSNotFound { line += "-codex" }
+            if let letterR = Range(m.range(at: 3), in: lowerID) {
+                line += lowerID[letterR]
+            }
+            if m.range(at: 4).location != NSNotFound { line += "-codex" }
             return line
         }
         guard let m = oSeriesIDRegex.firstMatch(in: lowerID, range: range),
@@ -238,11 +242,14 @@ enum ModelPricing {
     )
 
     /// Same shape as `grokIDRegex` — anchored, so only a version directly after the
-    /// prefix counts — with the `codex` specialization captured after it. The lookahead
-    /// is what keeps a date stamp out of the minor slot: "gpt-5-2026-01-01" has no
+    /// prefix counts — with two more things captured after the version: a letter glued
+    /// straight onto the digits, and the `codex` specialization. That letter names a
+    /// line rather than a tier ("gpt-4o" is a different model at a different price from
+    /// "gpt-4"), which is why it isn't stripped the way "-mini" is. The lookahead is
+    /// what keeps a date stamp out of the minor slot: "gpt-5-2026-01-01" has no
     /// two-digit run that isn't followed by another digit, so it stays the 5 line.
     private static let gptIDRegex = try! NSRegularExpression(
-        pattern: #"^gpt-(\d{1,2})(?:[.-](\d{1,2}))?(?![\d.])(-codex)?"#
+        pattern: #"^gpt-(\d{1,2})(?:[.-](\d{1,2}))?([a-z])?(?![\d.])(-codex)?"#
     )
 
     /// The reasoning series is a bare letter and a number: "o3-pro" → "o3".

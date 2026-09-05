@@ -64,11 +64,13 @@ final class TailsVerificationTests: XCTestCase {
         )
     }
 
-    /// Documents the actual (buggy) behavior precisely, so a future fix has to touch
-    /// this test too — not just the two above.
-    func testGPT4oAndPlainGPT4CurrentlyCollide() {
-        XCTAssertEqual(ModelPricing.family(for: "gpt-4o"), ModelPricing.family(for: "gpt-4"))
-        XCTAssertEqual(ModelPricing.family(for: "gpt-4o-mini"), ModelPricing.family(for: "gpt-4"))
+    /// Was: "documents the actual (buggy) behavior precisely, so a future fix has to
+    /// touch this test too — not just the two above." This is that fix, so the test is
+    /// inverted: the collision is what must never come back.
+    func testGPT4oAndPlainGPT4DoNotCollide() {
+        XCTAssertNotEqual(ModelPricing.family(for: "gpt-4o"), ModelPricing.family(for: "gpt-4"))
+        XCTAssertNotEqual(ModelPricing.family(for: "gpt-4o-mini"), ModelPricing.family(for: "gpt-4"))
+        XCTAssertEqual(ModelPricing.family(for: "gpt-4"), "gpt-4", "plain gpt-4 keeps its own line")
     }
 
     // MARK: - OpenAI: o-series

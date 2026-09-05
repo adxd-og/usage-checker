@@ -11,7 +11,14 @@ import XCTest
 /// computed from are seeded into `ModelPricing.updateDynamic` and cleared in teardown.
 final class CodexUsageAggregatorTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Anchored at least an hour into the local day. Fixtures are stamped up to fifteen
+    /// minutes before `now`, so a suite that ran just after local midnight would file
+    /// them under yesterday and every "today" assertion would read zero — a failure
+    /// about the wall clock, not about the aggregator.
+    private let now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
 
     /// Deliberately outside the tester's home directory: `ProjectName` strips a home
     /// prefix, and a fixture whose display name moved with whoever ran the suite would

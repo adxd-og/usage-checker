@@ -26,6 +26,14 @@ final class ModelPricingFamilyTests: XCTestCase {
         XCTAssertEqual(ModelPricing.family(for: "gpt-4.1-mini"), "gpt-4.1")
     }
 
+    /// A letter glued straight onto the digits names a line, not a tier: 4o is not a
+    /// variant of gpt-4, it is a different model at a different price.
+    func testALetterAttachedToTheVersionIsPartOfTheLine() {
+        XCTAssertEqual(ModelPricing.family(for: "gpt-4o"), "gpt-4o")
+        XCTAssertEqual(ModelPricing.family(for: "gpt-4o-mini"), "gpt-4o")
+        XCTAssertNotEqual(ModelPricing.family(for: "gpt-4o"), ModelPricing.family(for: "gpt-4"))
+    }
+
     func testTheOSeriesLinesAreNamedByTheirNumber() {
         XCTAssertEqual(ModelPricing.family(for: "o3"), "o3")
         XCTAssertEqual(ModelPricing.family(for: "o3-pro"), "o3")
