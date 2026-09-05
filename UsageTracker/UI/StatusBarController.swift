@@ -124,7 +124,11 @@ final class StatusBarController {
         var lines: [String] = []
         for service in services {
             if !lines.isEmpty { lines.append("") }
-            lines.append(service.plan ?? service.displayName)
+            // A retained provider's block needs a header that explains why the
+            // numbers under it aren't moving; a healthy one just names the plan.
+            lines.append(service.isRetained
+                         ? MenuBarLabel.text(for: service)
+                         : (service.plan ?? service.displayName))
             for b in service.buckets where b.clampedPercent > 0 || b.kind == .session || b.id == "seven_day" {
                 lines.append("  \(b.label): \(Int(b.clampedPercent.rounded()))%")
             }

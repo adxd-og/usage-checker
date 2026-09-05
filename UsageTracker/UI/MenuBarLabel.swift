@@ -46,6 +46,23 @@ struct MenuBarLabel: View {
         .animation(.easeInOut(duration: 0.45), value: snapshot.headlinePercent)
     }
 
+    /// The line the status item's tooltip and VoiceOver read for one pill. Pure so
+    /// the retained wording is tested: 22 points of bar and two digits can't say
+    /// "these numbers are an hour old", and the dimming alone is easy to miss.
+    nonisolated static func text(
+        for service: ServiceSnapshot,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let percent = Int(service.headlinePercent.rounded())
+        guard let at = service.retainedAt else {
+            return "\(service.displayName) usage \(percent)%"
+        }
+        let stamp = RelativeStamp.asOf(at, now: now, calendar: calendar, locale: locale)
+        return "\(service.displayName): last known \(percent)% (as of \(stamp)) — \(RetainedCopy.chipText(for: service.state))"
+    }
+
     /// The agents pill. A separate view, not an `@ObservedObject` on `MenuBarLabel`
     /// itself: see `AgentsPillSlot`.
     @ViewBuilder
@@ -78,7 +95,11 @@ private struct MiniServiceBar: View {
     private var percent: Double { service.headlinePercent }
     private var barColor: Color { usageStatusColor(percent) }
     private var isCritical: Bool { percent >= 95 }
-    private var shouldPulse: Bool { isCritical && !reduceMotion }
+    /// A frozen 96% is not an emergency: the provider stopped reporting, so the
+    /// number isn't climbing and the pulse would be crying wolf.
+    private var shouldPulse: Bool { isCritical && !reduceMotion && !service.isRetained }
+    /// Last-known numbers read at the same strength as live ones without this.
+    private var retainedDim: Double { service.isRetained ? 0.55 : 1 }
 
     var body: some View {
         // TimelineView(.animation) is a continuous redraw loop, so it only exists
@@ -107,19 +128,19 @@ private struct MiniServiceBar: View {
                     .fill(barColor)
                     .frame(width: max(2, 22 * percent / 100), height: 8)
             }
-            .opacity(pulse)
+            .opacity(pulse * retainedDim)
 
             if showsNumber {
                 Text("\(Int(percent.rounded()))")
                     .font(OMFont.menuNumeral)
                     .monospacedDigit()
                     .foregroundStyle(isStale ? Color.secondary : barColor)
-                    .opacity(pulse)
+                    .opacity(pulse * retainedDim)
             }
         }
         .animation(.easeInOut(duration: 0.4), value: percent)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(service.displayName) usage \(Int(percent.rounded())) percent")
+        .accessibilityLabel(MenuBarLabel.text(for: service))
     }
 }
 
