@@ -331,10 +331,12 @@ enum AgentHooksInstaller {
         return untrusted.isEmpty ? .trusted : .awaitingTrust(untrusted: untrusted)
     }
 
-    /// The `[hooks.state."…"]` key for one entry, in the TOML-escaped form the
-    /// header holds it in.
+    /// The `[hooks.state."…"]` key for one entry, as the path really reads. The
+    /// header holds it as a TOML basic string, so `trustTable` unescapes it before
+    /// the two are compared — a path with a quote or a backslash in it would
+    /// otherwise depend on both sides spelling the escape the same way.
     static func codexTrustKey(hooksPath: String, event: String, entryIndex: Int, hookIndex: Int) -> String {
-        "\(tomlEscaped(hooksPath)):\(snakeCasedEvent(event)):\(entryIndex):\(hookIndex)"
+        "\(hooksPath):\(snakeCasedEvent(event)):\(entryIndex):\(hookIndex)"
     }
 
     /// `PermissionRequest` → `permission_request`, the spelling Codex writes.
@@ -379,35 +381,105 @@ enum AgentHooksInstaller {
             enabled = true
         }
         for raw in lines(of: text) {
-            let line = raw.trimmingCharacters(in: .whitespaces)
-            if line.hasPrefix("#") { continue }
+            let line = interpretable(raw)
+            if line.isEmpty { continue }
             if line.hasPrefix("[") {
                 flush()
                 key = stateKey(inHeader: line)
                 continue
             }
-            guard key != nil else { continue }
-            if line.hasPrefix("trusted_hash"), let value = tomlStringValue(line), !value.isEmpty { hasHash = true }
-            if line.hasPrefix("enabled"), line.contains("false") { enabled = false }
+            guard key != nil, let (name, value) = assignment(line) else { continue }
+            switch name {
+            case "trusted_hash":
+                if let hash = tomlUnquoted(value), !hash.isEmpty { hasHash = true }
+            case "enabled":
+                if value == "false" { enabled = false }
+            default:
+                break
+            }
         }
         flush()
         return table
     }
 
-    /// `[hooks.state."…"]` → the key exactly as written (still TOML-escaped, which
-    /// is the form `codexTrustKey` produces); nil for any other header.
-    private static func stateKey(inHeader line: String) -> String? {
-        let prefix = "[hooks.state.\""
-        guard line.hasPrefix(prefix), line.hasSuffix("\"]"), line.count > prefix.count + 2 else { return nil }
-        return String(line.dropFirst(prefix.count).dropLast(2))
+    /// One line ready to interpret: no carriage return from a CRLF file, no trailing
+    /// `# comment`, no surrounding whitespace. A `#` inside a quoted string is part
+    /// of the string — a path may contain one.
+    private static func interpretable(_ raw: String) -> String {
+        var out = ""
+        var inQuotes = false
+        var escaped = false
+        for character in raw where character != "\r" {
+            if escaped {
+                out.append(character)
+                escaped = false
+                continue
+            }
+            switch character {
+            case "\\" where inQuotes:
+                out.append(character)
+                escaped = true
+            case "\"":
+                inQuotes.toggle()
+                out.append(character)
+            case "#" where !inQuotes:
+                return out.trimmingCharacters(in: .whitespaces)
+            default:
+                out.append(character)
+            }
+        }
+        return out.trimmingCharacters(in: .whitespaces)
     }
 
-    /// The right-hand side of `key = "value"`.
-    private static func tomlStringValue(_ line: String) -> String? {
-        guard let equals = line.firstIndex(of: "=") else { return nil }
-        let rest = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
-        guard rest.hasPrefix("\""), rest.hasSuffix("\""), rest.count >= 2 else { return nil }
-        return String(rest.dropFirst().dropLast())
+    /// `key = value` split on the first `=` outside quotes. The key may be bare or
+    /// quoted — Codex writes `enabled = false`, but `"enabled" = false` is the same
+    /// key and the same answer.
+    private static func assignment(_ line: String) -> (name: String, value: String)? {
+        var inQuotes = false
+        var escaped = false
+        for index in line.indices {
+            let character = line[index]
+            if escaped { escaped = false; continue }
+            if character == "\\", inQuotes { escaped = true; continue }
+            if character == "\"" { inQuotes.toggle(); continue }
+            guard character == "=", !inQuotes else { continue }
+            let rawName = String(line[..<index]).trimmingCharacters(in: .whitespaces)
+            let name = tomlUnquoted(rawName) ?? rawName
+            let value = String(line[line.index(after: index)...]).trimmingCharacters(in: .whitespaces)
+            return name.isEmpty ? nil : (name, value)
+        }
+        return nil
+    }
+
+    /// `[hooks.state."…"]` → the key the path really spells; nil for any other
+    /// header.
+    private static func stateKey(inHeader line: String) -> String? {
+        let prefix = "[hooks.state."
+        guard line.hasPrefix(prefix), line.hasSuffix("]") else { return nil }
+        let quoted = String(line.dropFirst(prefix.count).dropLast()).trimmingCharacters(in: .whitespaces)
+        guard let key = tomlUnquoted(quoted), !key.isEmpty else { return nil }
+        return key
+    }
+
+    /// The contents of a TOML basic string, with `\"` and `\\` resolved; nil when
+    /// `text` is not one. Those two escapes are the ones a path produces, and this
+    /// reads one table of a file we never write — anything else is left as it is.
+    private static func tomlUnquoted(_ text: String) -> String? {
+        guard text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\"") else { return nil }
+        var out = ""
+        var escaped = false
+        for character in text.dropFirst().dropLast() {
+            if escaped {
+                if character != "\"", character != "\\" { out.append("\\") }
+                out.append(character)
+                escaped = false
+            } else if character == "\\" {
+                escaped = true
+            } else {
+                out.append(character)
+            }
+        }
+        return out
     }
 
     // MARK: - Codex

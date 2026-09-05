@@ -624,11 +624,15 @@ final class AgentHooksInstallerTests: XCTestCase {
     /// `trusted_hash` under it. `hooksPath` is the temp hooks.json this test wrote,
     /// and the entry indices are the ones a merge into the rtk file produces —
     /// PreToolUse is 1 because rtk owns 0.
+    /// The seven tables of ours a trusted config carries, with the entry indices a
+    /// merge into the rtk file produces — PreToolUse is 1 because rtk owns 0.
+    private static let trustedEntries: [(event: String, index: Int)] = [
+        ("permission_request", 0), ("session_start", 0), ("user_prompt_submit", 0),
+        ("pre_tool_use", 1), ("post_tool_use", 0), ("stop", 0), ("session_end", 0),
+    ]
+
     private func trustedConfig(hooksPath: String, skipping missing: String = "", disabling disabled: String = "") -> String {
-        let entries: [(event: String, index: Int)] = [
-            ("permission_request", 0), ("session_start", 0), ("user_prompt_submit", 0),
-            ("pre_tool_use", 1), ("post_tool_use", 0), ("stop", 0), ("session_end", 0),
-        ]
+        let entries = Self.trustedEntries
         var text = """
         model = "gpt-5"
 
@@ -749,5 +753,87 @@ final class AgentHooksInstallerTests: XCTestCase {
             AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
             .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents)
         )
+    }
+
+    // MARK: - Codex trust: the shapes a real config.toml comes in
+
+    /// Our seven tables, with the header line and the body spelled the way the case
+    /// under test needs them.
+    private func trustTables(hooksPath: String, headerSuffix: String = "", body: String) -> String {
+        Self.trustedEntries.map { entry in
+            """
+            [hooks.state."\(hooksPath):\(entry.event):\(entry.index):0"]\(headerSuffix)
+            \(body)
+            """
+        }.joined(separator: "\n\n")
+    }
+
+    private static let hash = #"trusted_hash = "sha256:ff051adf363232a355758bbc96941b87ab8b38bd47e6c5940b1232827a68b6d6""#
+
+    func testACRLFConfigReadsLikeAUnixOne() throws {
+        try installedIntoRtkHooks()
+        let crlf = trustedConfig(hooksPath: hooksURL.path).replacingOccurrences(of: "\n", with: "\r\n")
+        try write(crlf, to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL), .trusted,
+            "a carriage return is not part of the key"
+        )
+    }
+
+    func testACommentAfterAHeaderOrAValueIsNotPartOfIt() throws {
+        try installedIntoRtkHooks()
+        try write(trustTables(
+            hooksPath: hooksURL.path,
+            headerSuffix: " # trusted 2026-09-01",
+            body: "\(Self.hash) # sha of the command\nenabled = true # false alarm"
+        ), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL), .trusted,
+            #"the word "false" in a comment is not `enabled = false`"#
+        )
+    }
+
+    func testEnabledIsTheValueNotAWordOnTheLine() throws {
+        try installedIntoRtkHooks()
+        try write(trustTables(hooksPath: hooksURL.path, body: "\(Self.hash)\nenabled = false"), to: configURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents)
+        )
+    }
+
+    func testAQuotedKeyIsTheSameKey() throws {
+        try installedIntoRtkHooks()
+        let quoted = #""trusted_hash" = "sha256:ff051adf363232a355758bbc96941b87ab8b38bd47e6c5940b1232827a68b6d6""#
+        try write(trustTables(hooksPath: hooksURL.path, body: "\(quoted)\n\"enabled\" = true"), to: configURL)
+
+        XCTAssertEqual(AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL), .trusted)
+
+        try write(trustTables(hooksPath: hooksURL.path, body: "\(quoted)\n\"enabled\" = false"), to: configURL)
+        XCTAssertEqual(
+            AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooksURL),
+            .awaitingTrust(untrusted: AgentHooksInstaller.codexHookEvents),
+            "a quoted key is read on both sides or on neither"
+        )
+    }
+
+    func testAPathWithAQuoteOrABackslashInItStillMatches() throws {
+        // TOML holds the key as a basic string, so those two characters arrive
+        // escaped. Both sides have to agree about which form is compared.
+        let odd = root.appendingPathComponent(#"qu"ote\back"#, isDirectory: true)
+        try FileManager.default.createDirectory(at: odd, withIntermediateDirectories: true)
+        let hooks = odd.appendingPathComponent("hooks.json")
+        try write(Self.rtkHooksJSON, to: hooks)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooks, helperPath: helper)
+
+        let escaped = hooks.path
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        try write(trustedConfig(hooksPath: escaped), to: configURL)
+
+        XCTAssertEqual(AgentHooksInstaller.codexTrust(configURL: configURL, hooksURL: hooks), .trusted)
     }
 }
