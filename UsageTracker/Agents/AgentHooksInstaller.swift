@@ -81,12 +81,11 @@ enum AgentHooksInstaller {
     }
 
     static func claudeStatus(settingsURL: URL, helperPath: String) -> HookInstallStatus {
-        guard let hooks = try? hooksObject(in: readSettings(settingsURL), url: settingsURL) else {
-            return .conflict(unparsableReason)
-        }
-        let mine = ourEntries(in: hooks)
-        if mine.isEmpty { return .notInstalled }
-        return mine == ourEntries(in: claudeTemplate(helperPath: helperPath)) ? .installed : .outdated
+        hooksStatus(
+            url: settingsURL,
+            template: claudeTemplate(helperPath: helperPath),
+            unparsable: unparsableReason
+        )
     }
 
     /// Merges the template in, dropping any earlier version of ours first.
@@ -94,33 +93,14 @@ enum AgentHooksInstaller {
     /// use all survive; the file comes back pretty-printed with sorted keys,
     /// which is why the original is copied to `.omelette-backup` beforehand.
     static func installClaude(settingsURL: URL, helperPath: String) throws {
-        var settings = try readSettings(settingsURL)
-        var hooks = stripOurs(from: try hooksObject(in: settings, url: settingsURL))
-        for (event, value) in claudeTemplate(helperPath: helperPath) {
-            guard let ours = value as? [[String: Any]] else { continue }
-            var groups = hooks[event] as? [[String: Any]] ?? []
-            groups.append(contentsOf: ours)
-            hooks[event] = groups
-        }
-        settings["hooks"] = hooks
-        try writeSettings(settings, to: settingsURL)
+        try mergeHooks(claudeTemplate(helperPath: helperPath), into: settingsURL)
     }
 
     /// Deletes exactly our entries. `helperPath` is part of the shared signature
     /// and deliberately unused: removal keys off `ourCommandMarker`, so an entry
     /// written by an older build with a different path goes too.
     static func removeClaude(settingsURL: URL, helperPath: String) throws {
-        guard FileManager.default.fileExists(atPath: settingsURL.path) else { return }
-        var settings = try readSettings(settingsURL)
-        let hooks = try hooksObject(in: settings, url: settingsURL)
-        guard !ourEntries(in: hooks).isEmpty else { return }   // nothing of ours: do not reformat the file
-        let cleaned = stripOurs(from: hooks)
-        if cleaned.isEmpty {
-            settings.removeValue(forKey: "hooks")
-        } else {
-            settings["hooks"] = cleaned
-        }
-        try writeSettings(settings, to: settingsURL)
+        try removeHooks(from: settingsURL)
     }
 
     // MARK: - Claude internals
@@ -153,6 +133,44 @@ enum AgentHooksInstaller {
               let text = String(data: data, encoding: .utf8)
         else { return String(describing: object) }
         return text
+    }
+
+    /// Whether the entries of ours in `url` are exactly `template`'s. Shared by
+    /// Claude's settings.json and Codex's hooks.json: the two files hold the same
+    /// `hooks` object, so everything below this line is one implementation.
+    private static func hooksStatus(url: URL, template: [String: Any], unparsable: String) -> HookInstallStatus {
+        guard let file = try? readSettings(url),
+              let hooks = try? hooksObject(in: file, url: url) else { return .conflict(unparsable) }
+        let mine = ourEntries(in: hooks)
+        if mine.isEmpty { return .notInstalled }
+        return mine == ourEntries(in: template) ? .installed : .outdated
+    }
+
+    private static func mergeHooks(_ template: [String: Any], into url: URL) throws {
+        var file = try readSettings(url)
+        var hooks = stripOurs(from: try hooksObject(in: file, url: url))
+        for (event, value) in template {
+            guard let ours = value as? [[String: Any]] else { continue }
+            var groups = hooks[event] as? [[String: Any]] ?? []
+            groups.append(contentsOf: ours)
+            hooks[event] = groups
+        }
+        file["hooks"] = hooks
+        try writeSettings(file, to: url)
+    }
+
+    private static func removeHooks(from url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        var file = try readSettings(url)
+        let hooks = try hooksObject(in: file, url: url)
+        guard !ourEntries(in: hooks).isEmpty else { return }   // nothing of ours: do not reformat the file
+        let cleaned = stripOurs(from: hooks)
+        if cleaned.isEmpty {
+            file.removeValue(forKey: "hooks")
+        } else {
+            file["hooks"] = cleaned
+        }
+        try writeSettings(file, to: url)
     }
 
     /// Removes every entry of ours, keeping foreign entries — including one that
@@ -210,6 +228,67 @@ enum AgentHooksInstaller {
         )
         try backupOnce(url)
         try writeAtomically(data, to: url)
+    }
+
+    // MARK: - Codex hooks
+
+    /// Status-line text when hooks.json exists but is not JSON.
+    static let hooksUnparsableReason = "hooks.json isn't valid JSON — fix or move it and try again."
+
+    /// The events we register with Codex, in the order the trust line lists them —
+    /// `PermissionRequest` first, because it is the one the user cares about.
+    /// No `Notification` (Codex has none) and no `SubagentStart`/`SubagentStop`
+    /// (Omelette does not draw Codex subagents).
+    static let codexHookEvents = [
+        "PermissionRequest", "SessionStart", "UserPromptSubmit",
+        "PreToolUse", "PostToolUse", "Stop", "SessionEnd",
+    ]
+
+    /// The `hooks` fragment we own in `~/.codex/hooks.json`. Same shape and the same
+    /// timeout chain as Claude's — Codex 0.153.4 copied the format — with one
+    /// difference: the command carries `--codex-hook`, which is how the helper tells
+    /// a hook payload on stdin from the `notify` argv line it also answers to.
+    static func codexHooksTemplate(helperPath: String) -> [String: Any] {
+        let command = shellQuoted(helperPath) + " --codex-hook"
+        let fireAndForget: [String: Any] = ["type": "command", "command": command, "async": true]
+        let blocking: [String: Any] = ["type": "command", "command": command, "timeout": 150]
+        func group(_ matcher: String, _ entry: [String: Any]) -> [String: Any] {
+            ["matcher": matcher, "hooks": [entry]]
+        }
+        return [
+            "SessionStart": [group("", fireAndForget)],
+            "UserPromptSubmit": [group("", fireAndForget)],
+            "PreToolUse": [group("", fireAndForget)],
+            "PostToolUse": [group("", fireAndForget)],
+            "PermissionRequest": [group("", blocking)],
+            "Stop": [group("", fireAndForget)],
+            "SessionEnd": [group("", fireAndForget)],
+        ]
+    }
+
+    /// Exactly what the Enable button will merge, for the Settings preview.
+    static func codexHooksPreviewJSON(helperPath: String) -> String {
+        prettyJSON(["hooks": codexHooksTemplate(helperPath: helperPath)]) ?? "{}"
+    }
+
+    static func codexHooksStatus(hooksURL: URL, helperPath: String) -> HookInstallStatus {
+        hooksStatus(
+            url: hooksURL,
+            template: codexHooksTemplate(helperPath: helperPath),
+            unparsable: hooksUnparsableReason
+        )
+    }
+
+    /// A missing file becomes `{"hooks": {…}}`; an existing one keeps every foreign
+    /// entry, including the `rtk hook claude` PreToolUse entry the owner's file has.
+    static func installCodexHooks(hooksURL: URL, helperPath: String) throws {
+        try mergeHooks(codexHooksTemplate(helperPath: helperPath), into: hooksURL)
+    }
+
+    /// `helperPath` is part of the shared signature and deliberately unused —
+    /// ownership is `ourCommandMarker`, so an entry from an older build goes too.
+    static func removeCodexHooks(hooksURL: URL, helperPath: String) throws {
+        try removeHooks(from: hooksURL)
     }
 
     // MARK: - Codex

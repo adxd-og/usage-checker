@@ -455,4 +455,165 @@ final class AgentHooksInstallerTests: XCTestCase {
 
         XCTAssertEqual(try text(at: configURL), original)
     }
+
+    // MARK: - Codex hooks
+
+    private var hooksURL: URL { root.appendingPathComponent("hooks.json") }
+
+    /// `~/.codex/hooks.json` as it is on a machine that runs rtk — the entry every
+    /// merge, update and removal has to leave exactly where it is.
+    private static let rtkHooksJSON = """
+    {
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "rtk hook claude"
+              }
+            ]
+          }
+        ]
+      }
+    }
+    """
+
+    /// What the installer writes as a Codex hook `command`.
+    private var codexHookCommand: String { quotedHelper + " --codex-hook" }
+
+    func testCodexTemplateRegistersTheEventsCodexFires() throws {
+        let template = AgentHooksInstaller.codexHooksTemplate(helperPath: helper)
+
+        XCTAssertEqual(Set(template.keys), [
+            "SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse",
+            "PermissionRequest", "Stop", "SessionEnd",
+        ])
+        XCTAssertNil(template["Notification"], "Codex has no Notification event")
+        XCTAssertEqual(Set(AgentHooksInstaller.codexHookEvents), Set(template.keys))
+
+        for event in ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop", "SessionEnd"] {
+            let entry = try templateEntry(template, event)
+            XCTAssertEqual(entry["type"] as? String, "command", event)
+            XCTAssertEqual(entry["command"] as? String, codexHookCommand, event)
+            XCTAssertEqual(entry["async"] as? Bool, true, "\(event) must never make Codex wait")
+            XCTAssertNil(entry["timeout"], event)
+        }
+
+        let permission = try templateEntry(template, "PermissionRequest")
+        XCTAssertEqual(permission["command"] as? String, codexHookCommand)
+        XCTAssertEqual(permission["timeout"] as? Int, 150, "same outer ring as Claude's chain")
+        XCTAssertNil(permission["async"])
+    }
+
+    func testCodexHooksMergeKeepsTheRtkEntry() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(
+            commands(hooks, "PreToolUse"), ["rtk hook claude", codexHookCommand],
+            "rtk owned this event first and keeps its place"
+        )
+        XCTAssertEqual(commands(hooks, "PermissionRequest"), [codexHookCommand])
+        XCTAssertEqual(commands(hooks, "SessionEnd"), [codexHookCommand])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+        XCTAssertEqual(
+            try text(at: AgentHooksInstaller.backupURL(for: hooksURL)), Self.rtkHooksJSON,
+            "the backup holds hooks.json as rtk left it"
+        )
+    }
+
+    func testCodexHooksInstallIsIdempotent() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(commands(hooks, "PreToolUse"), ["rtk hook claude", codexHookCommand])
+        XCTAssertEqual(commands(hooks, "Stop"), [codexHookCommand])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+    }
+
+    func testAnOlderCodexHookReadsAsOutdatedAndUpdateReplacesOnlyOurs() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        // Put our PermissionRequest entry back the way an earlier build wrote it.
+        var file = try json(at: hooksURL)
+        var hooks = try XCTUnwrap(file["hooks"] as? [String: Any])
+        var groups = try XCTUnwrap(hooks["PermissionRequest"] as? [[String: Any]])
+        var entries = try XCTUnwrap(groups[0]["hooks"] as? [[String: Any]])
+        entries[0]["timeout"] = 5
+        groups[0]["hooks"] = entries
+        hooks["PermissionRequest"] = groups
+        file["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: file).write(to: hooksURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .outdated
+        )
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let after = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(try templateEntry(after, "PermissionRequest")["timeout"] as? Int, 150)
+        XCTAssertEqual(commands(after, "PermissionRequest").count, 1, "Update replaces, never adds")
+        XCTAssertEqual(commands(after, "PreToolUse"), ["rtk hook claude", codexHookCommand])
+    }
+
+    func testRemoveCodexHooksLeavesTheRtkEntry() throws {
+        try write(Self.rtkHooksJSON, to: hooksURL)
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        try AgentHooksInstaller.removeCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let hooks = try hooksJSON(at: hooksURL)
+        XCTAssertEqual(Array(hooks.keys), ["PreToolUse"], "events that were only ours are gone, not left as []")
+        XCTAssertEqual(commands(hooks, "PreToolUse"), ["rtk hook claude"])
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .notInstalled
+        )
+    }
+
+    func testCodexHooksAreWrittenToAMissingFile() throws {
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .notInstalled
+        )
+
+        try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper)
+
+        let file = try json(at: hooksURL)
+        XCTAssertNotNil(file["hooks"] as? [String: Any], "a missing file becomes a hooks object")
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper), .installed
+        )
+    }
+
+    func testUnparsableCodexHooksAreNeverOverwritten() throws {
+        let broken = "{ not json at all"
+        try write(broken, to: hooksURL)
+
+        XCTAssertEqual(
+            AgentHooksInstaller.codexHooksStatus(hooksURL: hooksURL, helperPath: helper),
+            .conflict(AgentHooksInstaller.hooksUnparsableReason)
+        )
+        XCTAssertThrowsError(try AgentHooksInstaller.installCodexHooks(hooksURL: hooksURL, helperPath: helper))
+        XCTAssertEqual(try text(at: hooksURL), broken, "the file must be byte-identical")
+    }
+
+    func testCodexHooksPreviewIsTheJSONWeActuallyWrite() throws {
+        let preview = AgentHooksInstaller.codexHooksPreviewJSON(helperPath: helper)
+        let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(preview.utf8)) as? [String: Any])
+        XCTAssertNotNil(parsed["hooks"] as? [String: Any])
+        XCTAssertTrue(preview.contains("--codex-hook"))
+        XCTAssertTrue(preview.contains(helper), "the preview shows the real helper path, unescaped")
+    }
 }
