@@ -88,6 +88,7 @@ final class TailsCodexEarlyTokenVerificationTests: XCTestCase {
         """
     }
 
+    @discardableResult
     private func write(_ lines: [String], day: String = "2026/09/05", named name: String = "rollout-a.jsonl") throws -> URL {
         let dir = root.appendingPathComponent(day, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

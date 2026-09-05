@@ -5,6 +5,20 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] — 2026-09-06
+
+### Fixed
+- **The dashboard could grow past the screen edge.** History's header (provider
+  row, Cost / Tokens switch and range picker) was wider than the window, so the
+  window stretched off-screen and the title collapsed. The header now picks the
+  widest layout that fits the window: one row, the title with its controls over
+  the provider row, or three rows near the minimum width.
+- Codex daily cost by model family no longer lumps every OpenAI model into
+  "other": `gpt-5`, `gpt-5-codex`, `gpt-4o`, `o3` and friends each get a line of
+  their own.
+- A Codex `token_count` written before the session's first `turn_context` is
+  kept and attributed to that turn's model instead of being dropped.
+
 ## [2.3.0] — 2026-09-05
 
 ### Added
