@@ -246,7 +246,7 @@ struct SessionHistoryView: View {
                         .frame(width: 120, alignment: .leading)
                     Spacer()
                     Text("\(p.turns)").font(OMFont.numeral).monospacedDigit().frame(width: 60, alignment: .trailing)
-                    Text(formatTokens(p.tokens)).font(OMFont.numeral).monospacedDigit().frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
+                    Text(TokenFormat.formatTokens(p.tokens)).font(OMFont.numeral).monospacedDigit().frame(width: 100, alignment: .trailing).foregroundStyle(.secondary)
                     Text(String(format: "$%.2f", p.cost)).font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
                 }
                 .padding(.vertical, 3)
@@ -266,12 +266,6 @@ struct SessionHistoryView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 220)
-    }
-
-    private func formatTokens(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
-        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
-        return "\(n)"
     }
 }
 

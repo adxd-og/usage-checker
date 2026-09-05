@@ -124,17 +124,11 @@ struct OverviewView: View {
                     .font(OMFont.body)
                     .foregroundStyle(.secondary)
             }
-            Text("\(formatTokens(tokens)) tokens")
+            Text("\(TokenFormat.formatTokens(tokens)) tokens")
                 .font(OMFont.caption)
                 .foregroundStyle(.tertiary)
         }
         .dashboardCard(padding: 14)
-    }
-
-    private func formatTokens(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
-        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
-        return "\(n)"
     }
 
     private func bucketsBlock(service: ServiceSnapshot) -> some View {
