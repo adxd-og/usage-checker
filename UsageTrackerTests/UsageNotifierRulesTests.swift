@@ -232,3 +232,44 @@ final class UsageNotifierDayKeyTests: XCTestCase {
         XCTAssertFalse(UsageNotifier.isSameDay(storedKey: "not a date", as: Date(), calendar: tokyo))
     }
 }
+
+/// Which shape of "needs you" banner a session gets. The notification centre is out
+/// of reach here, so what is tested is the choice and the words, not the delivery.
+final class AgentNeedsYouBannerTests: XCTestCase {
+    private func session(attention: AgentAttention?, activity: String?, detail: String?) -> AgentSession {
+        var built = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou, activity: activity)
+        built.activityDetail = detail
+        built.attention = attention
+        return built
+    }
+
+    func testAPlainApprovalKeepsItsSentenceTitleAndHasNoSubtitle() {
+        let banner = UsageNotifier.needsYouBanner(
+            for: session(attention: nil, activity: "Warm the cache", detail: "swift build")
+        )
+        XCTAssertEqual(banner.title, "Usage tracker needs your approval")
+        XCTAssertNil(banner.subtitle)
+        XCTAssertEqual(banner.body, "Warm the cache")
+    }
+
+    func testAQuestionGetsTheProviderTitleAndTheOptions() {
+        let banner = UsageNotifier.needsYouBanner(for: session(
+            attention: .question(count: 1, multiSelect: false),
+            activity: "Question: Which provider?",
+            detail: "Which provider?\n• Claude\n• Codex"
+        ))
+        XCTAssertEqual(banner.title, "Usage tracker · Claude Code")
+        XCTAssertEqual(banner.subtitle, "Has a question for you")
+        XCTAssertEqual(banner.body, "Question: Which provider?\n• Claude\n• Codex")
+    }
+
+    func testAPlanGetsItsOwnSubtitle() {
+        let banner = UsageNotifier.needsYouBanner(for: session(
+            attention: .plan,
+            activity: "Plan ready for review: Rework the ring",
+            detail: "# Rework the ring\n\nStep one."
+        ))
+        XCTAssertEqual(banner.subtitle, "Plan ready for review")
+        XCTAssertEqual(banner.body, "Plan ready for review: Rework the ring\nStep one.")
+    }
+}

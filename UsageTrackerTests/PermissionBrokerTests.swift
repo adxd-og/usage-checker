@@ -102,6 +102,20 @@ final class PermissionBrokerTests: XCTestCase {
         XCTAssertNil(line(peer), "nothing goes to the helper while held")
     }
 
+    func testAHeldRequestForAQuestionCarriesItsAttention() {
+        let broker = makeBroker()
+        let (reply, _) = reply()
+        let event = AgentEvent(
+            source: .claude, kind: .permissionRequested, sessionID: "s1",
+            cwd: "/Users/tester/Projects/alpha", toolName: "AskUserQuestion",
+            toolSummary: "Question: Tabs or spaces?", toolDetail: "Tabs or spaces?",
+            attention: .question(count: 1, multiSelect: false),
+            isSubagent: false, host: iterm, receivedAt: t0, requestID: AgentFixture.requestID
+        )
+        broker.register(event: event, reply: reply, session: nil, now: t0)
+        XCTAssertEqual(broker.pending.first?.attention, .question(count: 1, multiSelect: false))
+    }
+
     func testAHeldRequestCarriesTheFullTextAsWellAsTheHeadline() {
         let broker = makeBroker()
         let (reply, _) = reply()

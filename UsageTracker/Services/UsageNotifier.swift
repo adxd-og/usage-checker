@@ -358,6 +358,26 @@ final class UsageNotifier: NSObject {
     static let agentAllowAction = "AGENT_ALLOW"
     static let agentDenyAction = "AGENT_DENY"
 
+    /// What a "needs you" banner says. A question or a plan is the same interruption
+    /// as an approval with no buttons on it, so it gets the permission banner's
+    /// shape — project and provider in the title, the verb in the subtitle — while a
+    /// plain approval keeps the sentence it has always had. Pure, so the wording is
+    /// tested rather than eyeballed in Notification Centre.
+    nonisolated static func needsYouBanner(
+        for session: AgentSession
+    ) -> (title: String, subtitle: String?, body: String) {
+        guard let attention = session.attention else {
+            return (AgentNotificationRules.title(for: session), nil, AgentNotificationRules.body(for: session))
+        }
+        return (
+            AgentNotificationRules.attentionTitle(for: session),
+            AgentNotificationRules.attentionSubtitle(attention),
+            AgentNotificationRules.attentionBody(
+                headline: session.activity, detail: session.activityDetail, attention: attention
+            )
+        )
+    }
+
     /// Installs the notification-centre delegate, registers the agent category and
     /// starts watching the session store. Called once at launch.
     ///
@@ -544,9 +564,11 @@ final class UsageNotifier: NSObject {
         // Recorded only once the banner is actually scheduled: a suppressed alert
         // has nothing to withdraw later.
         notifiedNeedsYou.insert(session.id)
+        let banner = Self.needsYouBanner(for: session)
         fire(
-            title: AgentNotificationRules.title(for: session),
-            body: AgentNotificationRules.body(for: session),
+            title: banner.title,
+            subtitle: banner.subtitle,
+            body: banner.body,
             identifier: AgentNotificationRules.identifier(for: session),
             category: Self.agentNeedsYouCategory,
             timeSensitive: true
@@ -576,14 +598,16 @@ final class UsageNotifier: NSObject {
         center.removeDeliveredNotifications(withIdentifiers: [needsYouID])
         notifiedNeedsYou.remove(pending.sessionID)
 
-        // The project name is the session's, not the payload's. A request whose
-        // session we somehow do not know still has to name something.
-        let project = AgentSessionStore.shared.sessions
-            .first { $0.id == pending.sessionID }?.projectName ?? "An agent"
+        // The project name and the provider are the session's, not the payload's. A
+        // request whose session we somehow do not know still has to name something.
+        let session = AgentSessionStore.shared.sessions.first { $0.id == pending.sessionID }
         fire(
             title: AgentNotificationRules.permissionTitle(
-                projectName: project,
-                source: AgentSessionStore.shared.sessions.first { $0.id == pending.sessionID }?.source ?? .claude
+                projectName: session?.projectName ?? "An agent",
+                source: session?.source ?? .claude
+            ),
+            subtitle: AgentNotificationRules.permissionSubtitle(
+                toolName: pending.toolName, attention: pending.attention
             ),
             body: AgentNotificationRules.permissionBody(headline: pending.toolSummary, detail: pending.detail),
             identifier: AgentNotificationRules.permissionIdentifier(requestID: pending.id),
@@ -671,6 +695,7 @@ final class UsageNotifier: NSObject {
     /// banner and lets `clearResolvedNeedsYou` take it down again.
     private func fire(
         title: String,
+        subtitle: String? = nil,
         body: String,
         critical: Bool = false,
         identifier: String? = nil,
@@ -679,6 +704,7 @@ final class UsageNotifier: NSObject {
     ) {
         let content = UNMutableNotificationContent()
         content.title = title
+        if let subtitle, !subtitle.isEmpty { content.subtitle = subtitle }
         content.body = body
         content.sound = critical ? .defaultCritical : .default
         if critical || timeSensitive {

@@ -13,6 +13,10 @@ struct PendingPermission: Identifiable, Equatable, Sendable {
     /// expanded block. Still nothing but what the summary rules extracted — the tool
     /// input itself never leaves the decoder (spec rule 6).
     let detail: String?
+    /// Set when the request *is* a question or a plan (`AskUserQuestion`,
+    /// `ExitPlanMode` can themselves need permission). Allow then means "go ahead and
+    /// ask me in the terminal", which the banner has to say in so many words.
+    let attention: AgentAttention?
     let receivedAt: Date
     let expiresAt: Date
 }
@@ -137,7 +141,8 @@ final class PermissionBroker: ObservableObject {
 
         let request = PendingPermission(
             id: id, sessionID: sessionID, toolName: event.toolName, toolSummary: event.toolSummary,
-            detail: event.toolDetail, receivedAt: now, expiresAt: now.addingTimeInterval(holdWindow)
+            detail: event.toolDetail, attention: event.attention,
+            receivedAt: now, expiresAt: now.addingTimeInterval(holdWindow)
         )
         held[id] = Held(reply: reply, host: host, expiry: nil)
         pending.insert(request, at: 0)
