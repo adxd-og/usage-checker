@@ -122,24 +122,42 @@ struct DashboardHeader: View {
 
 /// Which provider the dashboard is about. Hidden until a second provider has
 /// actually recorded something — a one-provider setup shouldn't pay screen space
-/// for a control with a single option.
+/// for a control with a single option. One click per provider rather than a
+/// drop-down: with three or four providers the menu was two clicks to answer
+/// "and what does Codex look like?".
 struct ServicePicker: View {
     @ObservedObject var dashboard: DashboardState
 
     var body: some View {
         if dashboard.availableServices.count > 1 {
-            Picker("", selection: Binding(
-                get: { dashboard.selectedService },
-                set: { dashboard.selectedService = $0 }
-            )) {
-                ForEach(dashboard.availableServices, id: \.self) { id in
-                    Text(dashboard.displayName(for: id)).tag(id)
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
+            OMSegmentedControl(
+                items: dashboard.availableServices.map { id in
+                    OMSegmentItem(
+                        id: id,
+                        title: dashboard.displayName(for: id),
+                        serviceID: id,
+                        sfFallback: Self.iconName(for: id)
+                    )
+                },
+                selection: Binding(
+                    get: { dashboard.selectedService },
+                    set: { dashboard.selectedService = $0 }
+                ),
+                alwaysShowsTitles: true,
+                keyboardShortcuts: false
+            )
+            // The header is a flexible HStack; without this the row would stretch
+            // across whatever the title leaves free.
             .fixedSize()
         }
+    }
+
+    /// The provider's own symbol while it is reporting. A provider that is on the
+    /// list only because it has recorded history has no live snapshot to ask, and
+    /// `ProviderIconView` falls back to this only when no bundled logo matches.
+    @MainActor
+    private static func iconName(for serviceID: String) -> String {
+        AppState.shared.snapshot.services.first(where: { $0.id == serviceID })?.icon ?? "sparkles"
     }
 }
 
