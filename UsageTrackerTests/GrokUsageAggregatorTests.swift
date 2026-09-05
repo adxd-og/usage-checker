@@ -39,19 +39,24 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let input: Int
         let output: Int
         let cachedRead: Int
+        let cacheCreation: Int
         let ticks: Int?
 
-        init(_ model: String, input: Int, output: Int, cachedRead: Int = 0, ticks: Int?) {
+        init(
+            _ model: String, input: Int, output: Int, cachedRead: Int = 0,
+            cacheCreation: Int = 0, ticks: Int?
+        ) {
             self.model = model
             self.input = input
             self.output = output
             self.cachedRead = cachedRead
+            self.cacheCreation = cacheCreation
             self.ticks = ticks
         }
 
         var counters: String {
             var s = "\"inputTokens\":\(input),\"outputTokens\":\(output),\"totalTokens\":\(input + output),"
-            s += "\"cachedReadTokens\":\(cachedRead),\"cacheCreationTokens\":0,\"reasoningTokens\":0,"
+            s += "\"cachedReadTokens\":\(cachedRead),\"cacheCreationTokens\":\(cacheCreation),\"reasoningTokens\":0,"
             s += "\"modelCalls\":1,\"apiDurationMs\":100"
             if let ticks { s += ",\"costUsdTicks\":\(ticks)" }
             return s
@@ -71,8 +76,9 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let input = models.reduce(0) { $0 + $1.input }
         let output = models.reduce(0) { $0 + $1.output }
         let cached = models.reduce(0) { $0 + $1.cachedRead }
+        let created = models.reduce(0) { $0 + $1.cacheCreation }
         var usage = "\"inputTokens\":\(input),\"outputTokens\":\(output),\"totalTokens\":\(input + output),"
-        usage += "\"cachedReadTokens\":\(cached),\"cacheCreationTokens\":0,\"reasoningTokens\":0,"
+        usage += "\"cachedReadTokens\":\(cached),\"cacheCreationTokens\":\(created),\"reasoningTokens\":0,"
         usage += "\"modelCalls\":\(models.count),\"apiDurationMs\":100"
         if let ticks { usage += ",\"costUsdTicks\":\(ticks)" }
         usage += ",\"modelUsage\":{\(models.map(\.json).joined(separator: ","))},\"numTurns\":1"
@@ -525,5 +531,96 @@ final class GrokUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(breakdown.weekCost, 0)
         XCTAssertTrue(breakdown.projectsWeek.isEmpty)
         XCTAssertTrue(usage.isEmpty)
+    }
+
+    // MARK: - Token breakdown
+
+    func testFreshInputIsTheDifferenceAndThereAreNoCategoryDollars() async throws {
+        // The CLI's `inputTokens` INCLUDES the cached read — unlike Claude's, which is
+        // the uncached part already. Fresh input is the difference, or the two would
+        // double-count the same context.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 178_020_000,
+            models: [ModelFixture(
+                "grok-4.6-build", input: 8_790, output: 37, cachedRead: 6_000,
+                ticks: 178_020_000
+            )]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        let model = try XCTUnwrap(usage.models.first)
+        XCTAssertEqual(model.breakdown.input, 2_790)
+        XCTAssertEqual(model.breakdown.cacheRead, 6_000)
+        XCTAssertEqual(model.breakdown.output, 37)
+        XCTAssertEqual(model.breakdown.cacheWrite, 0)
+        XCTAssertEqual(model.breakdown.thinking, 0, "the CLI logs no reasoning split")
+        XCTAssertNil(model.breakdown.cost, "the CLI prices a whole turn; there is no per-category rate")
+        XCTAssertNil(usage.breakdown.cost)
+        XCTAssertEqual(usage.breakdown.input, 2_790)
+        XCTAssertEqual(usage.breakdown.cacheRead, 6_000)
+        // The dollars still come from the CLI's own ticks, untouched by any of this.
+        XCTAssertEqual(usage.cost, 0.017802, accuracy: 1e-9)
+    }
+
+    func testTheHeadlineTotalStaysTheCLIsEvenWhenTheSplitDisagrees() async throws {
+        // `cacheCreationTokens` is reported alongside and is not inside the CLI's
+        // `totalTokens`, so the split sums higher. The headline is the CLI's figure;
+        // the split is the split.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture(
+                "grok-4.6-build", input: 1_000, output: 10, cachedRead: 400,
+                cacheCreation: 250, ticks: 100_000_000
+            )]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        let model = try XCTUnwrap(usage.models.first)
+        XCTAssertEqual(usage.tokens, 1_010, "the CLI's own totalTokens")
+        XCTAssertEqual(model.tokens, 1_010)
+        XCTAssertEqual(model.breakdown.input, 600)
+        XCTAssertEqual(model.breakdown.cacheWrite5m, 250)
+        XCTAssertEqual(model.breakdown.cacheWrite1h, 0, "the CLI reports one cache-write figure")
+        XCTAssertEqual(model.breakdown.total, 1_260, "the parts, which need not match the headline")
+        XCTAssertEqual(usage.breakdown.total, 1_260)
+        XCTAssertEqual(usage.tokens, 1_010, "and the headline does not follow the parts")
+    }
+
+    func testTheDashboardShapeCarriesTheSplitPerModelAndPerDay() async throws {
+        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
+        // into yesterday whenever the suite runs between 00:00 and 00:10.
+        try write([turnLine(
+            eventID: "a1",
+            secondsAgo: 1,
+            ticks: 300_000_000,
+            models: [ModelFixture(
+                "grok-4.6-build", input: 300, output: 3, cachedRead: 100,
+                cacheCreation: 50, ticks: 300_000_000
+            )]
+        )], project: alphaDir)
+
+        let breakdown = await loaded().breakdown()
+        XCTAssertEqual(breakdown.todayTokenBreakdown.input, 200)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.cacheRead, 100)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.cacheWrite, 50)
+        XCTAssertEqual(breakdown.todayTokenBreakdown.output, 3)
+        XCTAssertNil(breakdown.todayTokenBreakdown.cost)
+        XCTAssertEqual(breakdown.todayTokens, 303, "still the CLI's totalTokens")
+
+        let model = try XCTUnwrap(breakdown.byModelToday.first)
+        XCTAssertEqual(model.model, "Grok 4.6")
+        XCTAssertEqual(model.breakdown.input, 200)
+        XCTAssertEqual(model.breakdown.cacheWrite, 50)
+        XCTAssertNil(model.breakdown.cost)
+
+        let day = try XCTUnwrap(breakdown.daily.last)
+        XCTAssertEqual(day.tokens.input, 200)
+        XCTAssertEqual(day.tokens.cacheRead, 100)
+        XCTAssertEqual(day.totalTokens, 303)
+        XCTAssertNil(day.tokens.cost)
     }
 }

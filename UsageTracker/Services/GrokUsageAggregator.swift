@@ -30,6 +30,8 @@ actor GrokUsageAggregator: CostLogAggregating {
         let model: String
         let cost: Double
         let tokens: Int
+        /// Never carries per-category dollars — see `RawModelUsage.breakdown`.
+        let breakdown: TokenBreakdown
     }
 
     /// One `turn_completed` event: a single user prompt, however many model calls
@@ -39,12 +41,14 @@ actor GrokUsageAggregator: CostLogAggregating {
         let projectSlug: String
         let cost: Double
         let tokens: Int
+        let breakdown: TokenBreakdown
         let models: [ModelSpend]
     }
 
     private struct DayAgg {
         var cost = 0.0
         var tokens = 0
+        var breakdown = TokenBreakdown.zero
         var turns = 0
         var byFamily: [String: Double] = [:]
     }
@@ -103,10 +107,11 @@ actor GrokUsageAggregator: CostLogAggregating {
 
         var todayCost = 0.0
         var todayTokens = 0
+        var todayTokenBreakdown = TokenBreakdown.zero
         var todayTurns = 0
         var weekCost = 0.0
         var monthCost = 0.0
-        var byModelToday: [String: (cost: Double, tokens: Int)] = [:]
+        var byModelToday: [String: (cost: Double, tokens: Int, breakdown: TokenBreakdown)] = [:]
         var dailyAcc = oldDays
         var projectsWeekAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
         var projectsMonthAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
@@ -115,11 +120,12 @@ actor GrokUsageAggregator: CostLogAggregating {
             if t.timestamp >= startOfDay {
                 todayCost += t.cost
                 todayTokens += t.tokens
+                todayTokenBreakdown += t.breakdown
                 todayTurns += 1
                 for m in t.models {
                     guard let display = ModelPricing.displayName(for: m.model) else { continue }
-                    let p = byModelToday[display] ?? (0, 0)
-                    byModelToday[display] = (p.cost + m.cost, p.tokens + m.tokens)
+                    let p = byModelToday[display] ?? (0, 0, .zero)
+                    byModelToday[display] = (p.cost + m.cost, p.tokens + m.tokens, p.breakdown + m.breakdown)
                 }
             }
             if t.timestamp >= weekAgo {
@@ -145,6 +151,7 @@ actor GrokUsageAggregator: CostLogAggregating {
             var bucket = dailyAcc[day] ?? DayAgg()
             bucket.cost += t.cost
             bucket.tokens += t.tokens
+            bucket.breakdown += t.breakdown
             bucket.turns += 1
             for m in t.models {
                 bucket.byFamily[ModelPricing.family(for: m.model), default: 0] += m.cost
@@ -153,21 +160,20 @@ actor GrokUsageAggregator: CostLogAggregating {
         }
 
         let daily = dailyAcc.map { (k, v) in
-            // Placeholder until task 6 gives DayAgg a breakdown of its own.
             CLIDailySummary(
-                day: k, totalCost: v.cost, totalTokens: v.tokens, tokens: .zero,
+                day: k, totalCost: v.cost, totalTokens: v.tokens, tokens: v.breakdown,
                 turns: v.turns, byFamily: v.byFamily
             )
         }.sorted { $0.day < $1.day }
 
         let modelsToday = byModelToday
-            .map { ($0.key, $0.value.cost, $0.value.tokens, TokenBreakdown.zero) }
+            .map { ($0.key, $0.value.cost, $0.value.tokens, $0.value.breakdown) }
             .sorted { $0.1 > $1.1 }
 
         return CLIBreakdown(
             todayCost: todayCost,
             todayTokens: todayTokens,
-            todayTokenBreakdown: .zero,
+            todayTokenBreakdown: todayTokenBreakdown,
             todayTurns: todayTurns,
             weekCost: weekCost,
             monthCost: monthCost,
@@ -182,13 +188,17 @@ actor GrokUsageAggregator: CostLogAggregating {
     func usage(from start: Date, to end: Date) -> WindowUsage {
         var cost = 0.0
         var tokens = 0
+        // Not `breakdown`: the actor already has a `breakdown()` method, and a local of
+        // that name would shadow it.
+        var windowBreakdown = TokenBreakdown.zero
         var turns = 0
         var byProject: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
-        var byModel: [String: (cost: Double, tokens: Int)] = [:]
+        var byModel: [String: (cost: Double, tokens: Int, breakdown: TokenBreakdown)] = [:]
 
         for t in recentTurns where t.timestamp >= start && t.timestamp <= end {
             cost += t.cost
             tokens += t.tokens
+            windowBreakdown += t.breakdown
             turns += 1
 
             var p = byProject[t.projectSlug] ?? (0, 0, 0, t.timestamp)
@@ -200,8 +210,8 @@ actor GrokUsageAggregator: CostLogAggregating {
 
             for m in t.models {
                 guard let display = ModelPricing.displayName(for: m.model) else { continue }
-                let acc = byModel[display] ?? (0, 0)
-                byModel[display] = (acc.cost + m.cost, acc.tokens + m.tokens)
+                let acc = byModel[display] ?? (0, 0, .zero)
+                byModel[display] = (acc.cost + m.cost, acc.tokens + m.tokens, acc.breakdown + m.breakdown)
             }
         }
 
@@ -210,11 +220,11 @@ actor GrokUsageAggregator: CostLogAggregating {
             end: end,
             cost: cost,
             tokens: tokens,
-            breakdown: .zero,
+            breakdown: windowBreakdown,
             turns: turns,
             projects: Self.summaries(byProject),
             models: byModel
-                .map { ($0.key, $0.value.cost, $0.value.tokens, TokenBreakdown.zero) }
+                .map { ($0.key, $0.value.cost, $0.value.tokens, $0.value.breakdown) }
                 .sorted { $0.1 > $1.1 }
         )
     }
@@ -254,6 +264,7 @@ actor GrokUsageAggregator: CostLogAggregating {
         var agg = oldDays[day] ?? DayAgg()
         agg.cost += t.cost
         agg.tokens += t.tokens
+        agg.breakdown += t.breakdown
         agg.turns += 1
         for m in t.models {
             agg.byFamily[ModelPricing.family(for: m.model), default: 0] += m.cost
@@ -422,6 +433,22 @@ actor GrokUsageAggregator: CostLogAggregating {
         /// The CLI's own figure, when this build of the CLI logs one.
         var cost: Double?
 
+        /// The CLI's `inputTokens` includes the cached read, so fresh input is the
+        /// difference. `cost` stays nil on purpose: `costUsdTicks` prices a turn as a
+        /// whole, and `pricedCost` is a fallback for the *total* only — presenting it
+        /// as a per-category split would be inventing a breakdown the CLI never gave.
+        var breakdown: TokenBreakdown {
+            TokenBreakdown(
+                input: max(0, input - cacheRead),
+                output: output,
+                cacheRead: cacheRead,
+                cacheWrite5m: cacheCreate,
+                cacheWrite1h: 0,
+                thinking: 0,
+                cost: nil
+            )
+        }
+
         /// models.dev's answer, for CLI builds that predate `costUsdTicks`. Zero when
         /// no price is known — a turn we can't price still has to contribute its
         /// tokens and its place in the day rather than vanishing.
@@ -473,6 +500,7 @@ actor GrokUsageAggregator: CostLogAggregating {
             projectSlug: projectSlug,
             cost: spends.reduce(0) { $0 + $1.cost },
             tokens: spends.reduce(0) { $0 + $1.tokens },
+            breakdown: spends.reduce(.zero) { $0 + $1.breakdown },
             models: spends
         )
         return (turn, eventID)
@@ -528,14 +556,17 @@ actor GrokUsageAggregator: CostLogAggregating {
         let alreadyPriced = rows.reduce(0.0) { $0 + ($1.cost ?? 0) }
 
         guard !unpriced.isEmpty else {
-            var spends = rows.map { ModelSpend(model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens) }
+            var spends = rows.map {
+                ModelSpend(model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens, breakdown: $0.breakdown)
+            }
             guard let turnCost, turnCost - alreadyPriced > remainderEpsilon,
                   let biggest = spends.indices.max(by: { spends[$0].cost < spends[$1].cost })
             else { return spends }
             spends[biggest] = ModelSpend(
                 model: spends[biggest].model,
                 cost: spends[biggest].cost + (turnCost - alreadyPriced),
-                tokens: spends[biggest].tokens
+                tokens: spends[biggest].tokens,
+                breakdown: spends[biggest].breakdown
             )
             return spends
         }
@@ -545,15 +576,26 @@ actor GrokUsageAggregator: CostLogAggregating {
             let unpricedTokens = unpriced.reduce(0) { $0 + $1.tokens }
             return rows.map { row in
                 guard row.cost == nil else {
-                    return ModelSpend(model: row.model, cost: row.cost ?? 0, tokens: row.tokens)
+                    return ModelSpend(
+                        model: row.model, cost: row.cost ?? 0, tokens: row.tokens,
+                        breakdown: row.breakdown
+                    )
                 }
                 let share = unpricedTokens > 0
                     ? Double(row.tokens) / Double(unpricedTokens)
                     : 1.0 / Double(unpriced.count)
-                return ModelSpend(model: row.model, cost: remainder * share, tokens: row.tokens)
+                return ModelSpend(
+                    model: row.model, cost: remainder * share, tokens: row.tokens,
+                    breakdown: row.breakdown
+                )
             }
         }
-        return rows.map { ModelSpend(model: $0.model, cost: $0.cost ?? $0.pricedCost, tokens: $0.tokens) }
+        return rows.map {
+            ModelSpend(
+                model: $0.model, cost: $0.cost ?? $0.pricedCost, tokens: $0.tokens,
+                breakdown: $0.breakdown
+            )
+        }
     }
 
     private static func intValue(_ any: Any?) -> Int {
