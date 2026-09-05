@@ -24,6 +24,9 @@ final class AppState: ObservableObject {
     private var screenLocked = false
     private var isSuspended: Bool { systemAsleep || screenLocked }
     private var suspensionObservers: [NSObjectProtocol] = []
+    /// Last successful readings from disk — the source `retainingLastGoodServices`
+    /// falls back to when this session has never seen a provider succeed.
+    private var lastKnown: [String: LastKnownService] = [:]
 
     private init() {}
 
@@ -35,8 +38,57 @@ final class AppState: ObservableObject {
         AgentChannel.shared.onEvent = { event, reply in
             AgentEventRouter.handle(event, reply: reply, store: AgentSessionStore.shared, broker: PermissionBroker.shared)
         }
+        seedFromLastKnown()
         refreshNow()
         startTimer()
+    }
+
+    /// The popover opened right after launch was empty for a second — and for a
+    /// provider that is closed, empty for good. Seed from disk first: the numbers
+    /// are last-known, flagged stale, and the first poll replaces them.
+    private func seedFromLastKnown() {
+        Task { [weak self] in
+            let stored = await LastKnownStore.shared.load()
+            await MainActor.run {
+                guard let self else { return }
+                self.lastKnown = stored
+                // The poll started in the same turn may already have landed; fresh
+                // data always wins over the file.
+                guard !stored.isEmpty, !self.snapshot.hasAnyData else { return }
+                self.snapshot = Self.seededSnapshot(from: stored)
+            }
+        }
+    }
+
+    /// Stored readings as a snapshot: the numbers, no state message, and the quiet
+    /// `.notRunning` chip — nothing has been polled yet this session. `fetchedAt` is
+    /// the newest stored reading, so the header says "Updated 3h ago" rather than
+    /// claiming the app just refreshed.
+    nonisolated static func seededSnapshot(from stored: [String: LastKnownService]) -> UsageSnapshot {
+        guard !stored.isEmpty else { return .empty }
+        let services = stored
+            .sorted { ($0.value.order, $0.key) < ($1.value.order, $1.key) }
+            .map { pair in
+                ServiceSnapshot(
+                    id: pair.key,
+                    displayName: pair.value.displayName,
+                    icon: pair.value.icon,
+                    plan: pair.value.plan,
+                    accountLabel: pair.value.accountLabel,
+                    buckets: pair.value.buckets,
+                    extraUsage: pair.value.extraUsage,
+                    weekCost: pair.value.weekCost,
+                    state: .notRunning,
+                    stateMessage: nil,
+                    fetchedAt: pair.value.fetchedAt
+                )
+            }
+        return UsageSnapshot(
+            services: services,
+            fetchedAt: services.map(\.fetchedAt).max() ?? .distantPast,
+            isStale: true,
+            lastError: nil
+        )
     }
 
     private func observeSystemState() {
@@ -147,7 +199,7 @@ final class AppState: ObservableObject {
             grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
         next = await Self.applyPayAsYouGo(to: next)
-        next = Self.retainingLastGoodServices(previous: snapshot, next: next)
+        next = Self.retainingLastGoodServices(previous: snapshot, next: next, stored: lastKnown)
 
         // A failed or empty poll (network blip, transient API error) must not wipe the
         // last-known usage from the menu bar. Keep the previous data and flag it stale;
@@ -162,6 +214,11 @@ final class AppState: ObservableObject {
                 lastError: next.lastError
             )
         }
+
+        // The disk copy, for the next launch and for the fallback above. Only ok,
+        // non-empty readings are written; the store skips unchanged numbers.
+        await LastKnownStore.shared.remember(snapshot.services)
+        lastKnown = await LastKnownStore.shared.load()
 
         // Back off polling until any server-requested Retry-After elapses (clamped to 5m);
         // a clean fetch clears the backoff.
@@ -269,27 +326,37 @@ final class AppState: ObservableObject {
     /// rate-limited Claude replaced its bars with a bare error tile. Instead, a
     /// service that comes back failed keeps its previous data (bars, plan, costs)
     /// alongside the error state — the badge says what's wrong, the numbers stay.
-    private static func retainingLastGoodServices(
+    ///
+    /// Two sources, in order: this session's own last good poll, then the file. The
+    /// file is what carries Antigravity's numbers through a relaunch with the app
+    /// closed, which nothing did before.
+    nonisolated static func retainingLastGoodServices(
         previous: UsageSnapshot,
-        next: UsageSnapshot
+        next: UsageSnapshot,
+        stored: [String: LastKnownService] = [:]
     ) -> UsageSnapshot {
         let services = next.services.map { service -> ServiceSnapshot in
-            guard service.state != .ok, service.buckets.isEmpty,
-                  let prev = previous.services.first(where: { $0.id == service.id }),
-                  !prev.buckets.isEmpty
-            else { return service }
+            guard service.state != .ok, service.buckets.isEmpty else { return service }
+            let source: LastKnownService? = {
+                if let prev = previous.services.first(where: { $0.id == service.id }), !prev.buckets.isEmpty {
+                    return LastKnownService(from: prev, order: 0)
+                }
+                guard let entry = stored[service.id], !entry.buckets.isEmpty else { return nil }
+                return entry
+            }()
+            guard let source else { return service }
             return ServiceSnapshot(
                 id: service.id,
                 displayName: service.displayName,
                 icon: service.icon,
-                plan: prev.plan,
-                accountLabel: prev.accountLabel,
-                buckets: prev.buckets,
-                extraUsage: prev.extraUsage,
-                weekCost: prev.weekCost,
+                plan: source.plan,
+                accountLabel: source.accountLabel,
+                buckets: source.buckets,
+                extraUsage: source.extraUsage,
+                weekCost: source.weekCost,
                 state: service.state,
                 stateMessage: service.stateMessage,
-                fetchedAt: prev.fetchedAt,
+                fetchedAt: source.fetchedAt,
                 retryAfter: service.retryAfter
             )
         }
