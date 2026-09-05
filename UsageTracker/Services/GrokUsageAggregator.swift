@@ -153,16 +153,21 @@ actor GrokUsageAggregator: CostLogAggregating {
         }
 
         let daily = dailyAcc.map { (k, v) in
-            CLIDailySummary(day: k, totalCost: v.cost, totalTokens: v.tokens, turns: v.turns, byFamily: v.byFamily)
+            // Placeholder until task 6 gives DayAgg a breakdown of its own.
+            CLIDailySummary(
+                day: k, totalCost: v.cost, totalTokens: v.tokens, tokens: .zero,
+                turns: v.turns, byFamily: v.byFamily
+            )
         }.sorted { $0.day < $1.day }
 
         let modelsToday = byModelToday
-            .map { ($0.key, $0.value.cost, $0.value.tokens) }
+            .map { ($0.key, $0.value.cost, $0.value.tokens, TokenBreakdown.zero) }
             .sorted { $0.1 > $1.1 }
 
         return CLIBreakdown(
             todayCost: todayCost,
             todayTokens: todayTokens,
+            todayTokenBreakdown: .zero,
             todayTurns: todayTurns,
             weekCost: weekCost,
             monthCost: monthCost,
@@ -205,10 +210,11 @@ actor GrokUsageAggregator: CostLogAggregating {
             end: end,
             cost: cost,
             tokens: tokens,
+            breakdown: .zero,
             turns: turns,
             projects: Self.summaries(byProject),
             models: byModel
-                .map { ($0.key, $0.value.cost, $0.value.tokens) }
+                .map { ($0.key, $0.value.cost, $0.value.tokens, TokenBreakdown.zero) }
                 .sorted { $0.1 > $1.1 }
         )
     }

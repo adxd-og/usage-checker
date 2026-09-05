@@ -594,4 +594,93 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(usage.turns, 2, "identical content is one turn; a different thinking count is not")
         XCTAssertEqual(usage.cost, 12.0, accuracy: 0.0001)
     }
+
+    // MARK: - Aggregated token breakdown
+
+    /// Two turns a few seconds old — not ten minutes, which falls into yesterday
+    /// whenever the suite runs just after midnight.
+    private func writeTodayBreakdownFixture() throws {
+        try write([
+            line(
+                id: "msg_t1", minutesAgo: 0.1, model: "claude-sonnet-4-5",
+                input: 1_000_000, output: 200_000, cacheRead: 500_000,
+                cacheCreate5m: 100_000, cacheCreate1h: 10_000, thinking: 50_000
+            ),
+            line(
+                id: "msg_t2", minutesAgo: 0.1, model: "claude-opus-4-5",
+                input: 2_000_000, output: 100_000
+            ),
+        ], project: alphaSlug)
+    }
+
+    func testTodaysTokensAreSplitByKind() async throws {
+        try writeTodayBreakdownFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let b = await aggregator.breakdown()
+
+        XCTAssertEqual(b.todayTokenBreakdown.input, 3_000_000)
+        XCTAssertEqual(b.todayTokenBreakdown.output, 300_000)
+        XCTAssertEqual(b.todayTokenBreakdown.cacheRead, 500_000)
+        XCTAssertEqual(b.todayTokenBreakdown.cacheWrite5m, 100_000)
+        XCTAssertEqual(b.todayTokenBreakdown.cacheWrite1h, 10_000)
+        XCTAssertEqual(b.todayTokenBreakdown.cacheWrite, 110_000)
+        XCTAssertEqual(b.todayTokenBreakdown.thinking, 50_000, "reported, and only reported")
+        XCTAssertEqual(b.todayTokens, b.todayTokenBreakdown.total, "the headline is the split's sum")
+        // Sonnet: $3.00 in + $3.00 out + $0.15 cache read + $0.375 5m + $0.06 1h = $6.585
+        // Opus:   $10.00 in + $2.50 out = $12.50
+        XCTAssertEqual(b.todayCost, 19.085, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(b.todayTokenBreakdown.cost).total, b.todayCost, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(b.todayTokenBreakdown.cost).cacheWrite, 0.435, accuracy: 1e-9)
+    }
+
+    func testEachOfTodaysModelsCarriesItsOwnSplit() async throws {
+        try writeTodayBreakdownFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let b = await aggregator.breakdown()
+
+        XCTAssertEqual(b.byModelToday.map(\.model), ["Opus 4.5", "Sonnet 4.5"], "ranked by cost")
+        XCTAssertEqual(b.byModelToday[0].breakdown.input, 2_000_000)
+        XCTAssertEqual(b.byModelToday[0].breakdown.cacheRead, 0)
+        XCTAssertEqual(b.byModelToday[0].breakdown.thinking, 0, "no output_tokens_details in that line")
+        XCTAssertEqual(b.byModelToday[0].breakdown.total, b.byModelToday[0].tokens)
+        XCTAssertEqual(b.byModelToday[1].breakdown.cacheWrite, 110_000)
+        XCTAssertEqual(b.byModelToday[1].breakdown.thinking, 50_000)
+        XCTAssertEqual(
+            try XCTUnwrap(b.byModelToday[1].breakdown.cost).total,
+            b.byModelToday[1].cost,
+            accuracy: 1e-9
+        )
+    }
+
+    func testEachDailyRowCarriesTheSplitBehindItsTotal() async throws {
+        try writeTodayBreakdownFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let b = await aggregator.breakdown()
+        let day = try XCTUnwrap(b.daily.last)
+
+        XCTAssertEqual(day.tokens.input, 3_000_000)
+        XCTAssertEqual(day.tokens.cacheWrite, 110_000)
+        XCTAssertEqual(day.tokens.thinking, 50_000)
+        XCTAssertEqual(day.totalTokens, day.tokens.total)
+        XCTAssertEqual(try XCTUnwrap(day.tokens.cost).total, day.totalCost, accuracy: 1e-9)
+    }
+
+    func testTheWindowCarriesTheSameSplit() async throws {
+        try writeTodayBreakdownFixture()
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.breakdown.input, 3_000_000)
+        XCTAssertEqual(usage.breakdown.cacheRead, 500_000)
+        XCTAssertEqual(usage.breakdown.cacheWrite, 110_000)
+        XCTAssertEqual(usage.breakdown.total, usage.tokens)
+        XCTAssertEqual(try XCTUnwrap(usage.breakdown.cost).total, usage.cost, accuracy: 1e-9)
+        XCTAssertEqual(usage.models.map(\.model), ["Opus 4.5", "Sonnet 4.5"])
+        XCTAssertEqual(usage.models[0].breakdown.input, 2_000_000)
+        XCTAssertEqual(usage.models[1].breakdown.thinking, 50_000)
+    }
 }

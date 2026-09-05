@@ -36,6 +36,10 @@ struct CLIDailySummary: Sendable, Identifiable {
     let day: Date
     let totalCost: Double
     let totalTokens: Int
+    /// The same tokens split by kind. `totalTokens == tokens.total` for Claude and
+    /// Codex; for Grok the headline stays the CLI's own figure, which can disagree
+    /// with the parts (see `GrokUsageAggregator`).
+    let tokens: TokenBreakdown
     let turns: Int
     let byFamily: [String: Double] // opus / sonnet / haiku → $
 
@@ -55,10 +59,13 @@ struct ProjectSummary: Sendable, Identifiable {
 struct CLIBreakdown: Sendable {
     let todayCost: Double
     let todayTokens: Int
+    /// Today's tokens split by kind, with per-category dollars when the provider
+    /// prices per category.
+    let todayTokenBreakdown: TokenBreakdown
     let todayTurns: Int
     let weekCost: Double
     let monthCost: Double
-    let byModelToday: [(model: String, cost: Double, tokens: Int)]
+    let byModelToday: [(model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)]
     let daily: [CLIDailySummary]
     let projectsWeek: [ProjectSummary]
     let projectsMonth: [ProjectSummary]
@@ -75,10 +82,13 @@ struct WindowUsage: Sendable {
     let end: Date
     let cost: Double
     let tokens: Int
+    /// The window's tokens split by kind. The headline `tokens` above is untouched —
+    /// every existing caller reads it, and for Grok it can disagree with the parts.
+    let breakdown: TokenBreakdown
     let turns: Int
     /// Ranked by cost, descending.
     let projects: [ProjectSummary]
-    let models: [(model: String, cost: Double, tokens: Int)]
+    let models: [(model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)]
 
     var isEmpty: Bool { turns == 0 }
 }
@@ -100,6 +110,7 @@ actor JSONLAggregator: CostLogAggregating {
     private struct DayAgg {
         var cost = 0.0
         var tokens = 0
+        var breakdown = TokenBreakdown.zero
         var turns = 0
         var byFamily: [String: Double] = [:]
     }
@@ -126,6 +137,7 @@ actor JSONLAggregator: CostLogAggregating {
         let day: Date
         let cost: Double
         let tokens: Int
+        let breakdown: TokenBreakdown
         let turns: Int
         let byFamily: [String: Double]
     }
@@ -143,7 +155,9 @@ actor JSONLAggregator: CostLogAggregating {
         let seenMessageIDs: [UInt64]
     }
 
-    private static let cacheVersion = 1
+    /// 2: turns and folded days carry a `TokenBreakdown`. A version-1 snapshot has
+    /// neither and is rejected wholesale — one cold rebuild, then business as usual.
+    private static let cacheVersion = 2
 
     private let rootURL: URL
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
@@ -252,10 +266,11 @@ actor JSONLAggregator: CostLogAggregating {
 
         var todayCost = 0.0
         var todayTokens = 0
+        var todayTokenBreakdown = TokenBreakdown.zero
         var todayTurns = 0
         var weekCost = 0.0
         var monthCost = 0.0
-        var byModelToday: [String: (cost: Double, tokens: Int)] = [:]
+        var byModelToday: [String: (cost: Double, tokens: Int, breakdown: TokenBreakdown)] = [:]
         var dailyAcc = oldDays
         var projectsWeekAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
         var projectsMonthAcc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
@@ -266,10 +281,11 @@ actor JSONLAggregator: CostLogAggregating {
             if t.timestamp >= startOfDay {
                 todayCost += c
                 todayTokens += tokens
+                todayTokenBreakdown += t.tokens
                 todayTurns += 1
                 if let modelDisplay = ModelPricing.displayName(for: t.model) {
-                    let p = byModelToday[modelDisplay] ?? (0, 0)
-                    byModelToday[modelDisplay] = (p.cost + c, p.tokens + tokens)
+                    let p = byModelToday[modelDisplay] ?? (0, 0, .zero)
+                    byModelToday[modelDisplay] = (p.cost + c, p.tokens + tokens, p.breakdown + t.tokens)
                 }
             }
             if t.timestamp >= weekAgo {
@@ -295,17 +311,21 @@ actor JSONLAggregator: CostLogAggregating {
             var bucket = dailyAcc[day] ?? DayAgg()
             bucket.cost += c
             bucket.tokens += tokens
+            bucket.breakdown += t.tokens
             bucket.turns += 1
             bucket.byFamily[ModelPricing.family(for: t.model), default: 0] += c
             dailyAcc[day] = bucket
         }
 
         let daily = dailyAcc.map { (k, v) in
-            CLIDailySummary(day: k, totalCost: v.cost, totalTokens: v.tokens, turns: v.turns, byFamily: v.byFamily)
+            CLIDailySummary(
+                day: k, totalCost: v.cost, totalTokens: v.tokens, tokens: v.breakdown,
+                turns: v.turns, byFamily: v.byFamily
+            )
         }.sorted { $0.day < $1.day }
 
         let modelsToday = byModelToday
-            .map { ($0.key, $0.value.cost, $0.value.tokens) }
+            .map { ($0.key, $0.value.cost, $0.value.tokens, $0.value.breakdown) }
             .sorted { $0.1 > $1.1 }
 
         let projectsWeek = projectsWeekAcc
@@ -333,6 +353,7 @@ actor JSONLAggregator: CostLogAggregating {
         return CLIBreakdown(
             todayCost: todayCost,
             todayTokens: todayTokens,
+            todayTokenBreakdown: todayTokenBreakdown,
             todayTurns: todayTurns,
             weekCost: weekCost,
             monthCost: monthCost,
@@ -349,15 +370,19 @@ actor JSONLAggregator: CostLogAggregating {
     func usage(from start: Date, to end: Date) -> WindowUsage {
         var cost = 0.0
         var tokens = 0
+        // Not `breakdown`: the actor already has a `breakdown()` method, and a local of
+        // that name would shadow it.
+        var windowBreakdown = TokenBreakdown.zero
         var turns = 0
         var byProject: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)] = [:]
-        var byModel: [String: (cost: Double, tokens: Int)] = [:]
+        var byModel: [String: (cost: Double, tokens: Int, breakdown: TokenBreakdown)] = [:]
 
         for t in recentTurns where t.timestamp >= start && t.timestamp <= end {
             let c = t.cost
             let tok = t.totalTokens
             cost += c
             tokens += tok
+            windowBreakdown += t.tokens
             turns += 1
 
             var p = byProject[t.projectSlug] ?? (0, 0, 0, t.timestamp)
@@ -368,8 +393,8 @@ actor JSONLAggregator: CostLogAggregating {
             byProject[t.projectSlug] = p
 
             if let modelDisplay = ModelPricing.displayName(for: t.model) {
-                let m = byModel[modelDisplay] ?? (0, 0)
-                byModel[modelDisplay] = (m.cost + c, m.tokens + tok)
+                let m = byModel[modelDisplay] ?? (0, 0, .zero)
+                byModel[modelDisplay] = (m.cost + c, m.tokens + tok, m.breakdown + t.tokens)
             }
         }
 
@@ -378,6 +403,7 @@ actor JSONLAggregator: CostLogAggregating {
             end: end,
             cost: cost,
             tokens: tokens,
+            breakdown: windowBreakdown,
             turns: turns,
             projects: byProject
                 .map { ProjectSummary(
@@ -390,7 +416,7 @@ actor JSONLAggregator: CostLogAggregating {
                 ) }
                 .sorted { $0.totalCost > $1.totalCost },
             models: byModel
-                .map { ($0.key, $0.value.cost, $0.value.tokens) }
+                .map { ($0.key, $0.value.cost, $0.value.tokens, $0.value.breakdown) }
                 .sorted { $0.1 > $1.1 }
         )
     }
@@ -417,6 +443,7 @@ actor JSONLAggregator: CostLogAggregating {
         var agg = oldDays[day] ?? DayAgg()
         agg.cost += t.cost
         agg.tokens += t.totalTokens
+        agg.breakdown += t.tokens
         agg.turns += 1
         agg.byFamily[ModelPricing.family(for: t.model), default: 0] += t.cost
         oldDays[day] = agg
@@ -601,7 +628,8 @@ actor JSONLAggregator: CostLogAggregating {
         var days: [Date: DayAgg] = [:]
         for entry in snapshot.oldDays {
             days[entry.day] = DayAgg(
-                cost: entry.cost, tokens: entry.tokens, turns: entry.turns, byFamily: entry.byFamily
+                cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
+                turns: entry.turns, byFamily: entry.byFamily
             )
         }
         oldDays = days
@@ -638,7 +666,8 @@ actor JSONLAggregator: CostLogAggregating {
             recentTurns: recentTurns,
             oldDays: oldDays.map {
                 DayEntry(day: $0.key, cost: $0.value.cost, tokens: $0.value.tokens,
-                         turns: $0.value.turns, byFamily: $0.value.byFamily)
+                         breakdown: $0.value.breakdown, turns: $0.value.turns,
+                         byFamily: $0.value.byFamily)
             },
             seenMessageIDs: Array(seenMessageIDs)
         )
