@@ -234,17 +234,16 @@ enum AgentToolSummary {
     }
 
     /// nil when there is no headline; the detail is dropped when it only repeats it,
-    /// which is what keeps the row's chevron off a one-word command.
+    /// which is what keeps the row's chevron off a one-word command. A headline that
+    /// *ends* with the detail repeats it too — "Edit WalletView.swift" over
+    /// "WalletView.swift" is a chevron that opens onto the line above it.
     private static func plain(headline: String, detail: String?) -> ToolSummary? {
         let headline = cap(headline, maxHeadlineLength)
         guard !headline.isEmpty else { return nil }
         let body = detail.map { cap($0, maxDetailLength) } ?? ""
         let trimmed = body.trimmingCharacters(in: .whitespacesAndNewlines)
-        return ToolSummary(
-            headline: headline,
-            detail: trimmed.isEmpty || trimmed == headline ? nil : body,
-            attention: nil
-        )
+        let repeats = trimmed.isEmpty || headline.hasSuffix(trimmed)
+        return ToolSummary(headline: headline, detail: repeats ? nil : body, attention: nil)
     }
 
     private static func cap(_ text: String, _ limit: Int) -> String {

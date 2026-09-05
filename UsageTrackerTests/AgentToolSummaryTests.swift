@@ -45,6 +45,22 @@ final class AgentToolSummaryTests: XCTestCase {
         XCTAssertEqual(AgentToolSummary.make(toolName: "NotebookEdit", toolInput: ["notebook_path": "/tmp/n.ipynb"])?.headline, "NotebookEdit n.ipynb")
     }
 
+    func testABareFilenameLeavesNothingToExpand() {
+        // `Edit WalletView.swift` over a detail of "WalletView.swift" is a chevron
+        // that opens onto the headline again.
+        let summary = AgentToolSummary.make(toolName: "Edit", toolInput: ["file_path": "WalletView.swift"])
+        XCTAssertEqual(summary?.headline, "Edit WalletView.swift")
+        XCTAssertNil(summary?.detail)
+    }
+
+    func testAPathThatSaysMoreThanTheHeadlineStillExpands() {
+        XCTAssertEqual(
+            AgentToolSummary.make(toolName: "Edit", toolInput: ["file_path": "./WalletView.swift"])?.detail,
+            "./WalletView.swift",
+            "the directory is the part the headline dropped"
+        )
+    }
+
     // MARK: search
 
     func testSearchToolsKeepTheToolNameAndHaveNoDetail() {
