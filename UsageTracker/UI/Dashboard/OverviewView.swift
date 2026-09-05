@@ -54,19 +54,29 @@ struct OverviewView: View {
     @ViewBuilder
     private var heroCard: some View {
         if let service, let hero = WindowRanking.detailHero(for: service) {
-            let verdict = BurnVerdict.make(
+            // Last-known numbers can't be extrapolated: a provider that stopped
+            // reporting isn't burning anything, whatever the last slope said.
+            let verdict = service.isRetained ? nil : BurnVerdict.make(
                 burn: dashboard.sessionBurn,
                 sessionBuckets: service.buckets.filter { $0.kind == .session }
             )
             VStack(alignment: .leading, spacing: OMSpacing.xs) {
                 OMHero(hero: hero, verdict: verdict)
+                    .opacity(service.isRetained ? 0.55 : 1)
                 if verdict == nil {
                     // Stale, absent or too-flat to extrapolate: the hero would say
                     // nothing at all about the burn rate, so the burn card's own line
                     // goes here instead.
-                    Text(Self.burnLine(burn: dashboard.sessionBurn, bucket: dashboard.burnBucket))
+                    Text(Self.burnLine(burn: dashboard.sessionBurn, bucket: dashboard.burnBucket,
+                                       retained: service.isRetained))
                         .font(OMFont.caption)
                         .foregroundStyle(.secondary)
+                }
+                if let caption = RetainedCopy.caption(for: service) {
+                    Text(caption)
+                        .font(OMFont.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .dashboardCard(padding: 14)
@@ -84,7 +94,8 @@ struct OverviewView: View {
                 Text(Self.burnTitle(bucket))
                     .font(OMFont.body)
                     .foregroundStyle(.secondary)
-                Text(Self.burnValue(dashboard.sessionBurn)).font(OMFont.bodyStrong)
+                Text(Self.burnValue(dashboard.sessionBurn, retained: service?.isRetained ?? false))
+                    .font(OMFont.bodyStrong)
             }
             Spacer()
             OMRing(percent: bucket?.clampedPercent ?? 0, size: .medium)
@@ -100,7 +111,10 @@ struct OverviewView: View {
         bucket.map { "\($0.label) burn rate" } ?? "Burn rate"
     }
 
-    nonisolated static func burnValue(_ burn: BurnRatePrediction?) -> String {
+    /// `retained`: the provider stopped reporting, so its numbers are frozen — a
+    /// prediction drawn from them would describe a limit nobody is walking towards.
+    nonisolated static func burnValue(_ burn: BurnRatePrediction?, retained: Bool = false) -> String {
+        if retained { return "Paused" }
         guard let burn else { return "Not enough data" }
         guard let secs = burn.secondsToLimit else {
             return burn.percentPerMinute > 0 ? "Stable" : "Idle"
@@ -109,8 +123,12 @@ struct OverviewView: View {
     }
 
     /// The two lines of `burnCard` as one caption, for under the hero.
-    nonisolated static func burnLine(burn: BurnRatePrediction?, bucket: UsageBucket?) -> String {
-        "\(burnTitle(bucket)) · \(burnValue(burn))"
+    nonisolated static func burnLine(
+        burn: BurnRatePrediction?,
+        bucket: UsageBucket?,
+        retained: Bool = false
+    ) -> String {
+        "\(burnTitle(bucket)) · \(burnValue(burn, retained: retained))"
     }
 
     private var todayCard: some View {
@@ -143,16 +161,20 @@ struct OverviewView: View {
     private func bucketsBlock(service: ServiceSnapshot) -> some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             OMSectionHeader(title: "Usage windows")
-            ForEach(service.buckets) { b in
-                // Same wording as before ("resets in 2h 15m" / "resets —"), now on the
-                // component: the label, the reset time and the bar are one row.
-                OMKeyValueRow(
-                    label: b.label,
-                    value: "resets \(formatRelative(b.resetsAt))",
-                    barPercent: b.clampedPercent,
-                    pace: b.elapsedFraction()
-                )
+            // Dimmed as a block, so no individual row has to remember to do it.
+            VStack(alignment: .leading, spacing: OMSpacing.m) {
+                ForEach(service.buckets) { b in
+                    // Same wording as before ("resets in 2h 15m" / "resets —"), now on the
+                    // component: the label, the reset time and the bar are one row.
+                    OMKeyValueRow(
+                        label: b.label,
+                        value: "resets \(formatRelative(b.resetsAt))",
+                        barPercent: b.clampedPercent,
+                        pace: b.elapsedFraction()
+                    )
+                }
             }
+            .opacity(service.isRetained ? 0.55 : 1)
         }
         .dashboardCard()
     }

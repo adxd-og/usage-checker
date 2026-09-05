@@ -103,6 +103,16 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
         }
         return candidates.max() ?? 0
     }
+
+    /// The service failed but still has numbers on screen: this session's previous
+    /// poll — or, after a relaunch, `LastKnownStore` — kept the last good reading.
+    /// One predicate for every surface that draws a service, so the tile, the
+    /// popover rows, the dashboard and the menu bar can't disagree about it.
+    var isRetained: Bool { state != .ok && !buckets.isEmpty }
+
+    /// When the retained numbers were last true. nil for a live service — it has
+    /// nothing to stamp.
+    var retainedAt: Date? { isRetained ? fetchedAt : nil }
 }
 
 /// Enterprise/Team accounts know extra usage as their spend limit;

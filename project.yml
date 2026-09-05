@@ -129,6 +129,10 @@ targets:
     # Omelette` see the app's internal types.
     dependencies:
       - target: UsageTracker
+      # The Antigravity fallback test builds real CodexBarCore value types; the
+      # module reaches this bundle only if it is declared here.
+      - package: CodexBar
+        product: CodexBarCore
     settings:
       base:
         # signing.xcconfig sets one bundle id for every target; the test bundle

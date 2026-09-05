@@ -67,4 +67,31 @@ final class OverviewBurnLineTests: XCTestCase {
             "Session burn rate · Hit limit in 2h 15m"
         )
     }
+
+    // MARK: - Retained
+
+    func testARetainedProviderBurnsNothing() {
+        // The numbers stopped moving with the provider; extrapolating from them
+        // would predict a limit the user is not walking towards.
+        XCTAssertEqual(
+            OverviewView.burnValue(Fixture.prediction(secondsToLimit: 2 * 3600), retained: true),
+            "Paused"
+        )
+        XCTAssertEqual(OverviewView.burnValue(nil, retained: true), "Paused")
+    }
+
+    func testALiveProviderStillPredicts() {
+        XCTAssertEqual(
+            OverviewView.burnValue(Fixture.prediction(secondsToLimit: 2 * 3600), retained: false),
+            "Hit limit in 2h 0m"
+        )
+    }
+
+    func testTheHeroCaptionSaysPausedToo() {
+        let bucket = Fixture.bucket(id: "seven_day", label: "All models", percent: 62, kind: .weekly)
+        XCTAssertEqual(
+            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: 2 * 3600), bucket: bucket, retained: true),
+            "All models burn rate · Paused"
+        )
+    }
 }

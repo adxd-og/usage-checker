@@ -42,4 +42,23 @@ final class Updater: NSObject, ObservableObject {
     var lastUpdateCheckDate: Date? {
         controller.updater.lastUpdateCheckDate
     }
+
+    /// Sparkle's own scheduled check runs on its own cadence and can miss a machine
+    /// that sleeps between them. Opening a window is a cheap second trigger — but
+    /// the popover is opened dozens of times a day, so once an hour is the cap.
+    nonisolated static let openCheckInterval: TimeInterval = 3600
+
+    nonisolated static func isDue(lastCheck: Date?, now: Date) -> Bool {
+        guard let lastCheck else { return true }
+        return now.timeIntervalSince(lastCheck) >= openCheckInterval
+    }
+
+    /// Silent: Sparkle only puts UI on screen when there is something to install.
+    /// Honors the user's "check automatically" setting — an update check they
+    /// turned off must not come back through a side door.
+    func checkInBackgroundIfDue(now: Date = Date()) {
+        guard automaticallyChecksForUpdates, canCheckForUpdates else { return }
+        guard Self.isDue(lastCheck: lastUpdateCheckDate, now: now) else { return }
+        controller.updater.checkForUpdatesInBackground()
+    }
 }

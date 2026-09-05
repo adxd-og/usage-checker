@@ -78,6 +78,10 @@ final class StatusBarController {
             popover.performClose(nil)
         } else {
             AppState.shared.refreshForPopover()
+            // Same moment, same reasoning as the refresh: the user is looking at the
+            // app, so this is when an update is worth noticing. Throttled to once an
+            // hour inside the updater.
+            Updater.shared.checkInBackgroundIfDue()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
@@ -124,7 +128,11 @@ final class StatusBarController {
         var lines: [String] = []
         for service in services {
             if !lines.isEmpty { lines.append("") }
-            lines.append(service.plan ?? service.displayName)
+            // A retained provider's block needs a header that explains why the
+            // numbers under it aren't moving; a healthy one just names the plan.
+            lines.append(service.isRetained
+                         ? MenuBarLabel.text(for: service)
+                         : (service.plan ?? service.displayName))
             for b in service.buckets where b.clampedPercent > 0 || b.kind == .session || b.id == "seven_day" {
                 lines.append("  \(b.label): \(Int(b.clampedPercent.rounded()))%")
             }
