@@ -101,4 +101,34 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(extraUsageTitle(plan: "Max 20x"), "Extra usage credits")
         XCTAssertEqual(extraUsageTitle(plan: nil), "Extra usage credits")
     }
+
+    // MARK: - isRetained
+
+    func testAFailedServiceThatStillHasNumbersIsRetained() {
+        // Antigravity with the app closed: the chip says "Not running", the bars
+        // still show what it reported an hour ago.
+        let at = Date(timeIntervalSince1970: 1_788_000_000)
+        let service = Fixture.snapshot(
+            id: "antigravity",
+            buckets: [Fixture.bucket(id: "antigravity_gemini", percent: 62)],
+            state: .notRunning,
+            at: at
+        )
+        XCTAssertTrue(service.isRetained)
+        XCTAssertEqual(service.retainedAt, at)
+    }
+
+    func testAHealthyServiceIsNeverRetained() {
+        let service = Fixture.snapshot(buckets: [Fixture.bucket(id: "seven_day", percent: 55)])
+        XCTAssertFalse(service.isRetained)
+        XCTAssertNil(service.retainedAt, "live numbers carry no as-of stamp")
+    }
+
+    func testAFailedServiceWithNothingToShowIsNotRetained() {
+        // Signed out and never polled: there is nothing to dim, so the chip is
+        // the whole tile.
+        let service = Fixture.snapshot(id: "codex", buckets: [], state: .notSignedIn)
+        XCTAssertFalse(service.isRetained)
+        XCTAssertNil(service.retainedAt)
+    }
 }
