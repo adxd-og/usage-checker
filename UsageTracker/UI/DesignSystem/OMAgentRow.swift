@@ -84,6 +84,21 @@ enum AgentRowText {
         return !id.isEmpty
     }
 
+    /// Whether the row offers the chevron that expands the full text. A detail that
+    /// only repeats the summary is already nil by the time it gets here
+    /// (`AgentToolSummary`), so this is the blank check and nothing more.
+    static func detailIsExpandable(_ activityDetail: String?) -> Bool {
+        !(activityDetail?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+    }
+
+    /// What clicking the row does. A question or a plan can only be answered where it
+    /// was asked, so the row says so instead of implying Omelette can take the answer.
+    static func jumpHelp(for session: AgentSession) -> String {
+        session.attention == nil
+            ? "Jump to \(session.projectName)"
+            : "Click to go to the terminal and answer"
+    }
+
     /// One sentence carrying everything the row shows visually: project,
     /// provider, state, activity, and how long it has been that way.
     static func accessibilityLabel(for session: AgentSession, now: Date = Date()) -> String {
@@ -131,21 +146,42 @@ struct OMAgentRow: View {
         )
     }
 
+    @State private var expanded = false
+    @State private var detailHeight: CGFloat = 0
+
+    /// Twelve lines of an 11 pt monospaced caption. Past that the block scrolls
+    /// instead of pushing the rest of the popover off screen.
+    nonisolated static let detailVisibleLines = 12
+    nonisolated static let detailLineHeight: CGFloat = 13
+    nonisolated static var detailMaxHeight: CGFloat { detailLineHeight * CGFloat(detailVisibleLines) }
+
+    private var showsDetail: Bool {
+        AgentRowText.detailIsExpandable(session.activityDetail)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs + 2) {
-            // The jump target is the row's text, not the whole card: the buttons
-            // below must not be nested inside another button, or which one takes
-            // the click stops being predictable.
-            Button(action: action) {
-                summaryLine
+            // The jump target is the row's text, not the whole card: the chevron and
+            // the buttons must not be nested inside another button, or which one
+            // takes the click stops being predictable.
+            HStack(spacing: OMSpacing.xs) {
+                Button(action: action) {
+                    summaryLine
+                }
+                .buttonStyle(.plain)
+                .focusEffectDisabled()
+                .help(AgentRowText.jumpHelp(for: session))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(AgentRowText.accessibilityLabel(for: session))
+                .accessibilityHint("Brings the window running this session to the front")
+                .accessibilityAddTraits(.isButton)
+
+                if showsDetail { disclosure }
             }
-            .buttonStyle(.plain)
-            .focusEffectDisabled()
-            .help("Jump to \(session.projectName)")
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(AgentRowText.accessibilityLabel(for: session))
-            .accessibilityHint("Brings the window running this session to the front")
-            .accessibilityAddTraits(.isButton)
+
+            if expanded, showsDetail, let detail = session.activityDetail {
+                detailBlock(detail)
+            }
 
             if showsPermission {
                 permissionLine
@@ -158,6 +194,50 @@ struct OMAgentRow: View {
         // The row grows by a line when a request arrives and shrinks when it is
         // answered; without this the list jumps. Reduce Motion gets the jump.
         .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: showsPermission)
+        .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: expanded)
+    }
+
+    /// Collapsed by default and per row: an expanded block is a decision about *this*
+    /// session, and nothing about it is worth persisting.
+    private var disclosure: some View {
+        Button {
+            expanded.toggle()
+        } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.tertiary)
+                .rotationEffect(.degrees(expanded ? 0 : -90))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusEffectDisabled()
+        .help(expanded ? "Hide the full text" : "Show the full text")
+        .accessibilityLabel(expanded ? "Hide the full text" : "Show the full text")
+    }
+
+    /// The whole command, path or plan. Monospaced because most of it is code, and
+    /// selectable because the point of showing it is being able to take it.
+    private func detailBlock(_ detail: String) -> some View {
+        ScrollView(.vertical) {
+            Text(detail)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    // Self-sizing, like AgentsSection's list: measure the text, then
+                    // take exactly that height up to twelve lines. `.task(id:)` keeps
+                    // the write to @State on the main actor under Swift 6.
+                    GeometryReader { proxy in
+                        Color.clear.task(id: proxy.size.height) { detailHeight = proxy.size.height }
+                    }
+                }
+        }
+        .frame(height: min(detailHeight > 0 ? detailHeight : Self.detailMaxHeight, Self.detailMaxHeight))
+        .scrollIndicators(detailHeight > Self.detailMaxHeight ? .automatic : .never)
+        .scrollDisabled(detailHeight <= Self.detailMaxHeight)
+        .padding(.leading, 20 + OMSpacing.s + 1)   // clears the leading icon, so the text lines up
     }
 
     private var summaryLine: some View {
@@ -291,6 +371,8 @@ enum AgentPreviewData {
         _ project: String,
         _ state: AgentState,
         activity: String? = nil,
+        activityDetail: String? = nil,
+        attention: AgentAttention? = nil,
         minutes: Double = 3,
         source: AgentSource = .claude,
         approximate: Bool = false
@@ -305,6 +387,8 @@ enum AgentPreviewData {
             cwd: "/Users/me/Desktop/\(project)",
             state: state,
             activity: activity,
+            activityDetail: activityDetail,
+            attention: attention,
             stateSince: now.addingTimeInterval(-minutes * 60),
             lastEventAt: now.addingTimeInterval(-minutes * 60),
             startedAt: now.addingTimeInterval(-3600),
@@ -318,9 +402,9 @@ enum AgentPreviewData {
     /// The mockup's cast: one waiting, two working, one finished.
     static var mixed: [AgentSession] {
         [
-            session("Usage tracker", .needsYou, activity: "Bash: xcodegen generate", minutes: 1),
-            session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14),
-            session("orion-gemini", .working, activity: "Bash: swift test", minutes: 3, source: .codex),
+            session("Usage tracker", .needsYou, activity: "Regenerate the project", activityDetail: "xcodegen generate", minutes: 1),
+            session("Orion Gate / mobile", .working, activity: "Edit WalletView.swift", activityDetail: "/Users/me/Orion/WalletView.swift", minutes: 14),
+            session("orion-gemini", .working, activity: "swift test", minutes: 3, source: .codex),
             session("Jaravis", .done, activity: nil, minutes: 5),
         ]
     }
@@ -331,11 +415,11 @@ enum AgentPreviewData {
 @MainActor
 private func agentRowPreviewStack(showsProviderIcon: Bool) -> some View {
     VStack(spacing: 5) {
-        OMAgentRow(session: AgentPreviewData.session("Usage tracker", .needsYou, activity: "Bash: xcodegen generate", minutes: 1), showsProviderIcon: showsProviderIcon, action: {})
-        OMAgentRow(session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Usage tracker", .needsYou, activity: "Regenerate the project", activityDetail: "xcodegen generate", minutes: 1), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit WalletView.swift", activityDetail: "/Users/me/Orion/WalletView.swift", minutes: 14), showsProviderIcon: showsProviderIcon, action: {})
         OMAgentRow(session: AgentPreviewData.session("Jaravis", .done, minutes: 5), showsProviderIcon: showsProviderIcon, action: {})
         OMAgentRow(session: AgentPreviewData.session("orion-gemini", .idle, minutes: 42, source: .codex), showsProviderIcon: showsProviderIcon, action: {})
-        OMAgentRow(session: AgentPreviewData.session("Movie app", .working, activity: "Grep: usageStatusColor", minutes: 2, approximate: true), showsProviderIcon: showsProviderIcon, action: {})
+        OMAgentRow(session: AgentPreviewData.session("Movie app", .working, activity: "Grep usageStatusColor", minutes: 2, approximate: true), showsProviderIcon: showsProviderIcon, action: {})
     }
     .padding()
     .frame(width: 328)
@@ -347,14 +431,42 @@ private func agentRowPreviewStack(showsProviderIcon: Bool) -> some View {
 @MainActor
 private func pendingPermissionPreviewStack(showsProviderIcon: Bool) -> some View {
     var waiting = AgentPreviewData.session(
-        "Usage tracker", .needsYou, activity: "Bash: rm -rf build/DerivedData", minutes: 1
+        "Usage tracker", .needsYou, activity: "Clear the derived data", activityDetail: "rm -rf build/DerivedData", minutes: 1
     )
     waiting.pendingPermissionID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
     return VStack(spacing: 5) {
         OMAgentRow(session: waiting, showsProviderIcon: showsProviderIcon, onAllow: {}, onDeny: {}, action: {})
         OMAgentRow(
-            session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit: WalletView.swift", minutes: 14),
+            session: AgentPreviewData.session("Orion Gate / mobile", .working, activity: "Edit WalletView.swift", activityDetail: "/Users/me/Orion/WalletView.swift", minutes: 14),
             showsProviderIcon: showsProviderIcon,
+            action: {}
+        )
+    }
+    .padding()
+    .frame(width: 328)
+}
+
+/// A session waiting on a question: needs-you colours, the question and its options
+/// one click away, and no Allow / Deny — the answer is typed in the terminal.
+@MainActor
+private func attentionPreviewStack() -> some View {
+    VStack(spacing: 5) {
+        OMAgentRow(
+            session: AgentPreviewData.session(
+                "Usage tracker", .needsYou,
+                activity: "Question: Which provider should the tab default to?",
+                activityDetail: "Which provider should the tab default to?\n• Claude Code\n• Codex\n• Grok",
+                attention: .question(count: 1, multiSelect: false), minutes: 1
+            ),
+            action: {}
+        )
+        OMAgentRow(
+            session: AgentPreviewData.session(
+                "Orion Gate / mobile", .needsYou,
+                activity: "Plan ready for review: Rework the wallet ring",
+                activityDetail: "# Rework the wallet ring\n\nStep one.\nStep two.",
+                attention: .plan, minutes: 4
+            ),
             action: {}
         )
     }
@@ -369,4 +481,6 @@ private func pendingPermissionPreviewStack(showsProviderIcon: Bool) -> some View
 #Preview("Agent rows — permission pending, light") { pendingPermissionPreviewStack(showsProviderIcon: true) }
 #Preview("Agent rows — permission pending, dark") { pendingPermissionPreviewStack(showsProviderIcon: true).preferredColorScheme(.dark) }
 #Preview("Agent rows — permission pending, dots") { pendingPermissionPreviewStack(showsProviderIcon: false) }
+#Preview("Agent rows — question and plan") { attentionPreviewStack() }
+#Preview("Agent rows — question and plan, dark") { attentionPreviewStack().preferredColorScheme(.dark) }
 #endif

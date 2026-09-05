@@ -115,4 +115,31 @@ final class AgentRowTextTests: XCTestCase {
             AgentRowText.permissionButtonsVisible(pendingPermissionID: "0f1e2d3c", source: .codex)
         )
     }
+
+    // MARK: the expanded block
+
+    func testAChevronAppearsOnlyWhenThereIsSomethingToExpand() {
+        XCTAssertTrue(AgentRowText.detailIsExpandable("rm -rf build/DerivedData"))
+        XCTAssertTrue(AgentRowText.detailIsExpandable("Tabs or spaces?\n• Tabs"))
+        XCTAssertFalse(AgentRowText.detailIsExpandable(nil))
+        XCTAssertFalse(AgentRowText.detailIsExpandable(""))
+        XCTAssertFalse(AgentRowText.detailIsExpandable("   \n "))
+    }
+
+    // MARK: where the answer goes
+
+    func testARowWaitingOnAQuestionSaysTheAnswerIsTypedInTheTerminal() {
+        var waiting = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou, activity: "Question: Tabs or spaces?")
+        waiting.attention = .question(count: 1, multiSelect: false)
+        XCTAssertEqual(AgentRowText.jumpHelp(for: waiting), "Click to go to the terminal and answer")
+
+        var planning = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou)
+        planning.attention = .plan
+        XCTAssertEqual(AgentRowText.jumpHelp(for: planning), "Click to go to the terminal and answer")
+    }
+
+    func testEveryOtherRowKeepsTheJumpWording() {
+        let working = Fixture.agentSession(projectName: "Usage tracker", state: .working)
+        XCTAssertEqual(AgentRowText.jumpHelp(for: working), "Jump to Usage tracker")
+    }
 }
