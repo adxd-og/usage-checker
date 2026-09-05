@@ -4,6 +4,8 @@ import Charts
 struct SessionHistoryView: View {
     @ObservedObject var dashboard: DashboardState
 
+    @AppStorage("historyChartMode") private var chartMode: HistoryChartMode = .cost
+
     /// Providers with no local cost log get their quota charted over the same range
     /// instead of an empty state. On a subscription the quota *is* the consumption,
     /// so this is the same story the cost chart tells, in the only unit available.
@@ -52,7 +54,12 @@ struct SessionHistoryView: View {
         let cutoff = cal.startOfDay(for: Date().addingTimeInterval(-dashboard.range.seconds))
         return daily
             .filter { $0.day >= cutoff }
-            .map { DailyPoint(day: $0.day, cost: $0.totalCost, tokens: $0.totalTokens, turns: $0.turns) }
+            .map {
+                DailyPoint(
+                    day: $0.day, cost: $0.totalCost, tokens: $0.totalTokens,
+                    turns: $0.turns, breakdown: $0.tokens
+                )
+            }
     }
 
     var body: some View {
@@ -61,13 +68,24 @@ struct SessionHistoryView: View {
                 DashboardHeader(
                     title: showsQuota ? "Quota history" : "Session history",
                     subtitle: subtitle,
-                    trailing: AnyView(RangePicker(range: $dashboard.range))
+                    // A provider with no cost log has one unit to chart, so it is
+                    // shown a range control and nothing to toggle.
+                    trailing: AnyView(
+                        HStack(spacing: 12) {
+                            if !showsQuota { modePicker }
+                            RangePicker(range: $dashboard.range)
+                        }
+                    )
                 )
 
                 if showsQuota {
                     quotaContent
                 } else if data.isEmpty {
                     placeholder
+                } else if chartMode == .tokens {
+                    tokensChart
+                    Divider().padding(.horizontal, 24)
+                    tokensTable
                 } else {
                     chart
                     Divider().padding(.horizontal, 24)
@@ -81,6 +99,17 @@ struct SessionHistoryView: View {
         .task(id: cacheKey) {
             await rebuildQuota()
         }
+    }
+
+    private var modePicker: some View {
+        Picker("", selection: $chartMode) {
+            ForEach(HistoryChartMode.allCases) { mode in
+                Text(mode.displayName).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .frame(width: 140)
     }
 
     private var subtitle: String {
@@ -230,6 +259,91 @@ struct SessionHistoryView: View {
         )
     }
 
+    // MARK: - Tokens
+
+    /// One bar per day, split by what the tokens were. `TokenCategory.allCases` is
+    /// both the stacking order and the legend's order, and the scale below pins
+    /// each label to its colour — left alone, Charts picks its own palette and the
+    /// bar stops matching the Overview card.
+    private var tokensChart: some View {
+        Chart {
+            ForEach(data) { point in
+                ForEach(TokenCategory.allCases) { category in
+                    BarMark(
+                        x: .value("Day", point.day, unit: .day),
+                        y: .value("Tokens", category.tokens(in: point.breakdown))
+                    )
+                    .foregroundStyle(by: .value("Type", category.label))
+                }
+            }
+        }
+        .chartForegroundStyleScale(
+            domain: TokenCategory.allCases.map(\.label),
+            range: TokenCategory.allCases.map(\.color)
+        )
+        .chartXAxis {
+            AxisMarks(values: .stride(by: .day, count: max(1, data.count / 8))) { _ in
+                AxisGridLine()
+                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    // A million-token day is the norm; raw digits would be a wall.
+                    if let tokens = value.as(Int.self) {
+                        Text(TokenFormat.formatTokens(tokens))
+                    } else if let tokens = value.as(Double.self) {
+                        Text(TokenFormat.formatTokens(Int(tokens)))
+                    }
+                }
+            }
+        }
+        .chartLegend(position: .bottom, alignment: .leading)
+        .frame(minHeight: 260)
+        .padding(.horizontal, 24)
+    }
+
+    /// The chart's numbers, per day. Cache columns are secondary: they are usually
+    /// the biggest figures on the row and the least actionable.
+    private var tokensTable: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
+                Spacer()
+                Text("In").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                Text("Out").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                Text("Cache read").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
+                Text("Cache write").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
+                Text("Cost").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+            }
+            .padding(.bottom, 6)
+            ForEach(data.reversed()) { p in
+                HStack {
+                    Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(OMFont.body)
+                        .frame(width: 120, alignment: .leading)
+                    Spacer()
+                    Text(TokenFormat.formatTokens(p.breakdown.input))
+                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
+                    Text(TokenFormat.formatTokens(p.breakdown.output))
+                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
+                    Text(TokenFormat.formatTokens(p.breakdown.cacheRead))
+                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
+                        .frame(width: 90, alignment: .trailing)
+                    Text(TokenFormat.formatTokens(p.breakdown.cacheWrite))
+                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
+                        .frame(width: 90, alignment: .trailing)
+                    Text(String(format: "$%.2f", p.cost))
+                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
+                }
+                .padding(.vertical, 3)
+                if p.id != data.first?.id { Divider().opacity(0.3) }
+            }
+        }
+        .padding(.horizontal, 24)
+    }
+
     private var table: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -261,11 +375,26 @@ struct SessionHistoryView: View {
             Image(systemName: "chart.bar.xaxis").font(.largeTitle).foregroundStyle(.tertiary)
             Text("No CLI usage recorded yet")
                 .foregroundStyle(.secondary)
-            Text("Run a `claude` session to start collecting data")
+            Text("Run a `\(DashboardState.cliCommandName(for: dashboard.selectedService))` session to start collecting data")
                 .font(OMFont.body)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, minHeight: 220)
+    }
+}
+
+/// Which unit the history tab charts. Persisted (`@AppStorage`), so the tab
+/// reopens on whichever question the user was last asking. Internal rather than
+/// private: the raw values are a storage contract and are asserted in tests.
+enum HistoryChartMode: String, CaseIterable, Identifiable {
+    case cost, tokens
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .cost: return "Cost"
+        case .tokens: return "Tokens"
+        }
     }
 }
 
@@ -274,6 +403,10 @@ private struct DailyPoint: Identifiable {
     let cost: Double
     let tokens: Int
     let turns: Int
+    /// The same day's tokens split by what they were. `tokens` stays the headline
+    /// figure: for Grok the CLI's own total is authoritative and may differ from
+    /// the sum of the parts.
+    let breakdown: TokenBreakdown
     var id: Date { day }
 }
 

@@ -169,6 +169,18 @@ final class DashboardState: ObservableObject {
         }
     }
 
+    /// The command a user would type to produce this provider's log — what the
+    /// history tab's empty state asks them to run. Not derived from `costSource`:
+    /// that carries product names ("Claude Code CLI"), and the empty state needs
+    /// the executable. Anything unknown gets `claude`, the commonest CLI.
+    nonisolated static func cliCommandName(for serviceID: String) -> String {
+        switch serviceID {
+        case "codex": return "codex"
+        case "grok": return "grok"
+        default: return "claude"
+        }
+    }
+
     private var refreshTask: Task<Void, Never>?
     /// Bumped by every `refreshAll()`. `Task.cancel()` is cooperative and an actor call
     /// already in flight runs to completion regardless, so a pass identifies itself and

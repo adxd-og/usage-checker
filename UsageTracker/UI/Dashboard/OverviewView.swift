@@ -27,6 +27,15 @@ struct OverviewView: View {
                         .padding(.horizontal, 24)
                 }
 
+                // Below the hero row and above the CLI dollars: this is the same
+                // log's data, one question earlier ("what did those tokens do?").
+                if dashboard.costSource.hasBreakdown,
+                   let cli = dashboard.cliBreakdown,
+                   cli.todayTokenBreakdown.total > 0 {
+                    TokensTodayCard(breakdown: cli.todayTokenBreakdown)
+                        .padding(.horizontal, 24)
+                }
+
                 if dashboard.costSource.hasBreakdown, let cli = dashboard.cliBreakdown {
                     cliBlock(cli: cli)
                         .padding(.horizontal, 24)
