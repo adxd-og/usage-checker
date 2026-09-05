@@ -730,6 +730,32 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(session?.state, .needsYou)
     }
 
+    func testTheIdlePromptDoesNotDismissAQuestion() {
+        // Claude Code fires `Notification` "waiting for your input" 60 seconds into a
+        // question. It is the same wait, not the end of it: dropping to Idle would
+        // withdraw the banner and take the row out of Needs you while the terminal
+        // is still holding the prompt open.
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: t0)
+
+        store.apply(event(.notificationIdle), now: at(60))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .needsYou)
+        XCTAssertEqual(session?.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(session?.activity, "Question: Tabs or spaces?")
+        XCTAssertEqual(session?.stateSince, t0, "the wait did not restart")
+        XCTAssertEqual(session?.needsYouCount, 1, "one episode, counted once")
+    }
+
+    func testTheIdlePromptStillGoesIdleWithNoQuestionOpen() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "Bash", toolSummary: "swift test"), now: t0)
+        store.apply(event(.notificationIdle), now: at(60))
+        XCTAssertEqual(store.sessions.first?.state, .idle)
+    }
+
     func testANewPromptClearsTheAttention() {
         let store = makeStore()
         store.apply(event(.toolStarted, toolName: "ExitPlanMode", toolSummary: "Plan ready for review: X",

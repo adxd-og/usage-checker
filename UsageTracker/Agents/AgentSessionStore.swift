@@ -157,7 +157,13 @@ final class AgentSessionStore: ObservableObject {
             Self.applyActivity(event, to: &session)
             transition(&session, to: .needsYou, now: now)
         case .notificationIdle:
-            transition(&session, to: .idle, now: now)
+            // "Waiting for your input" fires 60 seconds into an open question. It is
+            // the same wait said again, so a session that is asking something stays
+            // in `needsYou` — going idle would withdraw the banner and hide the row
+            // while the terminal still has the prompt up.
+            if session.attention == nil {
+                transition(&session, to: .idle, now: now)
+            }
         case .stop, .codexTurnComplete:
             session.attention = nil
             transition(&session, to: .done, now: now)
