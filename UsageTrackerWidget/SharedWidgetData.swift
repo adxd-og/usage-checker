@@ -26,6 +26,10 @@ struct WidgetService: Codable, Equatable, Sendable, Identifiable {
     /// a dollar figure. Optional (and defaulted) so a file written by an older build
     /// still decodes. nil for subscription accounts.
     var spendLabel: String? = nil
+    /// The provider stopped reporting and these are its last known numbers, so the
+    /// widget dims them like every other surface. Optional (and defaulted) so a file
+    /// written by an older build still decodes.
+    var isRetained: Bool = false
 
     /// A provider with neither windows nor spend has nothing to draw.
     var hasContent: Bool { !buckets.isEmpty || spendLabel != nil }

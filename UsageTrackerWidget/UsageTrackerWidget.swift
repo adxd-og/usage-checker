@@ -163,12 +163,16 @@ struct ProviderWidgetEntryView: View {
 
     var body: some View {
         if let service = entry.service {
-            switch family {
-            case .systemSmall: SmallProviderView(service: service)
-            case .systemMedium: MediumProviderView(service: service, updatedAt: entry.updatedAt)
-            case .systemLarge: LargeProviderView(service: service, updatedAt: entry.updatedAt)
-            default: SmallProviderView(service: service)
+            Group {
+                switch family {
+                case .systemSmall: SmallProviderView(service: service)
+                case .systemMedium: MediumProviderView(service: service, updatedAt: entry.updatedAt)
+                case .systemLarge: LargeProviderView(service: service, updatedAt: entry.updatedAt)
+                default: SmallProviderView(service: service)
+                }
             }
+            // Last known, not current — same 55% the app uses.
+            .opacity(service.isRetained ? 0.55 : 1)
         } else {
             NoDataView(provider: entry.provider)
         }
@@ -306,6 +310,7 @@ struct AllProvidersWidgetView: View {
                         SpendRow(label: spend, compact: true)
                     }
                 }
+                .opacity(service.isRetained ? 0.55 : 1)
                 if service.id != snapshot.services.prefix(4).last?.id {
                     Divider()
                 }

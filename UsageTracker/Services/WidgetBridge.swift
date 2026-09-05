@@ -6,9 +6,16 @@ import WidgetKit
 @MainActor
 enum WidgetBridge {
     static func publish(_ services: [ServiceSnapshot], at date: Date) {
-        // Only services that actually have usage to show — a signed-out provider
-        // would just clutter the widget.
-        let widgetServices = services
+        let widgetServices = widgetServices(from: services)
+        guard !widgetServices.isEmpty else { return }
+        SharedWidgetStore.write(WidgetSnapshot(services: widgetServices, updatedAt: date))
+        WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// The mapping on its own: `publish` writes into the App Group container, which
+    /// only the real app can reach, so the shape of what it writes is tested here.
+    nonisolated static func widgetServices(from services: [ServiceSnapshot]) -> [WidgetService] {
+        services
             .map { service in
                 var buckets = service.buckets.map { bucket in
                     WidgetBucket(
@@ -40,13 +47,13 @@ enum WidgetBridge {
                     icon: service.icon,
                     plan: service.plan,
                     buckets: buckets,
-                    spendLabel: spendLabel
+                    spendLabel: spendLabel,
+                    // Retained numbers go through unchanged; the flag is what lets the
+                    // widget draw them as old rather than as current.
+                    isRetained: service.isRetained
                 )
             }
             // A signed-out provider would just clutter the widget.
             .filter(\.hasContent)
-        guard !widgetServices.isEmpty else { return }
-        SharedWidgetStore.write(WidgetSnapshot(services: widgetServices, updatedAt: date))
-        WidgetCenter.shared.reloadAllTimelines()
     }
 }
