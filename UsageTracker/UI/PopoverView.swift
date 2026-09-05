@@ -435,7 +435,16 @@ private struct ProviderDetail: View {
     private var usageBlock: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if let hero {
-                OMHero(hero: hero, verdict: BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets))
+                // Last-known numbers can't be extrapolated: a provider that stopped
+                // reporting isn't burning anything, whatever the last slope said.
+                // The caption under the chip already says the numbers are frozen —
+                // same call the dashboard's hero makes (`OverviewView.heroCard`).
+                OMHero(
+                    hero: hero,
+                    verdict: service.isRetained
+                        ? nil
+                        : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
+                )
             } else if service.state == .ok, let cost = service.weekCost, cost > 0 {
                 // Pay-as-you-go without windows: the 7-day spend is the headline.
                 OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
