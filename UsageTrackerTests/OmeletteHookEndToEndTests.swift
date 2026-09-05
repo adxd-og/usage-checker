@@ -337,6 +337,61 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
+    func testAnOversizedBashKeepsItsDescriptionAndFourKilobytesOfCommand() throws {
+        try startServer()
+        let command = String(repeating: "echo hello; ", count: 10_000)   // ~120 KB
+        let payload = AgentFixture.claude(
+            "PreToolUse",
+            extra: #""tool_name":"Bash","tool_input":{"command":"\#(command)","description":"Warm the cache"}"#
+        )
+
+        XCTAssertEqual(try runHelper(stdin: payload).status, 0)
+
+        XCTAssertTrue(waitForEvents(1))
+        let event = try XCTUnwrap(box.events.first)
+        XCTAssertEqual(event.toolSummary, "Warm the cache", "the description must survive the shrink")
+        XCTAssertEqual(event.toolDetail?.count, 4096, "4096 kept by the helper, under the app's own 4096 cap")
+        XCTAssertEqual(event.toolDetail?.hasPrefix("echo hello; "), true)
+        XCTAssertEqual(server?.droppedCount, 0)
+    }
+
+    func testAnOversizedQuestionKeepsItsQuestionsAndOptions() throws {
+        try startServer()
+        let padding = String(repeating: "p", count: 100 * 1024)
+        let payload = AgentFixture.claude(
+            "PreToolUse",
+            extra: #""tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Tabs or spaces?","header":"Style","multiSelect":false,"options":[{"label":"Tabs","description":"\#(padding)"},{"label":"Spaces","description":"four"}]}]}"#
+        )
+
+        XCTAssertEqual(try runHelper(stdin: payload).status, 0)
+
+        XCTAssertTrue(waitForEvents(1))
+        let event = try XCTUnwrap(box.events.first)
+        XCTAssertEqual(event.toolSummary, "Question: Tabs or spaces?")
+        XCTAssertEqual(event.toolDetail, "Tabs or spaces?\n• Tabs\n• Spaces")
+        XCTAssertEqual(event.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(server?.droppedCount, 0)
+    }
+
+    func testAnOversizedPlanKeepsItsFirstKilobyte() throws {
+        try startServer()
+        let plan = "# Rework the ring\n\n" + String(repeating: "step. ", count: 20_000)   // ~120 KB
+        let payload = AgentFixture.claude(
+            "PreToolUse",
+            extra: #""tool_name":"ExitPlanMode","tool_input":{"plan":"\#(plan.replacingOccurrences(of: "\n", with: "\\n"))"}"#
+        )
+
+        XCTAssertEqual(try runHelper(stdin: payload).status, 0)
+
+        XCTAssertTrue(waitForEvents(1))
+        let event = try XCTUnwrap(box.events.first)
+        XCTAssertEqual(event.toolSummary, "Plan ready for review: Rework the ring")
+        XCTAssertEqual(event.attention, .plan)
+        XCTAssertEqual(event.toolDetail?.count, 1024, "the helper keeps a kilobyte of plan")
+        XCTAssertEqual(event.toolDetail?.hasPrefix("# Rework the ring"), true)
+        XCTAssertEqual(server?.droppedCount, 0)
+    }
+
     func testHostInfoIsWellFormed() throws {
         // Under xcodebuild no known terminal sits above the test host, so the fields may be nil;
         // when present, a pid is a live process with a bundle id and a tty is a /dev path.

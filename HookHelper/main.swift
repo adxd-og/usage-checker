@@ -120,18 +120,52 @@ enum HookMain {
         return data
     }
 
-    /// A Write's `tool_input` carries the whole file. Keep only the keys the app
-    /// summarises (capped) so the event still counts as `working` with an activity.
+    /// A Write's `tool_input` carries the whole file, an ExitPlanMode the whole
+    /// plan. Keep only the keys the app summarises, each capped, so the event still
+    /// says what the tool is doing instead of arriving as "something truncated".
+    /// Worst case this is ~15 KB, well inside `maxLineBytes`.
+    static let keptStringKeys: [(key: String, limit: Int)] = [
+        ("command", 4096),
+        ("description", 512),
+        ("file_path", 1024),
+        ("notebook_path", 1024),
+        ("pattern", 1024),
+        ("url", 2048),
+        ("plan", 1024),
+    ]
+    static let maxKeptQuestions = 4
+    static let maxKeptOptions = 6
+
     static func shrinkingToolInput(_ payload: [String: Any]) -> [String: Any] {
         var shrunk = payload
         var kept: [String: Any] = ["_omelette_truncated": true]
         if let input = payload["tool_input"] as? [String: Any] {
-            for key in ["command", "file_path", "notebook_path", "pattern"] {
-                if let value = input[key] as? String { kept[key] = String(value.prefix(1024)) }
+            for entry in keptStringKeys {
+                if let value = input[entry.key] as? String { kept[entry.key] = String(value.prefix(entry.limit)) }
+            }
+            if let questions = input["questions"] as? [[String: Any]] {
+                kept["questions"] = questions.prefix(maxKeptQuestions).map(shrinkingQuestion)
             }
         }
         shrunk["tool_input"] = kept
         return shrunk
+    }
+
+    /// One `AskUserQuestion` entry: the question, its header, whether it takes more
+    /// than one answer, and the option labels — the descriptions are what make these
+    /// payloads big and they are never shown.
+    static func shrinkingQuestion(_ question: [String: Any]) -> [String: Any] {
+        var kept: [String: Any] = [:]
+        if let text = question["question"] as? String { kept["question"] = String(text.prefix(512)) }
+        if let header = question["header"] as? String { kept["header"] = String(header.prefix(64)) }
+        if let multiSelect = question["multiSelect"] as? Bool { kept["multiSelect"] = multiSelect }
+        if let options = question["options"] as? [[String: Any]] {
+            kept["options"] = options.prefix(maxKeptOptions).compactMap { option -> [String: Any]? in
+                guard let label = option["label"] as? String else { return nil }
+                return ["label": String(label.prefix(80))]
+            }
+        }
+        return kept
     }
 
     /// The socket to talk to, and whether the environment override was honoured.
