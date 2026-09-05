@@ -9,11 +9,20 @@ import Foundation
 /// Antigravity app / `agy` CLI / IDE extension — no external auth, no processes
 /// spawned. Quotas come back as two pools (Gemini models; Claude & GPT models), each
 /// with weekly and five-hour windows.
+///
+/// The same quotas also live behind Google's web API, which needs only the OAuth
+/// credentials Antigravity already wrote to `~/.antigravity/oauth_creds.json`. That is
+/// the fallback when the local server isn't there — a closed app is not a reason to
+/// tell the user nothing.
 actor AntigravityProvider: UsageProvider {
-    /// Singleton so the throttle cache survives across poll cycles.
+    /// Singleton so the throttle caches survive across poll cycles.
     static let shared = AntigravityProvider()
 
     nonisolated let serviceID = "antigravity"
+
+    /// The local probe and the web API, as closures: the tests inject both, so a
+    /// test run never scans for a process or opens a socket.
+    typealias StatusFetch = @Sendable () async throws -> AntigravityStatusSnapshot
 
     /// Default for the settings toggle: on when Antigravity (app or CLI) is present.
     static var isAntigravityInstalled: Bool {
@@ -28,10 +37,38 @@ actor AntigravityProvider: UsageProvider {
     /// Local port-scan probe is cheap, but there's no point re-probing on rapid
     /// re-polls; concurrent callers serialize on the actor.
     private let minFetchInterval: TimeInterval = 45
+    /// The web API is a round trip to Google with a refreshable token behind it, so
+    /// it runs an order of magnitude less often than the local probe.
+    static let remoteMinInterval: TimeInterval = 300
+
+    private let localFetch: StatusFetch
+    private let remoteFetch: StatusFetch
+
     private var cached: (snapshot: ServiceSnapshot, at: Date)?
+    /// The last remote outcome, kept for `remoteMinInterval`. A nil snapshot means
+    /// that attempt failed. Caching the *result* rather than just the attempt time
+    /// is what stops the tile flipping back to "Not running" 45 seconds after a
+    /// perfectly good web reading.
+    private var remoteCache: (snapshot: ServiceSnapshot?, at: Date)?
+
+    init(
+        localFetch: @escaping StatusFetch = {
+            try await AntigravityStatusProbe(processScope: .ideAndCLI).fetch()
+        },
+        remoteFetch: @escaping StatusFetch = {
+            try await AntigravityRemoteUsageFetcher().fetch()
+        }
+    ) {
+        self.localFetch = localFetch
+        self.remoteFetch = remoteFetch
+    }
 
     func fetch() async -> ServiceSnapshot {
-        let now = Date()
+        await fetch(now: Date())
+    }
+
+    /// Injectable clock: the two throttles are the behaviour worth testing.
+    func fetch(now: Date) async -> ServiceSnapshot {
         if let cached, now.timeIntervalSince(cached.at) < minFetchInterval {
             return cached.snapshot
         }
@@ -42,7 +79,7 @@ actor AntigravityProvider: UsageProvider {
 
     private func fetchFresh(now: Date) async -> ServiceSnapshot {
         do {
-            let status = try await AntigravityStatusProbe(processScope: .ideAndCLI).fetch()
+            let status = try await localFetch()
             let usage = try status.toUsageSnapshot()
             return Self.snapshot(from: usage, status: status, at: now)
         } catch {
@@ -53,6 +90,11 @@ actor AntigravityProvider: UsageProvider {
                 if case AntigravityStatusProbeError.notRunning = error { return true }
                 return false
             }()
+            // Only that quiet state is worth a web call. A signed-out CLI or a parse
+            // failure is a different problem, and the web API can't fix either.
+            if isNotRunning, let remote = await remoteSnapshot(now: now) {
+                return remote
+            }
             return ServiceSnapshot(
                 id: serviceID,
                 displayName: "Antigravity",
@@ -68,6 +110,28 @@ actor AntigravityProvider: UsageProvider {
                     : error.localizedDescription,
                 fetchedAt: now
             )
+        }
+    }
+
+    /// The web API, at most once every `remoteMinInterval`. nil = no reading, either
+    /// because the last attempt failed or because this one did; the caller then
+    /// returns the plain `.notRunning` snapshot and retention keeps the numbers.
+    private func remoteSnapshot(now: Date) async -> ServiceSnapshot? {
+        if let remoteCache, now.timeIntervalSince(remoteCache.at) < Self.remoteMinInterval {
+            return remoteCache.snapshot
+        }
+        do {
+            let status = try await remoteFetch()
+            let usage = try status.toUsageSnapshot()
+            let snapshot = Self.snapshot(from: usage, status: status, at: now)
+            remoteCache = (snapshot, now)
+            NSLog("[UT] Antigravity remote fetch ok: %d window(s)", snapshot.buckets.count)
+            return snapshot
+        } catch {
+            // Not signed in on the web either, or the API said no.
+            NSLog("[UT] Antigravity remote fetch failed: %@", String(describing: error))
+            remoteCache = (nil, now)
+            return nil
         }
     }
 
