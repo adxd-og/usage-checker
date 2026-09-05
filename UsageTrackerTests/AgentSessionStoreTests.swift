@@ -30,6 +30,8 @@ final class AgentSessionStoreTests: XCTestCase {
         cwd: String? = "/Users/tester/Projects/alpha",
         toolName: String? = nil,
         toolSummary: String? = nil,
+        toolDetail: String? = nil,
+        attention: AgentAttention? = nil,
         isSubagent: Bool = false,
         pid: Int32? = nil
     ) -> AgentEvent {
@@ -40,6 +42,8 @@ final class AgentSessionStoreTests: XCTestCase {
             cwd: cwd,
             toolName: toolName,
             toolSummary: toolSummary,
+            toolDetail: toolDetail,
+            attention: attention,
             isSubagent: isSubagent,
             host: AgentHostInfo(pid: pid, bundleID: nil, tty: nil),
             receivedAt: t0
@@ -612,5 +616,122 @@ final class AgentSessionStoreTests: XCTestCase {
 
         XCTAssertEqual(emissions, 2)
         XCTAssertEqual(store.sessions.count, 1)
+    }
+
+    // MARK: - Attention (questions and plans)
+
+    func testAQuestionPutsTheSessionInNeedsYouWithItsText() {
+        let store = makeStore()
+        store.apply(event(.promptSubmitted), now: t0)
+
+        store.apply(event(
+            .toolStarted, toolName: "AskUserQuestion",
+            toolSummary: "Question: Tabs or spaces?", toolDetail: "Tabs or spaces?\n• Tabs\n• Spaces",
+            attention: .question(count: 1, multiSelect: false)
+        ), now: at(5))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .needsYou)
+        XCTAssertEqual(session?.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(session?.activity, "Question: Tabs or spaces?")
+        XCTAssertEqual(session?.activityDetail, "Tabs or spaces?\n• Tabs\n• Spaces")
+        XCTAssertEqual(session?.needsYouCount, 1, "a question is counted like an approval")
+        XCTAssertEqual(session?.stateSince, at(5))
+    }
+
+    func testAPlanPutsTheSessionInNeedsYou() {
+        let store = makeStore()
+        store.apply(event(
+            .toolStarted, toolName: "ExitPlanMode",
+            toolSummary: "Plan ready for review: Rework the ring", toolDetail: "# Rework the ring",
+            attention: .plan
+        ), now: t0)
+        XCTAssertEqual(store.sessions.first?.state, .needsYou)
+        XCTAssertEqual(store.sessions.first?.attention, .plan)
+    }
+
+    func testAnsweringTheQuestionClearsTheAttention() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: t0)
+
+        store.apply(event(.toolFinished, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: at(30))
+
+        let session = store.sessions.first
+        XCTAssertNil(session?.attention)
+        XCTAssertNil(session?.activity, "the question is answered; the row goes back to plain Working")
+        XCTAssertNil(session?.activityDetail)
+        XCTAssertEqual(session?.state, .working)
+    }
+
+    func testAToolEventForSomethingElseLeavesTheQuestionOnScreen() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: t0)
+
+        store.apply(event(.toolFinished, toolName: "Bash", toolSummary: "swift test"), now: at(5))
+        store.apply(event(.toolStarted, toolName: "Read", toolSummary: "Read A.swift", toolDetail: "/tmp/A.swift"), now: at(6))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(session?.activity, "Question: Tabs or spaces?")
+        XCTAssertEqual(session?.activityDetail, "Tabs or spaces?")
+        XCTAssertEqual(session?.state, .needsYou)
+    }
+
+    func testANewPromptClearsTheAttention() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "ExitPlanMode", toolSummary: "Plan ready for review: X",
+                          toolDetail: "# X", attention: .plan), now: t0)
+
+        store.apply(event(.promptSubmitted), now: at(10))
+
+        XCTAssertNil(store.sessions.first?.attention)
+        XCTAssertNil(store.sessions.first?.activityDetail)
+        XCTAssertEqual(store.sessions.first?.state, .working)
+    }
+
+    func testStopClearsTheAttention() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "ExitPlanMode", toolSummary: "Plan ready for review: X",
+                          toolDetail: "# X", attention: .plan), now: t0)
+
+        store.apply(event(.stop), now: at(10))
+
+        XCTAssertNil(store.sessions.first?.attention)
+        XCTAssertEqual(store.sessions.first?.state, .done)
+    }
+
+    func testAQuestionAnnouncesItselfLikeAnApproval() {
+        let store = makeStore()
+        var announced: [AgentSession] = []
+        store.onNeedsYou = { announced.append($0) }
+
+        store.apply(event(.toolStarted, toolName: "AskUserQuestion", toolSummary: "Question: Tabs or spaces?",
+                          toolDetail: "Tabs or spaces?", attention: .question(count: 1, multiSelect: false)), now: t0)
+
+        XCTAssertEqual(announced.count, 1)
+        XCTAssertEqual(announced.first?.attention, .question(count: 1, multiSelect: false))
+    }
+
+    // MARK: - activity and activityDetail move together
+
+    func testTheDetailFollowsTheHeadline() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "Bash", toolSummary: "Warm the cache", toolDetail: "swift build"), now: t0)
+        XCTAssertEqual(store.sessions.first?.activityDetail, "swift build")
+
+        store.apply(event(.toolStarted, toolName: "Grep", toolSummary: "Grep AgentEvent"), now: at(1))
+        XCTAssertEqual(store.sessions.first?.activity, "Grep AgentEvent")
+        XCTAssertNil(store.sessions.first?.activityDetail, "a Grep has no detail; the Bash's must not linger")
+    }
+
+    func testAPostToolUseWithoutASummaryLeavesBothAlone() {
+        let store = makeStore()
+        store.apply(event(.toolStarted, toolName: "Bash", toolSummary: "Warm the cache", toolDetail: "swift build"), now: t0)
+        store.apply(event(.toolFinished, toolName: "Bash"), now: at(1))
+        XCTAssertEqual(store.sessions.first?.activity, "Warm the cache")
+        XCTAssertEqual(store.sessions.first?.activityDetail, "swift build")
     }
 }

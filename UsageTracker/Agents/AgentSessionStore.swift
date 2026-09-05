@@ -127,23 +127,39 @@ final class AgentSessionStore: ObservableObject {
         case .promptSubmitted:
             session.turns += 1
             session.activity = nil
+            session.activityDetail = nil
+            session.attention = nil
             transition(&session, to: .working, now: now)
         case .toolStarted, .toolFinished:
-            // PostToolUse carries no tool_input, so it usually has no summary; the
-            // one from PreToolUse stays on screen until the next tool starts.
-            if let summary = event.toolSummary { session.activity = summary }
-            transition(&session, to: .working, now: now)
+            if event.kind == .toolFinished, Self.clearsAttention(event.toolName) {
+                // The answer has been typed. The row stops asking and goes quiet
+                // until the next tool starts.
+                session.attention = nil
+                session.activity = nil
+                session.activityDetail = nil
+                transition(&session, to: .working, now: now)
+            } else if event.kind == .toolStarted, let attention = event.attention {
+                session.attention = attention
+                Self.applyActivity(event, to: &session)
+                transition(&session, to: .needsYou, now: now)
+            } else if session.attention == nil {
+                Self.applyActivity(event, to: &session)
+                transition(&session, to: .working, now: now)
+            }
+            // A session waiting on a question keeps showing the question: anything
+            // else the agent runs meanwhile is its own business, not the answer.
         case .permissionRequested, .notificationPermission:
-            if let summary = event.toolSummary { session.activity = summary }
+            Self.applyActivity(event, to: &session)
             transition(&session, to: .needsYou, now: now)
         case .notificationIdle:
             transition(&session, to: .idle, now: now)
         case .stop, .codexTurnComplete:
+            session.attention = nil
             transition(&session, to: .done, now: now)
         case .unknown:
             break // lastEventAt is already refreshed; the state is left alone.
         case .sessionEnd:
-            break // handled above
+            break // handled above — the row is gone, attention with it
         }
 
         if session.state == .needsYou, previousState != .needsYou {
@@ -290,6 +306,21 @@ final class AgentSessionStore: ObservableObject {
         guard session.state != state else { return }
         session.state = state
         session.stateSince = now
+    }
+
+    /// `PostToolUse` for the two tools that *are* a question: `AskUserQuestion` and
+    /// `ExitPlanMode` fire it once the user has answered in the terminal.
+    private static func clearsAttention(_ toolName: String?) -> Bool {
+        toolName == "AskUserQuestion" || toolName == "ExitPlanMode"
+    }
+
+    /// `activity` and `activityDetail` move as a pair, or not at all: a headline from
+    /// one tool over the detail of another would expand into a lie. `PostToolUse`
+    /// usually carries no summary, and then the one from `PreToolUse` stays up.
+    private static func applyActivity(_ event: AgentEvent, to session: inout AgentSession) {
+        guard let summary = event.toolSummary else { return }
+        session.activity = summary
+        session.activityDetail = event.toolDetail
     }
 
     private func upsert(_ session: AgentSession) {
