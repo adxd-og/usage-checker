@@ -190,4 +190,60 @@ final class AgentToolSummaryTests: XCTestCase {
         let command = String(repeating: "y", count: 80)
         XCTAssertEqual(AgentToolSummary.make(toolName: "Bash", toolInput: ["command": command])?.headline, command)
     }
+
+    // MARK: apply_patch (Codex)
+
+    private func applyPatch(_ patch: String) -> ToolSummary? {
+        AgentToolSummary.make(toolName: "apply_patch", toolInput: ["command": patch])
+    }
+
+    func testApplyPatchNamesTheFileAndTheVerb() throws {
+        let update = try XCTUnwrap(applyPatch("""
+        *** Begin Patch
+        *** Update File: src/wallet/WalletView.swift
+        @@
+        -old
+        +new
+        *** End Patch
+        """))
+        XCTAssertEqual(update.headline, "Edit WalletView.swift")
+        XCTAssertNil(update.attention)
+
+        XCTAssertEqual(applyPatch("*** Add File: src/main.rs")?.headline, "Create main.rs")
+        XCTAssertEqual(applyPatch("*** Delete File: /tmp/old.swift")?.headline, "Delete old.swift")
+    }
+
+    func testApplyPatchCountsTheOtherFiles() throws {
+        let patch = """
+        *** Begin Patch
+        *** Update File: a.swift
+        @@
+        -x
+        +y
+        *** Add File: b.swift
+        +new file
+        *** Delete File: c.swift
+        *** End Patch
+        """
+        XCTAssertEqual(applyPatch(patch)?.headline, "Edit a.swift +2 more")
+    }
+
+    func testApplyPatchKeepsThePatchAsTheDetail() throws {
+        let patch = "*** Begin Patch\n*** Update File: a.swift\n@@\n-x\n+y\n*** End Patch"
+        let summary = try XCTUnwrap(applyPatch(patch))
+        XCTAssertEqual(summary.detail, patch, "the detail is the patch, newlines and all")
+    }
+
+    func testApplyPatchWithNothingToName() {
+        XCTAssertNil(applyPatch("*** Begin Patch\n*** End Patch"), "no file header, nothing to say")
+        XCTAssertNil(AgentToolSummary.make(toolName: "apply_patch", toolInput: [:]))
+        XCTAssertNil(AgentToolSummary.make(toolName: "apply_patch", toolInput: ["command": 42]))
+    }
+
+    func testApplyPatchHeadlineStaysWithinTheRowsLine() throws {
+        let name = String(repeating: "n", count: 200) + ".swift"
+        let summary = try XCTUnwrap(applyPatch("*** Update File: /tmp/\(name)"))
+        XCTAssertLessThanOrEqual(summary.headline.count, 80)
+        XCTAssertTrue(summary.headline.hasSuffix("…"))
+    }
 }

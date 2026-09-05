@@ -49,6 +49,8 @@ enum AgentToolSummary {
             return question(toolInput)
         case "ExitPlanMode":
             return plan(toolInput)
+        case "apply_patch":
+            return applyPatchSummary(toolInput)
         default:
             if let parts = mcpParts(toolName) { return mcp(parts, toolInput) }
             return plain(headline: collapse(toolInput["description"] as? String) ?? "", detail: nil)
@@ -211,5 +213,39 @@ enum AgentToolSummary {
     private static func cap(_ text: String, _ limit: Int) -> String {
         guard text.count > limit else { return text }
         return String(text.prefix(limit - 1)) + "…"
+    }
+
+    /// Codex's editor tool. `tool_input.command` is the patch itself, and its header
+    /// lines name the files — `*** Update File: src/main.rs`. The headline is the
+    /// first of those in the app's own verbs, with a count when the patch spans more
+    /// than one file; the detail is the patch, so the expanded row shows it whole.
+    ///
+    /// The cap is applied here rather than trusted to the caller: a patch can name a
+    /// file whose basename alone overruns the row.
+    private static func applyPatchSummary(_ toolInput: [String: Any]) -> ToolSummary? {
+        guard let patch = toolInput["command"] as? String else { return nil }
+        let files = patchFiles(in: patch)
+        guard let first = files.first else { return nil }
+        var headline = "\(first.verb) \((first.path as NSString).lastPathComponent)"
+        if files.count > 1 { headline += " +\(files.count - 1) more" }
+        return ToolSummary(
+            headline: cap(headline, maxHeadlineLength),
+            detail: cap(patch, maxDetailLength),
+            attention: nil
+        )
+    }
+
+    /// `*** Update File: <path>` / `*** Add File:` / `*** Delete File:`, in order.
+    private static func patchFiles(in patch: String) -> [(verb: String, path: String)] {
+        let markers = [("*** Update File:", "Edit"), ("*** Add File:", "Create"), ("*** Delete File:", "Delete")]
+        var out: [(verb: String, path: String)] = []
+        for raw in patch.components(separatedBy: "\n") {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            for (marker, verb) in markers where line.hasPrefix(marker) {
+                let path = line.dropFirst(marker.count).trimmingCharacters(in: .whitespaces)
+                if !path.isEmpty { out.append((verb, path)) }
+            }
+        }
+        return out
     }
 }
