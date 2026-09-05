@@ -55,3 +55,33 @@ final class TokenCategoryColorTests: XCTestCase {
         XCTAssertEqual(Set(colors).count, TokenCategory.allCases.count)
     }
 }
+
+/// The card's footer is the one sentence on Overview that interprets rather than
+/// reports, so its arithmetic is pinned: the share is of the *context* — input,
+/// cache read and cache write — and output must never dilute it.
+final class TokensTodayCardCaptionTests: XCTestCase {
+    func testNothingOnTheInputSideMeansNoSentence() {
+        XCTAssertNil(TokensTodayCard.cacheShareCaption(.zero))
+        XCTAssertNil(TokensTodayCard.cacheShareCaption(TokenBreakdown(output: 4_000)))
+    }
+
+    func testOutputDoesNotDiluteTheShare() {
+        // 600 of the 1_000 context tokens were a cache read. The 9_000 output
+        // tokens are not context.
+        let b = TokenBreakdown(input: 300, output: 9_000, cacheRead: 600, cacheWrite5m: 100)
+        XCTAssertEqual(TokensTodayCard.cacheShareCaption(b), "60% of context came from cache")
+    }
+
+    func testTheShareIsRoundedNotTruncated() {
+        let b = TokenBreakdown(input: 334, cacheRead: 666)
+        XCTAssertEqual(TokensTodayCard.cacheShareCaption(b), "67% of context came from cache")
+    }
+
+    func testAColdCacheStillGetsItsSentence() {
+        // "0%" is information — a session that is re-sending its whole context.
+        XCTAssertEqual(
+            TokensTodayCard.cacheShareCaption(TokenBreakdown(input: 1_000)),
+            "0% of context came from cache"
+        )
+    }
+}
