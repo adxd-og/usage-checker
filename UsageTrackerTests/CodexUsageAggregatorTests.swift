@@ -454,4 +454,67 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(breakdown.weekCost, 0)
         XCTAssertTrue(breakdown.daily.isEmpty)
     }
+
+    // MARK: - costs(now:) and file eviction
+
+    func testCostsAgreeWithTheBreakdown() async throws {
+        // The popover's two numbers and the dashboard's two numbers are the same
+        // dollars from the same turns — they used to be computed by separate code.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 60),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
+            tokenCount(secondsAgo: 1, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ], named: "rollout-today.jsonl")
+        try write([
+            sessionMeta(cwd: betaCwd, secondsAgo: 2 * 24 * 3600),
+            turnContext(model: model, cwd: betaCwd, secondsAgo: 2 * 24 * 3600),
+            tokenCount(secondsAgo: 2 * 24 * 3600, input: 500, cached: 0, output: 50, reasoning: 0),
+        ], day: "2026/09/03", named: "rollout-old.jsonl")
+
+        let aggregator = await loaded()
+        let costs = await aggregator.costs(now: now)
+        let breakdown = await aggregator.breakdown()
+        XCTAssertEqual(costs.today, 0.0018, accuracy: 1e-12)
+        XCTAssertEqual(costs.week, 0.002925, accuracy: 1e-12)
+        XCTAssertEqual(costs.today, breakdown.todayCost, accuracy: 1e-12)
+        XCTAssertEqual(costs.week, breakdown.weekCost, accuracy: 1e-12)
+    }
+
+    func testCostsScanTheLogWithoutAnExplicitRefresh() async throws {
+        // CodexProvider calls costs(now:) straight off the poll path; it must not
+        // depend on the dashboard having refreshed first.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 60),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
+            tokenCount(secondsAgo: 1, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ])
+
+        let costs = await CodexUsageAggregator(rootURL: root).costs(now: now)
+        XCTAssertEqual(costs.today, 0.0018, accuracy: 1e-12)
+    }
+
+    func testARolloutUntouchedForNinetyDaysIsNeitherReadNorRemembered() async throws {
+        let url = try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 60),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
+            tokenCount(secondsAgo: 1, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ], named: "rollout-stale.jsonl")
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-100 * 24 * 3600)],
+            ofItemAtPath: url.path
+        )
+
+        let aggregator = await loaded()
+        let breakdown = await aggregator.breakdown()
+        XCTAssertEqual(breakdown.todayCost, 0, "outside the mtime window, whatever its contents say")
+        XCTAssertTrue(breakdown.daily.isEmpty)
+
+        // Touch it and it comes back — the skip is about the file's age, not a
+        // permanent blocklist.
+        try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
+        await aggregator.refresh()
+        let after = await aggregator.breakdown()
+        XCTAssertEqual(after.todayCost, 0.0018, accuracy: 1e-12)
+        XCTAssertEqual(after.todayTurns, 1, "and it is read exactly once")
+    }
 }
