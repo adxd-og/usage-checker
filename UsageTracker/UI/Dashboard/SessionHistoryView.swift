@@ -261,7 +261,7 @@ struct SessionHistoryView: View {
             Image(systemName: "chart.bar.xaxis").font(.largeTitle).foregroundStyle(.tertiary)
             Text("No CLI usage recorded yet")
                 .foregroundStyle(.secondary)
-            Text("Run a `claude` session to start collecting data")
+            Text("Run a `\(DashboardState.cliCommandName(for: dashboard.selectedService))` session to start collecting data")
                 .font(OMFont.body)
                 .foregroundStyle(.tertiary)
         }
