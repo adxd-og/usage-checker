@@ -27,10 +27,12 @@ enum Fixture {
         id: String = "claude",
         displayName: String? = nil,
         plan: String? = "Max 20x",
+        accountLabel: String? = nil,
         buckets: [UsageBucket] = [],
         extraUsage: ExtraUsage? = nil,
         weekCost: Double? = nil,
         state: ServiceState = .ok,
+        stateMessage: String? = nil,
         at date: Date = Date()
     ) -> ServiceSnapshot {
         ServiceSnapshot(
@@ -38,12 +40,12 @@ enum Fixture {
             displayName: displayName ?? id.capitalized,
             icon: "sparkles",
             plan: plan,
-            accountLabel: nil,
+            accountLabel: accountLabel,
             buckets: buckets,
             extraUsage: extraUsage,
             weekCost: weekCost,
             state: state,
-            stateMessage: nil,
+            stateMessage: stateMessage,
             fetchedAt: date
         )
     }
