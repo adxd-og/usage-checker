@@ -81,7 +81,7 @@ final class AgentEventServerTests: XCTestCase {
         XCTAssertEqual(reply, #"{"v":1,"decision":null}"#)
         XCTAssertTrue(box.onMain)
         XCTAssertEqual(box.events.map(\.kind), [.toolStarted])
-        XCTAssertEqual(box.events.first?.toolSummary, "Bash: xcodegen generate")
+        XCTAssertEqual(box.events.first?.toolSummary, "Regenerate the project")
         XCTAssertEqual(box.events.first?.host.bundleID, "com.googlecode.iterm2")
         XCTAssertEqual(server.receivedCount, 1)
         XCTAssertEqual(server.droppedCount, 0)

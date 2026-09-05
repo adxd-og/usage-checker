@@ -84,7 +84,7 @@ enum AgentEventDecoder {
             sessionID: sessionID,
             cwd: payload["cwd"] as? String,
             toolName: toolName,
-            toolSummary: AgentToolSummary.make(toolName: toolName, toolInput: toolInput),
+            toolSummary: AgentToolSummary.make(toolName: toolName, toolInput: toolInput)?.headline,
             isSubagent: !(agentID ?? "").isEmpty,
             host: host,
             receivedAt: receivedAt,

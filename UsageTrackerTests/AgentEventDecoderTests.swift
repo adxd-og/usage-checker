@@ -29,20 +29,20 @@ final class AgentEventDecoderTests: XCTestCase {
         let event = try decode(AgentFixture.preToolUseBash)
         XCTAssertEqual(event.kind, .toolStarted)
         XCTAssertEqual(event.toolName, "Bash")
-        XCTAssertEqual(event.toolSummary, "Bash: xcodegen generate")
+        XCTAssertEqual(event.toolSummary, "Regenerate the project")
     }
 
     func testPostToolUse() throws {
         let event = try decode(AgentFixture.postToolUseBash)
         XCTAssertEqual(event.kind, .toolFinished)
         XCTAssertEqual(event.toolName, "Bash")
-        XCTAssertEqual(event.toolSummary, "Bash: xcodegen generate")
+        XCTAssertEqual(event.toolSummary, "xcodegen generate")
     }
 
     func testPermissionRequest() throws {
         let event = try decode(AgentFixture.permissionRequestEdit)
         XCTAssertEqual(event.kind, .permissionRequested)
-        XCTAssertEqual(event.toolSummary, "Edit: WalletView.swift")
+        XCTAssertEqual(event.toolSummary, "Edit WalletView.swift")
     }
 
     func testNotificationVariants() throws {
@@ -60,7 +60,7 @@ final class AgentEventDecoderTests: XCTestCase {
         let event = try decode(AgentFixture.subagentPreToolUse)
         XCTAssertTrue(event.isSubagent)
         XCTAssertEqual(event.kind, .toolStarted)
-        XCTAssertEqual(event.toolSummary, "Grep: AgentEvent")
+        XCTAssertEqual(event.toolSummary, "Grep AgentEvent")
     }
 
     func testUnknownHookEventKeepsItsName() throws {

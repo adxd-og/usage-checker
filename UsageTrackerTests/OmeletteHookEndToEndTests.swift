@@ -111,7 +111,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertEqual(event.kind, .toolStarted)
         XCTAssertEqual(event.sessionID, "sess-1")
         XCTAssertEqual(event.cwd, "/Users/me/Desktop/Usage tracker")
-        XCTAssertEqual(event.toolSummary, "Bash: xcodegen generate")
+        XCTAssertEqual(event.toolSummary, "Regenerate the project")
         XCTAssertFalse(event.isSubagent)
         XCTAssertLessThan(abs(event.receivedAt.timeIntervalSinceNow), 5, "received_at must be the helper's wall clock")
         XCTAssertEqual(server?.receivedCount, 1)
@@ -164,7 +164,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
 
         let reply = try XCTUnwrap(waitForReply())
         XCTAssertEqual(box.events.first?.kind, .permissionRequested)
-        XCTAssertEqual(box.events.first?.toolSummary, "Edit: WalletView.swift")
+        XCTAssertEqual(box.events.first?.toolSummary, "Edit WalletView.swift")
         XCTAssertEqual(reply.requestID?.count, 32)
         XCTAssertEqual(box.events.first?.requestID, reply.requestID)
         XCTAssertFalse(reply.isSettled)
@@ -333,7 +333,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
 
         XCTAssertTrue(waitForEvents(1))
         XCTAssertEqual(box.events.first?.kind, .toolStarted)
-        XCTAssertEqual(box.events.first?.toolSummary, "Write: big.txt")
+        XCTAssertEqual(box.events.first?.toolSummary, "Write big.txt")
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
