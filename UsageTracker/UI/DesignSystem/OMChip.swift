@@ -5,19 +5,36 @@ struct OMChip: View {
     let text: String
     let tint: Color
 
-    /// Strength of the capsule's tint relative to the label colour.
-    static let glassTintOpacity: Double = 0.22
+    /// Strength of the capsule's glass tint on macOS 26, where the label is white
+    /// and needs a strong, saturated glass behind it to read as green/orange/red/grey.
+    static let glassTintOpacity: Double = 0.85
 
     var body: some View {
         Text(text)
             .font(.caption2.weight(.semibold))
             .padding(.horizontal, OMSpacing.s)
             .padding(.vertical, 3)
-            .foregroundStyle(tint)
-            // A full-strength glass tint is the same colour as the label, which made
-            // "Installed" green-on-green on macOS 26. A washed tint keeps the capsule
-            // coloured and the text readable in both themes.
-            .liquidGlass(in: Capsule(), tint: tint.opacity(Self.glassTintOpacity))
+            .foregroundStyle(labelColor)
+            .liquidGlass(in: Capsule(), tint: glassTint)
+    }
+
+    /// macOS 26's tinted glass capsule needs a bright white label to read; macOS 14/15's
+    /// untinted material is light in light mode, where white text would vanish, so the
+    /// label there stays in the semantic tint colour.
+    private var labelColor: Color {
+        if #available(macOS 26.0, *) {
+            return .white
+        } else {
+            return tint
+        }
+    }
+
+    private var glassTint: Color? {
+        if #available(macOS 26.0, *) {
+            return tint.opacity(Self.glassTintOpacity)
+        } else {
+            return nil
+        }
     }
 }
 
