@@ -6,17 +6,22 @@ struct CLITurn: Sendable, Codable {
     let id: String
     let timestamp: Date
     let model: String
-    let inputTokens: Int
-    let outputTokens: Int
-    let cacheReadTokens: Int
-    let cacheCreate5mTokens: Int
-    let cacheCreate1hTokens: Int
+    /// The turn's tokens split by kind, already priced: every turn this aggregator
+    /// parses carries a per-category dollar split.
+    let tokens: TokenBreakdown
     let projectSlug: String
 
-    var totalTokens: Int {
-        inputTokens + outputTokens + cacheReadTokens + cacheCreate5mTokens + cacheCreate1hTokens
-    }
+    // The five counters the rest of the app still reads by name.
+    var inputTokens: Int { tokens.input }
+    var outputTokens: Int { tokens.output }
+    var cacheReadTokens: Int { tokens.cacheRead }
+    var cacheCreate5mTokens: Int { tokens.cacheWrite5m }
+    var cacheCreate1hTokens: Int { tokens.cacheWrite1h }
 
+    var totalTokens: Int { tokens.total }
+
+    /// Still computed from the rate table rather than read out of `tokens.cost`: the
+    /// two are independent paths to the same dollars, and the tests pin them equal.
     var cost: Double {
         let p = ModelPricing.price(for: model)
         return (Double(inputTokens) * p.inputPerM
@@ -668,6 +673,10 @@ actor JSONLAggregator: CostLogAggregating {
             c1h = (cc["ephemeral_1h_input_tokens"] as? Int) ?? 0
         }
 
+        // New in the logs; absent in everything written before it, hence the default.
+        let thinking = (usage["output_tokens_details"] as? [String: Any])
+            .flatMap { $0["thinking_tokens"] as? Int } ?? 0
+
         let tsStr = (any["timestamp"] as? String) ?? ""
         // A line we can't date must be dropped, not billed as "now": the old
         // `?? Date()` put a turn from an unparseable line into today's spend and into
@@ -677,20 +686,24 @@ actor JSONLAggregator: CostLogAggregating {
         guard let ts = isoFormatter.date(from: tsStr) ?? isoFormatterNoFraction.date(from: tsStr)
         else { return nil }
         // Older logs may lack a message id — fall back to a content identity so exact
-        // duplicate lines still dedupe.
+        // duplicate lines still dedupe. `thinking` is part of that identity: two
+        // otherwise identical turns that reasoned differently are two turns.
         let id = msgID.isEmpty
-            ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)"
+            ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)|\(thinking)"
             : msgID
 
         return CLITurn(
             id: id,
             timestamp: ts,
             model: model,
-            inputTokens: input,
-            outputTokens: output,
-            cacheReadTokens: cacheRead,
-            cacheCreate5mTokens: c5,
-            cacheCreate1hTokens: c1h,
+            tokens: TokenBreakdown(
+                input: input,
+                output: output,
+                cacheRead: cacheRead,
+                cacheWrite5m: c5,
+                cacheWrite1h: c1h,
+                thinking: thinking
+            ).priced(model: model),
             projectSlug: projectSlug
         )
     }

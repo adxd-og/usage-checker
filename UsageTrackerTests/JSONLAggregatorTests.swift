@@ -49,13 +49,32 @@ final class JSONLAggregatorTests: XCTestCase {
         input: Int,
         output: Int = 0,
         cacheRead: Int = 0,
+        cacheCreate5m: Int = 0,
+        cacheCreate1h: Int = 0,
+        thinking: Int? = nil,
         timestamp: String? = nil
     ) -> String {
         let ts = timestamp ?? Self.iso.string(from: now.addingTimeInterval(-minutesAgo * 60))
+        // `output_tokens_details` is new in the logs; a line without it is the older
+        // shape every existing fixture uses, and must still parse (thinking 0).
+        let details = thinking.map { ",\"output_tokens_details\":{\"thinking_tokens\":\($0)}" } ?? ""
         return """
         {"type":"assistant","timestamp":"\(ts)","message":{"id":"\(id)","model":"\(model)",\
         "usage":{"input_tokens":\(input),"output_tokens":\(output),"cache_read_input_tokens":\(cacheRead),\
-        "cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}}}
+        "cache_creation":{"ephemeral_5m_input_tokens":\(cacheCreate5m),\
+        "ephemeral_1h_input_tokens":\(cacheCreate1h)}\(details)}}}
+        """
+    }
+
+    /// A line with no `message.id` — older Claude Code builds. Identity then has to come
+    /// from the content, which is what the dedup fallback key is for.
+    private func idlessLine(minutesAgo: Double, model: String, input: Int, output: Int, thinking: Int) -> String {
+        let ts = Self.iso.string(from: now.addingTimeInterval(-minutesAgo * 60))
+        return """
+        {"type":"assistant","timestamp":"\(ts)","message":{"model":"\(model)",\
+        "usage":{"input_tokens":\(input),"output_tokens":\(output),"cache_read_input_tokens":0,\
+        "cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},\
+        "output_tokens_details":{"thinking_tokens":\(thinking)}}}}
         """
     }
 
@@ -518,5 +537,61 @@ final class JSONLAggregatorTests: XCTestCase {
 
         XCTAssertEqual(afterPoll[.modificationDate] as? Date, writtenAt, "a quiet poll must not rewrite the cache")
         XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
+    }
+
+    // MARK: - Per-turn token breakdown
+
+    func testATurnsCategoryDollarsAddUpToItsCost() throws {
+        // The two paths to the same money: `cost` sums the buckets at their rates,
+        // `tokens.cost` keeps them apart. They must agree to the cent and well beyond.
+        let tokens = TokenBreakdown(
+            input: 1_000_000, output: 250_000, cacheRead: 3_000_000,
+            cacheWrite5m: 400_000, cacheWrite1h: 50_000, thinking: 60_000
+        ).priced(model: "claude-opus-4-5")
+        let turn = CLITurn(
+            id: "msg_x", timestamp: now, model: "claude-opus-4-5",
+            tokens: tokens, projectSlug: alphaSlug
+        )
+
+        XCTAssertEqual(try XCTUnwrap(turn.tokens.cost).total, turn.cost, accuracy: 1e-9)
+        XCTAssertEqual(turn.totalTokens, turn.tokens.total)
+        XCTAssertEqual(turn.totalTokens, 4_700_000, "thinking is not part of the total")
+        // The compatibility shims the rest of the app still reads.
+        XCTAssertEqual(turn.inputTokens, 1_000_000)
+        XCTAssertEqual(turn.outputTokens, 250_000)
+        XCTAssertEqual(turn.cacheReadTokens, 3_000_000)
+        XCTAssertEqual(turn.cacheCreate5mTokens, 400_000)
+        XCTAssertEqual(turn.cacheCreate1hTokens, 50_000)
+    }
+
+    func testThinkingTokensAreParsedWithoutInflatingTheTotal() async throws {
+        try write([
+            line(
+                id: "msg_think", minutesAgo: 10, model: "claude-sonnet-4-5",
+                input: 1_000_000, output: 200_000, thinking: 50_000
+            ),
+        ], project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.tokens, 1_200_000, "thinking is a subset of output, never an addition")
+        XCTAssertEqual(usage.cost, 6.0, accuracy: 0.0001) // $3.00 of input + $3.00 of output
+    }
+
+    func testIdlessLinesThatDifferOnlyInThinkingAreTwoTurns() async throws {
+        // Without a message id the dedup key is the content; thinking has to be part of
+        // it, or a turn that differs only there is silently swallowed as a duplicate.
+        let a = idlessLine(minutesAgo: 10, model: "claude-sonnet-4-5", input: 1_000_000, output: 200_000, thinking: 10_000)
+        let b = idlessLine(minutesAgo: 10, model: "claude-sonnet-4-5", input: 1_000_000, output: 200_000, thinking: 90_000)
+        try write([a, a, b], project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.turns, 2, "identical content is one turn; a different thinking count is not")
+        XCTAssertEqual(usage.cost, 12.0, accuracy: 0.0001)
     }
 }
