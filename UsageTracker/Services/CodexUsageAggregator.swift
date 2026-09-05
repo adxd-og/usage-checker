@@ -33,8 +33,14 @@ actor CodexUsageAggregator {
 
     private var fileCache: [String: FileState] = [:]
 
-    private let rootURL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions", isDirectory: true)
+    private let rootURL: URL
+
+    /// Injectable log root — the tests point it at a fixture tree instead of the real
+    /// `~/.codex/sessions`.
+    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".codex/sessions", isDirectory: true)) {
+        self.rootURL = rootURL
+    }
 
     private let isoFormatter: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()
