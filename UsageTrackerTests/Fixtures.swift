@@ -26,6 +26,7 @@ enum Fixture {
     static func snapshot(
         id: String = "claude",
         displayName: String? = nil,
+        icon: String = "sparkles",
         plan: String? = "Max 20x",
         accountLabel: String? = nil,
         buckets: [UsageBucket] = [],
@@ -38,7 +39,7 @@ enum Fixture {
         ServiceSnapshot(
             id: id,
             displayName: displayName ?? id.capitalized,
-            icon: "sparkles",
+            icon: icon,
             plan: plan,
             accountLabel: accountLabel,
             buckets: buckets,

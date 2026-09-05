@@ -111,6 +111,63 @@ final class LastKnownStoreTests: XCTestCase {
         XCTAssertEqual(reloaded["antigravity"]?.order, 2)
     }
 
+    func testAWriteThatFailedIsRetriedOnTheNextPoll() async throws {
+        // The directory is missing, so the first write throws. Nothing else will
+        // change for a while — Antigravity reports the same numbers every minute —
+        // so unless the store remembers that it owes the disk a write, the file
+        // never appears.
+        let missing = directory.appendingPathComponent("not-yet", isDirectory: true)
+        let target = missing.appendingPathComponent("last-known.json")
+        let s = LastKnownStore(fileURL: target)
+
+        await s.remember([antigravity(percent: 62, at: stored)])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: target.path), "the write had nowhere to go")
+
+        try FileManager.default.createDirectory(at: missing, withIntermediateDirectories: true)
+        await s.remember([antigravity(percent: 62, at: stored.addingTimeInterval(60))])
+
+        let reloaded = await LastKnownStore(fileURL: target).load()
+        XCTAssertEqual(reloaded["antigravity"]?.buckets.first?.utilization, 62)
+    }
+
+    func testARenamedProviderIsWrittenEvenWithTheSameNumbers() async throws {
+        let s = store()
+        await s.remember([antigravity(percent: 62, at: stored)])
+
+        let relabelled = Fixture.snapshot(
+            id: "antigravity",
+            displayName: "Antigravity Pro",
+            icon: "bolt",
+            plan: "Antigravity Pro",
+            accountLabel: "work@example.com",
+            buckets: [Fixture.bucket(id: "antigravity_gemini", label: "Gemini models", percent: 62)],
+            weekCost: 3.5,
+            at: stored.addingTimeInterval(60)
+        )
+        await s.remember([relabelled])
+
+        // A fresh actor reads the file rather than the cache: this is about what
+        // survives a relaunch, and a seeded popover with the old name and the old
+        // icon reads as a bug.
+        let reloaded = await store().load()
+        XCTAssertEqual(reloaded["antigravity"]?.displayName, "Antigravity Pro")
+        XCTAssertEqual(reloaded["antigravity"]?.icon, "bolt")
+        XCTAssertEqual(reloaded["antigravity"]?.accountLabel, "work@example.com")
+    }
+
+    func testAReorderedPollIsWrittenEvenWithTheSameNumbers() async throws {
+        let s = store()
+        let claude = Fixture.snapshot(id: "claude", buckets: [Fixture.bucket(id: "seven_day", percent: 10)], at: stored)
+        let anti = antigravity(percent: 62, at: stored)
+        await s.remember([claude, anti])
+
+        await s.remember([anti, claude])
+
+        let reloaded = await store().load()
+        XCTAssertEqual(reloaded["antigravity"]?.order, 0)
+        XCTAssertEqual(reloaded["claude"]?.order, 1)
+    }
+
     func testACorruptFileIsIgnoredRatherThanFatal() async throws {
         try Data("{ not json at all".utf8).write(to: fileURL)
 

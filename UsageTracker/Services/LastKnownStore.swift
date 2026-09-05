@@ -28,13 +28,19 @@ struct LastKnownService: Codable, Equatable, Sendable {
         self.order = order
     }
 
-    /// The throttle's comparison: the numbers only. `fetchedAt` moves on every
-    /// poll and is not by itself a reason to rewrite the file.
+    /// The throttle's comparison: everything the file holds except `fetchedAt`,
+    /// which moves on every poll and is not by itself a reason to rewrite. The
+    /// labels are in here too — a renamed provider, a new icon or a signed-in
+    /// account that only shows up after a relaunch reads as a bug.
     func hasSameValues(as other: LastKnownService) -> Bool {
         buckets == other.buckets
             && plan == other.plan
             && extraUsage == other.extraUsage
             && weekCost == other.weekCost
+            && displayName == other.displayName
+            && icon == other.icon
+            && accountLabel == other.accountLabel
+            && order == other.order
     }
 }
 
@@ -48,6 +54,11 @@ actor LastKnownStore {
     private let fileURL: URL
     /// Loaded once; this actor is the only writer, so the cache can't go stale.
     private var entries: [String: LastKnownService]?
+    /// Set when a write fails and cleared only when one succeeds. The next poll
+    /// usually carries the same numbers, so without this a transient failure — a
+    /// full disk, a directory that isn't there yet — would lose the file until
+    /// something actually changed.
+    private var dirty = false
 
     private let encoder: JSONEncoder = {
         let e = JSONEncoder()
@@ -95,15 +106,17 @@ actor LastKnownStore {
             current[service.id] = entry
             changed = true
         }
-        guard changed else { return }
         entries = current
+        guard changed || dirty else { return }
         write(current)
     }
 
     private func write(_ entries: [String: LastKnownService]) {
         do {
             try encoder.encode(entries).write(to: fileURL, options: [.atomic])
+            dirty = false
         } catch {
+            dirty = true
             NSLog("[UT] LastKnownStore write failed: %@", String(describing: error))
         }
     }
