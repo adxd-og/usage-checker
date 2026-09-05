@@ -246,4 +246,55 @@ final class AgentToolSummaryTests: XCTestCase {
         XCTAssertLessThanOrEqual(summary.headline.count, 80)
         XCTAssertTrue(summary.headline.hasSuffix("…"))
     }
+
+    // MARK: truncation
+
+    private static let notice = "[truncated by Omelette — see the terminal for the full text]"
+
+    func testATruncatedInputSaysSoUnderTheDetail() throws {
+        let command = String(repeating: "x", count: AgentToolSummary.maxDetailLength)
+        let summary = try XCTUnwrap(AgentToolSummary.make(
+            toolName: "Bash",
+            toolInput: ["command": command, "description": "Rebuild everything", "_omelette_truncated": true]
+        ))
+        XCTAssertTrue(summary.truncated)
+        XCTAssertEqual(summary.headline, "Rebuild everything", "the headline is what it always was")
+        let detail = try XCTUnwrap(summary.detail)
+        XCTAssertTrue(detail.hasPrefix("xxx"), "the text we did get is still there")
+        XCTAssertTrue(detail.hasSuffix("\n" + Self.notice), "got \(detail.suffix(80))")
+        let body = detail.dropLast(Self.notice.count + 1)
+        XCTAssertEqual(body.count, AgentToolSummary.maxDetailLength, "the notice is added, not carved out of the text")
+    }
+
+    func testAnInputThatArrivedWholeCarriesNoNotice() throws {
+        let summary = try XCTUnwrap(AgentToolSummary.make(
+            toolName: "Bash",
+            toolInput: ["command": "xcodegen generate", "description": "Regenerate the project"]
+        ))
+        XCTAssertFalse(summary.truncated)
+        XCTAssertEqual(summary.detail, "xcodegen generate")
+    }
+
+    func testTruncationIsStillVisibleWhenThereIsNoDetail() throws {
+        let summary = try XCTUnwrap(AgentToolSummary.make(
+            toolName: "Grep",
+            toolInput: ["pattern": "usageStatusColor", "_omelette_truncated": true]
+        ))
+        XCTAssertTrue(summary.truncated)
+        XCTAssertEqual(summary.headline, "Grep usageStatusColor")
+        XCTAssertEqual(summary.detail, Self.notice, "the notice is the whole detail rather than nothing at all")
+    }
+
+    func testAQuestionAlsoSaysWhenItsOptionsWereCut() throws {
+        let summary = try XCTUnwrap(AgentToolSummary.make(
+            toolName: "AskUserQuestion",
+            toolInput: [
+                "_omelette_truncated": true,
+                "questions": [["question": "Ship it?", "options": [["label": "Yes"], ["label": "No"]]]],
+            ]
+        ))
+        XCTAssertTrue(summary.truncated)
+        XCTAssertEqual(summary.attention, .question(count: 1, multiSelect: false))
+        XCTAssertEqual(summary.detail, "Ship it?\n• Yes\n• No\n" + Self.notice)
+    }
 }

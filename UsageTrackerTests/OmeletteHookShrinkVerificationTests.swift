@@ -59,6 +59,17 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         return process.terminationStatus
     }
 
+    /// Every shrunk payload now ends its detail with the app's own truncation notice
+    /// (`AgentToolSummary.truncationNotice`), which is the point of the flag the
+    /// helper sets. The caps below are about the text the helper sent, so the notice
+    /// is asserted once here and stripped before anything is measured.
+    private func detailWithoutNotice(_ detail: String?, file: StaticString = #filePath, line: UInt = #line) throws -> String {
+        let detail = try XCTUnwrap(detail, file: file, line: line)
+        let suffix = "\n" + AgentToolSummary.truncationNotice
+        XCTAssertTrue(detail.hasSuffix(suffix), "a shrunk payload must say so", file: file, line: line)
+        return String(detail.dropLast(suffix.count))
+    }
+
     private func waitForEvents(_ count: Int, timeout: TimeInterval = 3) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         while box.events.count < count && Date() < deadline {
@@ -96,9 +107,10 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         // second truncation. A shorter helper keep would show up as fewer than 4096
         // characters; a helper that forwarded the whole 6000 would show up as 4096
         // characters *with* a trailing "…" from the app's own cap. Neither happened.
-        XCTAssertEqual(event.toolDetail?.count, 4096)
-        XCTAssertFalse(event.toolDetail?.hasSuffix("…") ?? true, "the helper's cap and the app's cap land on the same boundary")
-        XCTAssertEqual(event.toolDetail, String(repeating: "c", count: 4096))
+        let detail = try detailWithoutNotice(event.toolDetail)
+        XCTAssertEqual(detail.count, 4096)
+        XCTAssertFalse(detail.hasSuffix("…"), "the helper's cap and the app's cap land on the same boundary")
+        XCTAssertEqual(detail, String(repeating: "c", count: 4096))
         XCTAssertEqual(event.toolSummary, "Warm the cache")
     }
 
@@ -115,7 +127,7 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         XCTAssertEqual(try runHelper(stdin: payload), 0)
         XCTAssertTrue(waitForEvents(1))
         let event = try XCTUnwrap(box.events.first)
-        let detail = try XCTUnwrap(event.toolDetail)
+        let detail = try detailWithoutNotice(event.toolDetail)
         XCTAssertFalse(detail.hasSuffix("…"), "well under the app's own 1024 MCP cap, so nothing here should look app-truncated")
         // Sorted-keys JSON puts "_omelette_truncated" (which itself contains one "d",
         // in "truncated") before "description" — pull only the description value out
@@ -138,7 +150,7 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         let event = try XCTUnwrap(box.events.first)
         // The full URL is the detail (AgentToolSummary caps at 4096, well above the
         // helper's own 2048), so its length pins the helper's cap exactly.
-        XCTAssertEqual(event.toolDetail?.count, 2048)
+        XCTAssertEqual(try detailWithoutNotice(event.toolDetail).count, 2048)
     }
 
     func testPlanIsKeptToOneThousandTwentyFourCharacters() throws {
@@ -152,7 +164,7 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         XCTAssertTrue(waitForEvents(1))
         let event = try XCTUnwrap(box.events.first)
         XCTAssertEqual(event.attention, .plan)
-        XCTAssertEqual(event.toolDetail?.count, 1024)
+        XCTAssertEqual(try detailWithoutNotice(event.toolDetail).count, 1024)
         XCTAssertEqual(event.toolSummary, "Plan ready for review: Title")
     }
 
@@ -216,7 +228,7 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         // kept list at all, so the summary is still exactly what a shrunk Edit
         // produces — a headline and the path, nothing about their contents.
         XCTAssertEqual(event.toolSummary, "Edit Big.swift")
-        XCTAssertEqual(event.toolDetail, "/tmp/Big.swift")
+        XCTAssertEqual(try detailWithoutNotice(event.toolDetail), "/tmp/Big.swift")
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
@@ -230,7 +242,7 @@ final class OmeletteHookShrinkVerificationTests: XCTestCase {
         XCTAssertTrue(waitForEvents(1))
         let event = try XCTUnwrap(box.events.first)
         XCTAssertEqual(event.toolSummary, "Write Notes.txt")
-        XCTAssertEqual(event.toolDetail, "/tmp/Notes.txt", "content must not leak into the detail")
+        XCTAssertEqual(try detailWithoutNotice(event.toolDetail), "/tmp/Notes.txt", "content must not leak into the detail")
     }
 
     func testWebFetchPromptIsDropped() throws {

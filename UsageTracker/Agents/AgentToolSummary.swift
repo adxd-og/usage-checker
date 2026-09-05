@@ -6,9 +6,20 @@ import Foundation
 struct ToolSummary: Equatable, Sendable {
     /// One line, ≤ 80 characters, whitespace collapsed. Shown in rows and banners.
     let headline: String
-    /// Multi-line, ≤ 4096 characters, original whitespace. nil when the headline says it all.
+    /// Multi-line, ≤ 4096 characters (plus the truncation notice when `truncated`),
+    /// original whitespace. nil when the headline says it all.
     let detail: String?
     let attention: AgentAttention?
+    /// The helper shrank `tool_input` to fit it on the wire, so what we have is a
+    /// prefix of what the terminal is showing. The detail says so in its last line.
+    let truncated: Bool
+
+    init(headline: String, detail: String?, attention: AgentAttention?, truncated: Bool = false) {
+        self.headline = headline
+        self.detail = detail
+        self.attention = attention
+        self.truncated = truncated
+    }
 }
 
 /// A tool call that *is* the thing the user has to answer: the agent asked a
@@ -29,10 +40,36 @@ enum AgentToolSummary {
     /// JSON of the whole input — kept short, because it is a debugging aid.
     static let maxMCPDetailLength = 1024
 
+    /// The last line of a detail the helper had to cut. Said here, once, so every
+    /// surface that shows a detail shows it — a 4 KB command that stops mid-word
+    /// otherwise reads as the whole command.
+    static let truncationNotice = "[truncated by Omelette — see the terminal for the full text]"
+
     /// nil when the tool is unknown, the input lacks the key the rule reads, or
     /// everything it carries is blank.
     static func make(toolName: String?, toolInput: [String: Any]?) -> ToolSummary? {
         guard let toolName, !toolName.isEmpty, let toolInput else { return nil }
+        let summary = summarize(toolName: toolName, toolInput: toolInput)
+        // `_omelette_truncated` is the helper's own flag (`shrinkingToolInput`), set
+        // on the whole shrunken payload rather than on the field we happened to read.
+        guard toolInput["_omelette_truncated"] as? Bool == true else { return summary }
+        return summary.map(markingTruncated)
+    }
+
+    /// The notice is added to the detail rather than taken out of it: the text the
+    /// helper did send is the part worth reading, and shortening it further to make
+    /// room would hide where the cut actually fell.
+    private static func markingTruncated(_ summary: ToolSummary) -> ToolSummary {
+        let body = summary.detail.map { $0 + "\n" } ?? ""
+        return ToolSummary(
+            headline: summary.headline,
+            detail: body + truncationNotice,
+            attention: summary.attention,
+            truncated: true
+        )
+    }
+
+    private static func summarize(toolName: String, toolInput: [String: Any]) -> ToolSummary? {
         switch toolName {
         case "Bash":
             return bash(toolInput)

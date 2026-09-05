@@ -337,6 +337,16 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
+    /// A shrunk payload's detail ends with the app's truncation notice, so the row
+    /// says the text is a prefix. The caps below are about what the helper sent:
+    /// assert the notice once, then measure the text under it.
+    private func detailWithoutNotice(_ detail: String?, file: StaticString = #filePath, line: UInt = #line) throws -> String {
+        let detail = try XCTUnwrap(detail, file: file, line: line)
+        let suffix = "\n" + AgentToolSummary.truncationNotice
+        XCTAssertTrue(detail.hasSuffix(suffix), "a shrunk payload must say so", file: file, line: line)
+        return String(detail.dropLast(suffix.count))
+    }
+
     func testAnOversizedBashKeepsItsDescriptionAndFourKilobytesOfCommand() throws {
         try startServer()
         let command = String(repeating: "echo hello; ", count: 10_000)   // ~120 KB
@@ -350,8 +360,9 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertTrue(waitForEvents(1))
         let event = try XCTUnwrap(box.events.first)
         XCTAssertEqual(event.toolSummary, "Warm the cache", "the description must survive the shrink")
-        XCTAssertEqual(event.toolDetail?.count, 4096, "4096 kept by the helper, under the app's own 4096 cap")
-        XCTAssertEqual(event.toolDetail?.hasPrefix("echo hello; "), true)
+        let command4096 = try detailWithoutNotice(event.toolDetail)
+        XCTAssertEqual(command4096.count, 4096, "4096 kept by the helper, under the app's own 4096 cap")
+        XCTAssertTrue(command4096.hasPrefix("echo hello; "))
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
@@ -368,7 +379,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertTrue(waitForEvents(1))
         let event = try XCTUnwrap(box.events.first)
         XCTAssertEqual(event.toolSummary, "Question: Tabs or spaces?")
-        XCTAssertEqual(event.toolDetail, "Tabs or spaces?\n• Tabs\n• Spaces")
+        XCTAssertEqual(try detailWithoutNotice(event.toolDetail), "Tabs or spaces?\n• Tabs\n• Spaces")
         XCTAssertEqual(event.attention, .question(count: 1, multiSelect: false))
         XCTAssertEqual(server?.droppedCount, 0)
     }
@@ -387,8 +398,9 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         let event = try XCTUnwrap(box.events.first)
         XCTAssertEqual(event.toolSummary, "Plan ready for review: Rework the ring")
         XCTAssertEqual(event.attention, .plan)
-        XCTAssertEqual(event.toolDetail?.count, 1024, "the helper keeps a kilobyte of plan")
-        XCTAssertEqual(event.toolDetail?.hasPrefix("# Rework the ring"), true)
+        let plan1024 = try detailWithoutNotice(event.toolDetail)
+        XCTAssertEqual(plan1024.count, 1024, "the helper keeps a kilobyte of plan")
+        XCTAssertTrue(plan1024.hasPrefix("# Rework the ring"))
         XCTAssertEqual(server?.droppedCount, 0)
     }
 
