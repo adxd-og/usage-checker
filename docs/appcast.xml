@@ -6,6 +6,27 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.3.1</title>
+      <pubDate>Sun, 06 Sep 2026 00:11:26 +0300</pubDate>
+      <sparkle:version>37</sparkle:version>
+      <sparkle:shortVersionString>2.3.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>The dashboard could grow past the screen edge.</b> History's header (provider row, Cost / Tokens switch and range picker) was wider than the window, so the window stretched off-screen and the title collapsed. The header now picks the widest layout that fits the window: one row, the title with its controls over the provider row, or three rows near the minimum width.</li>
+<li>Codex daily cost by model family no longer lumps every OpenAI model into "other": <code>gpt-5</code>, <code>gpt-5-codex</code>, <code>gpt-4o</code>, <code>o3</code> and friends each get a line of their own.</li>
+<li>A Codex <code>token_count</code> written before the session's first <code>turn_context</code> is kept and attributed to that turn's model instead of being dropped.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.3.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.3.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="QIs+zIYSG6AJ5DT2T3MT4gZt3R9Na3UYRNBDJMHe+YyuPyBP4gO7S5INLeENtKXkgalMj0rwSi0mOgw0M38YDA=="
+        length="16194760"/>
+    </item>
+    <item>
       <title>Omelette v2.3.0</title>
       <pubDate>Sat, 05 Sep 2026 23:37:06 +0300</pubDate>
       <sparkle:version>36</sparkle:version>
