@@ -61,3 +61,41 @@ final class AgentModelsTests: XCTestCase {
         XCTAssertNotEqual(copy, session, "the pending id takes part in equality so the popover redraws")
     }
 }
+
+final class AgentModelDetailFieldTests: XCTestCase {
+    func testTheNewEventFieldsDefaultToNothing() {
+        let event = AgentEvent(
+            source: .claude, kind: .toolStarted, sessionID: "s", cwd: nil, toolName: "Bash",
+            toolSummary: "swift test", isSubagent: false, host: .none, receivedAt: Date()
+        )
+        XCTAssertNil(event.toolDetail)
+        XCTAssertNil(event.attention)
+    }
+
+    func testAnEventCarriesADetailAndAnAttention() {
+        let event = AgentEvent(
+            source: .claude, kind: .toolStarted, sessionID: "s", cwd: nil, toolName: "AskUserQuestion",
+            toolSummary: "Question: Tabs or spaces?", toolDetail: "Tabs or spaces?\n• Tabs",
+            attention: .question(count: 1, multiSelect: false),
+            isSubagent: false, host: .none, receivedAt: Date()
+        )
+        XCTAssertEqual(event.toolDetail, "Tabs or spaces?\n• Tabs")
+        XCTAssertEqual(event.attention, .question(count: 1, multiSelect: false))
+    }
+
+    func testTheNewSessionFieldsDefaultToNothing() {
+        let session = AgentSession(
+            sessionID: "s", source: .claude, projectName: "p", cwd: nil, state: .working,
+            stateSince: Date(), lastEventAt: Date(), startedAt: Date()
+        )
+        XCTAssertNil(session.activityDetail)
+        XCTAssertNil(session.attention)
+    }
+
+    func testAttentionRoundTripsThroughCoding() throws {
+        for attention: AgentAttention in [.plan, .question(count: 3, multiSelect: true)] {
+            let data = try JSONEncoder().encode(attention)
+            XCTAssertEqual(try JSONDecoder().decode(AgentAttention.self, from: data), attention)
+        }
+    }
+}

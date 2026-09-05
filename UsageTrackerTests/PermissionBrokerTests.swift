@@ -102,6 +102,20 @@ final class PermissionBrokerTests: XCTestCase {
         XCTAssertNil(line(peer), "nothing goes to the helper while held")
     }
 
+    func testAHeldRequestCarriesTheFullTextAsWellAsTheHeadline() {
+        let broker = makeBroker()
+        let (reply, _) = reply()
+        let event = AgentEvent(
+            source: .claude, kind: .permissionRequested, sessionID: "s1",
+            cwd: "/Users/tester/Projects/alpha", toolName: "Bash",
+            toolSummary: "Clear the derived data", toolDetail: "rm -rf build/DerivedData",
+            isSubagent: false, host: iterm, receivedAt: t0, requestID: AgentFixture.requestID
+        )
+        broker.register(event: event, reply: reply, session: nil, now: t0)
+        XCTAssertEqual(broker.pending.first?.toolSummary, "Clear the derived data")
+        XCTAssertEqual(broker.pending.first?.detail, "rm -rf build/DerivedData")
+    }
+
     func testRegisterBeforeTheStoreKnowsTheSessionStillLandsThePendingID() {
         // Bootstrap order: register, then apply.
         let broker = makeBroker()

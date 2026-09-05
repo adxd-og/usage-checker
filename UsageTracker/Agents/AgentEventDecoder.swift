@@ -58,6 +58,7 @@ enum AgentEventDecoder {
         guard let sessionID = payload["session_id"] as? String, !sessionID.isEmpty else { throw Error.missingField("session_id") }
         let toolName = payload["tool_name"] as? String
         let toolInput = payload["tool_input"] as? [String: Any]
+        let summary = AgentToolSummary.make(toolName: toolName, toolInput: toolInput)
 
         let kind: AgentEvent.Kind
         switch name {
@@ -84,7 +85,9 @@ enum AgentEventDecoder {
             sessionID: sessionID,
             cwd: payload["cwd"] as? String,
             toolName: toolName,
-            toolSummary: AgentToolSummary.make(toolName: toolName, toolInput: toolInput)?.headline,
+            toolSummary: summary?.headline,
+            toolDetail: summary?.detail,
+            attention: summary?.attention,
             isSubagent: !(agentID ?? "").isEmpty,
             host: host,
             receivedAt: receivedAt,

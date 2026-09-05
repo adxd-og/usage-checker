@@ -9,6 +9,10 @@ struct PendingPermission: Identifiable, Equatable, Sendable {
     let sessionID: String          // AgentSession.id ("claude:<uuid>")
     let toolName: String?
     let toolSummary: String?
+    /// The full text behind the summary, for the banner's second line and the row's
+    /// expanded block. Still nothing but what the summary rules extracted — the tool
+    /// input itself never leaves the decoder (spec rule 6).
+    let detail: String?
     let receivedAt: Date
     let expiresAt: Date
 }
@@ -133,7 +137,7 @@ final class PermissionBroker: ObservableObject {
 
         let request = PendingPermission(
             id: id, sessionID: sessionID, toolName: event.toolName, toolSummary: event.toolSummary,
-            receivedAt: now, expiresAt: now.addingTimeInterval(holdWindow)
+            detail: event.toolDetail, receivedAt: now, expiresAt: now.addingTimeInterval(holdWindow)
         )
         held[id] = Held(reply: reply, host: host, expiry: nil)
         pending.insert(request, at: 0)

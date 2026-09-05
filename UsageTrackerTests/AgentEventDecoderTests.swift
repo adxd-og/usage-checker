@@ -170,3 +170,28 @@ final class AgentEventDecoderTests: XCTestCase {
         XCTAssertNoThrow(try AgentEventDecoder.decode(atCap))
     }
 }
+
+extension AgentEventDecoderTests {
+    func testTheDecoderFillsTheDetailAndTheAttention() throws {
+        let bash = try decode(AgentFixture.preToolUseBash)
+        XCTAssertEqual(bash.toolSummary, "Regenerate the project")
+        XCTAssertEqual(bash.toolDetail, "xcodegen generate")
+        XCTAssertNil(bash.attention)
+
+        let question = try decode(AgentFixture.claude(
+            "PreToolUse",
+            extra: #""tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Tabs or spaces?","header":"Style","multiSelect":false,"options":[{"label":"Tabs"},{"label":"Spaces"}]}]}"#
+        ))
+        XCTAssertEqual(question.kind, .toolStarted)
+        XCTAssertEqual(question.toolSummary, "Question: Tabs or spaces?")
+        XCTAssertEqual(question.toolDetail, "Tabs or spaces?\n• Tabs\n• Spaces")
+        XCTAssertEqual(question.attention, .question(count: 1, multiSelect: false))
+
+        let plan = try decode(AgentFixture.claude(
+            "PreToolUse",
+            extra: ##""tool_name":"ExitPlanMode","tool_input":{"plan":"# Rework the ring\n\nStep one."}"##
+        ))
+        XCTAssertEqual(plan.toolSummary, "Plan ready for review: Rework the ring")
+        XCTAssertEqual(plan.attention, .plan)
+    }
+}

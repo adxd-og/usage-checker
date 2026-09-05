@@ -51,7 +51,13 @@ struct AgentEvent: Equatable, Sendable {
     let sessionID: String            // Claude session_id / Codex thread-id
     let cwd: String?
     let toolName: String?
-    let toolSummary: String?         // AgentToolSummary.make(toolName:toolInput:)
+    let toolSummary: String?         // ToolSummary.headline
+    /// The full text behind the headline (`ToolSummary.detail`): the command, the
+    /// path, the plan. nil when the headline says it all.
+    let toolDetail: String?
+    /// Set when the tool call *is* the thing the user has to answer — a question or
+    /// a plan. Neither can be answered from Omelette.
+    let attention: AgentAttention?
     let isSubagent: Bool             // payload has agent_id
     let host: AgentHostInfo
     let receivedAt: Date
@@ -66,6 +72,8 @@ struct AgentEvent: Equatable, Sendable {
         cwd: String?,
         toolName: String?,
         toolSummary: String?,
+        toolDetail: String? = nil,
+        attention: AgentAttention? = nil,
         isSubagent: Bool,
         host: AgentHostInfo,
         receivedAt: Date,
@@ -77,6 +85,8 @@ struct AgentEvent: Equatable, Sendable {
         self.cwd = cwd
         self.toolName = toolName
         self.toolSummary = toolSummary
+        self.toolDetail = toolDetail
+        self.attention = attention
         self.isSubagent = isSubagent
         self.host = host
         self.receivedAt = receivedAt
@@ -91,7 +101,14 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     var projectName: String          // ProjectName(...) of cwd, or last path component (package 2 fills it)
     var cwd: String?
     var state: AgentState
-    var activity: String?            // last tool summary
+    var activity: String?            // last tool summary headline
+    /// The full text behind `activity`, for the row's expanded block. Moves with
+    /// `activity` as a pair — a headline from one tool over the detail of another
+    /// would expand into a lie.
+    var activityDetail: String?
+    /// The session is waiting on a question or a plan, which is a `needsYou` with no
+    /// Allow / Deny: the answer has to be typed in the terminal.
+    var attention: AgentAttention?
     var stateSince: Date
     var lastEventAt: Date
     var startedAt: Date
@@ -115,6 +132,8 @@ struct AgentSession: Identifiable, Equatable, Sendable {
         cwd: String?,
         state: AgentState,
         activity: String? = nil,
+        activityDetail: String? = nil,
+        attention: AgentAttention? = nil,
         stateSince: Date,
         lastEventAt: Date,
         startedAt: Date,
@@ -131,6 +150,8 @@ struct AgentSession: Identifiable, Equatable, Sendable {
         self.cwd = cwd
         self.state = state
         self.activity = activity
+        self.activityDetail = activityDetail
+        self.attention = attention
         self.stateSince = stateSince
         self.lastEventAt = lastEventAt
         self.startedAt = startedAt
