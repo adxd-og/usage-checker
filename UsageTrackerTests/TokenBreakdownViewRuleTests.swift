@@ -85,3 +85,28 @@ final class TokensTodayCardCaptionTests: XCTestCase {
         )
     }
 }
+
+/// The mode is persisted under a raw String, so its cases are a storage contract:
+/// renaming one silently resets every user's tab to Cost.
+final class HistoryChartModeTests: XCTestCase {
+    func testTheStoredValuesAreStable() {
+        XCTAssertEqual(HistoryChartMode.cost.rawValue, "cost")
+        XCTAssertEqual(HistoryChartMode.tokens.rawValue, "tokens")
+    }
+
+    func testBothModesAreOfferedInOrderWithCostFirst() {
+        // Cost is the default and the question the tab has always answered.
+        XCTAssertEqual(HistoryChartMode.allCases, [.cost, .tokens])
+    }
+
+    func testTheSegmentsAreLabelledForPeopleNotForStorage() {
+        XCTAssertEqual(HistoryChartMode.cost.displayName, "Cost")
+        XCTAssertEqual(HistoryChartMode.tokens.displayName, "Tokens")
+    }
+
+    func testAnUnknownStoredValueIsNotADecodableMode() {
+        // @AppStorage falls back to the default when the raw value no longer
+        // parses; this is the assumption that makes that safe.
+        XCTAssertNil(HistoryChartMode(rawValue: "spend"))
+    }
+}
