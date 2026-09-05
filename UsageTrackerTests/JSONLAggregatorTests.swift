@@ -539,6 +539,99 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
     }
 
+    func testAVersionOneCacheIsRejectedAndTheLogsAreReRead() async throws {
+        try writeStandardFixture()
+
+        // A snapshot in the *current* shape, wearing the old version number, with a day
+        // of spend the logs cannot produce. Only the version check can reject it — a
+        // decode failure would prove nothing about the bump.
+        let fabricatedDay = ISO8601DateFormatter().string(
+            from: Calendar.current.startOfDay(for: now.addingTimeInterval(-10 * 24 * 3600))
+        )
+        func snapshot(version: Int) -> Data {
+            let object: [String: Any] = [
+                "version": version,
+                "root": root.path,
+                "savedAt": ISO8601DateFormatter().string(from: now),
+                "fileMarks": [String: Any](),
+                "recentTurns": [Any](),
+                "oldDays": [[
+                    "day": fabricatedDay,
+                    "cost": 99.0,
+                    "tokens": 12_345,
+                    "breakdown": [
+                        "input": 12_345, "output": 0, "cacheRead": 0,
+                        "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
+                    ],
+                    "turns": 7,
+                    "byFamily": ["sonnet": 99.0],
+                ]],
+                "seenMessageIDs": [Any](),
+            ]
+            return try! JSONSerialization.data(withJSONObject: object)
+        }
+
+        try snapshot(version: 1).write(to: cacheURL)
+        let stale = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
+        await stale.refresh()
+        let staleParsed = await stale.filesParsedInLastScan
+        let staleBreakdown = await stale.breakdown()
+
+        XCTAssertEqual(staleParsed, 2, "a version-1 snapshot means a full rescan")
+        XCTAssertFalse(
+            staleBreakdown.daily.contains { $0.turns == 7 },
+            "nothing from the old snapshot may reach the figures"
+        )
+        XCTAssertEqual(staleBreakdown.weekCost, 12.5, accuracy: 0.0001)
+
+        // The control: the same bytes at version 2 ARE restored, so the assertions
+        // above are about the version number and not about an unreadable file.
+        let currentURL = cacheFile(named: "control")
+        try snapshot(version: 2).write(to: currentURL)
+        let current = JSONLAggregator(rootURL: root, cacheURL: currentURL)
+        await current.refresh()
+        let currentBreakdown = await current.breakdown()
+
+        XCTAssertTrue(
+            currentBreakdown.daily.contains { $0.turns == 7 && $0.tokens.input == 12_345 },
+            "a current snapshot restores its folded days, breakdown and all"
+        )
+    }
+
+    func testAFoldedOldDayKeepsItsBreakdownAcrossTheCache() async throws {
+        // 40 days back: past `recentWindow`, so the turn is folded into `oldDays` at
+        // ingest and only the day-level aggregate is ever written to the cache. The
+        // file itself is new, so the mtime window still lets the scanner read it.
+        try write([
+            line(
+                id: "msg_folded", minutesAgo: 40 * 24 * 60, model: "claude-sonnet-4-5",
+                input: 1_000_000, output: 200_000, cacheRead: 500_000,
+                cacheCreate5m: 100_000, cacheCreate1h: 10_000, thinking: 50_000
+            ),
+        ], project: alphaSlug)
+
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0)
+        await first.refresh()
+        let firstBreakdown = await first.breakdown()
+        let before = try XCTUnwrap(firstBreakdown.daily.first)
+        XCTAssertEqual(before.tokens.input, 1_000_000, "the fold has to keep the split")
+        XCTAssertEqual(before.tokens.cacheWrite, 110_000)
+        XCTAssertEqual(before.tokens.thinking, 50_000)
+
+        let second = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0)
+        await second.refresh()
+        let parsed = await second.filesParsedInLastScan
+        let secondBreakdown = await second.breakdown()
+        let after = try XCTUnwrap(secondBreakdown.daily.first)
+
+        XCTAssertEqual(parsed, 0, "the cache answers without reopening the transcript")
+        XCTAssertEqual(after.day, before.day)
+        XCTAssertEqual(after.tokens, before.tokens, "including the per-category dollars")
+        XCTAssertEqual(after.totalTokens, before.tokens.total)
+        XCTAssertEqual(after.totalCost, before.totalCost, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(after.tokens.cost).total, after.totalCost, accuracy: 1e-9)
+    }
+
     // MARK: - Per-turn token breakdown
 
     func testATurnsCategoryDollarsAddUpToItsCost() throws {
