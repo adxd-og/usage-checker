@@ -6,6 +6,31 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.3.0</title>
+      <pubDate>Sat, 05 Sep 2026 23:37:06 +0300</pubDate>
+      <sparkle:version>36</sparkle:version>
+      <sparkle:shortVersionString>2.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Token breakdown in the dashboard.</b> Overview gets a "Tokens today" card that splits the day into input, output, cache read and cache write (with "of which thinking" under output and the share of context that came from cache), and History gets a Cost / Tokens switch: the Tokens mode stacks the same categories per day and adds them as table columns. Claude and Codex show dollars per category; the Grok CLI prices a whole turn, so it shows tokens only.</li>
+<li><b>Codex now has the full dashboard.</b> Its session logs are read per turn, so History, Insights and the project and model rankings work for Codex the way they do for Claude and Grok. The popover's today / 7-day figures are unchanged.</li>
+<li><b>One-click provider row.</b> The dashboard header's provider drop-down is now a row of icon-and-name buttons.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li>The Claude cost cache changed shape (it now keeps the token split per day), so the first launch after updating re-reads the session logs once. Nothing is lost; it just takes a little longer.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.3.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.3.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="BVnXlX8b19aqZ9bsbgWHQvmhjt1NanOLUYxIh8FUGIt9hixMR9miIvG5FYPH5INieNznGlwbZlkj2+BzZkK1Cg=="
+        length="16191902"/>
+    </item>
+    <item>
       <title>Omelette v2.2.3</title>
       <pubDate>Thu, 03 Sep 2026 14:15:16 +0300</pubDate>
       <sparkle:version>35</sparkle:version>
