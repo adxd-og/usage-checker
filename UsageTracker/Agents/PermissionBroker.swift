@@ -90,19 +90,43 @@ final class PermissionBroker: ObservableObject {
         }
     }
 
-    /// The production feature flag: the switch is on *and* the installed Claude hooks
-    /// are exactly this build's template. A hold only makes sense if the
+    /// The production feature flag: the switch is on *and* at least one agent's
+    /// hooks are exactly this build's template. A hold only makes sense if the
     /// `PermissionRequest` hook is registered with the 150 s cap; an install from 2.1
-    /// (`timeout: 5`, which reads `.outdated`) has Claude Code kill the helper after
+    /// (`timeout: 5`, which reads `.outdated`) has the agent kill the helper after
     /// five seconds, and a five-second Allow/Deny banner that vanishes on its own is
-    /// worse than the terminal prompt. Two small file reads per request — the same
-    /// check Settings → Agents polls every 2 s.
+    /// worse than the terminal prompt. Four small file reads per request — the same
+    /// checks Settings → Agents polls every 2 s.
     static func featureIsUsable() -> Bool {
-        SettingsStore.shared.agentsAnswerPermissions
-            && AgentHooksInstaller.claudeStatus(
+        featureIsUsable(
+            settingEnabled: SettingsStore.shared.agentsAnswerPermissions,
+            claudeHooks: AgentHooksInstaller.claudeStatus(
                 settingsURL: AgentPaths.claudeSettingsURL,
                 helperPath: AgentPaths.helperSymlinkURL.path
-            ) == .installed
+            ),
+            codexHooks: AgentHooksInstaller.codexHooksStatus(
+                hooksURL: AgentPaths.codexHooksURL,
+                helperPath: AgentPaths.helperSymlinkURL.path
+            ),
+            codexTrust: AgentHooksInstaller.codexTrust(
+                configURL: AgentPaths.codexConfigURL,
+                hooksURL: AgentPaths.codexHooksURL
+            )
+        )
+    }
+
+    /// The truth table, as a pure function. One usable source is enough — the broker
+    /// holds whatever arrives with a request id, whoever sent it. Codex needs the
+    /// second half: a hook it has not been told to trust is one it refuses to run,
+    /// and Allow / Deny for a question nobody asked is the worst of both worlds.
+    static func featureIsUsable(
+        settingEnabled: Bool,
+        claudeHooks: HookInstallStatus,
+        codexHooks: HookInstallStatus,
+        codexTrust: AgentHooksInstaller.CodexTrustStatus
+    ) -> Bool {
+        guard settingEnabled else { return false }
+        return claudeHooks == .installed || (codexHooks == .installed && codexTrust == .trusted)
     }
 
     /// The whole policy, as a pure function (spec).

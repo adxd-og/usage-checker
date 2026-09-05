@@ -598,14 +598,15 @@ final class UsageNotifier: NSObject {
         center.removeDeliveredNotifications(withIdentifiers: [needsYouID])
         notifiedNeedsYou.remove(pending.sessionID)
 
-        // The project name and the provider are the session's, not the payload's. A
-        // request whose session we somehow do not know still has to name something.
+        // The project name and the agent's name are the session's, not the payload's.
+        // A request whose session we somehow do not know still has to name something,
+        // and its id carries the source ("codex:<uuid>").
         let session = AgentSessionStore.shared.sessions.first { $0.id == pending.sessionID }
+        let project = session?.projectName ?? "An agent"
+        let source: AgentSource = session?.source
+            ?? (pending.sessionID.hasPrefix("codex:") ? .codex : .claude)
         fire(
-            title: AgentNotificationRules.permissionTitle(
-                projectName: session?.projectName ?? "An agent",
-                source: session?.source ?? .claude
-            ),
+            title: AgentNotificationRules.permissionTitle(projectName: project, source: source),
             subtitle: AgentNotificationRules.permissionSubtitle(
                 toolName: pending.toolName, attention: pending.attention
             ),

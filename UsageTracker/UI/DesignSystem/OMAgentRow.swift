@@ -75,11 +75,12 @@ enum AgentRowText {
         }
     }
 
-    /// Whether the row offers Allow / Deny. Only a Claude session can be held —
-    /// Codex reports one event and has no approval hook — and an id that is blank
-    /// is not an id, so neither can put buttons on a row that answer nothing.
+    /// Whether the row offers Allow / Deny. Both sources can be held since 2.4 —
+    /// Codex has its own `PermissionRequest` hook — so what decides it is the id
+    /// alone: a blank id is not an id, and buttons that answer nothing are worse
+    /// than no buttons. `source` stays in the signature for the call sites and for
+    /// the day one of them needs it again.
     static func permissionButtonsVisible(pendingPermissionID: String?, source: AgentSource) -> Bool {
-        guard source == .claude else { return false }
         let id = pendingPermissionID?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return !id.isEmpty
     }

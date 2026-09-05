@@ -391,4 +391,34 @@ final class AgentPermissionNotificationIdentifierTests: XCTestCase {
         let identifier = AgentNotificationRules.permissionIdentifier(requestID: "0f1e2d3c")
         XCTAssertNil(AgentNotificationRules.sessionID(fromIdentifier: identifier))
     }
+
+    // MARK: - Source names
+
+    func testTheBannerNamesEachAgent() {
+        XCTAssertEqual(AgentNotificationRules.sourceName(for: .claude), "Claude Code")
+        XCTAssertEqual(AgentNotificationRules.sourceName(for: .codex), "Codex")
+    }
+
+    func testTheBannerAndTheRowNameSourcesIdentically() {
+        // Two layers, one name: a banner that says "Codex" and a row that says
+        // "OpenAI Codex" would read as two different agents.
+        for source in [AgentSource.claude, .codex] {
+            XCTAssertEqual(
+                AgentNotificationRules.sourceName(for: source),
+                AgentRowText.sourceName(source),
+                String(describing: source)
+            )
+        }
+    }
+
+    func testAPermissionTitleNamesTheAgentThatAsked() {
+        XCTAssertTrue(
+            AgentNotificationRules.permissionTitle(projectName: "Orion Gate", source: .codex)
+                .contains("Codex")
+        )
+        XCTAssertTrue(
+            AgentNotificationRules.permissionTitle(projectName: "Usage tracker", source: .claude)
+                .contains("Claude Code")
+        )
+    }
 }

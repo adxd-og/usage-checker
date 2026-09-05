@@ -107,13 +107,15 @@ final class AgentRowTextTests: XCTestCase {
         XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: "   ", source: .claude))
     }
 
-    func testCodexNeverOffersButtons() {
-        // Codex has no approval hook, so nothing on its side is waiting for an
-        // answer. Buttons that answer nothing are worse than no buttons, whatever
-        // the store happens to hold.
-        XCTAssertFalse(
+    func testCodexOffersButtonsOnceItsRequestIsHeld() {
+        // Codex has its own PermissionRequest hook since 2.4, and the broker holds
+        // its requests exactly like Claude's. The id is what decides: only a request
+        // the app is actually holding has one.
+        XCTAssertTrue(
             AgentRowText.permissionButtonsVisible(pendingPermissionID: "0f1e2d3c", source: .codex)
         )
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: nil, source: .codex))
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: "  ", source: .codex))
     }
 
     // MARK: the expanded block

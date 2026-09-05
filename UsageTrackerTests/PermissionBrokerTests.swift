@@ -444,4 +444,31 @@ final class PermissionBrokerTests: XCTestCase {
         let contents = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         XCTAssertEqual(contents, [], "the broker wrote \(contents)")
     }
+
+    // MARK: - featureIsUsable
+
+    func testTheFeatureNeedsTheSwitchAndOneUsableHook() {
+        func usable(
+            _ setting: Bool, _ claude: HookInstallStatus, _ codex: HookInstallStatus,
+            _ trust: AgentHooksInstaller.CodexTrustStatus
+        ) -> Bool {
+            PermissionBroker.featureIsUsable(
+                settingEnabled: setting, claudeHooks: claude, codexHooks: codex, codexTrust: trust
+            )
+        }
+        let awaiting = AgentHooksInstaller.CodexTrustStatus.awaitingTrust(untrusted: ["PermissionRequest"])
+
+        XCTAssertTrue(usable(true, .installed, .notInstalled, awaiting), "Claude alone is enough")
+        XCTAssertTrue(usable(true, .notInstalled, .installed, .trusted), "Codex alone is enough")
+        XCTAssertTrue(usable(true, .installed, .installed, .trusted))
+
+        XCTAssertFalse(usable(false, .installed, .installed, .trusted), "the switch is off")
+        XCTAssertFalse(usable(true, .notInstalled, .notInstalled, .trusted))
+        XCTAssertFalse(usable(true, .outdated, .outdated, .trusted), "an outdated hook has the wrong timeout")
+        XCTAssertFalse(
+            usable(true, .notInstalled, .installed, awaiting),
+            "an untrusted Codex hook is one Codex refuses to run"
+        )
+        XCTAssertFalse(usable(true, .conflict("x"), .notInstalled, .trusted))
+    }
 }
