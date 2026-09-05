@@ -84,6 +84,90 @@ final class AgentEventDecoderTests: XCTestCase {
         XCTAssertEqual(event.kind, .unknown("agent-approval-needed"))
     }
 
+    // MARK: Codex hooks
+
+    private func decodeCodexHook(_ payload: String, requestID: String? = nil) throws -> AgentEvent {
+        try AgentEventDecoder.decode(
+            AgentFixture.envelope(source: "codex", payload: payload, requestID: requestID, transport: "hook")
+        )
+    }
+
+    func testCodexHookEventsMapLikeClaudes() throws {
+        let cases: [(String, AgentEvent.Kind)] = [
+            ("SessionStart", .sessionStart),
+            ("UserPromptSubmit", .promptSubmitted),
+            ("PreToolUse", .toolStarted),
+            ("PostToolUse", .toolFinished),
+            ("PermissionRequest", .permissionRequested),
+            ("Stop", .stop),
+            ("SessionEnd", .sessionEnd),
+            ("PreCompact", .unknown("PreCompact")),
+        ]
+        for (name, kind) in cases {
+            let event = try decodeCodexHook(AgentFixture.codexHook(name))
+            XCTAssertEqual(event.kind, kind, name)
+            XCTAssertEqual(event.source, .codex, name)
+            XCTAssertFalse(event.isSubagent, name)
+        }
+    }
+
+    func testCodexHookCarriesTheToolAndItsSummary() throws {
+        let event = try decodeCodexHook(AgentFixture.codexHookPreToolUseBash)
+        XCTAssertEqual(event.toolName, "Bash")
+        XCTAssertEqual(event.toolSummary, "Run the tests", "Codex Bash carries a description like Claude's")
+        XCTAssertEqual(event.toolDetail, "cargo test")
+        XCTAssertNil(event.attention)
+    }
+
+    func testCodexHookPermissionRequestCarriesItsRequestID() throws {
+        let event = try decodeCodexHook(
+            AgentFixture.codexHookPermissionRequestApplyPatch, requestID: AgentFixture.requestID
+        )
+        XCTAssertEqual(event.kind, .permissionRequested)
+        XCTAssertEqual(event.requestID, AgentFixture.requestID)
+
+        let other = try decodeCodexHook(AgentFixture.codexHookPreToolUseBash, requestID: AgentFixture.requestID)
+        XCTAssertNil(other.requestID, "only a PermissionRequest can be held")
+    }
+
+    /// The hook's `session_id` and the rollout file name have to produce the same
+    /// `codex:<uuid>` session, or a Codex session shows up twice in the popover.
+    func testCodexHookSessionIDMatchesTheRolloutFileName() throws {
+        let event = try decodeCodexHook(AgentFixture.codexHookSessionStart)
+        let scanned = PassiveSessionScanner.codexSessionID(fileName: AgentFixture.codexRolloutFileName)
+
+        XCTAssertEqual(event.sessionID, scanned)
+        XCTAssertEqual(
+            AgentSession.makeID(source: .codex, sessionID: event.sessionID),
+            "codex:\(AgentFixture.codexSessionUUID)"
+        )
+    }
+
+    func testCodexHookRejectsMissingFields() {
+        func assertMissing(_ payload: String, _ field: String, line: UInt = #line) {
+            let data = AgentFixture.envelope(source: "codex", payload: payload, transport: "hook")
+            XCTAssertThrowsError(try AgentEventDecoder.decode(data), line: line) { error in
+                XCTAssertEqual(error as? AgentEventDecoder.Error, .missingField(field), line: line)
+            }
+        }
+        assertMissing(#"{"session_id":"019fd6d6-94a9-7611-a007-3c094955e537","cwd":"/x"}"#, "hook_event_name")
+        assertMissing(#"{"hook_event_name":"Stop","cwd":"/x"}"#, "session_id")
+        assertMissing(#"{"hook_event_name":"Stop","session_id":""}"#, "session_id")
+    }
+
+    func testACodexEnvelopeWithoutTransportIsStillNotify() throws {
+        let event = try AgentEventDecoder.decode(
+            AgentFixture.envelope(source: "codex", payload: AgentFixture.codexTurnComplete)
+        )
+        XCTAssertEqual(event.kind, .codexTurnComplete)
+        XCTAssertEqual(event.sessionID, "thr-9")
+
+        let explicit = try AgentEventDecoder.decode(
+            AgentFixture.envelope(source: "codex", payload: AgentFixture.codexTurnComplete, transport: "notify")
+        )
+        XCTAssertEqual(explicit.kind, .codexTurnComplete)
+    }
+
     // MARK: Envelope validation
 
     func testNullHostFieldsDecodeAsNil() throws {
