@@ -154,11 +154,14 @@ enum AgentNotificationRules {
         }
     }
 
-    /// The summary, then what the terminal is offering: the first three options of a
-    /// question, or the two lines of plan under its title (the title is already the
-    /// summary, so it is dropped).
+    /// The question or the plan title, then what the terminal is offering: the first
+    /// three options of a question, or the two lines of plan under its title.
+    ///
+    /// The subtitle above has already said "Plan ready for review" / "Has a question
+    /// for you", so the headline's own version of those words comes off first — a
+    /// banner is three short lines and none of them can afford to say it twice.
     static func attentionBody(headline: String?, detail: String?, attention: AgentAttention) -> String {
-        let head = headline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let head = attentionLead(headline: headline, attention: attention)
         let lines = (detail ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
         let extra: [String]
         switch attention {
@@ -175,6 +178,29 @@ enum AgentNotificationRules {
         let body = ([head] + extra).filter { !$0.isEmpty }.joined(separator: "\n")
         guard !body.isEmpty else { return "Waiting for your answer in the terminal." }
         return truncate(body, limit: maxPermissionBodyLength)
+    }
+
+    /// The headline with the words the subtitle already said taken off: "Plan ready
+    /// for review: Rework the ring" → "Rework the ring", "3 questions: Tabs or
+    /// spaces?" → "Tabs or spaces?". A headline that was *only* those words leaves
+    /// nothing, and the body starts with the lines under it instead.
+    static func attentionLead(headline: String?, attention: AgentAttention) -> String {
+        let head = headline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !head.isEmpty else { return "" }
+        let prefixes: [String]
+        let bare: [String]
+        switch attention {
+        case .plan:
+            prefixes = ["Plan ready for review: "]
+            bare = ["Plan ready for review"]
+        case .question(let count, _):
+            prefixes = ["Question: ", "\(count) questions: "]
+            bare = ["Question for you", "\(count) questions for you"]
+        }
+        for prefix in prefixes where head.hasPrefix(prefix) {
+            return String(head.dropFirst(prefix.count))
+        }
+        return bare.contains(head) ? "" : head
     }
 
     /// The first line with anything on it, trimmed. nil when there is none.

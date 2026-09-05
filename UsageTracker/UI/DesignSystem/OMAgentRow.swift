@@ -94,10 +94,15 @@ enum AgentRowText {
 
     /// What clicking the row does. A question or a plan can only be answered where it
     /// was asked, so the row says so instead of implying Omelette can take the answer.
+    /// With a request held *and* a question open — Codex asks permission to ask —
+    /// Allow only lets the agent put the question up; the answer is still typed in
+    /// the terminal, and the row has to say which of the two the buttons do.
     static func jumpHelp(for session: AgentSession) -> String {
-        session.attention == nil
-            ? "Jump to \(session.projectName)"
-            : "Click to go to the terminal and answer"
+        guard session.attention != nil else { return "Jump to \(session.projectName)" }
+        guard session.pendingPermissionID == nil else {
+            return "Allow lets the agent ask; then answer in the terminal"
+        }
+        return "Click to go to the terminal and answer"
     }
 
     /// One sentence carrying everything the row shows visually: project,

@@ -260,7 +260,7 @@ final class AgentNeedsYouBannerTests: XCTestCase {
         ))
         XCTAssertEqual(banner.title, "Usage tracker · Claude Code")
         XCTAssertEqual(banner.subtitle, "Has a question for you")
-        XCTAssertEqual(banner.body, "Question: Which provider?\n• Claude\n• Codex")
+        XCTAssertEqual(banner.body, "Which provider?\n• Claude\n• Codex")
     }
 
     func testAPlanGetsItsOwnSubtitle() {
@@ -270,6 +270,6 @@ final class AgentNeedsYouBannerTests: XCTestCase {
             detail: "# Rework the ring\n\nStep one."
         ))
         XCTAssertEqual(banner.subtitle, "Plan ready for review")
-        XCTAssertEqual(banner.body, "Plan ready for review: Rework the ring\nStep one.")
+        XCTAssertEqual(banner.body, "Rework the ring\nStep one.")
     }
 }

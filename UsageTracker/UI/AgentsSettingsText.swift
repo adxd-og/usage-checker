@@ -23,17 +23,18 @@ enum AgentsSettingsText {
     }
 
     /// The line under the Codex hooks row. Codex refuses a hook it has not been told
-    /// to trust and says nothing when it does, so the tab has to say it instead —
-    /// naming the events, because trust is granted per entry and a partial answer is
-    /// the confusing case.
+    /// to trust and says nothing when it does, so the tab has to say it instead. It
+    /// counts what is left rather than naming it: the events are wire identifiers
+    /// ("PermissionRequest, PreToolUse") and the number is the part that moves as
+    /// the user works down the /hooks list.
     static func codexTrustLine(_ trust: AgentHooksInstaller.CodexTrustStatus) -> (text: String, isTrusted: Bool) {
         switch trust {
         case .trusted:
             return ("Trusted in Codex", true)
         case .awaitingTrust(let events):
-            let named = events.isEmpty ? "" : " (\(events.joined(separator: ", ")))"
             return (
-                "Run /hooks in Codex once and trust the Omelette hooks\(named) — until then Codex ignores them",
+                "Run /hooks in Codex once and trust the Omelette hooks (\(events.count) awaiting)"
+                    + " — until then Codex ignores them",
                 false
             )
         }

@@ -140,7 +140,26 @@ final class AgentRowTextTests: XCTestCase {
         XCTAssertEqual(AgentRowText.jumpHelp(for: planning), "Click to go to the terminal and answer")
     }
 
+    func testAHeldRequestToAskSaysWhatAllowActuallyDoes() {
+        // Both at once: Codex holds a `PermissionRequest` for the question tool, so
+        // the row has Allow / Deny *and* an open question. Allow only lets the agent
+        // ask — the answer is still typed in the terminal.
+        var asking = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou, activity: "Question: Tabs or spaces?")
+        asking.attention = .question(count: 1, multiSelect: false)
+        asking.pendingPermissionID = "req-1"
+        XCTAssertEqual(AgentRowText.jumpHelp(for: asking), "Allow lets the agent ask; then answer in the terminal")
+
+        var planning = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou)
+        planning.attention = .plan
+        planning.pendingPermissionID = "req-2"
+        XCTAssertEqual(AgentRowText.jumpHelp(for: planning), "Allow lets the agent ask; then answer in the terminal")
+    }
+
     func testEveryOtherRowKeepsTheJumpWording() {
+        var held = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou, activity: "Clear the derived data")
+        held.pendingPermissionID = "req-3"
+        XCTAssertEqual(AgentRowText.jumpHelp(for: held), "Jump to Usage tracker", "a plain hold is answered on the row")
+
         let working = Fixture.agentSession(projectName: "Usage tracker", state: .working)
         XCTAssertEqual(AgentRowText.jumpHelp(for: working), "Jump to Usage tracker")
     }

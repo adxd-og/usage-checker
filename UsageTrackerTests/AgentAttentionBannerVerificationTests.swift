@@ -77,7 +77,7 @@ final class AgentAttentionBannerVerificationTests: XCTestCase {
             detail: "Which model?\n• Sonnet\n• Opus\n• Haiku\n• Fable\n• Grok",
             attention: .question(count: 1, multiSelect: false)
         )
-        XCTAssertEqual(body, "Question: Which model?\n• Sonnet\n• Opus\n• Haiku")
+        XCTAssertEqual(body, "Which model?\n• Sonnet\n• Opus\n• Haiku")
     }
 
     func testAPlanBodyCapsAtTwoLinesUnderTheTitleEvenWithFive() {
@@ -86,7 +86,7 @@ final class AgentAttentionBannerVerificationTests: XCTestCase {
             detail: "# Rework the ring\n\nStep one.\nStep two.\nStep three.\nStep four.",
             attention: .plan
         )
-        XCTAssertEqual(body, "Plan ready for review: Rework the ring\nStep one.\nStep two.")
+        XCTAssertEqual(body, "Rework the ring\nStep one.\nStep two.")
     }
 
     func testAPlanBodyIgnoresBlankLinesWhenCountingTheTwo() {
@@ -95,7 +95,7 @@ final class AgentAttentionBannerVerificationTests: XCTestCase {
             detail: "# X\n\n\nStep one.\n\nStep two.",
             attention: .plan
         )
-        XCTAssertEqual(body, "Plan ready for review: X\nStep one.\nStep two.")
+        XCTAssertEqual(body, "X\nStep one.\nStep two.")
     }
 
     func testAnAttentionBodyWithNoDetailIsJustTheHeadline() {
@@ -129,7 +129,7 @@ final class AgentAttentionBannerVerificationTests: XCTestCase {
         ))
         XCTAssertEqual(banner.title, "Usage tracker · Claude Code")
         XCTAssertEqual(banner.subtitle, "2 questions for you")
-        XCTAssertEqual(banner.body, "2 questions: Ship today?\n• Yes\n• No\n• Stable")
+        XCTAssertEqual(banner.body, "Ship today?\n• Yes\n• No\n• Stable", "the subtitle already counted the questions")
     }
 
     func testACodexSessionUsesTheCodexProviderNameInTheAttentionTitle() {

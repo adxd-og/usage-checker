@@ -26,17 +26,22 @@ final class AgentsSettingsTextTests: XCTestCase {
         XCTAssertEqual(trusted.text, "Trusted in Codex")
         XCTAssertTrue(trusted.isTrusted)
 
+        // The events are wire names — "PermissionRequest, PreToolUse" is a list
+        // nobody can act on. How many are still waiting is the part that changes as
+        // the user works through /hooks.
         let waiting = AgentsSettingsText.codexTrustLine(awaiting)
         XCTAssertFalse(waiting.isTrusted)
-        XCTAssertTrue(waiting.text.hasPrefix("Run /hooks in Codex once"), waiting.text)
-        XCTAssertTrue(waiting.text.contains("PermissionRequest, PreToolUse"), waiting.text)
-        XCTAssertTrue(waiting.text.hasSuffix("until then Codex ignores them"), waiting.text)
+        XCTAssertEqual(
+            waiting.text,
+            "Run /hooks in Codex once and trust the Omelette hooks (2 awaiting) — until then Codex ignores them"
+        )
+        XCTAssertFalse(waiting.text.contains("PermissionRequest"), waiting.text)
     }
 
-    func testTheTrustLineNamesNoEventsWhenThereAreNone() {
-        let line = AgentsSettingsText.codexTrustLine(.awaitingTrust(untrusted: []))
-        XCTAssertFalse(line.isTrusted)
-        XCTAssertFalse(line.text.contains("()"), line.text)
+    func testTheTrustLineCountsWhatIsLeft() {
+        let one = AgentsSettingsText.codexTrustLine(.awaitingTrust(untrusted: ["Stop"]))
+        XCTAssertTrue(one.text.contains("(1 awaiting)"), one.text)
+        XCTAssertFalse(one.text.contains("Stop"), one.text)
     }
 
     func testThePermissionsCaptionAppearsOnlyWhileNothingCanHold() {

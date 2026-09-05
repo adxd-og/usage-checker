@@ -324,7 +324,7 @@ final class AgentAttentionNotificationCopyTests: XCTestCase {
             detail: "Which provider?\n• Claude\n• Codex\n• Grok\n• Gemini",
             attention: .question(count: 1, multiSelect: false)
         )
-        XCTAssertEqual(body, "Question: Which provider?\n• Claude\n• Codex\n• Grok")
+        XCTAssertEqual(body, "Which provider?\n• Claude\n• Codex\n• Grok", "the subtitle already said it is a question")
     }
 
     func testAPlanBodyCarriesTheTwoLinesUnderTheTitle() {
@@ -333,13 +333,15 @@ final class AgentAttentionNotificationCopyTests: XCTestCase {
             detail: "# Rework the ring\n\nStep one.\nStep two.\nStep three.",
             attention: .plan
         )
-        XCTAssertEqual(body, "Plan ready for review: Rework the ring\nStep one.\nStep two.")
+        XCTAssertEqual(body, "Rework the ring\nStep one.\nStep two.", "the subtitle already said a plan is ready")
     }
 
-    func testABodyWithNothingToAddIsJustTheHeadline() {
+    func testABodyWithNothingToAddFallsBackToTheSentence() {
+        // "Question for you" is the headline a payload with no question text gets;
+        // once the subtitle's words come off there is nothing left to say.
         XCTAssertEqual(
             AgentNotificationRules.attentionBody(headline: "Question for you", detail: nil, attention: .question(count: 1, multiSelect: false)),
-            "Question for you"
+            "Waiting for your answer in the terminal."
         )
         XCTAssertEqual(
             AgentNotificationRules.attentionBody(headline: nil, detail: nil, attention: .plan),
@@ -347,7 +349,33 @@ final class AgentAttentionNotificationCopyTests: XCTestCase {
         )
     }
 
-    func testTheBodyIsCutAtTwoHundred() {
+    func testTheBodyNeverRepeatsTheSubtitle() {
+        // The banner shows the subtitle and then the body. "Plan ready for review"
+        // over "Plan ready for review: Rework the ring" spends the whole banner
+        // saying the same thing twice.
+        let plan = AgentNotificationRules.attentionBody(
+            headline: "Plan ready for review: Rework the ring", detail: nil, attention: .plan
+        )
+        XCTAssertEqual(plan, "Rework the ring")
+
+        let one = AgentNotificationRules.attentionBody(
+            headline: "Question: Tabs or spaces?", detail: nil, attention: .question(count: 1, multiSelect: false)
+        )
+        XCTAssertEqual(one, "Tabs or spaces?")
+
+        let many = AgentNotificationRules.attentionBody(
+            headline: "3 questions: Tabs or spaces?", detail: "Tabs or spaces?\n• Tabs\n• Spaces",
+            attention: .question(count: 3, multiSelect: false)
+        )
+        XCTAssertEqual(many, "Tabs or spaces?\n• Tabs\n• Spaces")
+
+        let untitled = AgentNotificationRules.attentionBody(
+            headline: "Plan ready for review", detail: "# Rework the ring\n\nStep one.", attention: .plan
+        )
+        XCTAssertEqual(untitled, "Step one.", "nothing of the headline is left, so the plan's own lines lead")
+    }
+
+    func testTheAttentionBodyIsCutAtTwoHundred() {
         let body = AgentNotificationRules.attentionBody(
             headline: "Plan ready for review: Rework the ring",
             detail: "# Rework the ring\n" + String(repeating: "x", count: 400),

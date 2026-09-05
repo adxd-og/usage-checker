@@ -57,14 +57,13 @@ final class PermissionBrokerAndSettingsVerificationTests: XCTestCase {
         )
     }
 
-    // MARK: - AgentsSettingsText: single untrusted event (no comma, no trailing junk)
+    // MARK: - AgentsSettingsText: one untrusted event is counted, not named
 
-    func testTrustLineWithExactlyOneUntrustedEventHasNoStrayComma() {
+    func testTrustLineWithExactlyOneUntrustedEventCountsIt() {
         let line = AgentsSettingsText.codexTrustLine(.awaitingTrust(untrusted: ["PermissionRequest"]))
         XCTAssertFalse(line.isTrusted)
-        XCTAssertTrue(line.text.contains("(PermissionRequest)"), line.text)
-        XCTAssertFalse(line.text.contains(", )"), line.text)
-        XCTAssertFalse(line.text.contains("(, "), line.text)
+        XCTAssertTrue(line.text.contains("(1 awaiting)"), line.text)
+        XCTAssertFalse(line.text.contains("PermissionRequest"), "a wire name is not something the user can act on")
     }
 
     // MARK: - The permissions caption agrees with the broker for every corner the plan's own test omits
