@@ -146,4 +146,151 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(costs.week, 0.0018, accuracy: 1e-9)
         XCTAssertEqual(costs.today, 0.0018, accuracy: 1e-9)
     }
+
+    // MARK: - Per-delta breakdown
+
+    private func loaded() async -> CodexUsageAggregator {
+        let aggregator = CodexUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+        return aggregator
+    }
+
+    private func lastHour(_ aggregator: CodexUsageAggregator) async -> WindowUsage {
+        await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+    }
+
+    func testCumulativeCountersBecomePerTurnBreakdowns() async throws {
+        try writeThreeReadings()
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 3)
+        XCTAssertEqual(usage.tokens, 4_050)
+
+        // Fresh input is input − cached, so the five buckets are disjoint and sum to
+        // the total; thinking is a subset of output and is not in it.
+        let b = usage.breakdown
+        XCTAssertEqual(b.input, 2_000)
+        XCTAssertEqual(b.output, 350)
+        XCTAssertEqual(b.cacheRead, 1_500)
+        XCTAssertEqual(b.cacheWrite5m, 200)
+        XCTAssertEqual(b.cacheWrite1h, 0)
+        XCTAssertEqual(b.thinking, 100)
+        XCTAssertEqual(b.total, 4_050)
+
+        let cost = try XCTUnwrap(b.cost)
+        XCTAssertEqual(cost.input, 0.0025, accuracy: 1e-12)
+        XCTAssertEqual(cost.output, 0.0035, accuracy: 1e-12)
+        XCTAssertEqual(cost.cacheRead, 0.0001875, accuracy: 1e-12)
+        XCTAssertEqual(cost.cacheWrite, 0, accuracy: 1e-12, "OpenAI does not bill cache writes")
+        // The turn's dollars and the breakdown's dollars are the same number.
+        XCTAssertEqual(cost.total, 0.0061875, accuracy: 1e-12)
+        XCTAssertEqual(usage.cost, 0.0061875, accuracy: 1e-12)
+    }
+
+    func testANegativeDeltaRestartsTheBaseline() async throws {
+        try writeThreeReadings()
+
+        // Only the third reading, whose counter restarted at 500/100/0/50/10. Read as a
+        // delta against the previous 3000 it would be −2500; it is the delta itself.
+        let aggregator = await loaded()
+        let third = await aggregator.usage(from: now.addingTimeInterval(-300), to: now)
+        XCTAssertEqual(third.turns, 1)
+        XCTAssertEqual(third.tokens, 550)
+        XCTAssertEqual(third.breakdown.input, 400)
+        XCTAssertEqual(third.breakdown.cacheRead, 100)
+        XCTAssertEqual(third.breakdown.output, 50)
+        XCTAssertEqual(third.breakdown.thinking, 10)
+        XCTAssertEqual(third.cost, 0.0010125, accuracy: 1e-12)
+    }
+
+    func testTheOtherLineTypesAreIgnored() async throws {
+        // `token_usage_record` sits next to every `token_count` in a real rollout and
+        // restates the same counters; billing it would double every figure. A
+        // `token_count` whose `info` is null appears in real logs too.
+        let record = """
+        {"timestamp":"\(stamp(500))","ordinal":15,"type":"token_usage_record","payload":\
+        {"thread_id":"t","turn_id":"u","usage":{"input_tokens":1000,"cached_input_tokens":400,\
+        "cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":30,\
+        "total_tokens":1100}}}
+        """
+        let nullInfo = """
+        {"timestamp":"\(stamp(450))","ordinal":16,"type":"event_msg","payload":\
+        {"type":"token_count","info":null,"rate_limits":null}}
+        """
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            record,
+            nullInfo,
+            tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ])
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.tokens, 1_100)
+        XCTAssertEqual(usage.cost, 0.0018, accuracy: 1e-12)
+    }
+
+    func testARepeatedReadingAddsNothing() async throws {
+        // The counter is cumulative, so an event that repeats the previous reading has
+        // a zero delta and is not a turn.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+            tokenCount(secondsAgo: 500, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ])
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.tokens, 1_100)
+    }
+
+    func testOnlyTheAppendedTailIsParsedOnASecondRefresh() async throws {
+        let head = [
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+        ]
+        try write(head)
+        let aggregator = await loaded()
+
+        // Re-reading the file from byte 0 with a fresh baseline would bill the first
+        // reading twice; the carried offset and baseline are what stop it.
+        await aggregator.refresh()
+        var usage = await lastHour(aggregator)
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.tokens, 1_100)
+
+        try write(head + [
+            tokenCount(secondsAgo: 300, input: 3_000, cached: 1_400, cacheWrite: 200, output: 300, reasoning: 90),
+        ])
+        await aggregator.refresh()
+
+        usage = await lastHour(aggregator)
+        XCTAssertEqual(usage.turns, 2)
+        XCTAssertEqual(usage.tokens, 3_500)
+        XCTAssertEqual(usage.breakdown.cacheWrite5m, 200)
+        XCTAssertEqual(usage.cost, 0.0051750, accuracy: 1e-12)
+    }
+
+    func testAWindowSumsOnlyTheTurnsInsideIt() async throws {
+        try writeThreeReadings()
+        let aggregator = await loaded()
+
+        let outside = await aggregator.usage(
+            from: now.addingTimeInterval(-2 * 3600),
+            to: now.addingTimeInterval(-3600)
+        )
+        XCTAssertTrue(outside.isEmpty)
+        XCTAssertEqual(outside.cost, 0)
+        XCTAssertEqual(outside.breakdown, .zero)
+    }
+
+    func testAnEmptyLogRootProducesNothing() async throws {
+        let usage = await lastHour(loaded())
+        XCTAssertTrue(usage.isEmpty)
+        XCTAssertEqual(usage.tokens, 0)
+        XCTAssertEqual(usage.breakdown, .zero)
+    }
 }
