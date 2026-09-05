@@ -61,6 +61,20 @@ final class RetainedCopyTests: XCTestCase {
         XCTAssertNotEqual(stamp, time(at))
     }
 
+    func testAReadingFromAnotherYearCarriesIt() {
+        let at = calendar.date(from: DateComponents(year: 2025, month: 12, day: 31, hour: 23, minute: 55))!
+        let stamp = RelativeStamp.asOf(at, now: calendar.date(from: DateComponents(year: 2026, month: 1, day: 2, hour: 9))!,
+                                       calendar: calendar, locale: locale)
+        XCTAssertTrue(stamp.contains("2025"), "\"31 Dec, 23:55\" on numbers from last year reads as this week; got \(stamp)")
+    }
+
+    func testAReadingFromThisYearDoesNotSpendRoomOnTheYear() {
+        let at = moment(month: 9, day: 5, hour: 14, minute: 5)
+        let stamp = RelativeStamp.asOf(at, now: moment(month: 9, day: 6, hour: 9, minute: 0),
+                                       calendar: calendar, locale: locale)
+        XCTAssertFalse(stamp.contains("2026"), stamp)
+    }
+
     // MARK: - chipText
 
     func testTheChipKeepsTheWordsTheAppAlreadyUses() {
@@ -106,6 +120,29 @@ final class RetainedCopyTests: XCTestCase {
                                            now: moment(month: 9, day: 5, hour: 17, minute: 40),
                                            calendar: calendar, locale: locale)
         XCTAssertEqual(caption, "Last known values from 14:05")
+    }
+
+    func testALongStateMessageIsCutInTheCaption() throws {
+        // A provider's error can be a whole HTTP body. The caption is one line under
+        // a chip, and it has to end somewhere the reader can see.
+        let at = moment(month: 9, day: 5, hour: 14, minute: 5)
+        let caption = try XCTUnwrap(RetainedCopy.caption(
+            for: retained(at: at, message: String(repeating: "x", count: 400)),
+            now: moment(month: 9, day: 5, hour: 17, minute: 40),
+            calendar: calendar, locale: locale
+        ))
+        let message = try XCTUnwrap(caption.components(separatedBy: " — ").last)
+        XCTAssertEqual(message.count, 120)
+        XCTAssertTrue(message.hasSuffix("…"))
+        XCTAssertTrue(caption.hasPrefix("Last known values from 14:05 — xxx"))
+    }
+
+    func testAMessageThatFitsIsLeftAlone() {
+        let at = moment(month: 9, day: 5, hour: 14, minute: 5)
+        let caption = RetainedCopy.caption(for: retained(at: at, message: "Antigravity isn't running"),
+                                           now: moment(month: 9, day: 5, hour: 17, minute: 40),
+                                           calendar: calendar, locale: locale)
+        XCTAssertEqual(caption, "Last known values from 14:05 — Antigravity isn't running")
     }
 
     func testALiveServiceHasNoCaption() {
