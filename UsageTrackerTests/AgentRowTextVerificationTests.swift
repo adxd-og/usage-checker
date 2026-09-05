@@ -37,11 +37,12 @@ final class AgentRowTextVerificationTests: XCTestCase {
         XCTAssertEqual(AgentRowText.jumpHelp(for: held), "Jump to Usage tracker")
     }
 
-    func testPermissionButtonsAreNeverOfferedForCodexRegardlessOfAPendingID() {
-        // Package B's rule, checked here because a wrong answer would silently defeat
-        // Package A's "no Allow/Deny on an attention row" guarantee for Claude too if
-        // the two conditions were ever merged into one.
-        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: "req-1", source: .codex))
+    func testPermissionButtonsFollowThePendingIDForBothAgents() {
+        // Since the Codex hooks landed, a held request shows Allow / Deny whichever
+        // agent it came from; an attention row (no pending id) never does.
+        XCTAssertTrue(AgentRowText.permissionButtonsVisible(pendingPermissionID: "req-1", source: .codex))
         XCTAssertTrue(AgentRowText.permissionButtonsVisible(pendingPermissionID: "req-1", source: .claude))
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: nil, source: .codex))
+        XCTAssertFalse(AgentRowText.permissionButtonsVisible(pendingPermissionID: nil, source: .claude))
     }
 }
