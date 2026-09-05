@@ -389,16 +389,51 @@ private struct ProviderDetail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if service.state != .ok {
-                HStack {
-                    if let msg = service.stateMessage, !msg.isEmpty {
-                        Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        // A retained provider's caption already carries the message;
+                        // saying it twice, two lines apart, reads as a bug.
+                        if !service.isRetained, let msg = service.stateMessage, !msg.isEmpty {
+                            Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
+                        }
+                        Spacer()
+                        ServiceStateChip(service: service)
                     }
-                    Spacer()
-                    ServiceStateChip(service: service)
+                    if let caption = RetainedCopy.caption(for: service) {
+                        Text(caption)
+                            .font(OMFont.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
-            // Last-good data is retained through a transient failure, so the
-            // numbers below stay on screen whatever the state chip says.
+            // Last-good data is retained through a failure, so the numbers below stay
+            // on screen whatever the state chip says — dimmed, because they're old.
+            usageBlock
+                .opacity(service.isRetained ? 0.55 : 1)
+            if showsHooksPrompt {
+                OMHooksPromptRow(onEnable: onEnableHooks, onDismiss: onDismissHooksPrompt)
+            }
+            if let source = agentSource {
+                AgentsSection(
+                    sessions: agents.sessions(for: source),
+                    grouped: false,
+                    // The prompt row above is the same offer, said better; the
+                    // link would only repeat it.
+                    hooksInstalled: hooksInstalled || showsHooksPrompt,
+                    title: "\(service.displayName) agents",
+                    onEnable: onEnableAgents
+                )
+            }
+        }
+    }
+
+    /// Everything the provider itself reported, as one block so the dimming for
+    /// last-known values is a single decision.
+    @ViewBuilder
+    private var usageBlock: some View {
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
             if let hero {
                 OMHero(hero: hero, verdict: BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets))
             } else if service.state == .ok, let cost = service.weekCost, cost > 0 {
@@ -433,20 +468,6 @@ private struct ProviderDetail: View {
             if service.state == .ok, nothingToShow {
                 Text("Server responded but returned no usage data.")
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
-            }
-            if showsHooksPrompt {
-                OMHooksPromptRow(onEnable: onEnableHooks, onDismiss: onDismissHooksPrompt)
-            }
-            if let source = agentSource {
-                AgentsSection(
-                    sessions: agents.sessions(for: source),
-                    grouped: false,
-                    // The prompt row above is the same offer, said better; the
-                    // link would only repeat it.
-                    hooksInstalled: hooksInstalled || showsHooksPrompt,
-                    title: "\(service.displayName) agents",
-                    onEnable: onEnableAgents
-                )
             }
         }
     }
