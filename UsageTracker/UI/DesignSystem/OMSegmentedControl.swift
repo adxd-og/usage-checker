@@ -12,12 +12,26 @@ struct OMSegmentItem: Identifiable, Equatable {
 /// glass capsule inside a GlassGroup (a cross-fade between items on macOS 26);
 /// on 14+ it is a quiet material capsule. With more than four items the
 /// provider names no longer fit 360 pt, so those segments go icon-only — the
-/// name stays in the tooltip and the accessibility label.
+/// name stays in the tooltip and the accessibility label. `alwaysShowsTitles`
+/// opts a wider surface out of that, and `keyboardShortcuts` out of ⌘1…⌘9.
 struct OMSegmentedControl: View {
     let items: [OMSegmentItem]
     @Binding var selection: String
+    /// Popover: names disappear past four items. Dashboard: always show them —
+    /// its header is a window wide, and a row of unlabelled logos is a quiz.
+    var alwaysShowsTitles: Bool = false
+    /// Popover: ⌘1…⌘9. Dashboard: off — the window's number keys belong to the
+    /// sidebar, and two owners for ⌘1 is one too many.
+    var keyboardShortcuts: Bool = true
 
-    private var showsTitles: Bool { items.count <= 4 }
+    /// Do the provider names fit? Pure, so both surfaces' answers are testable.
+    nonisolated static func showsTitles(count: Int, alwaysShowsTitles: Bool) -> Bool {
+        alwaysShowsTitles || count <= 4
+    }
+
+    private var showsTitles: Bool {
+        Self.showsTitles(count: items.count, alwaysShowsTitles: alwaysShowsTitles)
+    }
 
     var body: some View {
         GlassGroup(spacing: 2) {
@@ -64,7 +78,7 @@ struct OMSegmentedControl: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .modifier(SelectedCapsule(isSelected: isSelected))
-        .modifier(SegmentShortcut(index: index))
+        .modifier(SegmentShortcut(index: index, enabled: keyboardShortcuts))
         .help(item.title)
         .accessibilityLabel("\(item.title) tab")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -83,11 +97,13 @@ private struct SelectedCapsule: ViewModifier {
     }
 }
 
-/// ⌘1…⌘9 for the first nine segments; further items have no shortcut.
+/// ⌘1…⌘9 for the first nine segments; further items, and surfaces that opted
+/// out, have no shortcut.
 private struct SegmentShortcut: ViewModifier {
     let index: Int
+    let enabled: Bool
     func body(content: Content) -> some View {
-        if index < 9 {
+        if enabled, index < 9 {
             content.keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: .command)
         } else {
             content
