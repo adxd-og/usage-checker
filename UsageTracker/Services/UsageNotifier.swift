@@ -582,9 +582,10 @@ final class UsageNotifier: NSObject {
             .first { $0.id == pending.sessionID }?.projectName ?? "An agent"
         fire(
             title: AgentNotificationRules.permissionTitle(
-                projectName: project, toolName: pending.toolName
+                projectName: project,
+                source: AgentSessionStore.shared.sessions.first { $0.id == pending.sessionID }?.source ?? .claude
             ),
-            body: AgentNotificationRules.permissionBody(toolSummary: pending.toolSummary),
+            body: AgentNotificationRules.permissionBody(headline: pending.toolSummary, detail: pending.detail),
             identifier: AgentNotificationRules.permissionIdentifier(requestID: pending.id),
             category: Self.agentPermissionCategory,
             timeSensitive: true

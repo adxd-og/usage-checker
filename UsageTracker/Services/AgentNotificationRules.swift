@@ -20,9 +20,10 @@ enum AgentNotificationRules {
     /// answers one request id at most once, and a second request from the same
     /// session is a different question that must not quietly replace the first.
     static let permissionPrefix = "agent-permission-"
-    /// Tighter than `maxBodyLength`: a held request may show the tool name and a
-    /// truncated summary and nothing else (design doc, security rule 6).
-    static let maxPermissionBodyLength = 80
+    /// A permission or attention banner puts the verb in its subtitle, so the body is
+    /// free to carry the summary and the first line of the full text under it. Still
+    /// nothing but what the summary rules extracted (design doc, security rule 6).
+    static let maxPermissionBodyLength = 200
 
     /// "Needs you" is the alert the feature exists for, so it gets the one
     /// quiet-hours escape hatch in the app (`agentsNeedsYouBypassQuietHours`,
@@ -55,19 +56,43 @@ enum AgentNotificationRules {
         return id.isEmpty ? nil : id
     }
 
-    /// "Usage tracker wants to run Bash". The tool name is the one part of the
-    /// payload worth a title; without it the sentence still has to hold together.
-    static func permissionTitle(projectName: String, toolName: String?) -> String {
-        let tool = toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return "\(projectName) wants to run \(tool.isEmpty ? "a tool" : tool)"
+    /// "Usage tracker · Claude Code". The verb moved into the subtitle: a title that
+    /// is a whole sentence pushes the project name out of the banner, and the project
+    /// is the part that says *which* agent this is.
+    static func permissionTitle(projectName: String, source: AgentSource) -> String {
+        "\(projectName) · \(AgentRowText.sourceName(source))"
     }
 
-    /// The truncated tool summary — "Bash: rm -rf build/DerivedData". A request that
-    /// carries no summary still has to say what the buttons are for.
-    static func permissionBody(toolSummary: String?) -> String {
-        let summary = toolSummary?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !summary.isEmpty else { return "Waiting for your approval." }
-        return truncate(summary, limit: maxPermissionBodyLength)
+    /// "Wants to run Bash", "Wants to use Notion". An MCP tool's name is a wire
+    /// identifier — the server is the part a person recognises. A request that *is* a
+    /// question or a plan says so instead: Allow there means "go ahead and ask me in
+    /// the terminal", which naming the tool would not convey.
+    static func permissionSubtitle(toolName: String?, attention: AgentAttention? = nil) -> String {
+        switch attention {
+        case .question:
+            return "Wants to ask you a question"
+        case .plan:
+            return "Wants to show you a plan"
+        case nil:
+            break
+        }
+        let tool = toolName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !tool.isEmpty else { return "Wants to run a tool" }
+        if let parts = AgentToolSummary.mcpParts(tool) {
+            return "Wants to use \(AgentToolSummary.mcpServerName(parts.server))"
+        }
+        return "Wants to run \(tool)"
+    }
+
+    /// The summary, and the first line of the full text under it when that says
+    /// something the summary does not — the description, then the command.
+    static func permissionBody(headline: String?, detail: String?) -> String {
+        let head = headline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !head.isEmpty else { return "Waiting for your approval." }
+        guard let first = firstLine(detail), first != head else {
+            return truncate(head, limit: maxPermissionBodyLength)
+        }
+        return truncate(head + "\n" + first, limit: maxPermissionBodyLength)
     }
 
     /// "Finished" is opt-in and stays inside quiet hours like every usage alert.
@@ -101,6 +126,56 @@ enum AgentNotificationRules {
 
     static func doneTitle(for session: AgentSession) -> String {
         "\(session.projectName) finished"
+    }
+
+    // MARK: - Questions and plans
+
+    /// The same shape as the permission banner, because it is the same interruption
+    /// without the two buttons: this one can only be answered in the terminal.
+    static func attentionTitle(for session: AgentSession) -> String {
+        "\(session.projectName) · \(AgentRowText.sourceName(session.source))"
+    }
+
+    static func attentionSubtitle(_ attention: AgentAttention) -> String {
+        switch attention {
+        case .question(let count, _):
+            return count > 1 ? "\(count) questions for you" : "Has a question for you"
+        case .plan:
+            return "Plan ready for review"
+        }
+    }
+
+    /// The summary, then what the terminal is offering: the first three options of a
+    /// question, or the two lines of plan under its title (the title is already the
+    /// summary, so it is dropped).
+    static func attentionBody(headline: String?, detail: String?, attention: AgentAttention) -> String {
+        let head = headline?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let lines = (detail ?? "").split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let extra: [String]
+        switch attention {
+        case .question:
+            extra = Array(lines.filter { $0.hasPrefix("• ") }.prefix(3))
+        case .plan:
+            extra = Array(
+                lines.map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                    .dropFirst()
+                    .prefix(2)
+            )
+        }
+        let body = ([head] + extra).filter { !$0.isEmpty }.joined(separator: "\n")
+        guard !body.isEmpty else { return "Waiting for your answer in the terminal." }
+        return truncate(body, limit: maxPermissionBodyLength)
+    }
+
+    /// The first line with anything on it, trimmed. nil when there is none.
+    private static func firstLine(_ text: String?) -> String? {
+        guard let text else { return nil }
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        return nil
     }
 
     /// The tool the session is blocked on — "Bash: xcodegen generate". A needsYou

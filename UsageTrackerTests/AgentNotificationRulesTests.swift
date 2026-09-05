@@ -224,50 +224,137 @@ final class AgentNotificationWithdrawalTests: XCTestCase {
     }
 }
 
-/// What the Allow / Deny banner says. Only the tool name and the truncated summary
-/// leave the hook payload (design doc, security rule 6).
+/// What the Allow / Deny banner says. Only the summary and the first line of the
+/// full text leave the hook payload (design doc, security rule 6).
 final class AgentPermissionNotificationCopyTests: XCTestCase {
-    func testTheTitleNamesTheProjectAndTheTool() {
+    func testTheTitleIsTheProjectAndTheProvider() {
         XCTAssertEqual(
-            AgentNotificationRules.permissionTitle(projectName: "Usage tracker", toolName: "Bash"),
-            "Usage tracker wants to run Bash"
+            AgentNotificationRules.permissionTitle(projectName: "Usage tracker", source: .claude),
+            "Usage tracker · Claude Code"
+        )
+        XCTAssertEqual(
+            AgentNotificationRules.permissionTitle(projectName: "Orion Gate", source: .codex),
+            "Orion Gate · Codex"
         )
     }
 
-    func testARequestWithoutAToolNameStillReadsAsASentence() {
-        // The hook payload is not ours to rely on: a PermissionRequest can arrive
-        // with no tool_name at all, and "… wants to run " would read as a bug.
-        XCTAssertEqual(
-            AgentNotificationRules.permissionTitle(projectName: "Orion", toolName: nil),
-            "Orion wants to run a tool"
-        )
-        XCTAssertEqual(
-            AgentNotificationRules.permissionTitle(projectName: "Orion", toolName: "   "),
-            "Orion wants to run a tool"
-        )
+    func testTheSubtitleNamesTheTool() {
+        XCTAssertEqual(AgentNotificationRules.permissionSubtitle(toolName: "Bash"), "Wants to run Bash")
+        XCTAssertEqual(AgentNotificationRules.permissionSubtitle(toolName: nil), "Wants to run a tool")
+        XCTAssertEqual(AgentNotificationRules.permissionSubtitle(toolName: "   "), "Wants to run a tool")
     }
 
-    func testTheBodyIsTheToolSummary() {
+    func testAnMCPToolIsNamedByItsServer() {
         XCTAssertEqual(
-            AgentNotificationRules.permissionBody(toolSummary: "Bash: rm -rf build/DerivedData"),
-            "Bash: rm -rf build/DerivedData"
+            AgentNotificationRules.permissionSubtitle(toolName: "mcp__notion__notion-fetch"),
+            "Wants to use Notion"
         )
     }
 
-    func testAMissingSummaryFallsBackToTheWaitingSentence() {
-        XCTAssertEqual(AgentNotificationRules.permissionBody(toolSummary: nil), "Waiting for your approval.")
-        XCTAssertEqual(AgentNotificationRules.permissionBody(toolSummary: " "), "Waiting for your approval.")
+    /// A PermissionRequest can arrive for AskUserQuestion itself, and then "Allow"
+    /// means "go ahead and ask me in the terminal" — so the banner has to say a
+    /// question is coming, not name the tool that carries it.
+    func testARequestForAQuestionOrAPlanSaysSoInsteadOfNamingTheTool() {
+        XCTAssertEqual(
+            AgentNotificationRules.permissionSubtitle(
+                toolName: "AskUserQuestion", attention: .question(count: 1, multiSelect: false)
+            ),
+            "Wants to ask you a question"
+        )
+        XCTAssertEqual(
+            AgentNotificationRules.permissionSubtitle(toolName: "ExitPlanMode", attention: .plan),
+            "Wants to show you a plan"
+        )
     }
 
-    func testALongSummaryIsCutAtEightyCharacters() {
-        // Tighter than the 120 the other banners use: the spec caps what a permission
-        // request may show at 80.
-        let long = "Bash: " + String(repeating: "x", count: 300)
-        let body = AgentNotificationRules.permissionBody(toolSummary: long)
-        XCTAssertEqual(body.count, 80)
-        XCTAssertEqual(AgentNotificationRules.maxPermissionBodyLength, 80)
+    func testTheBodyIsTheHeadlineAndTheFirstLineOfTheFullText() {
+        XCTAssertEqual(
+            AgentNotificationRules.permissionBody(headline: "Clear the derived data", detail: "rm -rf build/DerivedData"),
+            "Clear the derived data\nrm -rf build/DerivedData"
+        )
+    }
+
+    func testADetailThatOnlyRepeatsTheHeadlineIsNotShownTwice() {
+        XCTAssertEqual(
+            AgentNotificationRules.permissionBody(headline: "swift test", detail: "swift test"),
+            "swift test"
+        )
+        XCTAssertEqual(AgentNotificationRules.permissionBody(headline: "swift test", detail: nil), "swift test")
+    }
+
+    func testAMissingHeadlineFallsBackToTheWaitingSentence() {
+        XCTAssertEqual(AgentNotificationRules.permissionBody(headline: nil, detail: "x"), "Waiting for your approval.")
+        XCTAssertEqual(AgentNotificationRules.permissionBody(headline: " ", detail: nil), "Waiting for your approval.")
+    }
+
+    func testTheBodyIsCutAtTwoHundred() {
+        let body = AgentNotificationRules.permissionBody(
+            headline: "Clear the derived data",
+            detail: String(repeating: "x", count: 400)
+        )
+        XCTAssertEqual(body.count, 200)
+        XCTAssertEqual(AgentNotificationRules.maxPermissionBodyLength, 200)
         XCTAssertTrue(body.hasSuffix("…"))
-        XCTAssertTrue(body.hasPrefix("Bash: xxx"))
+        XCTAssertTrue(body.hasPrefix("Clear the derived data\nxxx"))
+    }
+}
+
+/// What a question or a plan says on a banner with no buttons: the answer has to be
+/// typed in the terminal, so the banner's job is to carry the text there.
+final class AgentAttentionNotificationCopyTests: XCTestCase {
+    private func session(_ attention: AgentAttention?) -> AgentSession {
+        var built = Fixture.agentSession(projectName: "Usage tracker", state: .needsYou)
+        built.attention = attention
+        return built
+    }
+
+    func testTheTitleIsTheProjectAndTheProvider() {
+        XCTAssertEqual(AgentNotificationRules.attentionTitle(for: session(.plan)), "Usage tracker · Claude Code")
+    }
+
+    func testTheSubtitleSaysWhatIsWaiting() {
+        XCTAssertEqual(AgentNotificationRules.attentionSubtitle(.question(count: 1, multiSelect: false)), "Has a question for you")
+        XCTAssertEqual(AgentNotificationRules.attentionSubtitle(.question(count: 3, multiSelect: true)), "3 questions for you")
+        XCTAssertEqual(AgentNotificationRules.attentionSubtitle(.plan), "Plan ready for review")
+    }
+
+    func testAQuestionBodyCarriesUpToThreeOptions() {
+        let body = AgentNotificationRules.attentionBody(
+            headline: "Question: Which provider?",
+            detail: "Which provider?\n• Claude\n• Codex\n• Grok\n• Gemini",
+            attention: .question(count: 1, multiSelect: false)
+        )
+        XCTAssertEqual(body, "Question: Which provider?\n• Claude\n• Codex\n• Grok")
+    }
+
+    func testAPlanBodyCarriesTheTwoLinesUnderTheTitle() {
+        let body = AgentNotificationRules.attentionBody(
+            headline: "Plan ready for review: Rework the ring",
+            detail: "# Rework the ring\n\nStep one.\nStep two.\nStep three.",
+            attention: .plan
+        )
+        XCTAssertEqual(body, "Plan ready for review: Rework the ring\nStep one.\nStep two.")
+    }
+
+    func testABodyWithNothingToAddIsJustTheHeadline() {
+        XCTAssertEqual(
+            AgentNotificationRules.attentionBody(headline: "Question for you", detail: nil, attention: .question(count: 1, multiSelect: false)),
+            "Question for you"
+        )
+        XCTAssertEqual(
+            AgentNotificationRules.attentionBody(headline: nil, detail: nil, attention: .plan),
+            "Waiting for your answer in the terminal."
+        )
+    }
+
+    func testTheBodyIsCutAtTwoHundred() {
+        let body = AgentNotificationRules.attentionBody(
+            headline: "Plan ready for review: Rework the ring",
+            detail: "# Rework the ring\n" + String(repeating: "x", count: 400),
+            attention: .plan
+        )
+        XCTAssertEqual(body.count, 200)
+        XCTAssertTrue(body.hasSuffix("…"))
     }
 }
 
