@@ -119,7 +119,10 @@ final class PermissionBroker: ObservableObject {
     /// holds whatever arrives with a request id, whoever sent it. Codex needs the
     /// second half: a hook it has not been told to trust is one it refuses to run,
     /// and Allow / Deny for a question nobody asked is the worst of both worlds.
-    static func featureIsUsable(
+    ///
+    /// `nonisolated` because it reads nothing but its arguments: the Agents tab's
+    /// caption asks the same question from outside the main actor.
+    nonisolated static func featureIsUsable(
         settingEnabled: Bool,
         claudeHooks: HookInstallStatus,
         codexHooks: HookInstallStatus,
