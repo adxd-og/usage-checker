@@ -5,6 +5,26 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] — 2026-09-05
+
+### Added
+- **Token breakdown in the dashboard.** Overview gets a "Tokens today" card that
+  splits the day into input, output, cache read and cache write (with "of which
+  thinking" under output and the share of context that came from cache), and
+  History gets a Cost / Tokens switch: the Tokens mode stacks the same categories
+  per day and adds them as table columns. Claude and Codex show dollars per
+  category; the Grok CLI prices a whole turn, so it shows tokens only.
+- **Codex now has the full dashboard.** Its session logs are read per turn, so
+  History, Insights and the project and model rankings work for Codex the way
+  they do for Claude and Grok. The popover's today / 7-day figures are unchanged.
+- **One-click provider row.** The dashboard header's provider drop-down is now a
+  row of icon-and-name buttons.
+
+### Changed
+- The Claude cost cache changed shape (it now keeps the token split per day), so
+  the first launch after updating re-reads the session logs once. Nothing is
+  lost; it just takes a little longer.
+
 ## [2.2.3] — 2026-09-03
 
 ### Fixed

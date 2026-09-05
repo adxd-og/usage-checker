@@ -43,7 +43,7 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
   an optional weekly budget with percentage bars and alerts
 - **Native notifications** at 80% and 95% (configurable thresholds) with quiet-hours support
 - **Daily summary notification** — wake up to "Yesterday: $4.20 across 23 turns"
-- **Dashboard window** with Activity heatmap (GitHub-style, last 52 weeks), Session History chart, and Insights (top project, week-over-week, peak day)
+- **Dashboard window** with Activity heatmap (GitHub-style, last 52 weeks), Session History chart (cost per day, or tokens split into input / output / cache read / cache write), a "Tokens today" card, and Insights (top project, week-over-week, peak day) — for Claude Code, Codex and the Grok CLI, all read from their local session logs
 - **Agents tab in the dashboard (2.1)** — live sessions plus the run history: sessions, agent time,
   approval requests and busiest project over the range you pick, finished sessions grouped by day
 - **Desktop widgets** — per-provider Small / Medium / Large widgets (right-click →
