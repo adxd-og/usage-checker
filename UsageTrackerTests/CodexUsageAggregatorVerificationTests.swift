@@ -271,12 +271,13 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
         XCTAssertEqual(usage.tokens, 800 - 100 + 40 + 100)
     }
 
-    func testATokenCountBeforeAnyTurnContextIsSkippedWithoutCorruptingTheBaseline() async throws {
+    func testATokenCountBeforeAnyTurnContextIsRecoveredWithoutCorruptingTheBaseline() async throws {
         // Deliberately out-of-order: a token_count precedes the first turn_context.
-        // It must not produce a turn (no model to attribute it to), but its reading
-        // must still become the baseline the NEXT token_count's delta is computed
-        // against — otherwise the following turn would be billed as if the counter
-        // had started from zero, wildly overcounting it.
+        // Its tokens have no model yet, so they wait for the turn_context that names one
+        // and become a turn there (see CodexEarlyTokenCountTests). Whatever happens to
+        // them, its reading must become the baseline the NEXT token_count's delta is
+        // computed against — otherwise the following turn would be billed as if the
+        // counter had started from zero, wildly overcounting it.
         try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 900),
             tokenCount(secondsAgo: 700, input: 1_000, cached: 200, output: 50, reasoning: 10),
@@ -285,14 +286,16 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
         ])
 
         let usage = await lastHour(loaded())
-        XCTAssertEqual(usage.turns, 1, "the model-less token_count must not become a turn")
-        // Correct: delta = (500, 100, 0, 30, 10) against the carried baseline.
-        // Buggy (baseline lost): delta = (1500, 300, 0, 80, 20) against zero.
-        XCTAssertEqual(usage.breakdown.cacheRead, 100)
-        XCTAssertEqual(usage.breakdown.input, 400, "max(0, 500 − 100), not max(0, 1500 − 300)")
-        XCTAssertEqual(usage.breakdown.output, 30, "not 80 — the baseline must have carried")
-        XCTAssertEqual(usage.breakdown.thinking, 10)
-        XCTAssertEqual(usage.tokens, 400 + 30 + 100)
+        XCTAssertEqual(usage.turns, 2, "the held tokens and the one that followed")
+        // Correct: (800, 200, 0, 50, 10) recovered + delta (500, 100, 0, 30, 10) against
+        // the carried baseline.
+        // Buggy (baseline lost): the second delta would be the whole (1500, 300, 0, 80,
+        // 20) reading again, counting the first turn's tokens twice.
+        XCTAssertEqual(usage.breakdown.cacheRead, 300, "200 + 100, not 200 + 300")
+        XCTAssertEqual(usage.breakdown.input, 1_200, "800 + max(0, 500 − 100), not 800 + 1200")
+        XCTAssertEqual(usage.breakdown.output, 80, "50 + 30 — the baseline must have carried")
+        XCTAssertEqual(usage.breakdown.thinking, 20)
+        XCTAssertEqual(usage.tokens, 1_200 + 80 + 300)
     }
 
     // MARK: - B. Dollars

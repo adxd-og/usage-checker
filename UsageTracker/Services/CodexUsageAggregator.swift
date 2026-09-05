@@ -49,6 +49,12 @@ actor CodexUsageAggregator: CostLogAggregating {
         var projectSlug: String?
         /// Cumulative counters as of the previous `token_count` event.
         var prev = Counters()
+        /// Deltas seen before the file named a model, summed. The first `turn_context`
+        /// that follows adopts them as one turn; a file that never names a model leaves
+        /// them here, unrecorded — there is nothing to price or label them with.
+        var pendingTokens: TokenBreakdown?
+        /// When those tokens were first spent — the timestamp the recovered turn carries.
+        var pendingSince: Date?
     }
 
     private let rootURL: URL
@@ -383,7 +389,8 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - Line parsing
 
     /// Folds `session_meta` / `turn_context` into the carried parse state and returns
-    /// the turn a `token_count` delta completes, if any.
+    /// the turn a `token_count` delta completes, if any — or, at a `turn_context`, the
+    /// turn that names deltas which arrived before the file had a model.
     private func parseLine(_ data: Data, state: inout FileState, fallbackSlug: String) -> Turn? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String else { return nil }
@@ -404,7 +411,14 @@ actor CodexUsageAggregator: CostLogAggregating {
                     state.projectSlug = Self.encode(cwd: cwd)
                 }
             }
-            return nil
+            // Tokens spent before any model was named are billed here, at the first
+            // `turn_context` that can price and label them — one extra turn, stamped
+            // when they were actually spent.
+            guard let pending = state.pendingTokens, let model = state.currentModel else { return nil }
+            let ts = state.pendingSince ?? Date()
+            state.pendingTokens = nil
+            state.pendingSince = nil
+            return turn(tokens: pending, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
         }
 
         // `token_usage_record` restates the same counters under its own type; billing it
@@ -438,12 +452,8 @@ actor CodexUsageAggregator: CostLogAggregating {
         if delta.input < 0 || delta.output < 0 { delta = reading }
         guard delta.input > 0 || delta.output > 0 else { return nil }
 
-        // Every rollout writes `turn_context` before its first `token_count`, so this is
-        // a malformed file rather than an unpriced model (which is kept, below).
-        guard let model = state.currentModel else { return nil }
-
         let cacheRead = max(0, delta.cached)
-        var tokens = TokenBreakdown(
+        let tokens = TokenBreakdown(
             input: max(0, delta.input - cacheRead),
             output: max(0, delta.output),
             cacheRead: cacheRead,
@@ -451,20 +461,39 @@ actor CodexUsageAggregator: CostLogAggregating {
             cacheWrite1h: 0,
             thinking: max(0, delta.reasoning)
         )
-        // models.dev prices Codex models; a model it doesn't know keeps its tokens
-        // with no dollar split (`cost` stays nil).
+        let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
+
+        // Every real rollout writes `turn_context` before its first `token_count`; when
+        // one doesn't, the tokens are real but nameless, so they wait in the file's state
+        // for the first model that follows instead of being dropped. The baseline above
+        // has already advanced either way — the next delta must not be billed from zero.
+        guard let model = state.currentModel else {
+            state.pendingTokens = state.pendingTokens.map { $0 + tokens } ?? tokens
+            if state.pendingSince == nil { state.pendingSince = ts }
+            return nil
+        }
+
+        return turn(tokens: tokens, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
+    }
+
+    /// Prices one delta and dresses it as a turn. A model models.dev doesn't know keeps
+    /// its tokens with no dollar split (`cost` stays nil): $0 is the honest answer for
+    /// the dollar column, and dropping the turn and its tokens with it would not be.
+    private func turn(
+        tokens: TokenBreakdown,
+        model: String,
+        at timestamp: Date,
+        state: FileState,
+        fallbackSlug: String
+    ) -> Turn {
+        var tokens = tokens
         if let price = ModelPricing.dynamicLookup(for: model) {
             tokens = tokens.priced(with: price)
         }
-
-        let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
         return Turn(
-            timestamp: ts,
+            timestamp: timestamp,
             model: model,
             projectSlug: state.projectSlug ?? fallbackSlug,
-            // `cost` is nil for a model models.dev doesn't know.
-            // $0 is the honest answer for the dollar column; dropping the turn and its
-            // tokens with it would not be.
             cost: tokens.cost?.total ?? 0,
             tokens: tokens
         )
