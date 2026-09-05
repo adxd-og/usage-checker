@@ -335,4 +335,46 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertNil(usage.breakdown.cost)
         XCTAssertEqual(usage.tokens, 1_650)
     }
+
+    // MARK: - Project identity
+
+    func testProjectNamesComeFromTheSessionMetaCwd() async throws {
+        try writeThreeReadings(cwd: alphaCwd, named: "rollout-alpha.jsonl")
+        try write([
+            sessionMeta(cwd: betaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: betaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 500, cached: 0, output: 50, reasoning: 0),
+        ], named: "rollout-beta.jsonl")
+
+        let usage = await lastHour(loaded())
+        // Ranked by cost: alpha spent $0.0061875, beta $0.001125.
+        XCTAssertEqual(usage.projects.map(\.displayName), [alphaName, betaName])
+        XCTAssertEqual(usage.projects[0].totalCost, 0.0061875, accuracy: 1e-12)
+        XCTAssertEqual(usage.projects[1].totalCost, 0.001125, accuracy: 1e-12)
+        // The slug is the percent-encoded cwd, the same shape Grok's directories have.
+        XCTAssertEqual(usage.projects[1].slug, "%2Ftmp%2FCodex%20Fixtures%2Fbeta")
+    }
+
+    func testTheTurnContextCwdStandsInForAMissingSessionMeta() async throws {
+        // A rollout whose first line we never saw — the parser starts mid-file.
+        try write([
+            turnContext(model: model, cwd: betaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 500, cached: 0, output: 50, reasoning: 0),
+        ], named: "rollout-nometa.jsonl")
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.projects.map(\.displayName), [betaName])
+    }
+
+    func testTheFileBasenameIsTheLastResort() async throws {
+        try write([
+            turnContext(model: model, cwd: nil, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 500, cached: 0, output: 50, reasoning: 0),
+        ], named: "rollout-nowhere.jsonl")
+
+        let usage = await lastHour(loaded())
+        // Not an encoded absolute path, so `ProjectName` hands it back verbatim rather
+        // than inventing a directory for it.
+        XCTAssertEqual(usage.projects.map(\.displayName), ["rollout-nowhere"])
+    }
 }
