@@ -291,6 +291,125 @@ enum AgentHooksInstaller {
         try removeHooks(from: hooksURL)
     }
 
+    /// Whether Codex will actually run the hooks we installed. "Installed" is only
+    /// half the story: a hook Codex has not been told to trust is refused in
+    /// silence, so the Agents tab has to say so, and `PermissionBroker` must not
+    /// offer Allow / Deny for a request that will never arrive.
+    enum CodexTrustStatus: Equatable {
+        case trusted
+        /// The events of ours Codex is still ignoring, in `codexHookEvents` order.
+        case awaitingTrust(untrusted: [String])
+    }
+
+    /// Reads the `[hooks.state]` table of config.toml and asks it about every entry
+    /// of ours in hooks.json. The key is built from the hooks file's path, the event
+    /// in snake case and the two indices of the entry inside that event's array —
+    /// which is why this needs both files: the rtk hook owns `pre_tool_use:0:0`, so
+    /// ours is `:1:0`, and a merge that moved it would move the key with it.
+    ///
+    /// We cannot compute Codex's `trusted_hash`; its presence (with `enabled` absent
+    /// or true) is the whole test.
+    static func codexTrust(configURL: URL, hooksURL: URL) -> CodexTrustStatus {
+        guard let file = try? readSettings(hooksURL),
+              let hooks = try? hooksObject(in: file, url: hooksURL)
+        else { return .awaitingTrust(untrusted: codexHookEvents) }
+
+        let table = trustTable(in: (try? readConfig(configURL)) ?? "")
+        var untrusted: [String] = []
+        var found = 0
+        for event in codexHookEvents {
+            for position in ourEntryPositions(in: hooks, event: event) {
+                found += 1
+                let key = codexTrustKey(
+                    hooksPath: hooksURL.path, event: event,
+                    entryIndex: position.entry, hookIndex: position.hook
+                )
+                if table[key] != true, !untrusted.contains(event) { untrusted.append(event) }
+            }
+        }
+        guard found > 0 else { return .awaitingTrust(untrusted: codexHookEvents) }
+        return untrusted.isEmpty ? .trusted : .awaitingTrust(untrusted: untrusted)
+    }
+
+    /// The `[hooks.state."…"]` key for one entry, in the TOML-escaped form the
+    /// header holds it in.
+    static func codexTrustKey(hooksPath: String, event: String, entryIndex: Int, hookIndex: Int) -> String {
+        "\(tomlEscaped(hooksPath)):\(snakeCasedEvent(event)):\(entryIndex):\(hookIndex)"
+    }
+
+    /// `PermissionRequest` → `permission_request`, the spelling Codex writes.
+    static func snakeCasedEvent(_ event: String) -> String {
+        var out = ""
+        for character in event {
+            if character.isUppercase, !out.isEmpty { out.append("_") }
+            out.append(contentsOf: character.lowercased())
+        }
+        return out
+    }
+
+    // MARK: - Codex trust internals
+
+    /// Where our entries sit inside one event's array — the two indices the trust
+    /// key is built from.
+    private static func ourEntryPositions(in hooks: [String: Any], event: String) -> [(entry: Int, hook: Int)] {
+        guard let groups = hooks[event] as? [[String: Any]] else { return [] }
+        var out: [(entry: Int, hook: Int)] = []
+        for (entryIndex, group) in groups.enumerated() {
+            guard let entries = group["hooks"] as? [[String: Any]] else { continue }
+            for (hookIndex, entry) in entries.enumerated() where isOurs(entry) {
+                out.append((entryIndex, hookIndex))
+            }
+        }
+        return out
+    }
+
+    /// Every `[hooks.state."<key>"]` header mapped to "Codex will run this": a
+    /// non-empty `trusted_hash` and no `enabled = false`. Hand-rolled rather than a
+    /// TOML library because this is one table of a file we only ever read, and the
+    /// header is the only line whose shape we depend on.
+    private static func trustTable(in text: String) -> [String: Bool] {
+        var table: [String: Bool] = [:]
+        var key: String?
+        var hasHash = false
+        var enabled = true
+        func flush() {
+            if let key { table[key] = hasHash && enabled }
+            key = nil
+            hasHash = false
+            enabled = true
+        }
+        for raw in lines(of: text) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("#") { continue }
+            if line.hasPrefix("[") {
+                flush()
+                key = stateKey(inHeader: line)
+                continue
+            }
+            guard key != nil else { continue }
+            if line.hasPrefix("trusted_hash"), let value = tomlStringValue(line), !value.isEmpty { hasHash = true }
+            if line.hasPrefix("enabled"), line.contains("false") { enabled = false }
+        }
+        flush()
+        return table
+    }
+
+    /// `[hooks.state."…"]` → the key exactly as written (still TOML-escaped, which
+    /// is the form `codexTrustKey` produces); nil for any other header.
+    private static func stateKey(inHeader line: String) -> String? {
+        let prefix = "[hooks.state.\""
+        guard line.hasPrefix(prefix), line.hasSuffix("\"]"), line.count > prefix.count + 2 else { return nil }
+        return String(line.dropFirst(prefix.count).dropLast(2))
+    }
+
+    /// The right-hand side of `key = "value"`.
+    private static func tomlStringValue(_ line: String) -> String? {
+        guard let equals = line.firstIndex(of: "=") else { return nil }
+        let rest = line[line.index(after: equals)...].trimmingCharacters(in: .whitespaces)
+        guard rest.hasPrefix("\""), rest.hasSuffix("\""), rest.count >= 2 else { return nil }
+        return String(rest.dropFirst().dropLast())
+    }
+
     // MARK: - Codex
 
     /// The one line we own in config.toml.
