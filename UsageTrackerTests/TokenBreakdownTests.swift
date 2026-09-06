@@ -119,6 +119,18 @@ final class TokenBreakdownTests: XCTestCase {
         XCTAssertEqual(TokenCategory.cacheWrite.tokens(in: sample), 340_000)
     }
 
+    func testOnlyInputNeedsATooltipAndItSaysWhatTheLabelCannot() {
+        // "Input" is the label everywhere the CLIs use the word, and it is the wrong
+        // word: the bucket is the *uncached* input, which is a fraction of what was
+        // sent. The label stays (four columns and a legend have to fit it) and the
+        // tooltip says what it actually counts.
+        XCTAssertEqual(TokenCategory.input.label, "Input")
+        XCTAssertEqual(TokenCategory.input.help, "Uncached input")
+        for category in TokenCategory.allCases where category != .input {
+            XCTAssertNil(category.help, "\(category.label) already says what it is")
+        }
+    }
+
     func testCategoryDollarsAreNilWithoutASplitAndSumToTheTotalWithOne() {
         for category in TokenCategory.allCases {
             XCTAssertNil(category.cost(in: sample), "no split, no dollars")

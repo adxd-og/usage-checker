@@ -48,7 +48,13 @@ struct TokensTodayCard: View {
                 RoundedRectangle(cornerRadius: 3, style: .continuous)
                     .fill(category.color)
                     .frame(width: 10, height: 10)
-                Text(category.label).font(OMFont.bodyStrong)
+                // "Input" is the label the CLIs use; what the row counts is the
+                // uncached part of the context, and only a tooltip has room to say so.
+                if let help = category.help {
+                    Text(category.label).font(OMFont.bodyStrong).help(help)
+                } else {
+                    Text(category.label).font(OMFont.bodyStrong)
+                }
                 Spacer()
                 Text(TokenFormat.formatTokens(tokens))
                     .font(OMFont.body)

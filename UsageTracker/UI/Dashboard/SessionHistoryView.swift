@@ -128,8 +128,9 @@ struct SessionHistoryView: View {
         )
     }
 
-    /// The header line under "Session history". Pure so the caption rule is testable:
-    /// only the cost chart shows dollars, so only the cost chart explains them.
+    /// The header line under "Session history". Pure so both rules are testable: the
+    /// line names the unit on the chart (there are no dollars on the Tokens chart to
+    /// call a daily cost), and only the cost chart explains what its dollars are.
     nonisolated static func subtitle(
         showsQuota: Bool,
         providerName: String,
@@ -138,11 +139,17 @@ struct SessionHistoryView: View {
         isPayAsYouGo: Bool
     ) -> String {
         if showsQuota { return "How full \(providerName)'s usage windows ran" }
-        let base = longName.map { "Daily cost from \($0)" } ?? "Daily cost"
+        let base = costSubtitle(mode: mode, source: longName)
         guard mode == .cost,
               let caption = CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo)
         else { return base }
         return "\(base) · \(caption)"
+    }
+
+    /// "Daily cost from …" or "Daily tokens by type from …".
+    nonisolated static func costSubtitle(mode: HistoryChartMode, source: String?) -> String {
+        let unit = mode == .tokens ? "Daily tokens by type" : "Daily cost"
+        return source.map { "\(unit) from \($0)" } ?? unit
     }
 
     // MARK: - Quota
@@ -338,7 +345,10 @@ struct SessionHistoryView: View {
             HStack {
                 Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                Text("In").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                // The column is the uncached input; "In" is all the width there is.
+                Text("In").font(OMFont.body).foregroundStyle(.secondary)
+                    .frame(width: 80, alignment: .trailing)
+                    .help(TokenCategory.input.help ?? TokenCategory.input.label)
                 Text("Out").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
                 Text("Cache read").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
                 Text("Cache write").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)

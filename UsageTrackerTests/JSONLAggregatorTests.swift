@@ -539,7 +539,7 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
     }
 
-    func testAVersionOneCacheIsRejectedAndTheLogsAreReRead() async throws {
+    func testAVersionTwoCacheIsRejectedAndTheLogsAreReRead() async throws {
         try writeStandardFixture()
 
         // A snapshot in the *current* shape, wearing the old version number, with a day
@@ -571,23 +571,23 @@ final class JSONLAggregatorTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 1).write(to: cacheURL)
+        try snapshot(version: 2).write(to: cacheURL)
         let stale = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
         await stale.refresh()
         let staleParsed = await stale.filesParsedInLastScan
         let staleBreakdown = await stale.breakdown()
 
-        XCTAssertEqual(staleParsed, 2, "a version-1 snapshot means a full rescan")
+        XCTAssertEqual(staleParsed, 2, "a version-2 snapshot means a full rescan")
         XCTAssertFalse(
             staleBreakdown.daily.contains { $0.turns == 7 },
             "nothing from the old snapshot may reach the figures"
         )
         XCTAssertEqual(staleBreakdown.weekCost, 12.5, accuracy: 0.0001)
 
-        // The control: the same bytes at version 2 ARE restored, so the assertions
+        // The control: the same bytes at version 3 ARE restored, so the assertions
         // above are about the version number and not about an unreadable file.
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 2).write(to: currentURL)
+        try snapshot(version: 3).write(to: currentURL)
         let current = JSONLAggregator(rootURL: root, cacheURL: currentURL)
         await current.refresh()
         let currentBreakdown = await current.breakdown()
@@ -657,6 +657,34 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(turn.cacheCreate1hTokens, 50_000)
     }
 
+    func testATurnsDollarsAreTheOnesStoredWithItNotTodaysRates() throws {
+        // `tokens.cost` is priced once, when the line is parsed. `cost` used to
+        // multiply through the rate table on every read, so any price change after
+        // ingest — a models.dev refresh, a new rate landing — left the headline dollars
+        // and the per-category dollars describing the same turn differently.
+        let stored = TokenCostBreakdown(input: 1, output: 2, cacheRead: 3, cacheWrite: 4)
+        let turn = CLITurn(
+            id: "msg_stored", timestamp: now, model: "claude-sonnet-4-5",
+            tokens: TokenBreakdown(input: 1_000_000, output: 1_000_000, cost: stored),
+            projectSlug: alphaSlug
+        )
+
+        XCTAssertEqual(turn.cost, 10, accuracy: 1e-9, "the dollars stored with the turn")
+        XCTAssertEqual(try XCTUnwrap(turn.tokens.cost).total, turn.cost, accuracy: 1e-9)
+    }
+
+    func testATurnWithNoStoredDollarsStillPricesFromTheTable() throws {
+        // Nothing this aggregator parses arrives unpriced, but the type allows it and
+        // the fallback has to stay right.
+        let turn = CLITurn(
+            id: "msg_unpriced", timestamp: now, model: "claude-sonnet-4-5",
+            tokens: TokenBreakdown(input: 1_000_000, output: 1_000_000),
+            projectSlug: alphaSlug
+        )
+
+        XCTAssertEqual(turn.cost, 18, accuracy: 1e-9) // $3.00 of input + $15.00 of output
+    }
+
     func testThinkingTokensAreParsedWithoutInflatingTheTotal() async throws {
         try write([
             line(
@@ -686,6 +714,141 @@ final class JSONLAggregatorTests: XCTestCase {
 
         XCTAssertEqual(usage.turns, 2, "identical content is one turn; a different thinking count is not")
         XCTAssertEqual(usage.cost, 12.0, accuracy: 0.0001)
+    }
+
+    // MARK: - A later record for the same message id
+
+    /// Claude Code writes 2–4 `type: assistant` lines for one response, all under the
+    /// same `message.id`: the first carries a provisional usage (`output_tokens: 2`, no
+    /// thinking, `stop_reason: null`), the last the final counts. Keeping the first and
+    /// dropping the rest threw away most of the output — measured over this machine's
+    /// `~/.claude/projects/**/subagents/*.jsonl`, 5.8 M output tokens by the first-record
+    /// rule against 30.6 M by the last-record one.
+    private func growingRecords() -> [String] {
+        [
+            line(id: "msg_grow", minutesAgo: 10, model: "claude-sonnet-4-5",
+                 input: 1_000_000, output: 2, thinking: 0),
+            line(id: "msg_grow", minutesAgo: 10, model: "claude-sonnet-4-5",
+                 input: 1_000_000, output: 100_000, thinking: 40_000),
+            line(id: "msg_grow", minutesAgo: 10, model: "claude-sonnet-4-5",
+                 input: 1_000_000, output: 280_000, thinking: 149_000),
+        ]
+    }
+
+    func testTheLastRecordForAMessageIdSuppliesTheTurnsCounts() async throws {
+        try write(growingRecords(), project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.turns, 1, "one response is one turn, however many lines log it")
+        XCTAssertEqual(usage.breakdown.output, 280_000, "the final count, not the provisional 2")
+        XCTAssertEqual(usage.breakdown.thinking, 149_000)
+        XCTAssertEqual(usage.breakdown.input, 1_000_000, "counted once, not once per line")
+        XCTAssertEqual(usage.tokens, 1_280_000)
+        // $3.00 of input + $4.20 of output — the dollars follow the replaced counts.
+        XCTAssertEqual(usage.cost, 7.2, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(usage.breakdown.cost).total, usage.cost, accuracy: 1e-9)
+    }
+
+    func testALaterRecordWithSmallerOutputDoesNotRegressTheTurn() async throws {
+        // A replayed tail or a forked session can put an early record after a late one.
+        // The rule is "later reading", not "last line seen".
+        try write(growingRecords().reversed(), project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.breakdown.output, 280_000, "a smaller later record must not shrink the turn")
+        XCTAssertEqual(usage.breakdown.thinking, 149_000)
+    }
+
+    func testAReplacementAcrossPollsSurvivesTheCacheRoundTrip() async throws {
+        // The provisional line is ingested, cached and the process restarts; the final
+        // line arrives afterwards. The id is known from the restored `seenMessageIDs`,
+        // so the replacement only works if the id→turn index is rebuilt on cache load.
+        try write([growingRecords()[0]], project: alphaSlug)
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0)
+        await first.refresh()
+        let provisional = await first.usage(from: now.addingTimeInterval(-3600), to: now)
+        XCTAssertEqual(provisional.breakdown.output, 2)
+
+        try append(growingRecords()[2] + "\n", project: alphaSlug)
+        let second = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0)
+        await second.refresh()
+        let updated = await second.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(updated.turns, 1, "still one turn")
+        XCTAssertEqual(updated.breakdown.output, 280_000)
+        XCTAssertEqual(updated.breakdown.thinking, 149_000)
+
+        // And the replacement itself was persisted: a third launch reads no transcript.
+        let third = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0)
+        await third.refresh()
+        let parsed = await third.filesParsedInLastScan
+        let restored = await third.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(parsed, 0, "the cache answers without reopening the transcript")
+        XCTAssertEqual(restored.breakdown.output, 280_000)
+        XCTAssertEqual(restored.breakdown.thinking, 149_000)
+    }
+
+    // MARK: - cache_creation without the TTL object
+
+    /// A line carrying only the aggregate `cache_creation_input_tokens`, with no nested
+    /// `cache_creation` object to split it by TTL.
+    private func aggregateCacheLine(id: String, minutesAgo: Double, cacheCreation: Int) -> String {
+        let ts = Self.iso.string(from: now.addingTimeInterval(-minutesAgo * 60))
+        return """
+        {"type":"assistant","timestamp":"\(ts)","message":{"id":"\(id)","model":"claude-sonnet-4-5",\
+        "usage":{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0,\
+        "cache_creation_input_tokens":\(cacheCreation)}}}
+        """
+    }
+
+    func testAnAggregateCacheCreationCountIsBilledAsAFiveMinuteWrite() async throws {
+        // Without the TTL object there is nothing to say which tier the write was on.
+        // Dropping it lost real, chargeable tokens; 5m is what Claude Code writes unless
+        // a caller opts into the 1-hour cache, and it is the cheaper of the two rates,
+        // so an unknown TTL is never billed at the dearer one.
+        try write([aggregateCacheLine(id: "msg_agg", minutesAgo: 10, cacheCreation: 400_000)],
+                  project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.breakdown.cacheWrite5m, 400_000)
+        XCTAssertEqual(usage.breakdown.cacheWrite1h, 0, "the TTL is unknown, not one hour")
+        XCTAssertEqual(usage.tokens, 1_400_000)
+        // $3.00 of input + 400k at Sonnet's $3.75/M 5-minute write rate.
+        XCTAssertEqual(usage.cost, 4.5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(usage.breakdown.cost).cacheWrite, 1.5, accuracy: 1e-9)
+    }
+
+    func testTheTTLObjectWinsOverTheAggregateWhenBothArePresent() async throws {
+        // Real lines carry both, and the nested object is the one that says which tier
+        // the tokens were written at. Adding the aggregate on top would double them.
+        let ts = Self.iso.string(from: now.addingTimeInterval(-600))
+        let both = """
+        {"type":"assistant","timestamp":"\(ts)","message":{"id":"msg_both","model":"claude-sonnet-4-5",\
+        "usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,\
+        "cache_creation_input_tokens":52467,\
+        "cache_creation":{"ephemeral_5m_input_tokens":45678,"ephemeral_1h_input_tokens":6789}}}}
+        """
+        try write([both], project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.breakdown.cacheWrite5m, 45_678)
+        XCTAssertEqual(usage.breakdown.cacheWrite1h, 6_789)
+        XCTAssertEqual(usage.breakdown.cacheWrite, 52_467, "counted once, at its own TTLs")
     }
 
     // MARK: - Aggregated token breakdown

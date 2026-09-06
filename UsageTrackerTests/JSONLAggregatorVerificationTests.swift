@@ -338,7 +338,9 @@ final class JSONLAggregatorVerificationTests: XCTestCase {
         try write([realShapedLine(id: "msg_foreign", minutesAgo: 10, thinking: 0)])
 
         let object: [String: Any] = [
-            "version": 2,
+            // The current version, so the rejection under test is the root's and not
+            // the version's.
+            "version": 3,
             "root": "/completely/different/root/that/is/not/this/tests/root",
             "savedAt": ISO8601DateFormatter().string(from: now),
             "fileMarks": [String: Any](),

@@ -429,6 +429,8 @@ actor GrokUsageAggregator: CostLogAggregating {
         let output: Int
         let cacheRead: Int
         let cacheCreate: Int
+        /// `reasoningTokens` — a subset of `outputTokens`, 0 on builds that log none.
+        let reasoning: Int
         let tokens: Int
         /// The CLI's own figure, when this build of the CLI logs one.
         var cost: Double?
@@ -444,7 +446,7 @@ actor GrokUsageAggregator: CostLogAggregating {
                 cacheRead: cacheRead,
                 cacheWrite5m: cacheCreate,
                 cacheWrite1h: 0,
-                thinking: 0,
+                thinking: reasoning,
                 cost: nil
             )
         }
@@ -495,11 +497,16 @@ actor GrokUsageAggregator: CostLogAggregating {
 
         let turnCost = ticksToUSD(usage["costUsdTicks"])
         let spends = resolveCosts(rows, turnCost: turnCost)
+        // The turn's own `totalTokens` is the CLI's answer for the whole turn, the same
+        // way `costUsdTicks` is: it can cover model calls the `modelUsage` map never
+        // breaks out, so summing the rows would quietly lose them. The sum is the
+        // fallback for a turn that reports no total of its own.
+        let turnTotal = max(0, intValue(usage["totalTokens"]))
         let turn = Turn(
             timestamp: timestamp,
             projectSlug: projectSlug,
             cost: spends.reduce(0) { $0 + $1.cost },
-            tokens: spends.reduce(0) { $0 + $1.tokens },
+            tokens: turnTotal > 0 ? turnTotal : spends.reduce(0) { $0 + $1.tokens },
             breakdown: spends.reduce(.zero) { $0 + $1.breakdown },
             models: spends
         )
@@ -521,6 +528,8 @@ actor GrokUsageAggregator: CostLogAggregating {
             output: output,
             cacheRead: max(0, intValue(usage["cachedReadTokens"])),
             cacheCreate: max(0, intValue(usage["cacheCreationTokens"])),
+            // Inside `outputTokens`, like Claude's and Codex's — reported, never added.
+            reasoning: max(0, intValue(usage["reasoningTokens"])),
             tokens: total > 0 ? total : input + output,
             cost: ticksToUSD(usage["costUsdTicks"])
         )
