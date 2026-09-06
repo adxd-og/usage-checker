@@ -40,23 +40,26 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let output: Int
         let cachedRead: Int
         let cacheCreation: Int
+        let reasoning: Int
         let ticks: Int?
 
         init(
             _ model: String, input: Int, output: Int, cachedRead: Int = 0,
-            cacheCreation: Int = 0, ticks: Int?
+            cacheCreation: Int = 0, reasoning: Int = 0, ticks: Int?
         ) {
             self.model = model
             self.input = input
             self.output = output
             self.cachedRead = cachedRead
             self.cacheCreation = cacheCreation
+            self.reasoning = reasoning
             self.ticks = ticks
         }
 
         var counters: String {
             var s = "\"inputTokens\":\(input),\"outputTokens\":\(output),\"totalTokens\":\(input + output),"
-            s += "\"cachedReadTokens\":\(cachedRead),\"cacheCreationTokens\":\(cacheCreation),\"reasoningTokens\":0,"
+            s += "\"cachedReadTokens\":\(cachedRead),\"cacheCreationTokens\":\(cacheCreation),"
+            s += "\"reasoningTokens\":\(reasoning),"
             s += "\"modelCalls\":1,\"apiDurationMs\":100"
             if let ticks { s += ",\"costUsdTicks\":\(ticks)" }
             return s
@@ -65,11 +68,14 @@ final class GrokUsageAggregatorTests: XCTestCase {
         var json: String { "\"\(model)\":{\(counters)}" }
     }
 
+    /// `total` overrides the turn's own `usage.totalTokens`, which the CLI reports for
+    /// the whole turn and need not equal the sum of the `modelUsage` rows.
     private func turnLine(
         eventID: String,
         secondsAgo: Double,
         ticks: Int?,
         models: [ModelFixture],
+        total: Int? = nil,
         session: String = "01a04037-5a18-7133-b080-1d52b67ec4a3"
     ) -> String {
         let ts = Int(now.addingTimeInterval(-secondsAgo).timeIntervalSince1970)
@@ -77,8 +83,11 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let output = models.reduce(0) { $0 + $1.output }
         let cached = models.reduce(0) { $0 + $1.cachedRead }
         let created = models.reduce(0) { $0 + $1.cacheCreation }
-        var usage = "\"inputTokens\":\(input),\"outputTokens\":\(output),\"totalTokens\":\(input + output),"
-        usage += "\"cachedReadTokens\":\(cached),\"cacheCreationTokens\":\(created),\"reasoningTokens\":0,"
+        let reasoning = models.reduce(0) { $0 + $1.reasoning }
+        var usage = "\"inputTokens\":\(input),\"outputTokens\":\(output),"
+        usage += "\"totalTokens\":\(total ?? (input + output)),"
+        usage += "\"cachedReadTokens\":\(cached),\"cacheCreationTokens\":\(created),"
+        usage += "\"reasoningTokens\":\(reasoning),"
         usage += "\"modelCalls\":\(models.count),\"apiDurationMs\":100"
         if let ticks { usage += ",\"costUsdTicks\":\(ticks)" }
         usage += ",\"modelUsage\":{\(models.map(\.json).joined(separator: ","))},\"numTurns\":1"
@@ -555,7 +564,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(model.breakdown.cacheRead, 6_000)
         XCTAssertEqual(model.breakdown.output, 37)
         XCTAssertEqual(model.breakdown.cacheWrite, 0)
-        XCTAssertEqual(model.breakdown.thinking, 0, "the CLI logs no reasoning split")
+        XCTAssertEqual(model.breakdown.thinking, 0, "this turn reported no reasoning tokens")
         XCTAssertNil(model.breakdown.cost, "the CLI prices a whole turn; there is no per-category rate")
         XCTAssertNil(usage.breakdown.cost)
         XCTAssertEqual(usage.breakdown.input, 2_790)
@@ -622,5 +631,79 @@ final class GrokUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(day.tokens.cacheRead, 100)
         XCTAssertEqual(day.totalTokens, 303)
         XCTAssertNil(day.tokens.cost)
+    }
+
+    // MARK: - Reasoning and the turn's own total
+
+    func testReasoningTokensBecomeTheThinkingBucketWithoutJoiningTheTotal() async throws {
+        // The CLI does log a reasoning split; reading it as always-zero threw away the
+        // one figure that explains a big output. It is a subset of `outputTokens`, so
+        // it must never widen the total.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture(
+                "grok-4.6-build", input: 1_000, output: 800, cachedRead: 400,
+                reasoning: 620, ticks: 100_000_000
+            )]
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        let model = try XCTUnwrap(usage.models.first)
+        XCTAssertEqual(model.breakdown.thinking, 620)
+        XCTAssertEqual(model.breakdown.output, 800, "thinking is inside output, not beside it")
+        XCTAssertEqual(model.breakdown.total, 1_800, "600 fresh + 400 cached + 800 out")
+        XCTAssertEqual(usage.breakdown.thinking, 620)
+        XCTAssertEqual(usage.tokens, 1_800, "the CLI's own totalTokens, thinking excluded")
+    }
+
+    func testAMissingReasoningCountIsZeroRatherThanADroppedTurn() async throws {
+        let ts = Int(now.addingTimeInterval(-600).timeIntervalSince1970)
+        let line = """
+        {"timestamp":\(ts),"method":"_x.ai/session/update","params":{"sessionId":"s",\
+        "update":{"sessionUpdate":"turn_completed","usage":{"inputTokens":1000,\
+        "outputTokens":50,"totalTokens":1050,"cachedReadTokens":0,"cacheCreationTokens":0,\
+        "costUsdTicks":100000000,"modelUsage":{"grok-4.6-build":{"inputTokens":1000,\
+        "outputTokens":50,"totalTokens":1050,"costUsdTicks":100000000}}}},\
+        "_meta":{"eventId":"e-noreasoning","agentTimestampMs":\(ts * 1000)}}}
+        """
+        try write([line], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.turns, 1, "a build that logs no reasoning field still logs a turn")
+        XCTAssertEqual(usage.breakdown.thinking, 0)
+        XCTAssertEqual(usage.tokens, 1_050)
+    }
+
+    func testTheTurnsOwnTotalIsTheHeadlineWhenItDisagreesWithTheModelRows() async throws {
+        // The CLI bills a turn as a whole and can charge for model calls its `modelUsage`
+        // map never breaks out, so the turn's own `totalTokens` is the authority for the
+        // headline. Summing the rows instead loses whatever it didn't itemize.
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 1_000, output: 10, ticks: 100_000_000)],
+            total: 4_321
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.tokens, 4_321, "the turn's own figure, not the 1_010 the rows add to")
+        XCTAssertEqual(usage.models.first?.tokens, 1_010, "the per-model row keeps its own count")
+        XCTAssertEqual(usage.breakdown.total, 1_010, "and so does the split")
+    }
+
+    func testAZeroTurnTotalFallsBackToTheModelRows() async throws {
+        try write([turnLine(
+            eventID: "e1",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 1_000, output: 10, ticks: 100_000_000)],
+            total: 0
+        )], project: alphaDir)
+
+        let usage = await lastHour(loaded())
+        XCTAssertEqual(usage.tokens, 1_010, "a zero total prices nothing; the rows do")
     }
 }
