@@ -386,6 +386,13 @@ private struct ProviderDetail: View {
         service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0
     }
 
+    /// The "API-equivalent" line, once, and only under a dollar row that is actually
+    /// on screen. A pay-as-you-go account has no subscription to be confused with.
+    private var costCaption: String? {
+        guard (service.weekCost ?? 0) > 0 else { return nil }
+        return CostCopy.apiEquivalentCaption(isPayAsYouGo: CostCopy.isPayAsYouGo(service))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if service.state != .ok {
@@ -478,6 +485,12 @@ private struct ProviderDetail: View {
             if service.state == .ok, nothingToShow {
                 Text("Server responded but returned no usage data.")
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
+            }
+            if let caption = costCaption {
+                Text(caption)
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

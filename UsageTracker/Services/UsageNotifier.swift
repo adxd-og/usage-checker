@@ -142,7 +142,14 @@ final class UsageNotifier: NSObject {
         await evaluatePacing(snapshot: snapshot, now: now, inQuiet: inQuiet)
 
         // Daily summary
-        checkDailySummary(at: now, inQuiet: inQuiet)
+        checkDailySummary(
+            at: now, inQuiet: inQuiet,
+            // The summary is Claude Code's log; whether those dollars are a bill is
+            // Claude's account's question.
+            isPayAsYouGo: snapshot.services
+                .first { $0.id == "claude" }
+                .map(CostCopy.isPayAsYouGo) ?? false
+        )
     }
 
     /// Which of a service's windows a threshold alert may fire for.
@@ -315,7 +322,7 @@ final class UsageNotifier: NSObject {
         return calendar.isDate(legacy, inSameDayAs: day)
     }
 
-    private func checkDailySummary(at now: Date, inQuiet: Bool) {
+    private func checkDailySummary(at now: Date, inQuiet: Bool, isPayAsYouGo: Bool) {
         guard SettingsStore.shared.dailySummaryEnabled, !inQuiet else { return }
         let cal = Calendar.current
         let today = cal.startOfDay(for: now)
@@ -331,19 +338,24 @@ final class UsageNotifier: NSObject {
             let yesterday = cal.date(byAdding: .day, value: -1, to: today) ?? today
             let yesterdaySummary = breakdown.daily.first(where: { cal.isDate($0.day, inSameDayAs: yesterday) })
 
-            let body: String
-            if let s = yesterdaySummary, s.totalCost > 0 {
-                body = String(
-                    format: "Yesterday: $%.2f across %d turns.",
-                    s.totalCost, s.turns
-                )
-            } else {
-                body = "No Claude Code activity yesterday."
-            }
+            let body = Self.dailySummaryBody(
+                cost: yesterdaySummary?.totalCost ?? 0,
+                turns: yesterdaySummary?.turns ?? 0,
+                isPayAsYouGo: isPayAsYouGo
+            )
             await MainActor.run {
                 self.fire(title: "Omelette — daily summary", body: body)
             }
         }
+    }
+
+    /// "Yesterday: $4.20 across 23 turns. (API-equivalent)" — the dollars come from
+    /// Claude Code's own log at list prices, which on a subscription is not the bill.
+    nonisolated static func dailySummaryBody(cost: Double, turns: Int, isPayAsYouGo: Bool) -> String {
+        guard cost > 0 else { return "No Claude Code activity yesterday." }
+        let line = String(format: "Yesterday: $%.2f across %d turns.", cost, turns)
+        guard !isPayAsYouGo else { return line }
+        return "\(line) \(CostCopy.apiEquivalentSuffix)"
     }
 
     // MARK: - Agent sessions

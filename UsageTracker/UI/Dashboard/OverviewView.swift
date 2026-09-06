@@ -202,6 +202,14 @@ struct OverviewView: View {
                     OMKeyValueRow(label: entry.model, value: String(format: "$%.2f", entry.cost))
                 }
             }
+            if let caption = CostCopy.apiEquivalentCaption(
+                isPayAsYouGo: service.map(CostCopy.isPayAsYouGo) ?? false
+            ) {
+                Text(caption)
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .dashboardCard()
     }
