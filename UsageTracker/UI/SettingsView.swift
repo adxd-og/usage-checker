@@ -186,6 +186,8 @@ struct SettingsView: View {
                 }
             }
 
+            CommandLineSettingsView()
+
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: Binding(
                     get: { Updater.shared.automaticallyChecksForUpdates },

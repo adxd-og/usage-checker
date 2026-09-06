@@ -1,0 +1,318 @@
+import XCTest
+@testable import Omelette
+
+/// Spawns the built `omelette`. The test host is `$(BUILT_PRODUCTS_DIR)/Omelette.app`,
+/// so `AgentPaths.bundledCLIURL` is the binary the Embed Dependencies phase just copied
+/// and signed — the same trick `OmeletteHookEndToEndTests` uses for the hook helper.
+///
+/// Every run points `OMELETTE_STATUS_FILE` at a temp file: the tool must never read the
+/// developer's own status.json, and a test must never depend on whether Omelette
+/// happens to be running.
+final class OmeletteCLIEndToEndTests: XCTestCase {
+    private var directory: URL!
+    private var statusURL: URL!
+
+    /// 2026-09-06 11:20:00 UTC.
+    let now = Date(timeIntervalSince1970: 1_788_693_600)
+
+    override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("OmeletteCLITests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        statusURL = directory.appendingPathComponent("status.json")
+        XCTAssertTrue(
+            FileManager.default.isExecutableFile(atPath: AgentPaths.bundledCLIURL.path),
+            "omelette missing at \(AgentPaths.bundledCLIURL.path) — check the OmeletteCLI target and the embed dependency in project.yml"
+        )
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    struct Run {
+        let status: Int32
+        let stdout: String
+        let stderr: String
+        let elapsed: TimeInterval
+    }
+
+    /// Writes `snapshot` to the temp status file, or removes it when nil.
+    func publish(_ snapshot: StatusSnapshot?) throws {
+        guard let snapshot else {
+            try? FileManager.default.removeItem(at: statusURL)
+            return
+        }
+        var data = try StatusFile.encoder.encode(snapshot)
+        data.append(0x0A)
+        try data.write(to: statusURL, options: [.atomic])
+    }
+
+    @discardableResult
+    func runCLI(_ arguments: [String], stdin input: String? = nil) throws -> Run {
+        let process = Process()
+        process.executableURL = AgentPaths.bundledCLIURL
+        process.arguments = arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment[StatusFile.environmentKey] = statusURL.path
+        process.environment = environment
+        let stdout = Pipe()
+        let stderr = Pipe()
+        let stdin = Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = stdin
+        let started = Date()
+        try process.run()
+        if let input { stdin.fileHandleForWriting.write(Data(input.utf8)) }
+        try stdin.fileHandleForWriting.close()
+        // Both pipes are drained before waiting: the tool writes far less than a pipe
+        // buffer, but a `waitUntilExit` before a read is the classic way to deadlock.
+        let outData = stdout.fileHandleForReading.readDataToEndOfFile()
+        let errData = stderr.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return Run(
+            status: process.terminationStatus,
+            stdout: String(decoding: outData, as: UTF8.self),
+            stderr: String(decoding: errData, as: UTF8.self),
+            elapsed: Date().timeIntervalSince(started)
+        )
+    }
+
+    /// A snapshot with one healthy provider and one waiting agent. Tasks 6, 7 and 12
+    /// all print from this.
+    func sample(updatedAt: Date? = nil) -> StatusSnapshot {
+        StatusSnapshot(
+            version: StatusSnapshot.currentVersion,
+            updatedAt: updatedAt ?? Date(),
+            services: [
+                StatusSnapshot.Service(
+                    id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil,
+                    plan: "Max 5x",
+                    windows: [
+                        StatusSnapshot.Window(
+                            id: "five_hour", label: "Session", percent: 42,
+                            resetsAt: (updatedAt ?? Date()).addingTimeInterval(70 * 60), kind: "session"
+                        ),
+                    ],
+                    todayCost: 4.2, weekCost: 31.7, todayTokens: 1_234_567, apiEquivalent: true
+                ),
+            ],
+            agents: StatusSnapshot.Agents(
+                needsYou: 1, working: 2,
+                sessions: [
+                    StatusSnapshot.Session(
+                        id: "claude:abc", project: "Usage tracker", state: "needsYou",
+                        activity: "Remove build artifacts"
+                    ),
+                ]
+            )
+        )
+    }
+
+    // MARK: - The executable exists and answers
+
+    func testVersionPrintsTheVersionAndExitsCleanly() throws {
+        let run = try runCLI(["--version"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, "omelette \(CLIText.version)\n")
+        XCTAssertTrue(run.stderr.isEmpty)
+        XCTAssertLessThan(run.elapsed, 1, "process spawn included; the work itself is a string")
+    }
+
+    func testHelpNamesEveryCommand() throws {
+        let run = try runCLI(["--help"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.contains("omelette status"))
+        XCTAssertTrue(run.stdout.contains("omelette statusline"))
+        XCTAssertTrue(run.stdout.contains("omelette mcp"))
+    }
+
+    func testABadCommandExits64WithTheReasonOnStderr() throws {
+        let run = try runCLI(["stats"])
+
+        XCTAssertEqual(run.status, CLIText.usageExitCode)
+        XCTAssertTrue(run.stdout.isEmpty, "a usage error is not output")
+        XCTAssertTrue(run.stderr.contains("Unknown command: stats"), run.stderr)
+        XCTAssertTrue(run.stderr.contains("omelette status"), "the usage text follows the reason")
+    }
+
+    // MARK: - status
+
+    func testStatusPrintsTheProvidersAndTheAgentsLine() throws {
+        try publish(sample())
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("Claude  Session 42%"), run.stdout)
+        XCTAssertTrue(run.stdout.contains("$4.20 today"), run.stdout)
+        XCTAssertTrue(run.stdout.contains("$31.70 this week"), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("Agents: 1 needs you, 2 working\n"), run.stdout)
+        XCTAssertTrue(run.stderr.isEmpty)
+        XCTAssertLessThan(run.elapsed, 1)
+    }
+
+    func testStatusJSONPrintsTheFileVerbatim() throws {
+        try publish(sample())
+        let onDisk = try XCTUnwrap(StatusFile.read(from: statusURL))
+
+        let run = try runCLI(["status", "--json"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, String(decoding: onDisk, as: UTF8.self))
+    }
+
+    func testStatusExits2WithNoFile() throws {
+        try publish(nil)
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 2)
+        XCTAssertTrue(run.stdout.isEmpty)
+        XCTAssertEqual(run.stderr, CLIText.notRunning + "\n")
+    }
+
+    func testStatusExits2OnASnapshotOlderThanTenMinutes() throws {
+        try publish(sample(updatedAt: Date().addingTimeInterval(-20 * 60)))
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 2)
+        XCTAssertEqual(run.stderr, CLIText.notRunning + "\n")
+    }
+
+    // MARK: - statusline
+
+    func testStatusLinePrintsOneLineAndOneNewline() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("◐ 42% · resets in "), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("· $4.20 today · ⚑ 1\n"), run.stdout)
+        XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1, "exactly one newline, and it is the last byte")
+        XCTAssertTrue(run.stderr.isEmpty)
+    }
+
+    /// Claude Code writes its session JSON and closes the pipe. We must read it (or
+    /// their write can fail), print our own line, and be gone.
+    func testStatusLineIgnoresWhatClaudeCodeSendsOnStdin() throws {
+        try publish(sample())
+        let session = #"{"session_id":"abc","model":{"id":"claude-opus-5","display_name":"Opus"},"cost":{"total_cost_usd":9.99}}"#
+
+        let run = try runCLI(["statusline"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertFalse(run.stdout.contains("Opus"), "the line is about the account, not the session")
+        XCTAssertFalse(run.stdout.contains("9.99"))
+        XCTAssertTrue(run.stdout.contains("$4.20 today"))
+        XCTAssertLessThan(run.elapsed, 1)
+    }
+
+    func testStatusLineWithNoFileIsAnEmptyLineAndExitZero() throws {
+        try publish(nil)
+
+        let run = try runCLI(["statusline"])
+
+        XCTAssertEqual(run.status, 0, "a status line must never report an error")
+        XCTAssertEqual(run.stdout, "\n")
+        XCTAssertTrue(run.stderr.isEmpty)
+    }
+
+    func testStatusLineTakesAProvider() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline", "--provider", "codex"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, "⚑ 1\n", "no Codex in the file; the flag is not Codex's")
+    }
+
+    // MARK: - mcp
+
+    /// One session, the way a client runs it: initialize, the notification, tools/list,
+    /// a call, then the pipe closes and the server exits.
+    func testTheMCPServerAnswersAWholeSessionAndExitsWhenStdinCloses() throws {
+        try publish(sample())
+        let session = [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-code","version":"2.1.90"}}}"#,
+            #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_usage","arguments":{}}}"#,
+        ].joined(separator: "\n") + "\n"
+
+        let run = try runCLI(["mcp"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stderr.isEmpty, run.stderr)
+
+        let lines = run.stdout.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        XCTAssertEqual(lines.count, 3, "three requests carry an id; the notification is answered with nothing")
+        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"omelette""#), String(lines[0]))
+        XCTAssertTrue(lines[1].contains(#""name":"get_usage""#), String(lines[1]))
+        XCTAssertTrue(lines[2].contains("Claude (Max 5x): session 42%"), String(lines[2]))
+
+        // Every line has to be one parsable JSON object, or a client gives up mid-stream.
+        for line in lines {
+            XCTAssertNotNil(
+                try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                String(line)
+            )
+        }
+    }
+
+    /// The file is re-read per request, not cached: an agent asking twice across a poll
+    /// must see the second answer.
+    func testTheServerSeesAFileThatChangedBetweenRequests() throws {
+        try publish(sample())
+        var second = sample()
+        second.services[0] = StatusSnapshot.Service(
+            id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil, plan: "Max 5x",
+            windows: [StatusSnapshot.Window(id: "five_hour", label: "Session", percent: 91, resetsAt: Date().addingTimeInterval(600), kind: "session")],
+            todayCost: 9.99, weekCost: nil, todayTokens: nil, apiEquivalent: true
+        )
+
+        // Two calls in one process is not something a pipe can interleave with a write,
+        // so the second run is a second process against the rewritten file — which is
+        // the same guarantee from the client's point of view.
+        let first = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_usage"}}"# + "\n")
+        try publish(second)
+        let after = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_usage"}}"# + "\n")
+
+        XCTAssertTrue(first.stdout.contains("session 42%"), first.stdout)
+        XCTAssertTrue(after.stdout.contains("session 91%"), after.stdout)
+        XCTAssertTrue(after.stdout.contains("heavy work should wait"), after.stdout)
+    }
+
+    func testTheServerSaysOmeletteIsClosedRatherThanFailing() throws {
+        try publish(nil)
+
+        let run = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_agents"}}"# + "\n")
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.contains(#""isError":true"#), run.stdout)
+        XCTAssertTrue(run.stdout.contains(CLIText.notRunning), run.stdout)
+    }
+
+    /// The binary is Foundation-only by contract. `otool -L` is the assertion that
+    /// keeps an accidental `import AppKit` — which would drag a whole UI framework into
+    /// a tool that runs on every keystroke of a status line — from shipping.
+    func testTheToolLinksNoUIFrameworks() throws {
+        let otool = Process()
+        otool.executableURL = URL(fileURLWithPath: "/usr/bin/otool")
+        otool.arguments = ["-L", AgentPaths.bundledCLIURL.path]
+        let pipe = Pipe()
+        otool.standardOutput = pipe
+        try otool.run()
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        otool.waitUntilExit()
+
+        XCTAssertFalse(output.contains("AppKit.framework"), output)
+        XCTAssertFalse(output.contains("SwiftUI.framework"), output)
+        XCTAssertTrue(output.contains("Foundation.framework"), output)
+    }
+}

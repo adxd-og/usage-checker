@@ -18,12 +18,10 @@ enum HookInstallStatus: Equatable {
 /// `ourCommandMarker`, and a file we cannot parse is a refusal, never an
 /// overwrite.
 enum AgentHooksInstaller {
-    enum Error: Swift.Error, Equatable {
-        /// The file exists but is not the format it claims to be.
-        case unparsable(URL)
-        /// Someone else already owns the setting; the payload is their line.
-        case conflict(String)
-    }
+    /// The installers share one error type — `AgentHooksInstaller.Error.unparsable` and
+    /// `StatusLineInstaller.Error.unparsable` are the same case, because they are the
+    /// same refusal about the same file.
+    typealias Error = SettingsFile.Error
 
     /// A Claude hook entry is ours when its command contains this. The path is
     /// the App Support symlink, so an old entry still matches after the app moves.
@@ -35,9 +33,7 @@ enum AgentHooksInstaller {
     static let unreadableReason = "config.toml can't be read as UTF-8 text."
 
     /// `~/.claude/settings.json` → `~/.claude/settings.json.omelette-backup`.
-    static func backupURL(for url: URL) -> URL {
-        url.appendingPathExtension("omelette-backup")
-    }
+    static func backupURL(for url: URL) -> URL { SettingsFile.backupURL(for: url) }
 
     // MARK: - Claude
 
@@ -129,10 +125,7 @@ enum AgentHooksInstaller {
     }
 
     private static func canonicalJSON(_ object: [String: Any]) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-              let text = String(data: data, encoding: .utf8)
-        else { return String(describing: object) }
-        return text
+        SettingsFile.canonicalJSON(object)
     }
 
     /// Whether the entries of ours in `url` are exactly `template`'s. Shared by
@@ -198,20 +191,10 @@ enum AgentHooksInstaller {
         return out
     }
 
-    /// Missing or blank file → `{}`. Anything else that is not a JSON object,
-    /// or a file we cannot read, is a refusal.
+    /// Missing or blank file → `{}`. Anything else that is not a JSON object, or a
+    /// file we cannot read, is a refusal.
     private static func readSettings(_ url: URL) throws -> [String: Any] {
-        guard let data = try? Data(contentsOf: url) else {
-            if FileManager.default.fileExists(atPath: url.path) { throw Error.unparsable(url) }
-            return [:]
-        }
-        let blank = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? data.isEmpty
-        if blank { return [:] }
-        guard let dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-            throw Error.unparsable(url)
-        }
-        return dict
+        try SettingsFile.readJSON(url)
     }
 
     /// The `hooks` object, or a refusal when the key is there but is not one.
@@ -222,12 +205,7 @@ enum AgentHooksInstaller {
     }
 
     private static func writeSettings(_ settings: [String: Any], to url: URL) throws {
-        guard let data = prettyJSONData(settings) else { throw Error.unparsable(url) }
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        try backupOnce(url)
-        try writeAtomically(data, to: url)
+        try SettingsFile.writeJSON(settings, to: url)
     }
 
     // MARK: - Codex hooks
@@ -557,65 +535,20 @@ enum AgentHooksInstaller {
         return all.count
     }
 
-    private static func lines(of text: String) -> [String] {
-        text.components(separatedBy: "\n")
-    }
+    private static func lines(of text: String) -> [String] { SettingsFile.lines(of: text) }
 
-    private static func tomlEscaped(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-    }
+    private static func tomlEscaped(_ value: String) -> String { SettingsFile.tomlEscaped(value) }
 
-    /// Missing file → empty text. An existing file we cannot decode is a
-    /// refusal: overwriting it would destroy a config we never read.
-    private static func readConfig(_ url: URL) throws -> String {
-        guard let data = try? Data(contentsOf: url) else {
-            if FileManager.default.fileExists(atPath: url.path) { throw Error.unparsable(url) }
-            return ""
-        }
-        guard let text = String(data: data, encoding: .utf8) else { throw Error.unparsable(url) }
-        return text
-    }
+    /// Missing file → empty text. An existing file we cannot decode is a refusal.
+    private static func readConfig(_ url: URL) throws -> String { try SettingsFile.readText(url) }
 
     private static func writeConfig(_ all: [String], to url: URL) throws {
-        var text = all.joined(separator: "\n")
-        if !text.hasSuffix("\n") { text += "\n" }
-        try FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        try backupOnce(url)
-        try writeAtomically(Data(text.utf8), to: url)
+        try SettingsFile.writeText(all, to: url)
     }
 
     // MARK: - Shared file plumbing
 
-    /// One-time safety copy next to the file. Never overwritten, so it always
-    /// holds the file as it was before Omelette first edited it.
-    private static func backupOnce(_ url: URL) throws {
-        let backup = backupURL(for: url)
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: url.path), !fm.fileExists(atPath: backup.path) else { return }
-        try fm.copyItem(at: url, to: backup)
-    }
+    private static func prettyJSONData(_ object: Any) -> Data? { SettingsFile.prettyJSONData(object) }
 
-    /// Foundation's `.atomic` is exactly "write a temp file in the same
-    /// directory, then rename": a crash or a full disk leaves the previous
-    /// config intact instead of a half-written one.
-    private static func writeAtomically(_ data: Data, to url: URL) throws {
-        try data.write(to: url, options: [.atomic])
-    }
-
-    private static func prettyJSONData(_ object: Any) -> Data? {
-        guard var data = try? JSONSerialization.data(
-            withJSONObject: object,
-            options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        ) else { return nil }
-        data.append(0x0A)          // editors and `git diff` both want the trailing newline
-        return data
-    }
-
-    private static func prettyJSON(_ object: Any) -> String? {
-        prettyJSONData(object).flatMap { String(data: $0.dropLast(), encoding: .utf8) }
-    }
+    private static func prettyJSON(_ object: Any) -> String? { SettingsFile.prettyJSON(object) }
 }
