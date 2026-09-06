@@ -9,6 +9,66 @@ A native macOS menu bar widget that tracks your **AI coding limits** in real tim
 > window arrives as `seven_day_omelette`). The name was too good to leave
 > buried in a JSON key.
 
+## Screenshots
+
+<table>
+  <tr>
+    <td width="36%"><img src="docs/screenshots/popover-all-needs-you.png" alt="The popover: every provider on one tab, a session waiting for your Allow / Deny, one working, one idle"></td>
+    <td width="64%"><img src="docs/screenshots/dashboard-overview-claude.png" alt="Dashboard Overview for Claude: session ring, usage windows with exact reset times, Tokens today split by type, CLI costs"></td>
+  </tr>
+  <tr>
+    <td>The popover, All tab. An agent asked a question, so its row got Allow / Deny.</td>
+    <td>Dashboard Overview. Tokens today: input, output (with thinking), cache read, cache write, and dollars per category.</td>
+  </tr>
+</table>
+
+<details>
+<summary><b>More of the popover</b> — one tab per provider, last-known numbers when one is closed</summary>
+<br>
+<table>
+  <tr>
+    <td><img src="docs/screenshots/popover-claude.png" alt="Claude tab: session ring, weekly limits per model, live agents"></td>
+    <td><img src="docs/screenshots/popover-codex.png" alt="Codex tab: weekly window, seven-day cost"></td>
+    <td><img src="docs/screenshots/popover-antigravity-last-known.png" alt="Antigravity tab while the app is closed: Not running chip, last known values with their time"></td>
+    <td><img src="docs/screenshots/popover-grok.png" alt="Grok tab: credits window, seven-day cost"></td>
+  </tr>
+  <tr>
+    <td>Claude</td><td>Codex</td><td>Antigravity, closed: last known values, dimmed</td><td>Grok</td>
+  </tr>
+</table>
+</details>
+
+<details>
+<summary><b>More of the dashboard</b> — overview per provider, history in dollars or tokens, quota history, activity, agents, insights</summary>
+<br>
+<table>
+  <tr>
+    <td><img src="docs/screenshots/dashboard-overview-codex.png" alt="Overview for Codex"></td>
+    <td><img src="docs/screenshots/dashboard-overview-grok.png" alt="Overview for Grok"></td>
+  </tr>
+  <tr><td>Overview, Codex</td><td>Overview, Grok</td></tr>
+  <tr>
+    <td><img src="docs/screenshots/dashboard-overview-antigravity.png" alt="Overview for Antigravity while it is closed: last known values, burn rate paused"></td>
+    <td><img src="docs/screenshots/dashboard-history-tokens.png" alt="History in Tokens mode: stacked bars by type and a per-day table"></td>
+  </tr>
+  <tr><td>Overview, Antigravity closed: last known values</td><td>History, Tokens mode</td></tr>
+  <tr>
+    <td><img src="docs/screenshots/dashboard-history-cost.png" alt="History in Cost mode with the API-equivalent note"></td>
+    <td><img src="docs/screenshots/dashboard-quota-history-antigravity.png" alt="Quota history for Antigravity: every window as a line, daily peaks"></td>
+  </tr>
+  <tr><td>History, Cost mode</td><td>Quota history for a provider without a token log</td></tr>
+  <tr>
+    <td><img src="docs/screenshots/dashboard-activity.png" alt="Activity heatmap, last 52 weeks"></td>
+    <td><img src="docs/screenshots/dashboard-agents.png" alt="Agents tab: live sessions with Allow / Deny, run history"></td>
+  </tr>
+  <tr><td>Activity</td><td>Agents: live sessions and run history</td></tr>
+  <tr>
+    <td colspan="2"><img src="docs/screenshots/dashboard-insights.png" alt="Insights: what ran inside the current session window, week over week, biggest day"></td>
+  </tr>
+  <tr><td colspan="2">Insights: what filled the current session window, ranked by project</td></tr>
+</table>
+</details>
+
 ## What it shows
 
 If you use Claude Code, Codex, Gemini CLI, Antigravity or Grok, this is the
