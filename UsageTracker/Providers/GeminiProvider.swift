@@ -56,7 +56,7 @@ actor GeminiProvider: UsageProvider {
                 extraUsage: nil,
                 weekCost: nil,
                 state: .notSignedIn,
-                stateMessage: error.localizedDescription,
+                stateMessage: GeminiErrorCopy.stateMessage(for: error),
                 fetchedAt: now
             )
         }

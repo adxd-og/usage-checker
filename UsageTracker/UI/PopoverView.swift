@@ -386,6 +386,13 @@ private struct ProviderDetail: View {
         service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0
     }
 
+    /// The "API-equivalent" line, once, and only under a dollar row that is actually
+    /// on screen. A pay-as-you-go account has no subscription to be confused with.
+    private var costCaption: String? {
+        guard (service.weekCost ?? 0) > 0 else { return nil }
+        return CostCopy.apiEquivalentCaption(isPayAsYouGo: CostCopy.isPayAsYouGo(service))
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if service.state != .ok {
@@ -452,9 +459,10 @@ private struct ProviderDetail: View {
             ForEach(sessionRows) { bucket in
                 OMKeyValueRow(
                     label: bucket.label,
-                    value: Self.sessionRowValue(bucket),
+                    value: WindowRanking.sessionRowValue(bucket),
                     barPercent: bucket.clampedPercent,
-                    pace: bucket.elapsedFraction()
+                    pace: bucket.elapsedFraction(),
+                    help: Self.resetTooltip(bucket)
                 )
             }
             if !weeklyForRow.isEmpty {
@@ -478,23 +486,26 @@ private struct ProviderDetail: View {
                 Text("Server responded but returned no usage data.")
                     .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
             }
+            if let caption = costCaption {
+                Text(caption)
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
-    /// "37% · 2h 15m left" — the row's trailing text for a non-hero session window.
-    nonisolated private static func sessionRowValue(_ bucket: UsageBucket) -> String {
-        let percent = "\(Int(bucket.clampedPercent.rounded()))%"
-        guard let remaining = WindowRanking.remainingText(until: bucket.resetsAt) else { return percent }
-        return "\(percent) · \(remaining)"
+    /// The tooltip under a countdown row: the wall-clock time, always — even inside
+    /// the hour, where the row itself drops the parenthesis.
+    nonisolated private static func resetTooltip(_ bucket: UsageBucket, now: Date = Date()) -> String {
+        ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now).map { "Resets \($0)" } ?? ""
     }
 
-    /// "resets in 2d 4h" for the all-models weekly; nil when unknown.
+    /// "resets in 2d 4h (Thu 14:15)" for the all-models weekly; nil when unknown.
     private var weeklyReset: String? {
-        guard let weekly = weeklyBuckets.first(where: { $0.id == "seven_day" }) ?? weeklyBuckets.first,
-              let text = WindowRanking.remainingText(until: weekly.resetsAt) else { return nil }
-        // Past the reset time the helper already says "resets now".
-        guard text.hasSuffix(" left") else { return text }
-        return "resets in \(text.replacingOccurrences(of: " left", with: ""))"
+        guard let weekly = weeklyBuckets.first(where: { $0.id == "seven_day" }) ?? weeklyBuckets.first
+        else { return nil }
+        return ResetCopy.both(resetsAt: weekly.resetsAt, now: Date())
     }
 
     // A toggle row costs as much space as a ring row, so only fold when there

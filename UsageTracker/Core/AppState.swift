@@ -26,7 +26,12 @@ final class AppState: ObservableObject {
     private var suspensionObservers: [NSObjectProtocol] = []
     /// Last successful readings from disk — the source `retainingLastGoodServices`
     /// falls back to when this session has never seen a provider succeed.
-    private var lastKnown: [String: LastKnownService] = [:]
+    private var lastKnown: [String: LastKnownService] = [:] {
+        didSet { lastKnownServiceIDs = Set(lastKnown.keys) }
+    }
+    /// Which services have a stored reading. Published so Settings → Providers offers
+    /// "Forget last known numbers" only where there is something to forget.
+    @Published private(set) var lastKnownServiceIDs: Set<String> = []
 
     private init() {}
 
@@ -421,6 +426,46 @@ final class AppState: ObservableObject {
                 self.refreshNow(userInitiated: false)
             }
         }
+    }
+
+    /// Settings → Providers → "Forget last known numbers". The stored entry and the
+    /// dimmed numbers on screen go in the same turn: a button whose effect only shows
+    /// up after the next poll reads as broken. The file write is the slow half and
+    /// rides its own task.
+    func forgetLastKnown(serviceID: String) {
+        lastKnown.removeValue(forKey: serviceID)
+        snapshot = Self.droppingRetained(serviceID: serviceID, from: snapshot)
+        Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
+    }
+
+    /// The pure half: the named service loses everything it was only showing because
+    /// it was retained — the windows, the plan, the account, the costs. A live service
+    /// keeps all of it; so does every other service in the snapshot. The state and its
+    /// message stay, because the chip still has to say why the provider went quiet.
+    nonisolated static func droppingRetained(serviceID: String, from snapshot: UsageSnapshot) -> UsageSnapshot {
+        let services = snapshot.services.map { service -> ServiceSnapshot in
+            guard service.id == serviceID, service.isRetained else { return service }
+            return ServiceSnapshot(
+                id: service.id,
+                displayName: service.displayName,
+                icon: service.icon,
+                plan: nil,
+                accountLabel: nil,
+                buckets: [],
+                extraUsage: nil,
+                weekCost: nil,
+                state: service.state,
+                stateMessage: service.stateMessage,
+                fetchedAt: service.fetchedAt,
+                retryAfter: service.retryAfter
+            )
+        }
+        return UsageSnapshot(
+            services: services,
+            fetchedAt: snapshot.fetchedAt,
+            isStale: snapshot.isStale,
+            lastError: snapshot.lastError
+        )
     }
 
     func restartTimer() {

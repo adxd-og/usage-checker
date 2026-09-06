@@ -111,6 +111,16 @@ actor LastKnownStore {
         write(current)
     }
 
+    /// Drops one service's entry. The user asked for these numbers to go away, so a
+    /// write that fails is remembered as `dirty` exactly like `remember`'s — the next
+    /// poll retries it rather than leaving the file saying the opposite of the UI.
+    func forget(serviceID: String) {
+        var current = load()
+        guard current.removeValue(forKey: serviceID) != nil else { return }
+        entries = current
+        write(current)
+    }
+
     private func write(_ entries: [String: LastKnownService]) {
         do {
             try encoder.encode(entries).write(to: fileURL, options: [.atomic])

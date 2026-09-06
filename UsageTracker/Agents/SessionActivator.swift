@@ -9,8 +9,38 @@ enum SessionActivator {
     static let terminalBundleID = "com.apple.Terminal"
     static let iTermBundleID = "com.googlecode.iterm2"
 
+    /// A cmux tab's whole address. cmux exposes no tty and no per-tab pid, so this is
+    /// the only way to name the tab a session is running in.
+    struct CmuxTarget: Equatable {
+        let workspace: String
+        let surface: String
+        let socketPath: String
+    }
+
+    /// A cmux session: the helper found both ids in the shell's environment. The
+    /// bundle id alone is not enough — a cmux window whose environment carries no ids
+    /// has nothing to address, and the app activation below is the whole jump there.
+    static func cmuxTarget(for host: AgentHostInfo) -> CmuxTarget? {
+        guard let workspace = host.cmuxWorkspace, !workspace.isEmpty,
+              let surface = host.cmuxSurface, !surface.isEmpty
+        else { return nil }
+        let socket = host.cmuxSocket.flatMap { $0.isEmpty ? nil : $0 } ?? CmuxSocket.defaultPath
+        return CmuxTarget(workspace: workspace, surface: surface, socketPath: socket)
+    }
+
     @MainActor
     static func jump(to session: AgentSession) {
+        // cmux first: its socket is the only thing that can select the tab, and the
+        // selection has to happen before the window comes forward or the user watches
+        // the wrong tab appear and then swap.
+        if let target = cmuxTarget(for: session.host) {
+            CmuxSocket.send(
+                lines: CmuxRPC.requests(workspace: target.workspace, surface: target.surface),
+                to: target.socketPath
+            )
+            activate(pid: session.host.pid, bundleID: session.host.bundleID)
+            return
+        }
         if let pid = session.host.pid, let app = NSRunningApplication(processIdentifier: pid) {
             // macOS 14 activation model: hand Omelette's own activation to the
             // terminal — the user just clicked a row, so we are the active app and
@@ -27,6 +57,22 @@ enum SessionActivator {
         // project folder is the only thing left that still identifies the session.
         guard let cwd = session.cwd, !cwd.isEmpty else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+    }
+
+    /// Bring the host app to the front: its own process when the pid is still valid,
+    /// otherwise whichever running app carries that bundle id. Deliberately not
+    /// `NSWorkspace.openApplication`, which would *launch* a terminal that has since
+    /// quit — starting an empty cmux is not a jump to a session.
+    @MainActor
+    private static func activate(pid: Int32?, bundleID: String?) {
+        if let pid, let app = NSRunningApplication(processIdentifier: pid) {
+            app.activate(from: .current, options: [.activateAllWindows])
+            return
+        }
+        guard let bundleID,
+              let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
+        else { return }
+        app.activate(from: .current, options: [.activateAllWindows])
     }
 
     /// AppleScript that selects the tab/session whose tty matches, for the two

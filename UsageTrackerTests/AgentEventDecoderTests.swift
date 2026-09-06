@@ -253,6 +253,29 @@ final class AgentEventDecoderTests: XCTestCase {
         XCTAssertEqual(atCap.count, AgentEventDecoder.maxLineBytes)
         XCTAssertNoThrow(try AgentEventDecoder.decode(atCap))
     }
+
+    func testTheDecoderFillsTheCmuxIDsFromTheHostObject() throws {
+        let host = #"{"pid":900,"bundle_id":"com.cmuxterm.app","tty":null,"cmux_workspace":"ws-7","cmux_surface":"sf-3","cmux_socket":"/tmp/cmux.sock"}"#
+        let line = Data((#"{"v":2,"source":"claude","helper_version":2,"received_at":1788000000,"host":"# + host + #","payload":{"hook_event_name":"Stop","session_id":"sess-1"}}"#).utf8)
+
+        let event = try AgentEventDecoder.decode(line)
+
+        XCTAssertEqual(event.host.bundleID, "com.cmuxterm.app")
+        XCTAssertEqual(event.host.cmuxWorkspace, "ws-7")
+        XCTAssertEqual(event.host.cmuxSurface, "sf-3")
+        XCTAssertEqual(event.host.cmuxSocket, "/tmp/cmux.sock")
+    }
+
+    func testAHostObjectWithoutCmuxKeysLeavesThemNil() throws {
+        let host = #"{"pid":4242,"bundle_id":"com.googlecode.iterm2","tty":"/dev/ttys004"}"#
+        let line = Data((#"{"v":2,"source":"claude","helper_version":2,"received_at":1788000000,"host":"# + host + #","payload":{"hook_event_name":"Stop","session_id":"sess-1"}}"#).utf8)
+
+        let event = try AgentEventDecoder.decode(line)
+
+        XCTAssertNil(event.host.cmuxWorkspace)
+        XCTAssertNil(event.host.cmuxSurface)
+        XCTAssertNil(event.host.cmuxSocket)
+    }
 }
 
 extension AgentEventDecoderTests {

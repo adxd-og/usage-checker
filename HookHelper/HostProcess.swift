@@ -6,9 +6,26 @@ struct HostProcess {
     var pid: Int32?
     var bundleID: String?
     var tty: String?
+    /// cmux's own addressing, read out of the shell's environment rather than the
+    /// process tree: `cmux → /usr/bin/login → zsh → claude` gives us a pid and a tty
+    /// that cmux itself cannot do anything with.
+    var cmuxWorkspace: String?
+    var cmuxSurface: String?
+    var cmuxSocket: String?
+
+    /// cmux (github.com/manaflow-ai/cmux): release, debug and nightly builds.
+    static let cmuxBundleIDs: Set<String> = [
+        "com.cmuxterm.app",
+        "com.cmuxterm.app.debug",
+        "com.cmuxterm.app.nightly",
+    ]
+
+    static let workspaceEnvironmentKey = "CMUX_WORKSPACE_ID"
+    static let surfaceEnvironmentKey = "CMUX_SURFACE_ID"
+    static let socketEnvironmentKey = "CMUX_SOCKET_PATH"
 
     /// Terminals and IDEs the app knows how to bring to the front (package 4).
-    static let knownBundleIDs: Set<String> = [
+    static let knownBundleIDs: Set<String> = Set([
         "com.apple.Terminal",
         "com.googlecode.iterm2",
         "com.mitchellh.ghostty",
@@ -20,7 +37,7 @@ struct HostProcess {
         "com.microsoft.VSCodeInsiders",
         "com.todesktop.230313mzl4w4u92",   // Cursor
         "com.exafunction.windsurf",
-    ]
+    ]).union(cmuxBundleIDs)
     static let maxHops = 32
 
     /// Walks from `pid` up to launchd. `tty` is the first controlling terminal seen
@@ -29,7 +46,13 @@ struct HostProcess {
     /// the same app (VS Code's Electron main process, not its plugin helper). Without a
     /// known host the outermost `.app` ancestor is reported, so a click can still
     /// activate something.
-    static func describe(from pid: pid_t = getpid()) -> HostProcess {
+    ///
+    /// `environment` is injectable for the tests; production reads our own, which is
+    /// the shell's, which is cmux's when cmux started it.
+    static func describe(
+        from pid: pid_t = getpid(),
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> HostProcess {
         var result = HostProcess()
         var known: (pid: pid_t, bundleID: String)?
         var outermostApp: (pid: pid_t, bundleID: String)?
@@ -52,7 +75,16 @@ struct HostProcess {
             result.pid = host.pid
             result.bundleID = host.bundleID
         }
+        result.cmuxWorkspace = nonEmpty(environment[workspaceEnvironmentKey])
+        result.cmuxSurface = nonEmpty(environment[surfaceEnvironmentKey])
+        result.cmuxSocket = nonEmpty(environment[socketEnvironmentKey])
         return result
+    }
+
+    /// An exported-but-empty variable says as little as an unset one.
+    private static func nonEmpty(_ value: String?) -> String? {
+        guard let value, !value.isEmpty else { return nil }
+        return value
     }
 }
 

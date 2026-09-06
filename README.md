@@ -17,7 +17,8 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
 
 - **Agent Overview (2.0)** — every live Claude Code and Codex session in the popover,
   grouped *Needs you / Working / Done / Idle*, with the project, what the agent is
-  doing and for how long. Click a row to jump back to its terminal tab
+  doing and for how long. Click a row to jump back to its terminal tab — Terminal,
+  iTerm2 and cmux land on the exact tab, every other terminal or IDE comes to the front
 - **Agents pill in the menu bar** — grey when quiet, blue while agents work, amber
   "1 needs you" when one waits for your approval — plus a notification with an
   **Open** button. Powered by Claude Code hooks you enable with one click

@@ -2,6 +2,10 @@ import SwiftUI
 import Charts
 
 struct SessionHistoryView: View {
+    /// Only for one question — is the selected provider pay-as-you-go — but that
+    /// question decides a line of copy under the chart, so it has to come from the
+    /// live snapshot rather than from the dashboard's derived state.
+    @ObservedObject var appState: AppState
     @ObservedObject var dashboard: DashboardState
 
     @AppStorage("historyChartMode") private var chartMode: HistoryChartMode = .cost
@@ -113,10 +117,32 @@ struct SessionHistoryView: View {
     }
 
     private var subtitle: String {
-        if showsQuota {
-            return "How full \(dashboard.displayName(for: dashboard.selectedService))'s usage windows ran"
-        }
-        return dashboard.costSource.longName.map { "Daily cost from \($0)" } ?? "Daily cost"
+        Self.subtitle(
+            showsQuota: showsQuota,
+            providerName: dashboard.displayName(for: dashboard.selectedService),
+            longName: dashboard.costSource.longName,
+            mode: chartMode,
+            isPayAsYouGo: appState.snapshot.services
+                .first { $0.id == dashboard.selectedService }
+                .map(CostCopy.isPayAsYouGo) ?? false
+        )
+    }
+
+    /// The header line under "Session history". Pure so the caption rule is testable:
+    /// only the cost chart shows dollars, so only the cost chart explains them.
+    nonisolated static func subtitle(
+        showsQuota: Bool,
+        providerName: String,
+        longName: String?,
+        mode: HistoryChartMode,
+        isPayAsYouGo: Bool
+    ) -> String {
+        if showsQuota { return "How full \(providerName)'s usage windows ran" }
+        let base = longName.map { "Daily cost from \($0)" } ?? "Daily cost"
+        guard mode == .cost,
+              let caption = CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo)
+        else { return base }
+        return "\(base) · \(caption)"
     }
 
     // MARK: - Quota

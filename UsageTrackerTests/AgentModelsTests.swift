@@ -33,6 +33,7 @@ final class AgentModelsTests: XCTestCase {
         let json = Data(#"{"pid":4242,"bundle_id":"com.googlecode.iterm2","tty":"/dev/ttys004"}"#.utf8)
         let host = try JSONDecoder().decode(AgentHostInfo.self, from: json)
         XCTAssertEqual(host, AgentHostInfo(pid: 4242, bundleID: "com.googlecode.iterm2", tty: "/dev/ttys004"))
+        XCTAssertNil(host.cmuxWorkspace, "a terminal that is not cmux carries no cmux ids")
 
         let nulls = Data(#"{"pid":null,"bundle_id":null,"tty":null}"#.utf8)
         XCTAssertEqual(try JSONDecoder().decode(AgentHostInfo.self, from: nulls), .none)
@@ -40,6 +41,24 @@ final class AgentModelsTests: XCTestCase {
         let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(host)) as? [String: Any]
         XCTAssertEqual(encoded?["bundle_id"] as? String, "com.googlecode.iterm2")
         XCTAssertNil(encoded?["bundleID"])
+        XCTAssertNil(encoded?["cmux_workspace"], "an absent id is absent, not null")
+    }
+
+    func testHostInfoDecodesTheCmuxIDs() throws {
+        // cmux has no tty or pid addressing: a tab is a workspace and a surface, and
+        // the helper reads both out of the shell's own environment.
+        let json = Data(#"{"pid":900,"bundle_id":"com.cmuxterm.app","tty":null,"cmux_workspace":"ws-7","cmux_surface":"sf-3","cmux_socket":"/tmp/cmux.sock"}"#.utf8)
+        let host = try JSONDecoder().decode(AgentHostInfo.self, from: json)
+        XCTAssertEqual(host.bundleID, "com.cmuxterm.app")
+        XCTAssertNil(host.tty)
+        XCTAssertEqual(host.cmuxWorkspace, "ws-7")
+        XCTAssertEqual(host.cmuxSurface, "sf-3")
+        XCTAssertEqual(host.cmuxSocket, "/tmp/cmux.sock")
+
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(host)) as? [String: Any]
+        XCTAssertEqual(encoded?["cmux_workspace"] as? String, "ws-7")
+        XCTAssertEqual(encoded?["cmux_surface"] as? String, "sf-3")
+        XCTAssertEqual(encoded?["cmux_socket"] as? String, "/tmp/cmux.sock")
     }
 
     func testEventKindEquality() {

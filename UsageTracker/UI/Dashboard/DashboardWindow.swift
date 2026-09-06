@@ -81,7 +81,7 @@ struct DashboardWindow: View {
         case .activity:
             ActivityGridView(dashboard: dashboard)
         case .history:
-            SessionHistoryView(dashboard: dashboard)
+            SessionHistoryView(appState: appState, dashboard: dashboard)
         case .insights:
             InsightsView(dashboard: dashboard)
         }

@@ -168,6 +168,22 @@ struct SettingsView: View {
                 Text("Reads billing-period credit usage from the local Grok CLI, with a grok.com fallback. Requires being signed in (`grok login`).")
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)
+                if !forgettableServices.isEmpty {
+                    Divider()
+                    ForEach(forgettableServices) { service in
+                        HStack {
+                            Text(service.displayName)
+                            Spacer()
+                            Button("Forget last known numbers") {
+                                state.forgetLastKnown(serviceID: service.id)
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                    Text("Clears the stored reading for that provider. The dimmed \"last known\" numbers disappear straight away and come back only when it reports again.")
+                        .font(OMFont.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Updates") {
@@ -441,6 +457,11 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Providers with a stored reading on disk: the only ones with anything to forget.
+    private var forgettableServices: [ServiceSnapshot] {
+        state.snapshot.services.filter { state.lastKnownServiceIDs.contains($0.id) }
     }
 
     /// What this service is actually reporting, in the words the rest of the app

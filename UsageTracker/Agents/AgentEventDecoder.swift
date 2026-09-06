@@ -53,7 +53,10 @@ enum AgentEventDecoder {
         return AgentHostInfo(
             pid: (object["pid"] as? Int).flatMap { Int32(exactly: $0) },
             bundleID: object["bundle_id"] as? String,
-            tty: object["tty"] as? String
+            tty: object["tty"] as? String,
+            cmuxWorkspace: object["cmux_workspace"] as? String,
+            cmuxSurface: object["cmux_surface"] as? String,
+            cmuxSocket: object["cmux_socket"] as? String
         )
     }
 
