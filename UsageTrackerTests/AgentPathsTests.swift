@@ -37,6 +37,11 @@ final class AgentPathsTests: XCTestCase {
         XCTAssertEqual(AgentPaths.codexConfigURL.pathComponents.suffix(2), [".codex", "config.toml"])
         XCTAssertEqual(AgentPaths.codexHooksURL.pathComponents.suffix(2), [".codex", "hooks.json"])
         XCTAssertEqual(AgentPaths.codexSessionsURL.pathComponents.suffix(2), [".codex", "sessions"])
+        XCTAssertEqual(AgentPaths.cliName, "omelette")
+        XCTAssertEqual(AgentPaths.cliSymlinkURL.pathComponents.suffix(3), ["UsageTracker", "bin", "omelette"])
+        XCTAssertEqual(AgentPaths.bundledCLIURL.pathComponents.suffix(3), ["Contents", "Helpers", "omelette"])
+        XCTAssertEqual(AgentPaths.statusFileURL.pathComponents.suffix(2), ["UsageTracker", "status.json"])
+        XCTAssertEqual(AgentPaths.binURL.pathComponents.suffix(2), ["UsageTracker", "bin"])
     }
 
     func testSocketPathFitsInSockaddrUn() {
@@ -92,5 +97,41 @@ final class AgentPathsTests: XCTestCase {
         try Data("stale".utf8).write(to: link)
         XCTAssertTrue(try AgentPaths.refreshHelperSymlink(link: link, target: target))
         XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), target.path)
+    }
+
+    /// The app computes the file's path through Application Support and the CLI
+    /// computes it from `$HOME` with no app around to ask. Two spellings of one path
+    /// is exactly the bug that would make `omelette status` read an empty directory.
+    func testTheAppAndTheCLIAgreeOnWhereStatusJSONIs() {
+        XCTAssertEqual(AgentPaths.statusFileURL.path, StatusFile.defaultURL().path)
+        XCTAssertEqual(
+            AgentPaths.statusFileURL.path,
+            AgentPaths.appSupportURL.appendingPathComponent("status.json").path
+        )
+    }
+
+    func testTheCLILinkUsesTheSameRoutineAsTheHelperLink() throws {
+        let target = try makeTarget("omelette")
+        let link = root.appendingPathComponent("bin/omelette")
+
+        XCTAssertTrue(try AgentPaths.refreshCLISymlink(link: link, target: target))
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: link.path), target.path)
+        XCTAssertFalse(try AgentPaths.refreshCLISymlink(link: link, target: target))
+    }
+
+    /// Both links live in the same directory and neither may disturb the other — an
+    /// update that repointed `omelette` and left `omelette-hook` dangling would take
+    /// every hook down with it.
+    func testTheTwoLinksAreIndependent() throws {
+        let hook = try makeTarget("omelette-hook")
+        let cli = try makeTarget("omelette")
+        let hookLink = root.appendingPathComponent("bin/omelette-hook")
+        let cliLink = root.appendingPathComponent("bin/omelette")
+
+        _ = try AgentPaths.refreshHelperSymlink(link: hookLink, target: hook)
+        _ = try AgentPaths.refreshCLISymlink(link: cliLink, target: cli)
+
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: hookLink.path), hook.path)
+        XCTAssertEqual(try FileManager.default.destinationOfSymbolicLink(atPath: cliLink.path), cli.path)
     }
 }
