@@ -150,6 +150,29 @@ final class TokensTodayCardCaptionTests: XCTestCase {
     }
 }
 
+/// The history header's one line of explanation. It names the unit on the chart, and
+/// in Tokens mode the chart is not a cost chart.
+final class SessionHistorySubtitleTests: XCTestCase {
+    func testCostModeNamesTheCostAndItsSource() {
+        XCTAssertEqual(
+            SessionHistoryView.costSubtitle(mode: .cost, source: "the Claude Code session logs"),
+            "Daily cost from the Claude Code session logs"
+        )
+    }
+
+    func testTokensModeSaysTokensNotCost() {
+        XCTAssertEqual(
+            SessionHistoryView.costSubtitle(mode: .tokens, source: "the Claude Code session logs"),
+            "Daily tokens by type from the Claude Code session logs"
+        )
+    }
+
+    func testAProviderWithNoNamedSourceStillGetsTheUnit() {
+        XCTAssertEqual(SessionHistoryView.costSubtitle(mode: .cost, source: nil), "Daily cost")
+        XCTAssertEqual(SessionHistoryView.costSubtitle(mode: .tokens, source: nil), "Daily tokens by type")
+    }
+}
+
 /// The mode is persisted under a raw String, so its cases are a storage contract:
 /// renaming one silently resets every user's tab to Cost.
 final class HistoryChartModeTests: XCTestCase {

@@ -116,7 +116,14 @@ struct SessionHistoryView: View {
         if showsQuota {
             return "How full \(dashboard.displayName(for: dashboard.selectedService))'s usage windows ran"
         }
-        return dashboard.costSource.longName.map { "Daily cost from \($0)" } ?? "Daily cost"
+        return Self.costSubtitle(mode: chartMode, source: dashboard.costSource.longName)
+    }
+
+    /// The header line under "Session history", which has to name the unit on the chart:
+    /// in Tokens mode there are no dollars on it to call a daily cost.
+    nonisolated static func costSubtitle(mode: HistoryChartMode, source: String?) -> String {
+        let unit = mode == .tokens ? "Daily tokens by type" : "Daily cost"
+        return source.map { "\(unit) from \($0)" } ?? unit
     }
 
     // MARK: - Quota
@@ -312,7 +319,10 @@ struct SessionHistoryView: View {
             HStack {
                 Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                Text("In").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                // The column is the uncached input; "In" is all the width there is.
+                Text("In").font(OMFont.body).foregroundStyle(.secondary)
+                    .frame(width: 80, alignment: .trailing)
+                    .help(TokenCategory.input.help ?? TokenCategory.input.label)
                 Text("Out").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
                 Text("Cache read").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
                 Text("Cache write").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)

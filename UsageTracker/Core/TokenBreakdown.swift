@@ -134,6 +134,18 @@ enum TokenCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
+    /// Tooltip for a label that cannot say enough on its own. "Input" is the word every
+    /// CLI uses and the wrong word for this bucket — it is the *uncached* input, the
+    /// part of the context that was not served from cache — but it is also all a
+    /// narrow column or a chart legend has room for. nil where the label is the whole
+    /// story.
+    var help: String? {
+        switch self {
+        case .input: return "Uncached input"
+        case .output, .cacheRead, .cacheWrite: return nil
+        }
+    }
+
     func tokens(in b: TokenBreakdown) -> Int {
         switch self {
         case .input: return b.input
