@@ -6,6 +6,41 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.4.1</title>
+      <pubDate>Sun, 06 Sep 2026 13:24:18 +0300</pubDate>
+      <sparkle:version>39</sparkle:version>
+      <sparkle:shortVersionString>2.4.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b><code>omelette</code> in your terminal.</b> A small companion tool ships inside the app: <code>omelette status</code> (every provider's windows with exact reset times, today's and this week's cost, what your agents are doing; <code>--json</code> for scripts) and <code>omelette statusline</code> for Claude Code's status bar. Settings → General → Command line puts it on your PATH and installs the status line with one click.</li>
+<li><b>An MCP server for your agents.</b> <code>omelette mcp</code> answers <code>get_usage</code> and <code>get_agents</code> over stdio, so Claude Code and Codex can ask what your limits are before starting something expensive. One-click install into <code>~/.claude.json</code> and <code>~/.codex/config.toml</code>, or add it by hand (the README shows how).</li>
+<li><b>Exact reset times</b> next to every countdown: "resets in 1h 40m (13:00)", "Thu 14:15" later in the week.</li>
+<li><b>cmux</b> is recognised as a terminal, and a click on a session lands on its exact tab.</li>
+<li><b>Forget last known numbers</b> per provider, in Settings → Providers.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li><b>Token accounting, corrected.</b> Claude Code writes a response several times as it streams; the first copy carries provisional counts and the last the final ones. Omelette kept the first, which undercounted output and thinking tokens (six-fold in subagent transcripts on the author's Mac). The final record now wins, the cost cache is rebuilt once. Codex cache writes are subtracted from ordinary input and priced (1.25× for GPT-5.6 and later), Grok's reasoning tokens are read, and the offline price table matches models.dev.</li>
+<li>Dollar figures from local logs say what they are: API-equivalent, not your subscription bill.</li>
+<li>CodexBarCore is back on upstream main; the temporary fork is gone.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>A session whose terminal tab was closed no longer lingers as a ghost: five quiet minutes with no process on its tty and it is archived.</li>
+<li>Antigravity that is installed but not answering (a stale pid file, a port with nobody behind it) shows the grey "Not running" chip with last-known numbers instead of a red "Error".</li>
+<li>The Gemini tile no longer tells you to enable "CodexBar's Antigravity provider".</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.4.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.4.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="wVD+Z3OeTSLA+ZgV/UtySRldKRqpglIpJMj/JmiVH7mPJrBN0Y4MzEYSW2NfGaojw6NKk41CZsxfPIDGIS7nBg=="
+        length="24658620"/>
+    </item>
+    <item>
       <title>Omelette v2.4.0</title>
       <pubDate>Sun, 06 Sep 2026 10:37:30 +0300</pubDate>
       <sparkle:version>38</sparkle:version>
