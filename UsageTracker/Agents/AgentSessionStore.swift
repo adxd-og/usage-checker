@@ -32,6 +32,13 @@ final class AgentSessionStore: ObservableObject {
     /// assumed dead (`pruneStale`).
     static let staleAfter: TimeInterval = 2 * 3600
 
+    /// A *ghost*: quiet this long and its terminal tab is gone. Closing a tab inside a
+    /// still-running terminal leaves the host app alive, so `staleAfter` above never
+    /// fires for it and the row used to sit in the popover until the app quit. Five
+    /// minutes is long enough that a tab someone is reading is never mistaken for one
+    /// they closed.
+    static let ghostAfter: TimeInterval = 5 * 60
+
     private let history: AgentHistoryStore
 
     /// Sessions a `SessionEnd` hook has closed, with when. The transcript stays
@@ -239,13 +246,17 @@ final class AgentSessionStore: ObservableObject {
     }
 
     /// Drops sessions that have gone quiet for `staleAfter` and whose host process is
-    /// no longer running. A session whose terminal is still open is kept however quiet
-    /// it is — the user can see it and would not expect it to vanish.
-    func pruneStale(now: Date = Date()) {
+    /// no longer running, and sessions quiet for `ghostAfter` whose tty nothing holds
+    /// any more. A session whose tab is still open is kept however quiet it is — the
+    /// user can see it and would not expect it to vanish.
+    func pruneStale(
+        now: Date = Date(),
+        ttyAlive: (String) -> Bool = AgentSessionStore.systemTTYAlive
+    ) {
         var kept: [AgentSession] = []
         var dropped: [AgentSession] = []
         for session in sessions {
-            if Self.isStale(session, now: now) {
+            if Self.isStale(session, now: now, ttyAlive: ttyAlive) {
                 dropped.append(session)
             } else {
                 kept.append(session)
@@ -272,10 +283,17 @@ final class AgentSessionStore: ObservableObject {
         return upgraded
     }
 
-    private static func isStale(_ session: AgentSession, now: Date) -> Bool {
-        guard now.timeIntervalSince(session.lastEventAt) >= staleAfter else { return false }
-        guard let pid = session.host.pid else { return true }
-        return !isProcessAlive(pid)
+    /// Stale two ways: quiet for `staleAfter` with a dead (or unknown) host process,
+    /// **or** quiet for `ghostAfter` with a tty no process is attached to any more.
+    /// `ttyAlive` is injected so the rule is testable without a terminal.
+    static func isStale(_ session: AgentSession, now: Date, ttyAlive: (String) -> Bool) -> Bool {
+        let quiet = now.timeIntervalSince(session.lastEventAt)
+        if quiet >= staleAfter {
+            guard let pid = session.host.pid else { return true }
+            if !isProcessAlive(pid) { return true }
+        }
+        guard quiet >= ghostAfter, let tty = session.host.tty, !tty.isEmpty else { return false }
+        return !ttyAlive(tty)
     }
 
     /// `kill(pid, 0)` sends no signal and only reports whether the process exists.
@@ -284,6 +302,40 @@ final class AgentSessionStore: ObservableObject {
         guard pid > 0 else { return false }
         if kill(pid, 0) == 0 { return true }
         return errno == EPERM
+    }
+
+    /// Whether any process on this machine still has `path` as its controlling
+    /// terminal. The kernel's own answer, asked directly: `ps` would mean spawning a
+    /// process on every poll, and a tab that closed is exactly the case where the
+    /// terminal app is still there to be asked about.
+    ///
+    /// Two traps live in here. `proc_listallpids` returns a **pid count**, not a byte
+    /// count (unlike `proc_listpids`, it divides by `sizeof(int)` itself) — treating it
+    /// as bytes silently reads only a quarter of the process table. And
+    /// `proc_pidinfo(PROC_PIDTBSDINFO)` refuses processes belonging to other users, so
+    /// a short read is skipped rather than counted as a mismatch; the tty we care about
+    /// is the current user's, and its shell is the current user's too.
+    ///
+    /// Fails *open*: if the process table cannot be read at all, the answer is "alive",
+    /// which keeps a readable row on screen instead of deleting it on a bad guess.
+    nonisolated static func systemTTYAlive(_ path: String) -> Bool {
+        var node = stat()
+        // The device node itself is gone: no process can be attached to it.
+        guard stat(path, &node) == 0 else { return false }
+        let device = UInt32(bitPattern: node.st_rdev)
+
+        let capacity = proc_listallpids(nil, 0)
+        guard capacity > 0 else { return true }
+        var pids = [pid_t](repeating: 0, count: Int(capacity) + 64)
+        let found = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        guard found > 0 else { return true }
+        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+        for index in 0..<min(Int(found), pids.count) where pids[index] > 0 {
+            var info = proc_bsdinfo()
+            guard proc_pidinfo(pids[index], PROC_PIDTBSDINFO, 0, &info, size) == size else { continue }
+            if info.e_tdev == device { return true }
+        }
+        return false
     }
 
     // MARK: - Private
