@@ -5,6 +5,44 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.1] — 2026-09-06
+
+### Added
+- **`omelette` in your terminal.** A small companion tool ships inside the app:
+  `omelette status` (every provider's windows with exact reset times, today's and
+  this week's cost, what your agents are doing; `--json` for scripts) and
+  `omelette statusline` for Claude Code's status bar. Settings → General →
+  Command line puts it on your PATH and installs the status line with one click.
+- **An MCP server for your agents.** `omelette mcp` answers `get_usage` and
+  `get_agents` over stdio, so Claude Code and Codex can ask what your limits are
+  before starting something expensive. One-click install into `~/.claude.json`
+  and `~/.codex/config.toml`, or add it by hand (the README shows how).
+- **Exact reset times** next to every countdown: "resets in 1h 40m (13:00)",
+  "Thu 14:15" later in the week.
+- **cmux** is recognised as a terminal, and a click on a session lands on its
+  exact tab.
+- **Forget last known numbers** per provider, in Settings → Providers.
+
+### Changed
+- **Token accounting, corrected.** Claude Code writes a response several times as
+  it streams; the first copy carries provisional counts and the last the final
+  ones. Omelette kept the first, which undercounted output and thinking tokens
+  (six-fold in subagent transcripts on the author's Mac). The final record now
+  wins, the cost cache is rebuilt once. Codex cache writes are subtracted from
+  ordinary input and priced (1.25× for GPT-5.6 and later), Grok's reasoning
+  tokens are read, and the offline price table matches models.dev.
+- Dollar figures from local logs say what they are: API-equivalent, not your
+  subscription bill.
+- CodexBarCore is back on upstream main; the temporary fork is gone.
+
+### Fixed
+- A session whose terminal tab was closed no longer lingers as a ghost: five
+  quiet minutes with no process on its tty and it is archived.
+- Antigravity that is installed but not answering (a stale pid file, a port with
+  nobody behind it) shows the grey "Not running" chip with last-known numbers
+  instead of a red "Error".
+- The Gemini tile no longer tells you to enable "CodexBar's Antigravity provider".
+
 ## [2.4.0] — 2026-09-06
 
 ### Added
