@@ -452,9 +452,10 @@ private struct ProviderDetail: View {
             ForEach(sessionRows) { bucket in
                 OMKeyValueRow(
                     label: bucket.label,
-                    value: Self.sessionRowValue(bucket),
+                    value: WindowRanking.sessionRowValue(bucket),
                     barPercent: bucket.clampedPercent,
-                    pace: bucket.elapsedFraction()
+                    pace: bucket.elapsedFraction(),
+                    help: Self.resetTooltip(bucket)
                 )
             }
             if !weeklyForRow.isEmpty {
@@ -481,20 +482,17 @@ private struct ProviderDetail: View {
         }
     }
 
-    /// "37% · 2h 15m left" — the row's trailing text for a non-hero session window.
-    nonisolated private static func sessionRowValue(_ bucket: UsageBucket) -> String {
-        let percent = "\(Int(bucket.clampedPercent.rounded()))%"
-        guard let remaining = WindowRanking.remainingText(until: bucket.resetsAt) else { return percent }
-        return "\(percent) · \(remaining)"
+    /// The tooltip under a countdown row: the wall-clock time, always — even inside
+    /// the hour, where the row itself drops the parenthesis.
+    nonisolated private static func resetTooltip(_ bucket: UsageBucket, now: Date = Date()) -> String {
+        ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now).map { "Resets \($0)" } ?? ""
     }
 
-    /// "resets in 2d 4h" for the all-models weekly; nil when unknown.
+    /// "resets in 2d 4h (Thu 14:15)" for the all-models weekly; nil when unknown.
     private var weeklyReset: String? {
-        guard let weekly = weeklyBuckets.first(where: { $0.id == "seven_day" }) ?? weeklyBuckets.first,
-              let text = WindowRanking.remainingText(until: weekly.resetsAt) else { return nil }
-        // Past the reset time the helper already says "resets now".
-        guard text.hasSuffix(" left") else { return text }
-        return "resets in \(text.replacingOccurrences(of: " left", with: ""))"
+        guard let weekly = weeklyBuckets.first(where: { $0.id == "seven_day" }) ?? weeklyBuckets.first
+        else { return nil }
+        return ResetCopy.both(resetsAt: weekly.resetsAt, now: Date())
     }
 
     // A toggle row costs as much space as a ring row, so only fold when there

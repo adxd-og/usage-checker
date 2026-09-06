@@ -164,13 +164,17 @@ struct OverviewView: View {
             // Dimmed as a block, so no individual row has to remember to do it.
             VStack(alignment: .leading, spacing: OMSpacing.m) {
                 ForEach(service.buckets) { b in
-                    // Same wording as before ("resets in 2h 15m" / "resets —"), now on the
-                    // component: the label, the reset time and the bar are one row.
+                    // Same row, more of an answer: the countdown now carries the
+                    // wall-clock time past the first hour, and the tooltip carries it
+                    // always. "resets —" stays the wording for a window that reports
+                    // no reset time at all.
+                    let now = Date()
                     OMKeyValueRow(
                         label: b.label,
-                        value: "resets \(formatRelative(b.resetsAt))",
+                        value: ResetCopy.both(resetsAt: b.resetsAt, now: now) ?? "resets —",
                         barPercent: b.clampedPercent,
-                        pace: b.elapsedFraction()
+                        pace: b.elapsedFraction(),
+                        help: ResetCopy.absolute(resetsAt: b.resetsAt, now: now).map { "Resets \($0)" } ?? ""
                     )
                 }
             }
@@ -222,11 +226,5 @@ struct OverviewView: View {
         }
         if h > 0 { return "\(h)h \(m)m" }
         return "\(m)m"
-    }
-
-    private func formatRelative(_ date: Date) -> String {
-        let delta = date.timeIntervalSinceNow
-        if delta <= 0 || date >= Date.distantFuture.addingTimeInterval(-1) { return "—" }
-        return "in \(Self.formatDuration(delta))"
     }
 }

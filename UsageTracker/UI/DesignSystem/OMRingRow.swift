@@ -18,17 +18,32 @@ struct OMRingRow: View {
                         .lineLimit(1)
                 }
                 .opacity(bucket.clampedPercent == 0 ? 0.55 : 1)
-                .help(helpText(bucket))
+                // Two different readers, two different needs: the tooltip answers
+                // "when exactly?" for someone already looking at the ring, while
+                // VoiceOver keeps the full date because a screen reader cannot
+                // glance at a calendar to place "Thu 14:15".
+                .help(Self.tooltip(for: bucket))
                 .accessibilityElement(children: .combine)
-                // The tooltip carries the reset time / empty hint; VoiceOver gets it too.
-                .accessibilityLabel("\(helpText(bucket)), \(Int(bucket.clampedPercent.rounded())) percent used")
+                .accessibilityLabel("\(Self.accessibilityText(for: bucket)), \(Int(bucket.clampedPercent.rounded())) percent used")
             }
         }
     }
 
-    private func helpText(_ bucket: UsageBucket) -> String {
-        // An untouched window can't say anything about pace, so its tooltip
-        // explains the empty ring instead of repeating the label.
+    /// "All models · resets Thu 14:15" — the absolute form, always.
+    nonisolated static func tooltip(
+        for bucket: UsageBucket,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let title = bucket.clampedPercent == 0 ? emptyHint(for: bucket) : bucket.label
+        guard let absolute = ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale)
+        else { return title }
+        return "\(title) · resets \(absolute)"
+    }
+
+    /// What VoiceOver reads — unchanged: the abbreviated date and time.
+    nonisolated static func accessibilityText(for bucket: UsageBucket) -> String {
         let title = bucket.clampedPercent == 0 ? emptyHint(for: bucket) : bucket.label
         if bucket.resetsAt < .distantFuture {
             return "\(title) · resets \(bucket.resetsAt.formatted(date: .abbreviated, time: .shortened))"
@@ -36,7 +51,9 @@ struct OMRingRow: View {
         return title
     }
 
-    private func emptyHint(for bucket: UsageBucket) -> String {
+    /// An untouched window can't say anything about pace, so its label explains the
+    /// empty ring instead of repeating itself.
+    nonisolated static func emptyHint(for bucket: UsageBucket) -> String {
         if bucket.id == "seven_day_oauth_apps" { return "No OAuth apps yet" }
         guard bucket.kind == .modelSpecific else { return bucket.label }
         // "Opus only" → "You haven't used Opus yet"; works for any bucket label.

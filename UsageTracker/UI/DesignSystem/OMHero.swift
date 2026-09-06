@@ -15,13 +15,15 @@ struct OMHero: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        let now = Date()
+        return HStack(spacing: 14) {
             OMRing(percent: hero.clampedPercent, size: .hero, pace: hero.elapsedFraction())
             VStack(alignment: .leading, spacing: 3) {
                 Text(hero.label).font(.system(size: 14, weight: .semibold))
-                if let remaining = WindowRanking.remainingText(until: hero.resetsAt) {
-                    Text(remaining).font(OMFont.caption).foregroundStyle(.secondary)
-                        .help("Resets \(hero.resetsAt.formatted(date: .abbreviated, time: .shortened))")
+                if let reset = ResetCopy.both(resetsAt: hero.resetsAt, now: now) {
+                    Text(reset).font(OMFont.caption).foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(ResetCopy.absolute(resetsAt: hero.resetsAt, now: now).map { "Resets \($0)" } ?? "")
                 }
                 Text(Self.statusPhrase(hero.clampedPercent))
                     .font(OMFont.caption.weight(.semibold))

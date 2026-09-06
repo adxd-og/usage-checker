@@ -80,6 +80,25 @@ enum WindowRanking {
         return f.string(from: delta).map { "\($0) left" }
     }
 
+
+    /// A bucket row's trailing text: "37% · resets in 2h 15m (13:00)".
+    ///
+    /// `ResetCopy.both` drops the parenthesis inside the hour, which is what keeps a
+    /// row from growing a second line in a 360 pt popover; a window with no reset time
+    /// is just its percentage. `remainingText` above stays for the 160 pt tiles and the
+    /// floating window, where there is no room for a wall-clock time.
+    static func sessionRowValue(
+        _ bucket: UsageBucket,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let percent = "\(Int(bucket.clampedPercent.rounded()))%"
+        guard let reset = ResetCopy.both(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale)
+        else { return percent }
+        return "\(percent) · \(reset)"
+    }
+
     // MARK: - Private
 
     private static func coreCandidates(for service: ServiceSnapshot) -> [UsageBucket] {

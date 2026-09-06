@@ -7,6 +7,10 @@ struct OMKeyValueRow: View {
     var barPercent: Double? = nil
     /// 0…1 fraction of the window already elapsed — the bar's pace tick.
     var pace: Double? = nil
+    /// Tooltip for a row whose value is a countdown: the exact reset time. An empty
+    /// string is how AppKit spells "no tooltip", so nil rows keep behaving as before
+    /// without a second view identity.
+    var help: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs) {
@@ -17,6 +21,9 @@ struct OMKeyValueRow: View {
                     .font(OMFont.body)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
+                    // The reset text grew a "(13:00)". One line is what guarantees
+                    // every row stays exactly the height it was.
+                    .lineLimit(1)
             }
             if let barPercent {
                 BarSegment(percent: barPercent, height: 6, showsLabel: false, pace: pace)
@@ -24,6 +31,7 @@ struct OMKeyValueRow: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label), \(value)")
+        .help(help ?? "")
     }
 }
 
