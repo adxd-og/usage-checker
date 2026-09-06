@@ -59,6 +59,11 @@ targets:
       # target's source roots, while sources: auto-routes .xcassets to the
       # Resources build phase. Moving this to resources: starves the app of it.
       - path: SharedAssets/ProviderIcons.xcassets
+      # Shared with the `omelette` CLI target the same way SharedUI is shared with the
+      # widget: one folder, two `sources` entries, two modules. The CLI must compile
+      # StatusSnapshot, StatusText and friends without importing the app, and the app's
+      # test bundle must cover them — a framework would buy neither.
+      - path: CLICore
     resources:
       - path: UsageTracker/Resources
     dependencies:
