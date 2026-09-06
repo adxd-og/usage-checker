@@ -5,6 +5,38 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] — 2026-09-06
+
+### Added
+- **Codex approvals through Omelette.** Settings → Agents installs seven hooks into
+  `~/.codex/hooks.json`; after a one-time `/hooks` in Codex to trust them, a Codex
+  permission request shows up with Allow / Deny like a Claude Code one, and Codex
+  sessions get live tool activity. The trust status is read back from `config.toml`.
+- **Questions and plans as "needs you".** An `AskUserQuestion` or a plan waiting for
+  approval shows the question text and its options (or the plan's first lines) in
+  the banner and the row; a click goes to the terminal to answer.
+- **Last known numbers.** A provider that isn't running or is signed out keeps its
+  last good reading, dimmed, with "· as of 14:05" on the chip — on the All tab, in
+  the popover, the dashboard, the menu bar and the widgets — and it survives a
+  relaunch. Antigravity is asked over its web API before it is called not running.
+- An update check runs in the background when the dashboard or the popover opens
+  (at most once an hour).
+
+### Changed
+- **Permission requests read like a sentence.** The banner says
+  "<project> · Claude Code" / "Wants to run Bash", then the command's own
+  description first and the command under it; MCP tools read "Notion: create page".
+  The row gets a chevron that opens the full text (a truncated one says so).
+- Status chips ("Installed", "Not running") have a white label on a tinted
+  capsule on macOS 26 — they used to be the same colour as their background.
+
+### Fixed
+- A held permission's text can no longer be replaced by another tool's event, and an
+  idle prompt no longer dismisses an open question.
+- `config.toml` trust tables with CRLF, comments or quoted keys are read correctly.
+- Last-known data is written again after a failed write, and a changed account label
+  is noticed.
+
 ## [2.3.1] — 2026-09-06
 
 ### Fixed
