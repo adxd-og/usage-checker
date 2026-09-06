@@ -796,6 +796,61 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(restored.breakdown.thinking, 149_000)
     }
 
+    // MARK: - cache_creation without the TTL object
+
+    /// A line carrying only the aggregate `cache_creation_input_tokens`, with no nested
+    /// `cache_creation` object to split it by TTL.
+    private func aggregateCacheLine(id: String, minutesAgo: Double, cacheCreation: Int) -> String {
+        let ts = Self.iso.string(from: now.addingTimeInterval(-minutesAgo * 60))
+        return """
+        {"type":"assistant","timestamp":"\(ts)","message":{"id":"\(id)","model":"claude-sonnet-4-5",\
+        "usage":{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0,\
+        "cache_creation_input_tokens":\(cacheCreation)}}}
+        """
+    }
+
+    func testAnAggregateCacheCreationCountIsBilledAsAFiveMinuteWrite() async throws {
+        // Without the TTL object there is nothing to say which tier the write was on.
+        // Dropping it lost real, chargeable tokens; 5m is what Claude Code writes unless
+        // a caller opts into the 1-hour cache, and it is the cheaper of the two rates,
+        // so an unknown TTL is never billed at the dearer one.
+        try write([aggregateCacheLine(id: "msg_agg", minutesAgo: 10, cacheCreation: 400_000)],
+                  project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.breakdown.cacheWrite5m, 400_000)
+        XCTAssertEqual(usage.breakdown.cacheWrite1h, 0, "the TTL is unknown, not one hour")
+        XCTAssertEqual(usage.tokens, 1_400_000)
+        // $3.00 of input + 400k at Sonnet's $3.75/M 5-minute write rate.
+        XCTAssertEqual(usage.cost, 4.5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(usage.breakdown.cost).cacheWrite, 1.5, accuracy: 1e-9)
+    }
+
+    func testTheTTLObjectWinsOverTheAggregateWhenBothArePresent() async throws {
+        // Real lines carry both, and the nested object is the one that says which tier
+        // the tokens were written at. Adding the aggregate on top would double them.
+        let ts = Self.iso.string(from: now.addingTimeInterval(-600))
+        let both = """
+        {"type":"assistant","timestamp":"\(ts)","message":{"id":"msg_both","model":"claude-sonnet-4-5",\
+        "usage":{"input_tokens":0,"output_tokens":0,"cache_read_input_tokens":0,\
+        "cache_creation_input_tokens":52467,\
+        "cache_creation":{"ephemeral_5m_input_tokens":45678,"ephemeral_1h_input_tokens":6789}}}}
+        """
+        try write([both], project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: now.addingTimeInterval(-3600), to: now)
+
+        XCTAssertEqual(usage.breakdown.cacheWrite5m, 45_678)
+        XCTAssertEqual(usage.breakdown.cacheWrite1h, 6_789)
+        XCTAssertEqual(usage.breakdown.cacheWrite, 52_467, "counted once, at its own TTLs")
+    }
+
     // MARK: - Aggregated token breakdown
 
     /// Two turns a few seconds old — not ten minutes, which falls into yesterday

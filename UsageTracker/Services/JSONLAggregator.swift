@@ -764,8 +764,17 @@ actor JSONLAggregator: CostLogAggregating {
         var c5: Int = 0
         var c1h: Int = 0
         if let cc = usage["cache_creation"] as? [String: Any] {
+            // The TTL object is the authoritative split, and the aggregate beside it in
+            // the same line restates the sum — reading both would double the write.
             c5 = (cc["ephemeral_5m_input_tokens"] as? Int) ?? 0
             c1h = (cc["ephemeral_1h_input_tokens"] as? Int) ?? 0
+        } else if let aggregate = usage["cache_creation_input_tokens"] as? Int, aggregate > 0 {
+            // No TTL object: the tokens were written and charged, but nothing says at
+            // which tier. Billing them as 5-minute writes is the conservative reading —
+            // it is the tier Claude Code uses unless a caller opts into the 1-hour cache,
+            // and the cheaper of the two rates, so an unknown TTL never inflates the
+            // bill. Dropping them, which is what this did, lost real spend outright.
+            c5 = aggregate
         }
 
         // New in the logs; absent in everything written before it, hence the default.
