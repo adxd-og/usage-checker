@@ -6,6 +6,39 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.4.0</title>
+      <pubDate>Sun, 06 Sep 2026 10:37:30 +0300</pubDate>
+      <sparkle:version>38</sparkle:version>
+      <sparkle:shortVersionString>2.4.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Codex approvals through Omelette.</b> Settings → Agents installs seven hooks into <code>~/.codex/hooks.json</code>; after a one-time <code>/hooks</code> in Codex to trust them, a Codex permission request shows up with Allow / Deny like a Claude Code one, and Codex sessions get live tool activity. The trust status is read back from <code>config.toml</code>.</li>
+<li><b>Questions and plans as "needs you".</b> An <code>AskUserQuestion</code> or a plan waiting for approval shows the question text and its options (or the plan's first lines) in the banner and the row; a click goes to the terminal to answer.</li>
+<li><b>Last known numbers.</b> A provider that isn't running or is signed out keeps its last good reading, dimmed, with "· as of 14:05" on the chip — on the All tab, in the popover, the dashboard, the menu bar and the widgets — and it survives a relaunch. Antigravity is asked over its web API before it is called not running.</li>
+<li>An update check runs in the background when the dashboard or the popover opens (at most once an hour).</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li><b>Permission requests read like a sentence.</b> The banner says "&lt;project&gt; · Claude Code" / "Wants to run Bash", then the command's own description first and the command under it; MCP tools read "Notion: create page". The row gets a chevron that opens the full text (a truncated one says so).</li>
+<li>Status chips ("Installed", "Not running") have a white label on a tinted capsule on macOS 26 — they used to be the same colour as their background.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>A held permission's text can no longer be replaced by another tool's event, and an idle prompt no longer dismisses an open question.</li>
+<li><code>config.toml</code> trust tables with CRLF, comments or quoted keys are read correctly.</li>
+<li>Last-known data is written again after a failed write, and a changed account label is noticed.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.4.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.4.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="y4B36bhg7yWKQ87csGw3lISRqSNGnCIyzxFZl4Qln98jyIbuyi0DaHvGEzDI1WRT52LRjJ3+oCSxn1fAqHTNAA=="
+        length="16364407"/>
+    </item>
+    <item>
       <title>Omelette v2.3.1</title>
       <pubDate>Sun, 06 Sep 2026 00:11:26 +0300</pubDate>
       <sparkle:version>37</sparkle:version>
