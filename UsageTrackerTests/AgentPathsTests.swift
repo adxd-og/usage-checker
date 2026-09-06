@@ -42,6 +42,7 @@ final class AgentPathsTests: XCTestCase {
         XCTAssertEqual(AgentPaths.bundledCLIURL.pathComponents.suffix(3), ["Contents", "Helpers", "omelette"])
         XCTAssertEqual(AgentPaths.statusFileURL.pathComponents.suffix(2), ["UsageTracker", "status.json"])
         XCTAssertEqual(AgentPaths.binURL.pathComponents.suffix(2), ["UsageTracker", "bin"])
+        XCTAssertEqual(AgentPaths.claudeConfigURL.lastPathComponent, ".claude.json")
     }
 
     func testSocketPathFitsInSockaddrUn() {

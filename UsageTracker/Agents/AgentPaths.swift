@@ -44,6 +44,9 @@ enum AgentPaths {
     static var historyURL: URL { appSupportURL.appendingPathComponent("agent-sessions.jsonl") }
 
     static var claudeSettingsURL: URL { home.appendingPathComponent(".claude/settings.json") }
+    /// ~/.claude.json — Claude Code's own state file, and where it keeps `mcpServers`.
+    /// Not `settings.json`: MCP servers have never lived there.
+    static var claudeConfigURL: URL { home.appendingPathComponent(".claude.json") }
     static var claudeProjectsURL: URL { home.appendingPathComponent(".claude/projects", isDirectory: true) }
     static var codexConfigURL: URL { home.appendingPathComponent(".codex/config.toml") }
     /// ~/.codex/hooks.json — Codex CLI 0.153.4 reads hooks from here, in Claude's shape.
