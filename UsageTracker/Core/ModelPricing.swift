@@ -9,17 +9,24 @@ struct ModelPrice: Sendable, Codable {
 }
 
 enum ModelPricing {
-    // Prices per claude.com/pricing. Opus 4.5+ is $5/$25; the old $15/$75 tier
-    // only applies to the deprecated Opus 4 / 4.1.
+    // Prices per claude.com/pricing, kept in step with the models.dev rates the app
+    // caches (`models-dev-pricing-v3.json`) — this table is the offline answer, and an
+    // offline answer that differs from the online one is a second set of books. Opus
+    // 4.5+ is $5/$25; the old $15/$75 tier only applies to the deprecated Opus 4 / 4.1.
+    // The 5.1 models read cache at a quarter of what the 5 models did.
     static let table: [String: ModelPrice] = [
+        "claude-fable-5-1": ModelPrice(inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, cacheCreate5mPerM: 12.5, cacheCreate1hPerM: 20),
+        "claude-mythos-5-1": ModelPrice(inputPerM: 10, outputPerM: 50, cacheReadPerM: 0.25, cacheCreate5mPerM: 12.5, cacheCreate1hPerM: 20),
         "claude-fable-5": ModelPrice(inputPerM: 10, outputPerM: 50, cacheReadPerM: 1, cacheCreate5mPerM: 12.5, cacheCreate1hPerM: 20),
         "claude-mythos-5": ModelPrice(inputPerM: 10, outputPerM: 50, cacheReadPerM: 1, cacheCreate5mPerM: 12.5, cacheCreate1hPerM: 20),
+        "claude-opus-5": ModelPrice(inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheCreate5mPerM: 6.25, cacheCreate1hPerM: 10),
         "claude-opus-4-8": ModelPrice(inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheCreate5mPerM: 6.25, cacheCreate1hPerM: 10),
         "claude-opus-4-7": ModelPrice(inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheCreate5mPerM: 6.25, cacheCreate1hPerM: 10),
         "claude-opus-4-6": ModelPrice(inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheCreate5mPerM: 6.25, cacheCreate1hPerM: 10),
         "claude-opus-4-5": ModelPrice(inputPerM: 5, outputPerM: 25, cacheReadPerM: 0.5, cacheCreate5mPerM: 6.25, cacheCreate1hPerM: 10),
         "claude-opus-4-1": ModelPrice(inputPerM: 15, outputPerM: 75, cacheReadPerM: 1.5, cacheCreate5mPerM: 18.75, cacheCreate1hPerM: 30),
         "claude-opus-4": ModelPrice(inputPerM: 15, outputPerM: 75, cacheReadPerM: 1.5, cacheCreate5mPerM: 18.75, cacheCreate1hPerM: 30),
+        "claude-sonnet-5": ModelPrice(inputPerM: 2, outputPerM: 10, cacheReadPerM: 0.2, cacheCreate5mPerM: 2.5, cacheCreate1hPerM: 4),
         "claude-sonnet-4-6": ModelPrice(inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheCreate5mPerM: 3.75, cacheCreate1hPerM: 6),
         "claude-sonnet-4-5": ModelPrice(inputPerM: 3, outputPerM: 15, cacheReadPerM: 0.3, cacheCreate5mPerM: 3.75, cacheCreate1hPerM: 6),
         "claude-haiku-4-5": ModelPrice(inputPerM: 1, outputPerM: 5, cacheReadPerM: 0.1, cacheCreate5mPerM: 1.25, cacheCreate1hPerM: 2),
