@@ -14,7 +14,7 @@ enum CommandLineSettingsText {
 
     static let statusLinePreviewTitle = "What will be written"
 
-    static let mcpCaption = "Lets Claude Code and Codex ask Omelette what your limits are before they start something expensive. Two read-only tools over stdio: `get_usage` (every provider's windows, resets and costs) and `get_agents` (which sessions are working or waiting for you). Nothing is written and nothing leaves your Mac."
+    static let mcpCaption = "Lets Claude Code and Codex ask Omelette what your limits are before they start something expensive. Two read-only tools over stdio: `get_usage` (every provider's windows, resets and costs) and `get_agents` (which sessions are working or waiting for you). Nothing is written and nothing leaves your Mac. Or add it yourself: `claude mcp add omelette -- <path> mcp` (the path is shown above), or an `[mcp_servers.omelette]` table in ~/.codex/config.toml."
 
     static let mcpClaudeCaption = "Adds `omelette` to `mcpServers` in ~/.claude.json — the file Claude Code keeps its own state in, so Omelette rewrites it with sorted keys and keeps the original as .claude.json.omelette-backup. Restart Claude Code to pick it up."
 

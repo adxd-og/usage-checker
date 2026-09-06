@@ -9,91 +9,181 @@ A native macOS menu bar widget that tracks your **AI coding limits** in real tim
 > window arrives as `seven_day_omelette`). The name was too good to leave
 > buried in a JSON key.
 
-## Why
+## What it shows
 
-If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've probably hit a 5-hour or weekly rate limit mid-task. This widget shows exactly where you are at a glance — across every provider you use — so you can plan ahead and never get caught off guard.
+If you use Claude Code, Codex, Gemini CLI, Antigravity or Grok, this is the
+one place that shows where you stand across all of them, so a rate limit
+never catches you mid-task.
 
-## Features
+- **Claude** — 5-hour session, weekly limits per model (decoded dynamically,
+  so new models appear without an update), extra usage credits and
+  Enterprise spend limits
+- **Codex (OpenAI)** — session and weekly limits from the local Codex CLI,
+  plus local $ cost accounting from its session logs
+- **Gemini CLI / Antigravity** — Gemini CLI's daily model quotas using its
+  Google sign-in, or Antigravity's model-pool quotas (the path for personal
+  Google accounts)
+- **Grok (xAI)** — billing-period credit usage from the local Grok CLI,
+  falling back to grok.com web billing when the CLI is unavailable
+- **Costs from local logs, not invented numbers** — every dollar figure is
+  computed from the CLI's own session logs at models.dev list prices
+- **Last known numbers** — a provider that's closed or signed out keeps its
+  last good reading, dimmed, with "· as of 14:05" on the chip, on every
+  surface (All tab, popover, dashboard, menu bar, widgets); a **Forget last
+  known numbers** button per provider in Settings clears it on demand
+- **Pay-as-you-go mode** — accounts without rate windows get a "$ spent"
+  pill and an optional weekly budget with percentage bars and alerts
 
-- **Agent Overview (2.0)** — every live Claude Code and Codex session in the popover,
-  grouped *Needs you / Working / Done / Idle*, with the project, what the agent is
-  doing and for how long. Click a row to jump back to its terminal tab — Terminal,
-  iTerm2 and cmux land on the exact tab, every other terminal or IDE comes to the front
-- **Agents pill in the menu bar** — grey when quiet, blue while agents work, amber
-  "1 needs you" when one waits for your approval — plus a notification with an
-  **Open** button. Powered by Claude Code hooks you enable with one click
-  (Settings → Agents shows the exact JSON first and removes it again); without
-  hooks, sessions are still read from the CLIs' own logs
-- **Approve or deny from Omelette (2.2)** — when a Claude Code or Codex session asks
-  for permission and its terminal isn't in front, the notification and the session's
-  popover row both offer **Allow** / **Deny**. The request is held for two minutes,
-  answered once, and released to the terminal if you don't answer; when the terminal
-  is in front, the CLI asks there as usual. Codex runs Omelette's hooks only after
-  you trust them once with `/hooks` inside Codex — Settings → Agents says when that
-  is still outstanding
-- **`omelette` in your terminal (2.4.1)** — a tiny companion tool inside the app.
-  `omelette status` prints every provider's windows with exact reset times, today's
-  and this week's cost and what your agents are doing; `omelette statusline` prints one
-  line for Claude Code's status bar (`◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`);
-  `omelette mcp` is a read-only MCP server, so Claude Code and Codex can ask what your
-  limits are *before* starting something expensive. Settings → General → Command line
-  puts it on your PATH and installs the status line and the MCP entries with one click
-- **All tab** — one tile per provider with a ring for the leading window, and
-  provider tabs with a large session ring and weekly windows as rings
-- **Compact menu bar pill per provider** — no Dock icon, no clutter
-- **Claude** — 5-hour session, weekly limits per model (decoded dynamically, so new
-  models appear without an update), extra usage credits / Enterprise spend limits
-- **Codex (OpenAI)** — session and weekly limits from the local Codex CLI, plus
-  local $ cost accounting from its session logs
-- **Antigravity / Gemini** — model-pool quotas from a running Antigravity
-  (the Gemini-quota path for personal Google accounts), or Gemini CLI daily quotas
-- **Grok (xAI)** — billing-period credit usage from the local Grok CLI, falling
-  back to grok.com web billing when the CLI is unavailable
-- **Pay-as-you-go mode** — accounts without rate windows get a "$ spent" pill and
-  an optional weekly budget with percentage bars and alerts
-- **Native notifications** at 80% and 95% (configurable thresholds) with quiet-hours support
-- **Daily summary notification** — wake up to "Yesterday: $4.20 across 23 turns"
-- **Dashboard window** with Activity heatmap (GitHub-style, last 52 weeks), Session History chart (cost per day, or tokens split into input / output / cache read / cache write), a "Tokens today" card, and Insights (top project, week-over-week, peak day) — for Claude Code, Codex and the Grok CLI, all read from their local session logs
-- **Agents tab in the dashboard (2.1)** — live sessions plus the run history: sessions, agent time,
-  approval requests and busiest project over the range you pick, finished sessions grouped by day
-- **Desktop widgets** — per-provider Small / Medium / Large widgets (right-click →
+## Agents at a glance
+
+The popover doubles as a control panel for the Claude Code and Codex
+sessions you already have running.
+
+- **Live sessions** — every session, grouped *Needs you / Working / Done /
+  Idle*, with the project and what it's doing
+- **Needs you** covers three things: a permission request, a question
+  (`AskUserQuestion`), or a plan waiting for approval — each shows the real
+  text (the question's options, the plan's opening lines), one click away
+- **Allow / Deny** from the notification and from the session's row, when
+  its terminal isn't in front — held for two minutes, then released
+  untouched to the terminal if you don't answer; when the terminal is
+  already in front, the CLI just asks there
+- **Hooks for both CLIs** — eight Claude Code hooks in
+  `~/.claude/settings.json`, seven Codex hooks in `~/.codex/hooks.json`,
+  installed with one click (Settings → Agents shows the exact JSON first).
+  Codex refuses a hook until you trust it once with `/hooks` inside Codex —
+  Settings → Agents says when that's still outstanding
+- **Jump to the tab** — clicking a row brings its terminal back. Terminal
+  and iTerm2 select the exact tab; cmux selects the exact workspace and
+  surface over its own socket; Ghostty, Warp, kitty, Alacritty, WezTerm,
+  VS Code, VS Code Insiders, Cursor and Windsurf all come to the front
+
+## Command line and MCP
+
+A tiny `omelette` tool ships inside the app, for the terminal and for your
+agents.
+
+- `omelette status` prints every provider's windows with exact reset times,
+  today's and this week's cost, and what your agents are doing;
+  `--json` prints the same snapshot as JSON
+- `omelette statusline` prints one line for Claude Code's status bar —
+  `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1` — installed with one click
+  from Settings → General → Command line
+- `omelette mcp` is a read-only MCP server on stdio: `get_usage` (every
+  provider's windows, resets and costs) and `get_agents` (which sessions
+  are working or waiting on you). Nothing is written, nothing leaves your Mac
+- One-click install for Claude Code (adds `omelette` to `~/.claude.json`)
+  and Codex (adds an `[mcp_servers.omelette]` table to
+  `~/.codex/config.toml`) from that same Settings section
+- Or add it by hand:
+  ```bash
+  claude mcp add omelette -- "$HOME/Library/Application Support/UsageTracker/bin/omelette" mcp
+  ```
+  or, in `~/.codex/config.toml`:
+  ```toml
+  [mcp_servers.omelette]
+  command = "$HOME/Library/Application Support/UsageTracker/bin/omelette"
+  args = ["mcp"]
+  ```
+- What an agent actually does with it: before a long task it asks
+  `get_usage` and waits for the reset, or picks a cheaper model.
+
+## Dashboard
+
+A separate window, per provider, built from the same local logs.
+
+- **Overview** — the leading window as a ring with the burn verdict, and
+  the day's cost
+- **Tokens today** — input, output, cache read, cache write and (nested
+  under output) thinking, plus the share of context that came from cache
+- **History** — a Cost / Tokens switch: cost per day, or the same
+  categories stacked per day
+- **Insights** — top project, week-over-week change, peak day, busiest hour
+- **Activity** — a GitHub-style heatmap of the last 52 weeks
+- **Agents tab** — live sessions plus the run history: sessions, agent
+  time, approval requests and busiest project over the range you pick,
+  finished sessions grouped by day
+- Every dollar figure here is the API-equivalent cost of your CLI usage,
+  not what your subscription bills — except on a pay-as-you-go account,
+  where it's the real bill
+
+## Notifications
+
+- **Threshold alerts** at 80% and 95% (configurable), with quiet-hours support
+- **Session-timing alerts** — "burning fast" (would hit the limit before
+  the window resets) and "resets soon"
+- **Daily summary** — wake up to "Yesterday: $4.20 across 23 turns"
+- **Agent banners** — "needs you" (ignores quiet hours by default, opt-out)
+  and "finished a turn" (opt-in), each naming its source ("· Claude Code" /
+  "· Codex")
+
+## Widgets and floating window
+
+- **Desktop widgets** — per-provider Small / Medium / Large (right-click →
   Edit Widget to pick the provider) and an "All providers" overview widget
-- **Floating mini window** — always-on-top compact view, dock it to a corner
-- **Burn rate prediction** — "At this pace, limit in ~2h 15m"
-- **Live model pricing** from [models.dev](https://models.dev) — newly launched
-  models are priced correctly without an app update
-- **Optional Anthropic Admin API** — org-level spend for Team/Enterprise
-- **Liquid Glass** styling on macOS 26+, graceful fallback on macOS 14+
+- **Floating mini window** — always-on-top, dockable to a corner, shows
+  the leading window as a ring plus how many agent sessions are running
+
+## Settings
+
+- **General** — refresh interval, menu bar (percentage mode, per-provider
+  visibility), the global peek shortcut, launch at login, provider toggles
+  with Forget last known numbers, and **Command line** (PATH, status line,
+  MCP server, both installers above)
+- **Notifications** — threshold %, session timing, quiet hours, daily summary
+- **Agents** — hooks status and install for Claude Code and Codex (with the
+  Codex trust line), the Codex `notify` line, alert toggles, the Allow/Deny
+  switch with its pending/answered/expired counts, socket diagnostics
+- **Account** — connected services, keychain access, optional Admin API
+  key, pay-as-you-go weekly budget
+- **Advanced** — override the `anthropic-beta` OAuth header, replay the
+  welcome tour, force a refresh, reset all settings
 
 ## How it works
 
-Reads the OAuth token that **Claude Code** stores in your macOS Keychain (item name `Claude Code-credentials`) and calls `https://api.anthropic.com/api/oauth/usage` — the same undocumented endpoint Claude Code itself uses for its `/usage` command and status line. Omelette never refreshes that token itself — Claude Code owns its own refresh cycle. Other providers are read the same reuse-what's-already-there way: the local Codex CLI's RPC server, a running Antigravity's local language server, the Gemini CLI's Google sign-in, or the local Grok CLI (with a grok.com fallback).
+Reads the OAuth token that **Claude Code** stores in your macOS Keychain
+(item name `Claude Code-credentials`) and calls
+`https://api.anthropic.com/api/oauth/usage` — the same undocumented endpoint
+Claude Code itself uses for its `/usage` command and status line. Omelette
+never refreshes that token itself — Claude Code owns its own refresh cycle.
+Other providers are read the same reuse-what's-already-there way: the local
+Codex CLI's RPC server, a running Antigravity's local language server, the
+Gemini CLI's Google sign-in, or the local Grok CLI (with a grok.com fallback).
 
-The widget:
-- Uses **only your own credentials**, already obtained by the tools themselves — it never asks you to log in anywhere
-- Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost reports if you add an Admin API key), `models.dev` (public pricing data), `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled), `grok.com` (Grok web-billing fallback, only if enabled), `github.com` + `adxd-og.github.io` (Sparkle update feed & DMG download), and local RPC to the Codex CLI or Antigravity's language server
-- Agent status comes from a tiny `omelette-hook` helper inside the app that Claude Code / Codex
-  run on their hook events; it talks to Omelette over a local Unix socket (0600, 64 KB cap) and
-  forwards only the session id, tool name, a truncated tool summary, folder and host process —
-  never prompts or file contents. Every hook exits within 0.8 s except a permission
-  request: since 2.2 the helper holds that one open for up to 140 s so Omelette can answer
-  Allow/Deny (or the terminal answers first), and it still fails safe — no reply from Omelette
-  ever means no decision reaches the CLI
-- The `omelette` command-line tool reads one file — `~/Library/Application
-  Support/UsageTracker/status.json`, which the app writes after every poll — and never
-  starts the app, opens a socket or touches the network. With Omelette closed it says
-  so and exits 2. Its MCP server is read-only: two tools that answer questions, none
-  that change anything
+- Uses **only your own credentials**, already obtained by the tools
+  themselves — it never asks you to log in anywhere
+- Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost
+  reports if you add an Admin API key), `models.dev` (public pricing data),
+  `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled),
+  `grok.com` (Grok web-billing fallback, only if enabled), `github.com` +
+  `adxd-og.github.io` (Sparkle update feed & DMG download), and local RPC to
+  the Codex CLI or Antigravity's language server
+- Agent status comes from a tiny `omelette-hook` helper inside the app that
+  Claude Code and Codex run on their hook events; it talks to Omelette over
+  a local Unix socket (0600, 64 KB cap) and forwards only the session id,
+  tool name, a truncated summary, folder and host process — never prompts
+  or file contents. Every hook exits within 0.8 s except a permission
+  request, which the helper holds open for up to 140 s so Omelette can
+  answer Allow/Deny; a helper that gets no reply always fails safe
+- The `omelette` command-line tool and MCP server only ever read
+  `~/Library/Application Support/UsageTracker/status.json`, written after
+  every poll. They never start the app, open a socket, or touch the network
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
-- **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
+- **No telemetry, no analytics** — usage history and cost accounting stay
+  on your Mac
 - Open source end to end — audit anything above
 
 ## Requirements
 
 - macOS 14 (Sonoma) or newer — Liquid Glass activates on macOS 26 Tahoe+
-- [Claude Code](https://docs.anthropic.com/claude-code) installed and signed in (`claude login`)
-- Works with Pro / Max / Team / Enterprise subscriptions **and** pay-as-you-go Enterprise accounts
-- Optional: Codex CLI (ChatGPT sign-in), Gemini CLI or Antigravity (Google sign-in), and/or Grok CLI (xAI sign-in) for their providers
+- [Claude Code](https://docs.anthropic.com/claude-code) installed and
+  signed in (`claude login`)
+- Works with Pro / Max / Team / Enterprise subscriptions **and**
+  pay-as-you-go Enterprise accounts
+- Optional: Codex CLI (ChatGPT sign-in), Gemini CLI or Antigravity (Google
+  sign-in), and/or Grok CLI (xAI sign-in) for their providers
+- No extra setup for the terminal: Terminal, iTerm2, cmux and every other
+  supported host work out of the box
 
 ## Install
 
@@ -107,19 +197,6 @@ The widget:
    case Settings → Account → **Request keychain access now** brings it back on demand
 4. The icon appears in your menu bar; click it to see usage
 5. That's the last manual install — updates arrive automatically via Sparkle (signed & notarized), or on demand via Settings → **Check for updates now**
-
-## Settings
-
-Open via the popover's gear icon (or `⌘,`):
-
-- **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity / Grok), the `omelette` command line (PATH, Claude Code status line, MCP server), update check
-- **Notifications** — threshold alerts, session-timing (burn-fast / reset-soon) alerts, quiet hours, daily summary
-- **Agents** — enable/remove the Claude Code hooks, the Codex hooks and the Codex
-  `notify` line (with the exact JSON/TOML shown first), the Codex trust status, agent
-  alert toggles, menu-bar pill toggle, the switch for answering permission requests
-  with its pending / answered / expired counts, socket diagnostics
-- **Account** — subscription tier, re-request keychain access, optional Admin API key, pay-as-you-go weekly budget
-- **Advanced** — override the `anthropic-beta` OAuth header, reset settings
 
 ## Build from source
 
