@@ -249,6 +249,40 @@ final class MCPInstallerTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: codexURL.path))
     }
 
+    /// A `config.toml` written by a Windows-side editor, or by a checkout with
+    /// `core.autocrlf`, ends every line with "\r\n". `.trimmingCharacters(in:
+    /// .whitespaces)` does not remove "\r", so without stripping it the header never
+    /// matches, install appends a second table and remove silently does nothing.
+    func testACRLFConfigIsReadAndRewrittenAsACRLFConfig() throws {
+        let crlf = [
+            "model = \"gpt-6-astra\"",
+            "",
+            "[mcp_servers.omelette]",
+            "command = \"/Users/other/Library/Application Support/UsageTracker/bin/omelette\"",
+            "args = [\"mcp\"]",
+            "",
+        ].joined(separator: "\r\n")
+        try write(crlf, to: codexURL)
+
+        XCTAssertEqual(codexStatus, .outdated, "ours, only with Windows line endings and an older path")
+
+        try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
+
+        XCTAssertEqual(codexStatus, .installed)
+        let after = try text(at: codexURL)
+        XCTAssertEqual(after.components(separatedBy: MCPInstaller.codexHeader).count - 1, 1, "one table, not two:\n\(after)")
+        XCTAssertFalse(after.contains("/Users/other/"), after)
+        XCTAssertTrue(after.contains("\r\n"), "a CRLF file stays a CRLF file:\n\(after)")
+        XCTAssertFalse(
+            after.replacingOccurrences(of: "\r\n", with: "").contains("\n"),
+            "no line was rewritten with a bare LF:\n\(after)"
+        )
+
+        try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
+        XCTAssertFalse(try text(at: codexURL).contains("mcp_servers.omelette"))
+        XCTAssertTrue(try text(at: codexURL).contains("model = \"gpt-6-astra\""))
+    }
+
     func testAPathWithAQuoteIsEscapedIntoTheTOMLAndReadBack() throws {
         let weird = #"/Users/o"brien/Library/Application Support/UsageTracker/bin/omelette"#
         try MCPInstaller.installCodex(configURL: codexURL, cliPath: weird)

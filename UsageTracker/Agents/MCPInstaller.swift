@@ -115,15 +115,39 @@ enum MCPInstaller {
     /// sub-table of ours (`[mcp_servers.omelette.env]`), which belongs to it. Leaving
     /// an orphan sub-table behind would give Codex a config it refuses to parse.
     static func codexTableRange(in lines: [String]) -> Range<Int>? {
-        guard let start = lines.firstIndex(where: { $0.trimmingCharacters(in: .whitespaces) == codexHeader })
+        guard let start = lines.firstIndex(where: { codexInterpreted($0) == codexHeader })
         else { return nil }
         var end = start + 1
         while end < lines.count {
-            let line = lines[end].trimmingCharacters(in: .whitespaces)
+            let line = codexInterpreted(lines[end])
             if line.hasPrefix("["), !line.hasPrefix("[mcp_servers.\(serverKey).") { break }
             end += 1
         }
         return start..<end
+    }
+
+    /// One line ready to interpret: no carriage return from a CRLF file, no surrounding
+    /// whitespace. `.trimmingCharacters(in: .whitespaces)` leaves "\r" exactly where it
+    /// is — CR is a control character, not a space — so a `config.toml` with Windows
+    /// line endings would never match `codexHeader`, and install would append a second
+    /// table beside the one already there. `AgentHooksInstaller.interpretable` strips it
+    /// for the same reason.
+    private static func codexInterpreted(_ raw: String) -> String {
+        raw.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// The line ending the file already uses, so a CRLF config stays CRLF. Untouched
+    /// lines keep their own "\r" (the split is on "\n"); only the lines we add have to
+    /// be told which file they are joining.
+    private static func codexLineEnding(in text: String) -> String {
+        text.contains("\r\n") ? "\r\n" : "\n"
+    }
+
+    /// Our table's lines, punctuated for the file they are going into. `SettingsFile`
+    /// joins with "\n", so a CRLF file gets its "\r" appended here.
+    private static func codexLines(_ lines: [String], lineEnding: String) -> [String] {
+        guard lineEnding == "\r\n" else { return lines }
+        return lines.map { $0 + "\r" }
     }
 
     /// `key = "value"` inside a table's lines, unescaped. Hand-rolled for the same
@@ -131,7 +155,7 @@ enum MCPInstaller {
     /// otherwise only append to.
     static func codexValue(_ key: String, in lines: [String]) -> String? {
         for raw in lines {
-            let line = raw.trimmingCharacters(in: .whitespaces)
+            let line = codexInterpreted(raw)
             guard line.hasPrefix(key) else { continue }
             let rest = line.dropFirst(key.count).trimmingCharacters(in: .whitespaces)
             guard rest.hasPrefix("=") else { continue }
@@ -151,7 +175,7 @@ enum MCPInstaller {
         let body = Array(lines[range])
         guard let command = codexValue("command", in: body) else { return .conflict(codexUnreadableTableReason) }
         guard command.contains(ourCommandMarker) else { return .conflict(command) }
-        let meaningful = body.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        let meaningful = body.map(codexInterpreted).filter { !$0.isEmpty }
         return meaningful == codexTable(cliPath: cliPath) ? .installed : .outdated
     }
 
@@ -163,19 +187,21 @@ enum MCPInstaller {
         guard let text = try? SettingsFile.readText(configURL) else { throw Error.conflict(codexUnreadableReason) }
         var lines = SettingsFile.lines(of: text)
         let table = codexTable(cliPath: cliPath)
+        // Whatever the file already uses. Rewriting a CRLF config as LF would show up
+        // as a whole-file diff in someone's dotfiles repo.
+        let written = codexLines(table + [""], lineEnding: codexLineEnding(in: text))
 
         if let range = codexTableRange(in: lines) {
             let body = Array(lines[range])
             guard let command = codexValue("command", in: body) else { throw Error.conflict(codexUnreadableTableReason) }
             guard command.contains(ourCommandMarker) else { throw Error.conflict(command) }
-            let meaningful = body.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let meaningful = body.map(codexInterpreted).filter { !$0.isEmpty }
             if meaningful == table { return }
-            lines.replaceSubrange(range, with: table + [""])
+            lines.replaceSubrange(range, with: written)
         } else {
-            while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty { lines.removeLast() }
-            if !lines.isEmpty { lines.append("") }
-            lines.append(contentsOf: table)
-            lines.append("")
+            while let last = lines.last, codexInterpreted(last).isEmpty { lines.removeLast() }
+            if !lines.isEmpty { lines.append(contentsOf: codexLines([""], lineEnding: codexLineEnding(in: text))) }
+            lines.append(contentsOf: written)
         }
         try SettingsFile.writeText(lines, to: configURL)
     }
