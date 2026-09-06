@@ -49,14 +49,25 @@ final class OmeletteHookEndToEndTests: XCTestCase {
 
     /// Starts the helper against the temp socket with `input` on stdin (or only `arguments`).
     /// `decisionTimeout` sets OMELETTE_DECISION_TIMEOUT (seconds) — the helper honours it
-    /// only because the socket override is in the temp dir.
-    private func launchHelper(stdin input: String? = nil, arguments: [String] = [], decisionTimeout: TimeInterval? = nil) throws -> Launched {
+    /// only because the socket override is in the temp dir. `cmux` sets the three
+    /// CMUX_* variables a cmux shell exports; they are always cleared first, so a
+    /// tester who happens to run the suite inside cmux still gets a clean control case.
+    private func launchHelper(
+        stdin input: String? = nil,
+        arguments: [String] = [],
+        decisionTimeout: TimeInterval? = nil,
+        cmux: [String: String] = [:]
+    ) throws -> Launched {
         let process = Process()
         process.executableURL = AgentPaths.bundledHelperURL
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment[AgentPaths.socketEnvironmentKey] = socketURL.path
         if let decisionTimeout { environment[AgentPaths.decisionTimeoutEnvironmentKey] = String(decisionTimeout) }
+        for key in ["CMUX_WORKSPACE_ID", "CMUX_SURFACE_ID", "CMUX_SOCKET_PATH"] {
+            environment.removeValue(forKey: key)
+        }
+        for (key, value) in cmux { environment[key] = value }
         process.environment = environment
         let stdout = Pipe()
         let stdin = Pipe()
@@ -79,8 +90,13 @@ final class OmeletteHookEndToEndTests: XCTestCase {
     }
 
     /// Fire-and-forget events: launch and finish in one go.
-    private func runHelper(stdin input: String? = nil, arguments: [String] = [], decisionTimeout: TimeInterval? = nil) throws -> Run {
-        finish(try launchHelper(stdin: input, arguments: arguments, decisionTimeout: decisionTimeout))
+    private func runHelper(
+        stdin input: String? = nil,
+        arguments: [String] = [],
+        decisionTimeout: TimeInterval? = nil,
+        cmux: [String: String] = [:]
+    ) throws -> Run {
+        finish(try launchHelper(stdin: input, arguments: arguments, decisionTimeout: decisionTimeout, cmux: cmux))
     }
 
     /// The reply handle of the `count`-th event, once the server has delivered it on main.
@@ -418,6 +434,37 @@ final class OmeletteHookEndToEndTests: XCTestCase {
             XCTAssertNotNil(host.bundleID)
         }
         if let tty = host.tty { XCTAssertTrue(tty.hasPrefix("/dev/tty"), tty) }
+    }
+
+    func testACmuxShellsEnvironmentReachesTheAppAsHostIDs() throws {
+        // cmux exports these into the shell it runs `claude` in; the helper is a child
+        // of that shell, so its own environment is where they come from.
+        try startServer()
+
+        let run = try runHelper(stdin: AgentFixture.stop, cmux: [
+            "CMUX_WORKSPACE_ID": "ws-7",
+            "CMUX_SURFACE_ID": "sf-3",
+            "CMUX_SOCKET_PATH": "/tmp/cmux-test.sock",
+        ])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(waitForEvents(1))
+        let host = try XCTUnwrap(box.events.first?.host)
+        XCTAssertEqual(host.cmuxWorkspace, "ws-7")
+        XCTAssertEqual(host.cmuxSurface, "sf-3")
+        XCTAssertEqual(host.cmuxSocket, "/tmp/cmux-test.sock")
+    }
+
+    func testWithoutCmuxInTheEnvironmentTheIDsAreAbsent() throws {
+        try startServer()
+
+        XCTAssertEqual(try runHelper(stdin: AgentFixture.stop).status, 0)
+
+        XCTAssertTrue(waitForEvents(1))
+        let host = try XCTUnwrap(box.events.first?.host)
+        XCTAssertNil(host.cmuxWorkspace)
+        XCTAssertNil(host.cmuxSurface)
+        XCTAssertNil(host.cmuxSocket)
     }
 
     // MARK: - Codex hooks

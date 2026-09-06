@@ -31,16 +31,22 @@ enum HookMain {
 
         guard let input = readPayload(CommandLine.arguments) else { exit(0) }
         let host = HostProcess.describe()
+        // The three cmux keys are omitted rather than sent as null: a terminal that is
+        // not cmux has no such address, and an absent key says that plainly.
+        var hostObject: [String: Any] = [
+            "pid": host.pid.map { Int($0) } ?? NSNull(),
+            "bundle_id": host.bundleID ?? NSNull(),
+            "tty": host.tty ?? NSNull(),
+        ]
+        if let workspace = host.cmuxWorkspace { hostObject["cmux_workspace"] = workspace }
+        if let surface = host.cmuxSurface { hostObject["cmux_surface"] = surface }
+        if let socket = host.cmuxSocket { hostObject["cmux_socket"] = socket }
         var envelope: [String: Any] = [
             "v": wireVersion,
             "source": input.source,
             "helper_version": helperVersion,
             "received_at": receivedAt,
-            "host": [
-                "pid": host.pid.map { Int($0) } ?? NSNull(),
-                "bundle_id": host.bundleID ?? NSNull(),
-                "tty": host.tty ?? NSNull(),
-            ] as [String: Any],
+            "host": hostObject,
             "payload": input.payload,
         ]
         if let transport = input.transport { envelope["transport"] = transport }

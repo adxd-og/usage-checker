@@ -23,6 +23,13 @@ struct AgentHostInfo: Codable, Equatable, Sendable {
     var pid: Int32?
     var bundleID: String?
     var tty: String?
+    /// cmux only. cmux addresses its tabs by a workspace id and a surface id over its
+    /// own socket — it exposes no tty and no per-tab pid, so these three are the whole
+    /// address. Absent for every other terminal, and defaulted so the memberwise
+    /// initialiser every other call site uses keeps working.
+    var cmuxWorkspace: String? = nil
+    var cmuxSurface: String? = nil
+    var cmuxSocket: String? = nil
 
     static let none = AgentHostInfo(pid: nil, bundleID: nil, tty: nil)
 
@@ -31,6 +38,9 @@ struct AgentHostInfo: Codable, Equatable, Sendable {
         case pid
         case bundleID = "bundle_id"
         case tty
+        case cmuxWorkspace = "cmux_workspace"
+        case cmuxSurface = "cmux_surface"
+        case cmuxSocket = "cmux_socket"
     }
 }
 
