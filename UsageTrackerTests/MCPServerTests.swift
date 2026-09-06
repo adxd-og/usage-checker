@@ -100,4 +100,88 @@ final class MCPServerTests: XCTestCase {
             #"{"id":"req-1","jsonrpc":"2.0","result":{}}"#
         )
     }
+
+    // MARK: - tools/call
+
+    private func sample(updatedAt: Date? = nil) -> StatusSnapshot {
+        StatusSnapshot(
+            version: 1,
+            updatedAt: updatedAt ?? now,
+            services: [
+                StatusSnapshot.Service(
+                    id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil,
+                    plan: "Max 5x",
+                    windows: [
+                        StatusSnapshot.Window(
+                            id: "five_hour", label: "Session", percent: 42,
+                            resetsAt: now.addingTimeInterval(70 * 60), kind: "session"
+                        ),
+                    ],
+                    todayCost: 4.2, weekCost: 31.7, todayTokens: 1_234_567, apiEquivalent: true
+                ),
+            ],
+            agents: StatusSnapshot.Agents(
+                needsYou: 1, working: 2,
+                sessions: [StatusSnapshot.Session(id: "claude:a", project: "Usage tracker", state: "needsYou", activity: "Remove build artifacts")]
+            )
+        )
+    }
+
+    private func callResult(_ tool: String, snapshot: StatusSnapshot?) throws -> [String: Any] {
+        let line = try XCTUnwrap(handle(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"\#(tool)","arguments":{}}}"#, snapshot: snapshot))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        return try XCTUnwrap(object["result"] as? [String: Any])
+    }
+
+    func testGetUsageReturnsAParagraphTheDataAndStructuredContent() throws {
+        let result = try callResult("get_usage", snapshot: sample())
+
+        let content = try XCTUnwrap(result["content"] as? [[String: Any]])
+        XCTAssertEqual(content.count, 2, "the paragraph, then the same data serialised")
+        XCTAssertEqual(content[0]["type"] as? String, "text")
+        XCTAssertTrue((content[0]["text"] as? String)?.contains("Claude (Max 5x): session 42%") == true, String(describing: content[0]))
+        XCTAssertTrue((content[1]["text"] as? String)?.contains("\"todayCost\":4.2") == true, String(describing: content[1]))
+        XCTAssertEqual(result["isError"] as? Bool, false)
+
+        let structured = try XCTUnwrap(result["structuredContent"] as? [String: Any])
+        XCTAssertNotNil(structured["services"])
+        XCTAssertNil(structured["agents"], "get_usage is about limits; get_agents is the other tool")
+    }
+
+    func testGetAgentsReturnsTheCountsAndTheSessions() throws {
+        let result = try callResult("get_agents", snapshot: sample())
+
+        let content = try XCTUnwrap(result["content"] as? [[String: Any]])
+        XCTAssertTrue((content[0]["text"] as? String)?.hasPrefix("1 session needs a decision from you and 2 are working.") == true, String(describing: content[0]))
+
+        let structured = try XCTUnwrap(result["structuredContent"] as? [String: Any])
+        let agents = try XCTUnwrap(structured["agents"] as? [String: Any])
+        XCTAssertEqual(agents["needsYou"] as? Int, 1)
+        XCTAssertEqual((agents["sessions"] as? [[String: Any]])?.first?["project"] as? String, "Usage tracker")
+        XCTAssertNil(structured["services"])
+        XCTAssertNotNil(structured["updatedAt"], "a count with no timestamp is a guess")
+    }
+
+    func testWithOmeletteClosedBothToolsSaySoAsAResultNotAnError() throws {
+        for tool in ["get_usage", "get_agents"] {
+            let result = try callResult(tool, snapshot: nil)
+            XCTAssertEqual(result["isError"] as? Bool, true, tool)
+            let content = try XCTUnwrap(result["content"] as? [[String: Any]])
+            XCTAssertEqual(content.first?["text"] as? String, CLIText.notRunning + ".", tool)
+        }
+    }
+
+    func testAnUnknownToolIsMinus32602() {
+        XCTAssertEqual(
+            handle(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"delete_everything"}}"#, snapshot: sample()),
+            #"{"error":{"code":-32602,"message":"Unknown tool: delete_everything"},"id":9,"jsonrpc":"2.0"}"#
+        )
+    }
+
+    func testToolsCallWithNoNameIsMinus32602() {
+        XCTAssertEqual(
+            handle(#"{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{}}"#, snapshot: sample()),
+            #"{"error":{"code":-32602,"message":"tools/call needs a tool name"},"id":9,"jsonrpc":"2.0"}"#
+        )
+    }
 }

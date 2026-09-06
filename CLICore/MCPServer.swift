@@ -127,7 +127,7 @@ enum MCPServer {
         return text
     }
 
-    // MARK: - Tools (Task 11)
+    // MARK: - Tools
 
     static func toolCall(
         id: Any, params: [String: Any]?, snapshot: StatusSnapshot?, now: Date
@@ -135,6 +135,72 @@ enum MCPServer {
         guard let name = params?["name"] as? String else {
             return error(id: id, code: -32602, message: "tools/call needs a tool name")
         }
-        return error(id: id, code: -32602, message: "Unknown tool: \(name)")
+        switch name {
+        case "get_usage":
+            guard let snapshot else { return result(id: id, notRunningResult) }
+            return result(id: id, toolResult(
+                text: MCPSummary.usage(snapshot: snapshot, now: now),
+                data: usageData(snapshot)
+            ))
+        case "get_agents":
+            guard let snapshot else { return result(id: id, notRunningResult) }
+            return result(id: id, toolResult(
+                text: MCPSummary.agents(snapshot: snapshot, now: now),
+                data: agentsData(snapshot)
+            ))
+        default:
+            return error(id: id, code: -32602, message: "Unknown tool: \(name)")
+        }
+    }
+
+    /// A result, not a protocol error: "Omelette is closed" is an answer, and a
+    /// -32603 would have the client decide the server is broken and stop asking.
+    static var notRunningResult: [String: Any] {
+        [
+            "content": [["type": "text", "text": CLIText.notRunning + "."]],
+            "isError": true,
+        ]
+    }
+
+    /// Both blocks the spec asks of a tool with structured content: the paragraph a
+    /// model acts on, and the same data serialised for a client that reads only text.
+    /// No `outputSchema` is declared — a schema obliges the server to conform to it
+    /// exactly, and `status.json` grows keys between releases.
+    static func toolResult(text: String, data: [String: Any]) -> [String: Any] {
+        let serialised = (try? JSONSerialization.data(
+            withJSONObject: data, options: [.sortedKeys, .withoutEscapingSlashes]
+        )).flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+        return [
+            "content": [
+                ["type": "text", "text": text],
+                ["type": "text", "text": serialised],
+            ],
+            "structuredContent": data,
+            "isError": false,
+        ]
+    }
+
+    /// The snapshot as JSON, minus the agents. Re-encoded through the same `Codable`
+    /// the file uses rather than hand-mapped, so a key added to `StatusSnapshot`
+    /// reaches the tool without a second edit.
+    static func usageData(_ snapshot: StatusSnapshot) -> [String: Any] {
+        var object = jsonObject(snapshot)
+        object.removeValue(forKey: "agents")
+        return object
+    }
+
+    static func agentsData(_ snapshot: StatusSnapshot) -> [String: Any] {
+        let object = jsonObject(snapshot)
+        return [
+            "updatedAt": object["updatedAt"] ?? NSNull(),
+            "agents": object["agents"] ?? [String: Any](),
+        ]
+    }
+
+    private static func jsonObject(_ snapshot: StatusSnapshot) -> [String: Any] {
+        guard let data = try? StatusFile.encoder.encode(snapshot),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [:] }
+        return object
     }
 }
