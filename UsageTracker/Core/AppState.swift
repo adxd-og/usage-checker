@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import SwiftUI
 import AppKit
 
@@ -27,6 +28,15 @@ final class AppState: ObservableObject {
     /// Last successful readings from disk — the source `retainingLastGoodServices`
     /// falls back to when this session has never seen a provider succeed.
     private var lastKnown: [String: LastKnownService] = [:]
+    /// The last dollars `StatusCosts` produced. The poll refreshes them; an agent
+    /// starting a tool reuses them, because it did not change what you spent today.
+    private var lastCosts: [String: StatusFileWriter.CostEntry] = [:]
+    /// Keeps `status.json` current between polls. `$sessions` rather than the store's
+    /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
+    /// session moving from working to idle still changes what the file says.
+    private var agentObserver: AnyCancellable?
+    /// One trailing write is pending, so the throttle can never swallow the last change.
+    private var statusWriteScheduled = false
 
     private init() {}
 
@@ -38,6 +48,7 @@ final class AppState: ObservableObject {
         AgentChannel.shared.onEvent = { event, reply in
             AgentEventRouter.handle(event, reply: reply, store: AgentSessionStore.shared, broker: PermissionBroker.shared)
         }
+        observeAgentSessions()
         seedFromLastKnown()
         refreshNow()
         startTimer()
@@ -281,6 +292,7 @@ final class AppState: ObservableObject {
         await UsageNotifier.shared.evaluate(snapshot: next)
         NotificationCenter.default.post(name: .snapshotUpdated, object: nil)
         await scanAgentsPassively()
+        publishStatusFileAfterPoll()
     }
 
     /// Sessions no hook has spoken for, read from the CLIs' own logs. Riding the poll
@@ -296,6 +308,64 @@ final class AppState: ObservableObject {
         }.value
         AgentSessionStore.shared.mergePassive(scanned)
         AgentSessionStore.shared.pruneStale()
+    }
+
+    /// `status.json` for the `omelette` CLI: the numbers this poll produced, plus the
+    /// dollars from the cost logs. Gathering and writing both happen off the main
+    /// actor — the aggregators are actors and their scan is file I/O — so a slow log
+    /// tree delays the file, never the poll or the menu bar.
+    private func publishStatusFileAfterPoll() {
+        let ids = Set(snapshot.services.map(\.id))
+        Task { [weak self] in
+            let costs = await StatusCosts.gather(serviceIDs: ids)
+            await MainActor.run {
+                guard let self else { return }
+                self.lastCosts = costs
+                self.publishStatusFile(costs: costs)
+            }
+        }
+    }
+
+    /// The agent list changes far more often than the poll does, and the CLI's flag
+    /// count comes from it. `@Published` sends on the main actor because the store is
+    /// `@MainActor`, which is what makes `assumeIsolated` true here rather than hopeful.
+    private func observeAgentSessions() {
+        agentObserver = AgentSessionStore.shared.$sessions
+            .sink { _ in
+                MainActor.assumeIsolated {
+                    AppState.shared.publishStatusFile(costs: AppState.shared.lastCosts)
+                }
+            }
+    }
+
+    /// Writes the file, or schedules one write for when the throttle allows it — the
+    /// last change has to reach disk, or a status line spends the rest of the day
+    /// showing a flag for an agent that stopped waiting an hour ago.
+    private func publishStatusFile(costs: [String: StatusFileWriter.CostEntry]) {
+        let built = StatusFileWriter.build(
+            services: snapshot.services,
+            costs: costs,
+            agents: StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
+            now: Date()
+        )
+        Task { [weak self] in
+            let wrote = await StatusFileWriter.shared.write(built)
+            guard !wrote else { return }
+            await MainActor.run { self?.scheduleTrailingStatusWrite() }
+        }
+    }
+
+    private func scheduleTrailingStatusWrite() {
+        guard !statusWriteScheduled else { return }
+        statusWriteScheduled = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(StatusFileWriter.minimumInterval * 1_000_000_000))
+            await MainActor.run {
+                guard let self else { return }
+                self.statusWriteScheduled = false
+                self.publishStatusFile(costs: self.lastCosts)
+            }
+        }
     }
 
     /// Pay-as-you-go accounts (Enterprise API billing) get no rate-limit windows from
