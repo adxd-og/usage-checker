@@ -80,6 +80,18 @@ targets:
         copy:
           destination: wrapper
           subpath: Contents/Helpers
+      # The `omelette` CLI rides in the same Contents/Helpers as the hook helper, and
+      # for the same reasons: `wrapper` + subpath is the only spelling that lands
+      # there, codeSign gives the Debug copy the app's identity so the E2E test can
+      # spawn it, and link: false keeps an executable out of "Link Binary With
+      # Libraries". AgentPaths.refreshCLISymlink points ~/…/bin/omelette at it.
+      - target: OmeletteCLI
+        embed: true
+        link: false
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
       - package: Sparkle
       - package: CodexBar
         product: CodexBarCore
@@ -192,6 +204,35 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.hook
         # Without this the tool is also installed to Products/usr/local/bin in
         # the archive, which turns it into a "Generic Xcode Archive" that
+        # `xcodebuild -exportArchive` (scripts/build_dmg.sh) refuses to export.
+        SKIP_INSTALL: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        DEAD_CODE_STRIPPING: YES
+
+  # `omelette` — the command-line companion. Reads status.json and prints it; never
+  # starts the app, never opens a socket, never touches the network. Named
+  # OmeletteCLI rather than CLI to sit next to OmeletteHook in Xcode's target list;
+  # the sources live in CLI/ and the product the user types is `omelette`.
+  OmeletteCLI:
+    type: tool
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: CLI
+      # Shared with the app target, which compiles the same folder — one declaration
+      # of StatusSnapshot for the writer and the reader both.
+      - path: CLICore
+      # By path, not by folder: ResetCopy is the app's own words for "when does this
+      # window reset", and the terminal has to say exactly what the popover says.
+      - path: UsageTracker/Core/ResetCopy.swift
+    settings:
+      base:
+        PRODUCT_NAME: omelette
+        # signing.xcconfig hands every target the app's bundle id; a nested
+        # executable needs its own code-signing identifier.
+        PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.cli
+        # Without this the tool is also installed to Products/usr/local/bin in the
+        # archive, which turns it into a "Generic Xcode Archive" that
         # `xcodebuild -exportArchive` (scripts/build_dmg.sh) refuses to export.
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: NO
