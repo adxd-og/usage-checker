@@ -30,6 +30,13 @@ If you use [Claude Code](https://docs.anthropic.com/claude-code) heavily, you've
   is in front, the CLI asks there as usual. Codex runs Omelette's hooks only after
   you trust them once with `/hooks` inside Codex — Settings → Agents says when that
   is still outstanding
+- **`omelette` in your terminal (2.4.1)** — a tiny companion tool inside the app.
+  `omelette status` prints every provider's windows with exact reset times, today's
+  and this week's cost and what your agents are doing; `omelette statusline` prints one
+  line for Claude Code's status bar (`◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`);
+  `omelette mcp` is a read-only MCP server, so Claude Code and Codex can ask what your
+  limits are *before* starting something expensive. Settings → General → Command line
+  puts it on your PATH and installs the status line and the MCP entries with one click
 - **All tab** — one tile per provider with a ring for the leading window, and
   provider tabs with a large session ring and weekly windows as rings
 - **Compact menu bar pill per provider** — no Dock icon, no clutter
@@ -71,6 +78,11 @@ The widget:
   request: since 2.2 the helper holds that one open for up to 140 s so Omelette can answer
   Allow/Deny (or the terminal answers first), and it still fails safe — no reply from Omelette
   ever means no decision reaches the CLI
+- The `omelette` command-line tool reads one file — `~/Library/Application
+  Support/UsageTracker/status.json`, which the app writes after every poll — and never
+  starts the app, opens a socket or touches the network. With Omelette closed it says
+  so and exits 2. Its MCP server is read-only: two tools that answer questions, none
+  that change anything
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics** — usage history and cost accounting stay on your Mac
 - Open source end to end — audit anything above
@@ -99,7 +111,7 @@ The widget:
 
 Open via the popover's gear icon (or `⌘,`):
 
-- **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity / Grok), update check
+- **General** — refresh interval (30s / 1m / 5m), launch at login, provider toggles (Codex / Gemini / Antigravity / Grok), the `omelette` command line (PATH, Claude Code status line, MCP server), update check
 - **Notifications** — threshold alerts, session-timing (burn-fast / reset-soon) alerts, quiet hours, daily summary
 - **Agents** — enable/remove the Claude Code hooks, the Codex hooks and the Codex
   `notify` line (with the exact JSON/TOML shown first), the Codex trust status, agent
