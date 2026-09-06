@@ -25,7 +25,7 @@ final class ResetCopyTests: XCTestCase {
 
     func testAbsoluteIsATimeTodayAWeekdayThisWeekAndADateBeyond() {
         XCTAssertEqual(ResetCopy.absolute(resetsAt: now.addingTimeInterval(100 * 60), now: now, calendar: calendar, locale: locale), "13:00")
-        XCTAssertEqual(ResetCopy.absolute(resetsAt: now.addingTimeInterval(5 * 86_400 + 175 * 60), now: now, calendar: calendar, locale: locale), "Thu 14:15")
+        XCTAssertEqual(ResetCopy.absolute(resetsAt: now.addingTimeInterval(4 * 86_400 + 175 * 60), now: now, calendar: calendar, locale: locale), "Thu 14:15")
         XCTAssertEqual(ResetCopy.absolute(resetsAt: now.addingTimeInterval(8 * 86_400 + 175 * 60), now: now, calendar: calendar, locale: locale), "14 Sep, 14:15")
         XCTAssertNil(ResetCopy.absolute(resetsAt: .distantFuture, now: now, calendar: calendar, locale: locale))
     }
