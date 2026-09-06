@@ -166,6 +166,12 @@ final class AppState: ObservableObject {
     /// few times while debugging is exactly how the endpoint was driven into a
     /// burst of 429s on 2026-09-03. Ten seconds keeps "open = fresh" true in
     /// practice (the timer runs every 60 s) without letting clicks multiply calls.
+    /// The window `applyPayAsYouGo` invents for an account that reports none of its
+    /// own. Named here because `StatusFileWriter` has to tell it apart from a window a
+    /// provider actually reported — a budget Omelette made up is not evidence of a
+    /// subscription.
+    nonisolated static let payAsYouGoBudgetBucketID = "claude_weekly_budget"
+
     nonisolated static let popoverRefreshFloor: TimeInterval = 10
 
     nonisolated static func shouldRefreshOnPopoverOpen(lastRefreshAt: Date, now: Date) -> Bool {
@@ -317,7 +323,7 @@ final class AppState: ObservableObject {
         let budget = SettingsStore.shared.claudeWeeklyBudgetUSD
         if budget > 0 {
             buckets.append(UsageBucket(
-                id: "claude_weekly_budget",
+                id: Self.payAsYouGoBudgetBucketID,
                 label: "Weekly budget",
                 utilization: breakdown.weekCost / budget * 100,
                 resetsAt: .distantFuture,
