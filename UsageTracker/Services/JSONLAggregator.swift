@@ -20,9 +20,15 @@ struct CLITurn: Sendable, Codable {
 
     var totalTokens: Int { tokens.total }
 
-    /// Still computed from the rate table rather than read out of `tokens.cost`: the
-    /// two are independent paths to the same dollars, and the tests pin them equal.
+    /// The dollars priced with the turn, which is what the per-category split shows.
+    ///
+    /// Recomputing here instead — as this used to — made the headline and the split
+    /// disagree the moment a rate moved under a turn already ingested: the split was
+    /// priced once at parse time, the headline on every read. The stored figure keeps
+    /// the two describing the same turn the same way. The table is still the answer for
+    /// a turn that carries no split at all.
     var cost: Double {
+        if let stored = tokens.cost { return stored.total }
         let p = ModelPricing.price(for: model)
         return (Double(inputTokens) * p.inputPerM
               + Double(outputTokens) * p.outputPerM

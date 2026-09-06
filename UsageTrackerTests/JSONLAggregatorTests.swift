@@ -657,6 +657,34 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(turn.cacheCreate1hTokens, 50_000)
     }
 
+    func testATurnsDollarsAreTheOnesStoredWithItNotTodaysRates() throws {
+        // `tokens.cost` is priced once, when the line is parsed. `cost` used to
+        // multiply through the rate table on every read, so any price change after
+        // ingest — a models.dev refresh, a new rate landing — left the headline dollars
+        // and the per-category dollars describing the same turn differently.
+        let stored = TokenCostBreakdown(input: 1, output: 2, cacheRead: 3, cacheWrite: 4)
+        let turn = CLITurn(
+            id: "msg_stored", timestamp: now, model: "claude-sonnet-4-5",
+            tokens: TokenBreakdown(input: 1_000_000, output: 1_000_000, cost: stored),
+            projectSlug: alphaSlug
+        )
+
+        XCTAssertEqual(turn.cost, 10, accuracy: 1e-9, "the dollars stored with the turn")
+        XCTAssertEqual(try XCTUnwrap(turn.tokens.cost).total, turn.cost, accuracy: 1e-9)
+    }
+
+    func testATurnWithNoStoredDollarsStillPricesFromTheTable() throws {
+        // Nothing this aggregator parses arrives unpriced, but the type allows it and
+        // the fallback has to stay right.
+        let turn = CLITurn(
+            id: "msg_unpriced", timestamp: now, model: "claude-sonnet-4-5",
+            tokens: TokenBreakdown(input: 1_000_000, output: 1_000_000),
+            projectSlug: alphaSlug
+        )
+
+        XCTAssertEqual(turn.cost, 18, accuracy: 1e-9) // $3.00 of input + $15.00 of output
+    }
+
     func testThinkingTokensAreParsedWithoutInflatingTheTotal() async throws {
         try write([
             line(
