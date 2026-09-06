@@ -15,16 +15,16 @@ packages:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.6.0
   # CodexBar's UI-free core (MIT, Peter Steinberger) — multi-strategy provider
-  # fetchers + models.dev pricing. Temporarily pinned to adxd-og/CodexBar, branch
-  # omelette-2.2 = upstream a83a83fa (v0.41.0) + one commit that drops the
-  # `-a untrusted` argument Codex CLI 0.149+ rejects (same fix as upstream #3118).
-  # Provenance: diff vs a83a83fa is 2 files, +3/-5 lines, nothing else. Next step
-  # is a real bump to upstream main, after which this fork goes away. 0.x APIs
-  # break without notice, and a tag pin is impossible anyway (their graph
-  # contains a branch-based dependency, which SPM forbids under stable consumers).
+  # fetchers + models.dev pricing. Back on upstream steipete/CodexBar, no fork:
+  # the `-a untrusted` argument Codex CLI 0.149+ rejects is gone (their status
+  # probe now passes `-a never`), so the adxd-og pin that dropped it is retired.
+  # Pinned to main @ 559bfc81, committed 2026-09-05. Revision, not a tag: their
+  # graph contains a branch-based dependency (Vortex), which SPM forbids resolving
+  # under a version-pinned consumer. 0.x APIs break without notice — bump monthly
+  # and re-run the suite, don't float.
   CodexBar:
-    url: https://github.com/adxd-og/CodexBar
-    revision: 548a2f81287e7865217ad8a397f7748e8720b81b
+    url: https://github.com/steipete/CodexBar
+    revision: 559bfc818eb7b757d4763642a86586c40098d08a
   # Global hotkey recording + dispatch. Already in CodexBar's own graph, so the
   # resolved version is shared rather than duplicated.
   KeyboardShortcuts:
