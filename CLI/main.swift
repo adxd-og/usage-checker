@@ -66,8 +66,25 @@ enum CLIMain {
         return 0
     }
 
+    /// The MCP server: newline-delimited JSON-RPC on stdin and stdout until the client
+    /// closes the pipe, which is how the spec says a stdio server shuts down.
+    ///
+    /// `status.json` is re-read for every request and never held between them. A
+    /// server that cached would tell an agent what the limits were when the session
+    /// started, which is the one moment the answer does not matter.
+    ///
+    /// Nothing but JSON-RPC ever reaches stdout — a stray `print` in this loop is a
+    /// protocol violation, and the client would report the server as broken. Anything
+    /// worth saying goes to stderr, and at present nothing does.
     static func mcp() -> Int32 {
-        0
+        let url = StatusFile.url()
+        while let line = readLine(strippingNewline: true) {
+            guard let response = MCPServer.handle(line, snapshot: StatusFile.load(from: url), now: Date()) else {
+                continue
+            }
+            out(response + "\n")
+        }
+        return 0
     }
 
     // MARK: - I/O

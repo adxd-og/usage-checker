@@ -232,6 +232,72 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertEqual(run.stdout, "⚑ 1\n", "no Codex in the file; the flag is not Codex's")
     }
 
+    // MARK: - mcp
+
+    /// One session, the way a client runs it: initialize, the notification, tools/list,
+    /// a call, then the pipe closes and the server exits.
+    func testTheMCPServerAnswersAWholeSessionAndExitsWhenStdinCloses() throws {
+        try publish(sample())
+        let session = [
+            #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"claude-code","version":"2.1.90"}}}"#,
+            #"{"jsonrpc":"2.0","method":"notifications/initialized"}"#,
+            #"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#,
+            #"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_usage","arguments":{}}}"#,
+        ].joined(separator: "\n") + "\n"
+
+        let run = try runCLI(["mcp"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stderr.isEmpty, run.stderr)
+
+        let lines = run.stdout.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        XCTAssertEqual(lines.count, 3, "three requests carry an id; the notification is answered with nothing")
+        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"omelette""#), String(lines[0]))
+        XCTAssertTrue(lines[1].contains(#""name":"get_usage""#), String(lines[1]))
+        XCTAssertTrue(lines[2].contains("Claude (Max 5x): session 42%"), String(lines[2]))
+
+        // Every line has to be one parsable JSON object, or a client gives up mid-stream.
+        for line in lines {
+            XCTAssertNotNil(
+                try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                String(line)
+            )
+        }
+    }
+
+    /// The file is re-read per request, not cached: an agent asking twice across a poll
+    /// must see the second answer.
+    func testTheServerSeesAFileThatChangedBetweenRequests() throws {
+        try publish(sample())
+        var second = sample()
+        second.services[0] = StatusSnapshot.Service(
+            id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil, plan: "Max 5x",
+            windows: [StatusSnapshot.Window(id: "five_hour", label: "Session", percent: 91, resetsAt: Date().addingTimeInterval(600), kind: "session")],
+            todayCost: 9.99, weekCost: nil, todayTokens: nil, apiEquivalent: true
+        )
+
+        // Two calls in one process is not something a pipe can interleave with a write,
+        // so the second run is a second process against the rewritten file — which is
+        // the same guarantee from the client's point of view.
+        let first = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_usage"}}"# + "\n")
+        try publish(second)
+        let after = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_usage"}}"# + "\n")
+
+        XCTAssertTrue(first.stdout.contains("session 42%"), first.stdout)
+        XCTAssertTrue(after.stdout.contains("session 91%"), after.stdout)
+        XCTAssertTrue(after.stdout.contains("heavy work should wait"), after.stdout)
+    }
+
+    func testTheServerSaysOmeletteIsClosedRatherThanFailing() throws {
+        try publish(nil)
+
+        let run = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_agents"}}"# + "\n")
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.contains(#""isError":true"#), run.stdout)
+        XCTAssertTrue(run.stdout.contains(CLIText.notRunning), run.stdout)
+    }
+
     /// The binary is Foundation-only by contract. `otool -L` is the assertion that
     /// keeps an accidental `import AppKit` — which would drag a whole UI framework into
     /// a tool that runs on every keystroke of a status line — from shipping.
