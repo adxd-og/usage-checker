@@ -39,6 +39,70 @@ final class TokenShareBarSegmentTests: XCTestCase {
     }
 }
 
+/// The bar's other decision: how wide each segment is drawn. A minimum applied to
+/// each segment independently is not a layout — it is an overdraft, and the segments
+/// past the end of the bar are simply not visible.
+final class TokenShareBarWidthTests: XCTestCase {
+    private let bar: CGFloat = 300
+
+    func testTheSegmentsNeverAddUpToMoreThanTheBar() {
+        // [1, 1, 9997, 1] at 300 pt: `max(2, width * share)` per segment asked for
+        // 305.9 pt, and the 2-pt cache write on the end was clipped away entirely.
+        let b = TokenBreakdown(input: 1, output: 1, cacheRead: 9_997, cacheWrite5m: 1)
+        let widths = TokenShareBar.widths(b, in: bar).map(\.1)
+
+        XCTAssertEqual(widths.count, 4)
+        XCTAssertEqual(widths.reduce(0, +), bar, accuracy: 1e-9)
+        XCTAssertTrue(widths.allSatisfy { $0 >= 2 }, "and every visible bucket is still visible")
+    }
+
+    func testTheBigBucketKeepsEverythingTheMinimumsLeave() {
+        let b = TokenBreakdown(input: 1, output: 1, cacheRead: 9_997, cacheWrite5m: 1)
+        let widths = TokenShareBar.widths(b, in: bar)
+        let cacheRead = try? XCTUnwrap(widths.first { $0.0 == .cacheRead }?.1)
+
+        // 300 − 4 × 2 = 292 to share out; the cache read's 99.97% of it, plus its own
+        // 2-pt floor.
+        XCTAssertEqual(cacheRead ?? 0, 2 + 292 * 0.9997, accuracy: 1e-9)
+    }
+
+    func testAnEmptyBucketIsStillNotDrawn() {
+        let b = TokenBreakdown(input: 300, output: 100, cacheRead: 600)
+        XCTAssertEqual(TokenShareBar.widths(b, in: bar).map { $0.0 }, [.input, .output, .cacheRead])
+        XCTAssertTrue(TokenShareBar.widths(.zero, in: bar).isEmpty)
+    }
+
+    func testASingleBucketTakesTheWholeBar() {
+        let widths = TokenShareBar.widths(TokenBreakdown(cacheRead: 5_000), in: bar)
+        XCTAssertEqual(widths.count, 1)
+        XCTAssertEqual(widths[0].1, bar, accuracy: 1e-9)
+    }
+
+    func testABarTooNarrowForEveryMinimumSharesWhatItHas() {
+        // Four buckets and 5 pt: the 2-pt floor cannot be honoured, and honouring it
+        // anyway would draw 8 pt of bar in 5 pt of space.
+        let b = TokenBreakdown(input: 1, output: 1, cacheRead: 1, cacheWrite5m: 1)
+        let widths = TokenShareBar.widths(b, in: 5).map(\.1)
+
+        XCTAssertEqual(widths.reduce(0, +), 5, accuracy: 1e-9)
+        XCTAssertTrue(widths.allSatisfy { $0 > 0 }, "narrow, but nothing vanishes")
+    }
+
+    func testAZeroWidthBarAsksForNoWidthAtAll() {
+        // SwiftUI hands a GeometryReader zero on the first pass; a negative remainder
+        // would come back as a negative frame width.
+        let b = TokenBreakdown(input: 1, output: 9)
+        XCTAssertTrue(TokenShareBar.widths(b, in: 0).allSatisfy { $0.1 == 0 })
+    }
+
+    func testTheProportionsSurviveTheMinimums() {
+        // Nothing pathological: four even buckets stay even.
+        let b = TokenBreakdown(input: 250, output: 250, cacheRead: 250, cacheWrite5m: 250)
+        let widths = TokenShareBar.widths(b, in: bar).map(\.1)
+        XCTAssertTrue(widths.allSatisfy { abs($0 - 75) < 1e-9 })
+    }
+}
+
 /// The palette is a contract with the chart's legend: the History tab pins each
 /// category's colour by label, so a colour changing in one place and not the
 /// other would silently recolour half the screen.
