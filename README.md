@@ -82,7 +82,7 @@ agents.
   or, in `~/.codex/config.toml`:
   ```toml
   [mcp_servers.omelette]
-  command = "$HOME/Library/Application Support/UsageTracker/bin/omelette"
+  command = "/Users/you/Library/Application Support/UsageTracker/bin/omelette"  # full path, no $HOME
   args = ["mcp"]
   ```
 - What an agent actually does with it: before a long task it asks
