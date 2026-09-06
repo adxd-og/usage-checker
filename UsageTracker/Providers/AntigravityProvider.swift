@@ -117,13 +117,23 @@ actor AntigravityProvider: UsageProvider {
     /// them is the user's fault, so none earns the red chip; a signed-out CLI, an API
     /// refusal, a parse failure or an account mismatch still does.
     nonisolated static func isUnreachable(_ error: Error) -> Bool {
-        guard let probe = error as? AntigravityStatusProbeError else { return false }
-        switch probe {
-        case .notRunning, .missingCSRFToken, .portDetectionFailed, .timedOut:
-            return true
-        case .apiError, .parseFailed, .authenticationRequired, .accountMismatch:
-            return false
+        if let probe = error as? AntigravityStatusProbeError {
+            switch probe {
+            case .notRunning, .missingCSRFToken, .portDetectionFailed, .timedOut:
+                return true
+            case .apiError, .parseFailed, .authenticationRequired, .accountMismatch:
+                return false
+            }
         }
+        // The probe talks to localhost: a transport failure there ("Could not connect
+        // to the server", a reset, a timeout) is a port with nobody behind it — the
+        // app quit and left its pid file — never a reason to show the red chip.
+        if error is URLError { return true }
+        let nsError = error as NSError
+        if nsError.domain == NSPOSIXErrorDomain {
+            return [ECONNREFUSED, ECONNRESET, ETIMEDOUT, EHOSTUNREACH, ENETUNREACH, EPIPE].contains(Int32(nsError.code))
+        }
+        return false
     }
 
     /// The web API, at most once every `remoteMinInterval`. nil = no reading, either

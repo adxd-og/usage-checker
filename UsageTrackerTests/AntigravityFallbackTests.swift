@@ -104,7 +104,25 @@ final class AntigravityFallbackTests: XCTestCase {
         }
         XCTAssertFalse(AntigravityProvider.isUnreachable(AntigravityStatusProbeError.apiError("nope")))
         XCTAssertFalse(AntigravityProvider.isUnreachable(AntigravityStatusProbeError.accountMismatch(expected: "a", found: "b")))
-        XCTAssertFalse(AntigravityProvider.isUnreachable(URLError(.cannotConnectToHost)))
+        XCTAssertTrue(AntigravityProvider.isUnreachable(URLError(.cannotConnectToHost)),
+                      "a localhost port with nobody behind it is the app having quit")
+        XCTAssertTrue(AntigravityProvider.isUnreachable(NSError(domain: NSPOSIXErrorDomain, code: Int(ECONNREFUSED))))
+        XCTAssertFalse(AntigravityProvider.isUnreachable(NSError(domain: "SomethingElse", code: 1)))
+    }
+
+    func testATransportFailureOnLocalhostFallsBackToTheWebAPI() async {
+        let ok = status(remaining: 0.38)
+        let remoteCalls = Calls()
+        let provider = AntigravityProvider(
+            localFetch: { throw URLError(.cannotConnectToHost) },
+            remoteFetch: {
+                remoteCalls.count += 1
+                return ok
+            }
+        )
+        let snapshot = await provider.fetch(now: t0)
+        XCTAssertEqual(snapshot.state, .ok)
+        XCTAssertEqual(remoteCalls.count, 1)
     }
 
     func testAnErrorThatIsNotNotRunningNeverReachesTheWebAPI() async {
