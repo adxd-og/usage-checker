@@ -139,6 +139,51 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(run.stderr.contains("omelette status"), "the usage text follows the reason")
     }
 
+    // MARK: - status
+
+    func testStatusPrintsTheProvidersAndTheAgentsLine() throws {
+        try publish(sample())
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("Claude  Session 42%"), run.stdout)
+        XCTAssertTrue(run.stdout.contains("$4.20 today"), run.stdout)
+        XCTAssertTrue(run.stdout.contains("$31.70 this week"), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("Agents: 1 needs you, 2 working\n"), run.stdout)
+        XCTAssertTrue(run.stderr.isEmpty)
+        XCTAssertLessThan(run.elapsed, 1)
+    }
+
+    func testStatusJSONPrintsTheFileVerbatim() throws {
+        try publish(sample())
+        let onDisk = try XCTUnwrap(StatusFile.read(from: statusURL))
+
+        let run = try runCLI(["status", "--json"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, String(decoding: onDisk, as: UTF8.self))
+    }
+
+    func testStatusExits2WithNoFile() throws {
+        try publish(nil)
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 2)
+        XCTAssertTrue(run.stdout.isEmpty)
+        XCTAssertEqual(run.stderr, CLIText.notRunning + "\n")
+    }
+
+    func testStatusExits2OnASnapshotOlderThanTenMinutes() throws {
+        try publish(sample(updatedAt: Date().addingTimeInterval(-20 * 60)))
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 2)
+        XCTAssertEqual(run.stderr, CLIText.notRunning + "\n")
+    }
+
     /// The binary is Foundation-only by contract. `otool -L` is the assertion that
     /// keeps an accidental `import AppKit` — which would drag a whole UI framework into
     /// a tool that runs on every keystroke of a status line — from shipping.

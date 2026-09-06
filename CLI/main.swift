@@ -31,9 +31,30 @@ enum CLIMain {
 
     // MARK: - Commands (filled in by the tasks that own them)
 
+    /// Exit 2 for every way the file can be missing — not written yet, too old,
+    /// unreadable, from another version. A script asking "is Omelette up?" gets one
+    /// answer, and the sentence goes to stderr so `omelette status | …` pipes nothing
+    /// but numbers.
     static func status(json: Bool) -> Int32 {
-        err(CLIText.notRunning + "\n")
-        return CLIText.noDataExitCode
+        let url = StatusFile.url()
+        let now = Date()
+        guard let snapshot = StatusFile.load(from: url), snapshot.isFresh(now: now) else {
+            err(CLIText.notRunning + "\n")
+            return CLIText.noDataExitCode
+        }
+        if json {
+            // The file verbatim: re-encoding it would mean two spellings of the same
+            // bytes, and `omelette status --json | jq` should see what is on disk.
+            guard var data = StatusFile.read(from: url) else {
+                err(CLIText.notRunning + "\n")
+                return CLIText.noDataExitCode
+            }
+            if data.last != 0x0A { data.append(0x0A) }
+            FileHandle.standardOutput.write(data)
+            return 0
+        }
+        out(StatusText.render(snapshot: snapshot, now: now))
+        return 0
     }
 
     static func statusLine(provider: String) -> Int32 {
