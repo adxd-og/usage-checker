@@ -82,6 +82,31 @@ final class AntigravityFallbackTests: XCTestCase {
         XCTAssertTrue(snapshot.buckets.isEmpty, "retention, not this provider, decides what stays on screen")
     }
 
+    func testAServerThatIsThereButNotAnsweringIsNotRunningNotAnError() async {
+        // A lingering Antigravity process with no language server behind it: the probe
+        // reports a missing CSRF token, an undetectable port or a timeout. That is the
+        // grey "Not running" chip (and a web call), never the red one.
+        let ok = status(remaining: 0.38)
+        for probeError: AntigravityStatusProbeError in [
+            .missingCSRFToken, .portDetectionFailed("no port"), .timedOut,
+        ] {
+            let remoteCalls = Calls()
+            let provider = AntigravityProvider(
+                localFetch: { throw probeError },
+                remoteFetch: {
+                    remoteCalls.count += 1
+                    return ok
+                }
+            )
+            let snapshot = await provider.fetch(now: t0)
+            XCTAssertEqual(snapshot.state, .ok, "\(probeError) should have fallen back to the web reading")
+            XCTAssertEqual(remoteCalls.count, 1, "\(probeError) should have asked the web API once")
+        }
+        XCTAssertFalse(AntigravityProvider.isUnreachable(AntigravityStatusProbeError.apiError("nope")))
+        XCTAssertFalse(AntigravityProvider.isUnreachable(AntigravityStatusProbeError.accountMismatch(expected: "a", found: "b")))
+        XCTAssertFalse(AntigravityProvider.isUnreachable(URLError(.cannotConnectToHost)))
+    }
+
     func testAnErrorThatIsNotNotRunningNeverReachesTheWebAPI() async {
         let remoteCalls = Calls()
         let ok = status(remaining: 0.38)

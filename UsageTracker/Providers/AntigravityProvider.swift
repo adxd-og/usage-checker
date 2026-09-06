@@ -86,10 +86,7 @@ actor AntigravityProvider: UsageProvider {
             // The local language server is only reachable while the app/CLI/IDE is
             // up, so "not running" is the normal quiet state, not a sign-in problem.
             NSLog("[UT] Antigravity fetch failed: %@", String(describing: error))
-            let isNotRunning: Bool = {
-                if case AntigravityStatusProbeError.notRunning = error { return true }
-                return false
-            }()
+            let isNotRunning = Self.isUnreachable(error)
             // Only that quiet state is worth a web call. A signed-out CLI or a parse
             // failure is a different problem, and the web API can't fix either.
             if isNotRunning, let remote = await remoteSnapshot(now: now) {
@@ -110,6 +107,22 @@ actor AntigravityProvider: UsageProvider {
                     : error.localizedDescription,
                 fetchedAt: now
             )
+        }
+    }
+
+    /// "Not running" in the sense that matters here: nothing answered. A closed app
+    /// is the obvious case, but a lingering Antigravity process with no language
+    /// server behind it looks like a missing CSRF token, an undetectable port or a
+    /// timeout — CodexBar's own descriptor lumps those with `.notRunning` too. None of
+    /// them is the user's fault, so none earns the red chip; a signed-out CLI, an API
+    /// refusal, a parse failure or an account mismatch still does.
+    nonisolated static func isUnreachable(_ error: Error) -> Bool {
+        guard let probe = error as? AntigravityStatusProbeError else { return false }
+        switch probe {
+        case .notRunning, .missingCSRFToken, .portDetectionFailed, .timedOut:
+            return true
+        case .apiError, .parseFailed, .authenticationRequired, .accountMismatch:
+            return false
         }
     }
 

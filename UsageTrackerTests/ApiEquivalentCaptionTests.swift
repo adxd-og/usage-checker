@@ -33,7 +33,7 @@ final class ApiEquivalentCaptionTests: XCTestCase {
                 showsQuota: false, providerName: "Claude", longName: "Claude Code logs",
                 mode: .tokens, isPayAsYouGo: false
             ),
-            "Daily cost from Claude Code logs",
+            "Daily tokens by type from Claude Code logs",
             "the tokens chart shows no dollars, so a caption about dollars would be noise"
         )
     }
