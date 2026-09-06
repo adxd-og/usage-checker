@@ -155,9 +155,10 @@ actor JSONLAggregator: CostLogAggregating {
         let seenMessageIDs: [UInt64]
     }
 
-    /// 2: turns and folded days carry a `TokenBreakdown`. A version-1 snapshot has
-    /// neither and is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 2
+    /// 3: a turn's counters are the *last* record for its message id, not the first
+    /// (see `ingest`). Every snapshot written before that holds provisional output
+    /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
+    private static let cacheVersion = 3
 
     private let rootURL: URL
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
@@ -182,7 +183,13 @@ actor JSONLAggregator: CostLogAggregating {
     private let recentWindow: TimeInterval = 31 * 24 * 3600
     /// Stable 64-bit hashes of message ids already counted, so duplicate log lines
     /// (re-scanned tails, forked sessions replaying old messages) never inflate cost.
+    /// It spans every file, which is why it stays even though a repeat inside the
+    /// recent window is now an update rather than a drop.
     private var seenMessageIDs: Set<UInt64> = []
+    /// Where each recent turn sits in `recentTurns`, keyed by the same stable hash
+    /// `seenMessageIDs` uses, so a later record for a known id can revise it in place.
+    /// Rebuilt wherever `recentTurns` is rewritten wholesale — a cache load, a fold.
+    private var recentIndexByID: [UInt64: Int] = [:]
     /// One cached day interval covers the common case: log lines arrive in
     /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
     /// to call per turn.
@@ -423,18 +430,66 @@ actor JSONLAggregator: CostLogAggregating {
 
     // MARK: - Ingest
 
+    /// One response is one turn, however many lines log it — but the *last* line is the
+    /// one that says what the response cost. Claude Code writes 2–4 `type: assistant`
+    /// lines per response under the same `message.id`: the first carries a provisional
+    /// usage (`output_tokens: 2`, no thinking, `stop_reason: null`) and later ones the
+    /// final counts. Keeping the first and dropping the rest is what the dedupe used to
+    /// do, and it threw away most of the output on this machine's own logs.
     private func ingest(_ turns: [CLITurn]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         for turn in turns {
-            // Each API response is logged multiple times with the same message id; count it once.
-            guard seenMessageIDs.insert(Self.stableHash(turn.id)).inserted else { continue }
+            let hash = Self.stableHash(turn.id)
+            // A repeat of an id we already hold is the same response told again, with
+            // better numbers; anything else about it (time, model, project) is settled
+            // by the first record.
+            guard seenMessageIDs.insert(hash).inserted else {
+                replaceIfLater(turn, hash: hash)
+                continue
+            }
             // Synthetic / internal Claude Code events aren't user-facing models.
             if ModelPricing.isSynthetic(turn.model) { continue }
             if turn.timestamp < recentCutoff {
                 fold(turn)
             } else {
+                recentIndexByID[hash] = recentTurns.count
                 recentTurns.append(turn)
             }
+        }
+    }
+
+    /// Adopts a later record's counters for a turn we already hold.
+    ///
+    /// "Later" is decided by the output count, not by line order: a re-scanned tail or a
+    /// forked session can replay the provisional record after the final one, and that
+    /// must not shrink the turn. Equal counts keep what is stored — measured over this
+    /// machine's transcripts, no message id ever changes anything else once its output
+    /// stops growing.
+    ///
+    /// Ids already folded into `oldDays` — turns older than `recentWindow` — are not in
+    /// the index and are never revised: the fold is a day-level sum with no per-turn slot
+    /// left to replace. Those records are weeks old and have long since stopped growing.
+    private func replaceIfLater(_ turn: CLITurn, hash: UInt64) {
+        guard let index = recentIndexByID[hash], index < recentTurns.count else { return }
+        let stored = recentTurns[index]
+        guard turn.tokens.output > stored.tokens.output else { return }
+        recentTurns[index] = CLITurn(
+            id: stored.id,
+            timestamp: stored.timestamp,
+            model: stored.model,
+            tokens: turn.tokens,
+            projectSlug: stored.projectSlug
+        )
+        dirty = true
+    }
+
+    /// `recentTurns` is append-only apart from the fold, so the index only has to be
+    /// rebuilt where the array is replaced wholesale.
+    private func rebuildRecentIndex() {
+        recentIndexByID.removeAll(keepingCapacity: true)
+        recentIndexByID.reserveCapacity(recentTurns.count)
+        for (i, t) in recentTurns.enumerated() {
+            recentIndexByID[Self.stableHash(t.id)] = i
         }
     }
 
@@ -458,6 +513,7 @@ actor JSONLAggregator: CostLogAggregating {
                 if t.timestamp < recentCutoff { fold(t) } else { kept.append(t) }
             }
             recentTurns = kept
+            rebuildRecentIndex()
             dirty = true
         }
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
@@ -623,6 +679,10 @@ actor JSONLAggregator: CostLogAggregating {
         }
         fileMarks = snapshot.fileMarks
         recentTurns = snapshot.recentTurns
+        // Without this the ids restored into `seenMessageIDs` would be known but
+        // unreachable, and a final record arriving after a relaunch would be dropped
+        // instead of replacing its provisional turn.
+        rebuildRecentIndex()
         // Last one wins rather than merged: a day repeated in a hand-edited file is
         // corruption, and counting it twice would be worse than dropping half of it.
         var days: [Date: DayAgg] = [:]
@@ -717,6 +777,13 @@ actor JSONLAggregator: CostLogAggregating {
         // Older logs may lack a message id — fall back to a content identity so exact
         // duplicate lines still dedupe. `thinking` is part of that identity: two
         // otherwise identical turns that reasoned differently are two turns.
+        //
+        // The counts are in the key, so the provisional and final records of one id-less
+        // response are two identities and both count — deliberately: with no id there is
+        // nothing to tie them together, and treating a bigger-output line as an update of
+        // a smaller one would silently merge two genuinely distinct turns. Only builds
+        // old enough to omit the id are affected, and they are the ones that logged a
+        // single line per response.
         let id = msgID.isEmpty
             ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)|\(thinking)"
             : msgID
