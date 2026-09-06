@@ -49,7 +49,7 @@ enum CLICommand: Equatable, Sendable {
     }
 
     private static func parseStatusLine(_ arguments: [String]) -> CLICommand {
-        var provider = "claude"
+        var provider = StatusLineText.defaultProvider
         var index = 0
         while index < arguments.count {
             let argument = arguments[index]

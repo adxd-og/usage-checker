@@ -57,9 +57,12 @@ enum CLIMain {
         return 0
     }
 
+    /// Always exit 0, always exactly one line. Claude Code shows whatever we print for
+    /// the rest of the session, so "not running" is an empty line rather than a word.
     static func statusLine(provider: String) -> Int32 {
         drainStandardInput()
-        out("\n")
+        let snapshot = StatusFile.load(from: StatusFile.url())
+        out(StatusLineText.render(snapshot: snapshot, provider: provider, now: Date()) + "\n")
         return 0
     }
 

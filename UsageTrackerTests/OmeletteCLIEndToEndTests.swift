@@ -184,6 +184,54 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertEqual(run.stderr, CLIText.notRunning + "\n")
     }
 
+    // MARK: - statusline
+
+    func testStatusLinePrintsOneLineAndOneNewline() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("◐ 42% · resets in "), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("· $4.20 today · ⚑ 1\n"), run.stdout)
+        XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1, "exactly one newline, and it is the last byte")
+        XCTAssertTrue(run.stderr.isEmpty)
+    }
+
+    /// Claude Code writes its session JSON and closes the pipe. We must read it (or
+    /// their write can fail), print our own line, and be gone.
+    func testStatusLineIgnoresWhatClaudeCodeSendsOnStdin() throws {
+        try publish(sample())
+        let session = #"{"session_id":"abc","model":{"id":"claude-opus-5","display_name":"Opus"},"cost":{"total_cost_usd":9.99}}"#
+
+        let run = try runCLI(["statusline"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertFalse(run.stdout.contains("Opus"), "the line is about the account, not the session")
+        XCTAssertFalse(run.stdout.contains("9.99"))
+        XCTAssertTrue(run.stdout.contains("$4.20 today"))
+        XCTAssertLessThan(run.elapsed, 1)
+    }
+
+    func testStatusLineWithNoFileIsAnEmptyLineAndExitZero() throws {
+        try publish(nil)
+
+        let run = try runCLI(["statusline"])
+
+        XCTAssertEqual(run.status, 0, "a status line must never report an error")
+        XCTAssertEqual(run.stdout, "\n")
+        XCTAssertTrue(run.stderr.isEmpty)
+    }
+
+    func testStatusLineTakesAProvider() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline", "--provider", "codex"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, "⚑ 1\n", "no Codex in the file; the flag is not Codex's")
+    }
+
     /// The binary is Foundation-only by contract. `otool -L` is the assertion that
     /// keeps an accidental `import AppKit` — which would drag a whole UI framework into
     /// a tool that runs on every keystroke of a status line — from shipping.
