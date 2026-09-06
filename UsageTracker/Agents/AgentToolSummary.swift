@@ -135,10 +135,15 @@ enum AgentToolSummary {
     /// Agents paste bare hosts — "example.com/hooks?tab=json" — which URLComponents
     /// reads as one long path with no host at all. Parsing it again as https tells
     /// the two apart; the scheme is for the parser only and is never shown.
+    ///
+    /// A host with a port ("example.com:8443/hooks", a local dev server) is the same
+    /// paste wearing a scheme it doesn't have: URLComponents takes "example.com" for
+    /// the scheme and still finds no host. So it is the missing *host*, not a missing
+    /// scheme, that says the string has to be read again.
     private static func parsed(_ raw: String) -> URLComponents? {
         guard let components = URLComponents(string: raw) else { return nil }
-        guard components.scheme == nil else { return components }
-        return URLComponents(string: "https://" + raw)
+        guard components.host == nil else { return components }
+        return URLComponents(string: "https://" + raw) ?? components
     }
 
     /// The agent asked something. The headline is the first question, the detail is

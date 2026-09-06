@@ -88,6 +88,14 @@ final class AgentToolSummaryTests: XCTestCase {
         XCTAssertEqual(AgentToolSummary.shortURL("docs.example.com"), "docs.example.com")
     }
 
+    func testABareHostWithAPortIsStillAHost() {
+        // "example.com:8443/hooks" parses as scheme "example.com" with no host at
+        // all — the same shape as a bare host, and a local dev server is just as
+        // plausible a paste.
+        XCTAssertEqual(AgentToolSummary.shortURL("example.com:8443/hooks"), "example.com/hooks")
+        XCTAssertEqual(AgentToolSummary.shortURL("https://example.com:8443/hooks?tab=json"), "example.com/hooks")
+    }
+
     func testSomethingThatIsNotAURLIsShownAsItArrived() {
         XCTAssertEqual(AgentToolSummary.shortURL("not a url at all"), "not a url at all")
     }
