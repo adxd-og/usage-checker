@@ -7,7 +7,11 @@ import SwiftUI
 /// General settings, and three sections is not a tab's worth of anything.
 struct CommandLineSettingsView: View {
     @State private var statusLine: HookInstallStatus = .notInstalled
+    @State private var claudeMCP: HookInstallStatus = .notInstalled
+    @State private var codexMCP: HookInstallStatus = .notInstalled
     @State private var statusLinePreviewShown = false
+    @State private var claudeMCPPreviewShown = false
+    @State private var codexMCPPreviewShown = false
     @State private var failure: String?
     @State private var copied = false
 
@@ -17,6 +21,7 @@ struct CommandLineSettingsView: View {
         Group {
             toolSection
             statusLineSection
+            mcpSection
             if let failure {
                 Section {
                     HStack(alignment: .top, spacing: 6) {
@@ -66,48 +71,23 @@ struct CommandLineSettingsView: View {
 
     private var statusLineSection: some View {
         Section {
-            HStack(spacing: OMSpacing.s) {
-                OMChip(
-                    text: AgentsSettingsText.hookStatusLabel(statusLine),
-                    tint: AgentsSettingsText.hookStatusTint(statusLine)
-                )
-                Spacer()
-            }
-            HStack {
-                switch statusLine {
-                case .notInstalled:
-                    Button("Enable") { run { try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cliPath) } }
-                case .outdated:
-                    Button("Update") { run { try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cliPath) } }
-                    Button("Disable") { run { try StatusLineInstaller.remove(settingsURL: settingsURL, cliPath: cliPath) } }
-                case .installed:
-                    Button("Disable") { run { try StatusLineInstaller.remove(settingsURL: settingsURL, cliPath: cliPath) } }
-                case .conflict:
-                    Button("Enable") {}.disabled(true)
-                }
-                Spacer()
-                Button("Open settings.json") { NSWorkspace.shared.open(settingsURL) }
-                    .disabled(!FileManager.default.fileExists(atPath: settingsURL.path))
-            }
-            DisclosureGroup(CommandLineSettingsText.statusLinePreviewTitle, isExpanded: $statusLinePreviewShown) {
-                ScrollView {
-                    Text(StatusLineInstaller.previewJSON(cliPath: cliPath))
-                        .font(.system(size: 10, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .frame(maxHeight: 120)
-            }
+            statusRow(statusLine)
+            actionRow(
+                status: statusLine,
+                fileURL: AgentPaths.claudeSettingsURL,
+                openTitle: "Open settings.json",
+                install: { try StatusLineInstaller.install(settingsURL: AgentPaths.claudeSettingsURL, cliPath: cliPath) },
+                remove: { try StatusLineInstaller.remove(settingsURL: AgentPaths.claudeSettingsURL, cliPath: cliPath) }
+            )
+            preview(isExpanded: $statusLinePreviewShown, text: StatusLineInstaller.previewJSON(cliPath: cliPath))
             if case .conflict(let command) = statusLine {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(CommandLineSettingsText.conflictCaption(command))
                         .font(OMFont.caption)
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
-                    Button("Copy Omelette's command") {
-                        copy(StatusLineInstaller.command(cliPath: cliPath))
-                    }
-                    .buttonStyle(.link)
+                    Button("Copy Omelette's command") { copy(StatusLineInstaller.command(cliPath: cliPath)) }
+                        .buttonStyle(.link)
                 }
             }
             Text(CommandLineSettingsText.statusLineCaption)
@@ -118,9 +98,100 @@ struct CommandLineSettingsView: View {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - MCP server
 
-    private var settingsURL: URL { AgentPaths.claudeSettingsURL }
+    private var mcpSection: some View {
+        Section {
+            Text(CommandLineSettingsText.mcpCaption)
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+
+            Text("Claude Code")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+            statusRow(claudeMCP)
+            actionRow(
+                status: claudeMCP,
+                fileURL: AgentPaths.claudeConfigURL,
+                openTitle: "Open .claude.json",
+                install: { try MCPInstaller.installClaude(configURL: AgentPaths.claudeConfigURL, cliPath: cliPath) },
+                remove: { try MCPInstaller.removeClaude(configURL: AgentPaths.claudeConfigURL, cliPath: cliPath) }
+            )
+            preview(isExpanded: $claudeMCPPreviewShown, text: MCPInstaller.claudePreviewJSON(cliPath: cliPath))
+            Text(CommandLineSettingsText.mcpClaudeCaption)
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+
+            Divider()
+
+            Text("Codex")
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+            statusRow(codexMCP)
+            actionRow(
+                status: codexMCP,
+                fileURL: AgentPaths.codexConfigURL,
+                openTitle: "Open config.toml",
+                install: { try MCPInstaller.installCodex(configURL: AgentPaths.codexConfigURL, cliPath: cliPath) },
+                remove: { try MCPInstaller.removeCodex(configURL: AgentPaths.codexConfigURL, cliPath: cliPath) }
+            )
+            preview(isExpanded: $codexMCPPreviewShown, text: MCPInstaller.codexPreview(cliPath: cliPath))
+            Text(CommandLineSettingsText.mcpCodexCaption)
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+        } header: {
+            Text("MCP server")
+        }
+    }
+
+    // MARK: - Rows shared by the three installers
+
+    private func statusRow(_ status: HookInstallStatus) -> some View {
+        HStack(spacing: OMSpacing.s) {
+            OMChip(
+                text: AgentsSettingsText.hookStatusLabel(status),
+                tint: AgentsSettingsText.hookStatusTint(status)
+            )
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func actionRow(
+        status: HookInstallStatus,
+        fileURL: URL,
+        openTitle: String,
+        install: @escaping () throws -> Void,
+        remove: @escaping () throws -> Void
+    ) -> some View {
+        HStack {
+            switch status {
+            case .notInstalled: Button("Enable") { run(install) }
+            case .outdated:
+                Button("Update") { run(install) }
+                Button("Disable") { run(remove) }
+            case .installed: Button("Disable") { run(remove) }
+            case .conflict: Button("Enable") {}.disabled(true)
+            }
+            Spacer()
+            Button(openTitle) { NSWorkspace.shared.open(fileURL) }
+                .disabled(!FileManager.default.fileExists(atPath: fileURL.path))
+        }
+    }
+
+    private func preview(isExpanded: Binding<Bool>, text: String) -> some View {
+        DisclosureGroup(CommandLineSettingsText.statusLinePreviewTitle, isExpanded: isExpanded) {
+            ScrollView {
+                Text(text)
+                    .font(.system(size: 10, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 120)
+        }
+    }
+
+    // MARK: - Actions
 
     private func copy(_ text: String) {
         let pasteboard = NSPasteboard.general
@@ -152,7 +223,9 @@ struct CommandLineSettingsView: View {
     }
 
     private func refreshStatus() {
-        statusLine = StatusLineInstaller.status(settingsURL: settingsURL, cliPath: cliPath)
+        statusLine = StatusLineInstaller.status(settingsURL: AgentPaths.claudeSettingsURL, cliPath: cliPath)
+        claudeMCP = MCPInstaller.claudeStatus(configURL: AgentPaths.claudeConfigURL, cliPath: cliPath)
+        codexMCP = MCPInstaller.codexStatus(configURL: AgentPaths.codexConfigURL, cliPath: cliPath)
     }
 }
 

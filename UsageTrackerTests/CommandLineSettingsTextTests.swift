@@ -48,6 +48,22 @@ final class CommandLineSettingsTextTests: XCTestCase {
         XCTAssertTrue(caption.contains("bash \"$HOME/.claude/statusline-command.sh\""), caption)
     }
 
+    func testTheMCPCaptionsNameTheToolsAndTheRestart() {
+        XCTAssertTrue(CommandLineSettingsText.mcpCaption.contains("get_usage"))
+        XCTAssertTrue(CommandLineSettingsText.mcpCaption.contains("get_agents"))
+        XCTAssertTrue(CommandLineSettingsText.mcpCaption.lowercased().contains("read-only"))
+        for caption in [CommandLineSettingsText.mcpClaudeCaption, CommandLineSettingsText.mcpCodexCaption] {
+            XCTAssertTrue(caption.lowercased().contains("restart"), caption)
+        }
+    }
+
+    /// Rewriting a file Claude Code writes itself is worth saying out loud, and the
+    /// backup is the sentence that makes it survivable.
+    func testTheClaudeCaptionWarnsAboutRewritingItsStateFile() {
+        XCTAssertTrue(CommandLineSettingsText.mcpClaudeCaption.contains("~/.claude.json"))
+        XCTAssertTrue(CommandLineSettingsText.mcpClaudeCaption.contains(".claude.json.omelette-backup"))
+    }
+
     func testTheCaptionsSayWhatTheThingDoes() {
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("status"))
         XCTAssertTrue(CommandLineSettingsText.pathCaption.contains("omelette status"))
