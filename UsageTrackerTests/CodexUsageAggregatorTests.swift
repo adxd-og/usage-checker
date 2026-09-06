@@ -35,12 +35,13 @@ final class CodexUsageAggregatorTests: XCTestCase {
             .appendingPathComponent("CodexUsageAggregatorTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         // `dynamicLookup` strips variant suffixes, so "gpt-5.6-terra" resolves to this
-        // row. Cache-create rates are zero because OpenAI does not bill cache writes —
-        // the same thing models.dev reports.
+        // row. OpenAI bills cache writes from GPT-5.6 on, at 1.25x the uncached input
+        // rate — the same figure `ModelsDevPricing` infers when models.dev publishes
+        // none — so the 5m rate here is 1.25 x 1.25.
         ModelPricing.updateDynamic([
             "gpt-5.6": ModelPrice(
                 inputPerM: 1.25, outputPerM: 10, cacheReadPerM: 0.125,
-                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+                cacheCreate5mPerM: 1.5625, cacheCreate1hPerM: 2.5
             )
         ])
     }
@@ -171,27 +172,64 @@ final class CodexUsageAggregatorTests: XCTestCase {
 
         let usage = await lastHour(loaded())
         XCTAssertEqual(usage.turns, 3)
-        XCTAssertEqual(usage.tokens, 4_050)
+        XCTAssertEqual(usage.tokens, 3_850, "the deltas' input (3_500) and output (350)")
 
-        // Fresh input is input − cached, so the five buckets are disjoint and sum to
-        // the total; thinking is a subset of output and is not in it.
+        // OpenAI's own formula: ordinary_input = input − cached − cache_write. All three
+        // are inside the `input_tokens` counter, so fresh input is what is left after
+        // both are taken out and the five buckets are disjoint; thinking is a subset of
+        // output and is not in the total.
         let b = usage.breakdown
-        XCTAssertEqual(b.input, 2_000)
+        XCTAssertEqual(b.input, 1_800)
         XCTAssertEqual(b.output, 350)
         XCTAssertEqual(b.cacheRead, 1_500)
         XCTAssertEqual(b.cacheWrite5m, 200)
         XCTAssertEqual(b.cacheWrite1h, 0)
         XCTAssertEqual(b.thinking, 100)
-        XCTAssertEqual(b.total, 4_050)
+        XCTAssertEqual(b.total, 3_850)
+        XCTAssertEqual(
+            b.input + b.cacheRead + b.cacheWrite5m, 3_500,
+            "the three input-side buckets add back up to the raw input counter"
+        )
 
         let cost = try XCTUnwrap(b.cost)
-        XCTAssertEqual(cost.input, 0.0025, accuracy: 1e-12)
+        XCTAssertEqual(cost.input, 0.00225, accuracy: 1e-12)
         XCTAssertEqual(cost.output, 0.0035, accuracy: 1e-12)
         XCTAssertEqual(cost.cacheRead, 0.0001875, accuracy: 1e-12)
-        XCTAssertEqual(cost.cacheWrite, 0, accuracy: 1e-12, "OpenAI does not bill cache writes")
+        XCTAssertEqual(cost.cacheWrite, 0.0003125, accuracy: 1e-12, "200 writes at 1.5625/M")
         // The turn's dollars and the breakdown's dollars are the same number.
-        XCTAssertEqual(cost.total, 0.0061875, accuracy: 1e-12)
-        XCTAssertEqual(usage.cost, 0.0061875, accuracy: 1e-12)
+        XCTAssertEqual(cost.total, 0.00625, accuracy: 1e-12)
+        XCTAssertEqual(usage.cost, 0.00625, accuracy: 1e-12)
+    }
+
+    func testAWhollyCachedTurnHasNoFreshInputAndStillPricesItsWrites() async throws {
+        // The shape a long Codex session settles into: the context is served from cache,
+        // a slice of it is written back, and nothing is fresh. Counting the writes as
+        // fresh input too (input − cached alone) would bill them twice — once at the
+        // input rate and once at the write rate — and inflate the total by 3_000 tokens.
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: 900),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            tokenCount(secondsAgo: 600, input: 15_000, cached: 12_000, cacheWrite: 3_000,
+                       output: 100, reasoning: 40),
+        ])
+
+        let usage = await lastHour(loaded())
+        let b = usage.breakdown
+        XCTAssertEqual(b.input, 0, "15_000 − 12_000 − 3_000")
+        XCTAssertEqual(b.cacheRead, 12_000)
+        XCTAssertEqual(b.cacheWrite5m, 3_000)
+        XCTAssertEqual(b.output, 100)
+        XCTAssertEqual(b.thinking, 40)
+        XCTAssertEqual(b.total, 15_100)
+        XCTAssertEqual(usage.tokens, 15_100)
+        XCTAssertEqual(try XCTUnwrap(b.cacheHitShare), 0.8, accuracy: 1e-12, "12_000 of 15_000")
+
+        let cost = try XCTUnwrap(b.cost)
+        XCTAssertEqual(cost.input, 0, accuracy: 1e-12)
+        XCTAssertEqual(cost.cacheRead, 12_000 * 0.125 / 1_000_000, accuracy: 1e-12)
+        XCTAssertEqual(cost.cacheWrite, 3_000 * 1.5625 / 1_000_000, accuracy: 1e-12)
+        XCTAssertEqual(cost.output, 100 * 10 / 1_000_000, accuracy: 1e-12)
+        XCTAssertEqual(cost.total, usage.cost, accuracy: 1e-12)
     }
 
     func testANegativeDeltaRestartsTheBaseline() async throws {
@@ -276,9 +314,9 @@ final class CodexUsageAggregatorTests: XCTestCase {
 
         usage = await lastHour(aggregator)
         XCTAssertEqual(usage.turns, 2)
-        XCTAssertEqual(usage.tokens, 3_500)
+        XCTAssertEqual(usage.tokens, 3_300)
         XCTAssertEqual(usage.breakdown.cacheWrite5m, 200)
-        XCTAssertEqual(usage.cost, 0.0051750, accuracy: 1e-12)
+        XCTAssertEqual(usage.cost, 0.0052375, accuracy: 1e-12)
     }
 
     func testAWindowSumsOnlyTheTurnsInsideIt() async throws {
@@ -354,9 +392,9 @@ final class CodexUsageAggregatorTests: XCTestCase {
         ], named: "rollout-beta.jsonl")
 
         let usage = await lastHour(loaded())
-        // Ranked by cost: alpha spent $0.0061875, beta $0.001125.
+        // Ranked by cost: alpha spent $0.00625, beta $0.001125.
         XCTAssertEqual(usage.projects.map(\.displayName), [alphaName, betaName])
-        XCTAssertEqual(usage.projects[0].totalCost, 0.0061875, accuracy: 1e-12)
+        XCTAssertEqual(usage.projects[0].totalCost, 0.00625, accuracy: 1e-12)
         XCTAssertEqual(usage.projects[1].totalCost, 0.001125, accuracy: 1e-12)
         // The slug is the percent-encoded cwd, the same shape Grok's directories have.
         XCTAssertEqual(usage.projects[1].slug, "%2Ftmp%2FCodex%20Fixtures%2Fbeta")

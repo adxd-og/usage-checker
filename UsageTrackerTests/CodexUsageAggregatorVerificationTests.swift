@@ -170,24 +170,27 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
         let usage = await lastHour(loaded())
         XCTAssertEqual(usage.turns, 3)
         let b = usage.breakdown
-        XCTAssertEqual(b.input, 6_400)
+        // Cache writes are inside the raw `input_tokens` counter too, so fresh input is
+        // input − cached − cache_write (OpenAI's own `ordinary_input_tokens`).
+        XCTAssertEqual(b.input, 6_150)
         XCTAssertEqual(b.output, 1_000)
         XCTAssertEqual(b.cacheRead, 2_600)
         XCTAssertEqual(b.cacheWrite5m, 250)
         XCTAssertEqual(b.cacheWrite1h, 0)
         XCTAssertEqual(b.thinking, 200)
-        XCTAssertEqual(b.total, 10_250)
-        XCTAssertEqual(usage.tokens, 10_250)
+        XCTAssertEqual(b.total, 10_000, "the deltas' input (9_000) and output (1_000)")
+        XCTAssertEqual(usage.tokens, 10_000)
 
         let cost = try XCTUnwrap(b.cost)
-        XCTAssertEqual(cost.input, 0.008, accuracy: 1e-9)
+        XCTAssertEqual(cost.input, 0.0076875, accuracy: 1e-9)
         XCTAssertEqual(cost.output, 0.01, accuracy: 1e-9)
         XCTAssertEqual(cost.cacheRead, 0.000325, accuracy: 1e-9)
-        XCTAssertEqual(cost.total, 0.018325, accuracy: 1e-9)
+        XCTAssertEqual(cost.cacheWrite, 0, accuracy: 1e-9, "this table publishes no write rate")
+        XCTAssertEqual(cost.total, 0.0180125, accuracy: 1e-9)
         // The turn dollars (summed independently as `usage.cost`) and the breakdown's
         // own dollars are the same number.
         XCTAssertEqual(usage.cost, cost.total, accuracy: 1e-9)
-        XCTAssertEqual(usage.cost, 0.018325, accuracy: 1e-9)
+        XCTAssertEqual(usage.cost, 0.0180125, accuracy: 1e-9)
     }
 
     func testFreshInputClampsAtZeroWhenCacheReadExceedsRawInput() async throws {
@@ -314,17 +317,17 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
         ])
 
         let usage = await lastHour(loaded())
-        XCTAssertEqual(usage.breakdown.input, 700)
+        XCTAssertEqual(usage.breakdown.input, 650, "1_000 − 300 cached − 50 written")
         XCTAssertEqual(usage.breakdown.cacheRead, 300)
         XCTAssertEqual(usage.breakdown.output, 80)
         XCTAssertEqual(usage.breakdown.cacheWrite5m, 50)
 
         let cost = try XCTUnwrap(usage.breakdown.cost)
-        XCTAssertEqual(cost.input, 700 * 2.0 / 1_000_000, accuracy: 1e-9)
+        XCTAssertEqual(cost.input, 650 * 2.0 / 1_000_000, accuracy: 1e-9)
         XCTAssertEqual(cost.output, 80 * 9.0 / 1_000_000, accuracy: 1e-9)
         XCTAssertEqual(cost.cacheRead, 300 * 0.4 / 1_000_000, accuracy: 1e-9)
         XCTAssertEqual(cost.cacheWrite, 50 * 6.0 / 1_000_000, accuracy: 1e-9)
-        XCTAssertEqual(cost.total, 0.0014 + 0.00072 + 0.00012 + 0.0003, accuracy: 1e-9)
+        XCTAssertEqual(cost.total, 0.0013 + 0.00072 + 0.00012 + 0.0003, accuracy: 1e-9)
     }
 
     func testAnUnpricedModelKeepsItsTokensInTheFullBreakdownShape() async throws {

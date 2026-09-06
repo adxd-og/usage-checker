@@ -11,9 +11,12 @@ import Foundation
 /// `session_meta` is always line 1 and `turn_context` always precedes the first
 /// `token_count` (verified across the whole rollout tree, 2026-09-05).
 ///
-/// Codex's `input_tokens` *includes* cached input, so fresh input is `input − cached`;
-/// `reasoning_output_tokens` is a subset of `output_tokens` and never joins the total.
-/// OpenAI doesn't bill cache writes — the count is still shown.
+/// Codex's `input_tokens` *includes* both the cached input and the tokens written to
+/// cache, so fresh input is OpenAI's `ordinary_input_tokens`: `input − cached −
+/// cache_write`. Each of the three bills at its own rate — cache writes at 1.25× the
+/// uncached input rate from GPT-5.6 on, cached reads at 0.1× — and each is one bucket of
+/// the breakdown. `reasoning_output_tokens` is a subset of `output_tokens` and never
+/// joins the total.
 actor CodexUsageAggregator: CostLogAggregating {
     static let shared = CodexUsageAggregator()
 
@@ -453,11 +456,16 @@ actor CodexUsageAggregator: CostLogAggregating {
         guard delta.input > 0 || delta.output > 0 else { return nil }
 
         let cacheRead = max(0, delta.cached)
+        let cacheWrite = max(0, delta.cacheWrite)
         let tokens = TokenBreakdown(
-            input: max(0, delta.input - cacheRead),
+            // OpenAI's own formula: ordinary_input = input − cached − cache_write. All
+            // three counters live inside `input_tokens`, so leaving the writes in would
+            // bill them twice — once at the input rate, once at the write rate — and add
+            // them to the turn's total a second time.
+            input: max(0, delta.input - cacheRead - cacheWrite),
             output: max(0, delta.output),
             cacheRead: cacheRead,
-            cacheWrite5m: max(0, delta.cacheWrite),
+            cacheWrite5m: cacheWrite,
             cacheWrite1h: 0,
             thinking: max(0, delta.reasoning)
         )

@@ -16,7 +16,10 @@ final class ModelsDevPricingTests: XCTestCase {
       },
       "openai": {
         "models": {
-          "gpt-5.6": {"cost": {"input": 1.25, "output": 10}}
+          "gpt-5.6": {"cost": {"input": 1.25, "output": 10}},
+          "gpt-5.4": {"cost": {"input": 2.5, "output": 15}},
+          "gpt-5.6-terra": {"cost": {"input": 2, "output": 12}},
+          "gpt-6-astra": {"cost": {"input": 10, "output": 50, "cache_write": 9}}
         }
       },
       "xai": {
@@ -100,7 +103,54 @@ final class ModelsDevPricingTests: XCTestCase {
     func testOpenAIFallsBackToATenthOfInputForCacheReads() throws {
         let price = try XCTUnwrap(parsed()["gpt-5.6"])
         XCTAssertEqual(price.cacheReadPerM, 0.125, accuracy: 1e-9)
-        XCTAssertEqual(price.cacheCreate5mPerM, 0)
+    }
+
+    // MARK: - OpenAI cache writes
+
+    func testGPT56AndLaterInferACacheWriteRateAtAQuarterOverInput() throws {
+        // OpenAI bills cache writes from GPT-5.6 on, at 1.25x the uncached input rate
+        // (`ordinary_input = input - cached - cache_write`, and the write is charged at
+        // the premium). Until models.dev publishes a `cache_write` for one of these ids,
+        // reporting $0 for the bucket understates a real charge.
+        let prices = try parsed()
+        XCTAssertEqual(try XCTUnwrap(prices["gpt-5.6"]).cacheCreate5mPerM, 1.5625, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(prices["gpt-5.6-terra"]).cacheCreate5mPerM, 2.5, accuracy: 1e-9)
+    }
+
+    func testAnOpenAILineOlderThanGPT56InfersNoCacheWriteRate() throws {
+        // The lines before 5.6 really do bill cache writes at nothing; inventing a rate
+        // for them would overstate every Codex turn that wrote to cache.
+        XCTAssertEqual(try XCTUnwrap(try parsed()["gpt-5.4"]).cacheCreate5mPerM, 0)
+    }
+
+    func testAPublishedCacheWriteRateWinsOverTheInferredOne() throws {
+        // The fixture's 9 is deliberately not 1.25x its input rate of 10, so a build
+        // that inferred over the published figure would read 12.5 here.
+        XCTAssertEqual(try XCTUnwrap(try parsed()["gpt-6-astra"]).cacheCreate5mPerM, 9, accuracy: 1e-9)
+    }
+
+    func testTheCacheWriteInferenceRuleIsPerProviderAndPerLine() throws {
+        XCTAssertEqual(
+            ModelsDevPricing.inferredCacheWrite5m(provider: "anthropic", modelID: "claude-haiku-4-5", inputPerM: 1),
+            1.25, accuracy: 1e-9
+        )
+        XCTAssertEqual(
+            ModelsDevPricing.inferredCacheWrite5m(provider: "openai", modelID: "gpt-6-astra", inputPerM: 10),
+            12.5, accuracy: 1e-9
+        )
+        XCTAssertEqual(
+            ModelsDevPricing.inferredCacheWrite5m(provider: "openai", modelID: "gpt-5.2", inputPerM: 1.75), 0
+        )
+        XCTAssertEqual(
+            ModelsDevPricing.inferredCacheWrite5m(provider: "xai", modelID: "grok-4.6", inputPerM: 2), 0
+        )
+        XCTAssertEqual(
+            ModelsDevPricing.inferredCacheWrite5m(provider: "google", modelID: "gemini-3.7-flash", inputPerM: 2), 0
+        )
+        // A date-stamped id is the same line: normalize before the prefix test.
+        XCTAssertTrue(ModelsDevPricing.billsCacheWrites(openAIModelID: "gpt-5.6-luna-20260101"))
+        XCTAssertFalse(ModelsDevPricing.billsCacheWrites(openAIModelID: "gpt-5.5-pro"))
+        XCTAssertFalse(ModelsDevPricing.billsCacheWrites(openAIModelID: "o3-pro"))
     }
 
     // MARK: - Shapes that must not take the rest of the payload down with them

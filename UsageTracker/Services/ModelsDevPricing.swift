@@ -96,11 +96,10 @@ enum ModelsDevPricing {
                       let output = doubleValue(cost["output"])
                 else { continue }
                 let cacheRead = doubleValue(cost["cache_read"]) ?? input * 0.1
-                // models.dev reports the 5-minute cache-write rate. Anthropic always
-                // sends one (and prices the 1-hour tier at a stable 1.6× of it); a
-                // provider without cache_write (OpenAI, xAI, Google) doesn't bill them.
+                // models.dev reports the 5-minute cache-write rate; the 1-hour tier is a
+                // stable 1.6× of it. A published rate always wins over the inference.
                 let cacheWrite5m = doubleValue(cost["cache_write"])
-                    ?? (provider == "anthropic" ? input * 1.25 : 0)
+                    ?? inferredCacheWrite5m(provider: provider, modelID: id, inputPerM: input)
                 prices[ModelPricing.normalize(id)] = ModelPrice(
                     inputPerM: input,
                     outputPerM: output,
@@ -112,6 +111,29 @@ enum ModelsDevPricing {
         }
         guard !prices.isEmpty else { throw URLError(.cannotParseResponse) }
         return prices
+    }
+
+    /// The 5-minute cache-write rate to assume for a model models.dev publishes none for.
+    ///
+    /// Anthropic bills every cache write, at 1.25× the input rate. OpenAI began billing
+    /// them with GPT-5.6 — the same 1.25× multiple on the uncached input rate, alongside
+    /// 0.1× for cached reads — and bills nothing for the lines before it. xAI and Google
+    /// bill no cache writes at all.
+    static func inferredCacheWrite5m(provider: String, modelID: String, inputPerM: Double) -> Double {
+        switch provider {
+        case "anthropic": return inputPerM * 1.25
+        case "openai": return billsCacheWrites(openAIModelID: modelID) ? inputPerM * 1.25 : 0
+        default: return 0
+        }
+    }
+
+    /// GPT-5.6 and GPT-6 bill cache writes; every OpenAI line before them does not.
+    /// A prefix test rather than a version comparison, because these ids are the only
+    /// two shapes that matter — models.dev already publishes a `cache_write` for most
+    /// of them, and a rate it publishes wins over this either way.
+    static func billsCacheWrites(openAIModelID: String) -> Bool {
+        let id = ModelPricing.normalize(openAIModelID)
+        return id.hasPrefix("gpt-5.6") || id.hasPrefix("gpt-6")
     }
 
     private static func doubleValue(_ any: Any?) -> Double? {
