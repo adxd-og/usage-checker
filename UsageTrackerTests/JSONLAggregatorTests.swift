@@ -539,7 +539,7 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
     }
 
-    func testAVersionThreeCacheIsRejectedAndTheLogsAreReRead() async throws {
+    func testAVersionFourCacheIsRejectedAndTheLogsAreReRead() async throws {
         try writeStandardFixture()
 
         // A snapshot in the *current* shape, wearing the old version number, with a day
@@ -574,23 +574,23 @@ final class JSONLAggregatorTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 3).write(to: cacheURL)
+        try snapshot(version: 4).write(to: cacheURL)
         let stale = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
         await stale.refresh()
         let staleParsed = await stale.filesParsedInLastScan
         let staleBreakdown = await stale.breakdown()
 
-        XCTAssertEqual(staleParsed, 2, "a version-3 snapshot means a full rescan")
+        XCTAssertEqual(staleParsed, 2, "a version-4 snapshot means a full rescan")
         XCTAssertFalse(
             staleBreakdown.daily.contains { $0.turns == 7 },
             "nothing from the old snapshot may reach the figures"
         )
         XCTAssertEqual(staleBreakdown.weekCost, 12.5, accuracy: 0.0001)
 
-        // The control: the same bytes at version 4 ARE restored, so the assertions
+        // The control: the same bytes at version 5 ARE restored, so the assertions
         // above are about the version number and not about an unreadable file.
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 4).write(to: currentURL)
+        try snapshot(version: 5).write(to: currentURL)
         let current = JSONLAggregator(rootURL: root, cacheURL: currentURL)
         await current.refresh()
         let currentBreakdown = await current.breakdown()

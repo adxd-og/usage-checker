@@ -602,6 +602,133 @@ final class JSONLSessionsTests: XCTestCase {
         """
     }
 
+    // MARK: - The chat split by model
+
+    /// A chat that ran on two models at two efforts with a sub-agent on a third: the
+    /// shape a package day here really has — Sonnet at `high` for the cheap turns,
+    /// Sonnet at `xhigh` and Opus for the expensive ones, and a Haiku sub-agent.
+    private func writeModelFixture() throws {
+        try writeMain([
+            mainTurn(id: "msg_s1", at: at(daysAgo: 2, hour: 9),
+                     model: "claude-sonnet-4-5", input: 1_000_000, effort: "high"),
+            mainTurn(id: "msg_s2", at: at(daysAgo: 1, hour: 10),
+                     model: "claude-sonnet-4-5", input: 1_000_000, output: 100_000,
+                     effort: "xhigh"),
+            mainTurn(id: "msg_o1", at: at(daysAgo: 1, hour: 11),
+                     model: "claude-opus-4-5", input: 1_000_000, effort: "high"),
+        ])
+        try writeSubagent(
+            [agentTurn(
+                id: "msg_a1", at: at(daysAgo: 1, hour: 11), agentID: "a06ceeae2762ca204",
+                kind: "planner", model: "claude-haiku-4-5", input: 1_000_000, effort: "low"
+            )],
+            agentID: "a06ceeae2762ca204"
+        )
+    }
+
+    func testAChatIsSplitByModelAndEffortWithItsSubAgentsIncluded() async throws {
+        try writeModelFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        // Opus $5.00, Sonnet at xhigh $3.00 + $1.50, Sonnet at high $3.00, Haiku $1.00.
+        XCTAssertEqual(
+            chat.models.map(\.id),
+            [
+                "claude-opus-4-5|high",
+                "claude-sonnet-4-5|xhigh",
+                "claude-sonnet-4-5|high",
+                "claude-haiku-4-5|low",
+            ],
+            "most expensive first"
+        )
+        XCTAssertEqual(chat.models.map(\.turns), [1, 1, 1, 1])
+        XCTAssertEqual(chat.models[0].model, "claude-opus-4-5", "the raw id, not a display name")
+        XCTAssertEqual(chat.models[0].effort, "high")
+        XCTAssertEqual(try XCTUnwrap(chat.models[0].tokens.cost).total, 5.0, accuracy: 1e-9)
+        XCTAssertEqual(chat.models[1].tokens.output, 100_000, "one model at two efforts is two rows")
+        XCTAssertEqual(try XCTUnwrap(chat.models[1].tokens.cost).total, 4.5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(chat.models[2].tokens.cost).total, 3.0, accuracy: 1e-9)
+        XCTAssertEqual(
+            chat.models[3].model, "claude-haiku-4-5",
+            "a sub-agent's model is one of the chat's models: the row says what the chat spent"
+        )
+        XCTAssertEqual(try XCTUnwrap(chat.models[3].tokens.cost).total, 1.0, accuracy: 1e-9)
+
+        XCTAssertEqual(chat.models.reduce(0) { $0 + $1.turns }, chat.turns,
+                       "every turn of the chat is in exactly one row")
+        XCTAssertEqual(
+            chat.models.reduce(TokenBreakdown.zero) { $0 + $1.tokens }.total,
+            chat.tokens.total,
+            "and so is every token"
+        )
+    }
+
+    func testALaterRecordForAMessageIdDoesNotDoubleCountItsModel() async throws {
+        // The provisional record, then two better ones for the same message id. The
+        // row it landed in takes the difference; it must not take three turns or three
+        // times the input.
+        try writeMain(growingRecords(at: at(daysAgo: 1, hour: 10)))
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.models.map(\.id), ["claude-sonnet-4-5|high"], "one response, one row")
+        XCTAssertEqual(chat.models[0].turns, 1, "a revision moves tokens, never turns")
+        XCTAssertEqual(chat.models[0].tokens.input, 1_000_000, "counted once, not once per line")
+        XCTAssertEqual(chat.models[0].tokens.output, 280_000, "the final count, not the provisional 2")
+        XCTAssertEqual(chat.models[0].tokens.thinking, 149_000)
+        XCTAssertEqual(try XCTUnwrap(chat.models[0].tokens.cost).total, 7.2, accuracy: 1e-9)
+        XCTAssertEqual(chat.models[0].tokens, chat.tokens,
+                       "a chat on one model spent all of it there")
+    }
+
+    func testAClippedRangeKeepsEveryModelRowWithTheChatsWholeTotals() async throws {
+        try writeModelFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 1), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.days.map(\.day), [dayStart(daysAgo: 1)], "one day survives the clip")
+        XCTAssertEqual(chat.turns, 3, "and three of the four turns with it")
+        XCTAssertEqual(chat.models.count, 4, "a model row is kept whenever any day is")
+        XCTAssertEqual(
+            chat.models.first { $0.id == "claude-sonnet-4-5|high" }?.tokens.input,
+            1_000_000,
+            "the row is the whole chat's: no per-model day split is stored"
+        )
+        XCTAssertEqual(
+            chat.models.reduce(0) { $0 + $1.turns }, 4,
+            "so the rows can outnumber the clipped chat's turns — the same rule agents follow"
+        )
+    }
+
+    func testAChatsModelRowsSurviveARelaunch() async throws {
+        try writeModelFixture()
+
+        let first = aggregator(cache: cacheURL)
+        await first.refresh()
+        let firstSessions = await first.sessions(from: dayStart(daysAgo: 3), to: now)
+        let before = try XCTUnwrap(firstSessions.first)
+
+        let second = aggregator(cache: cacheURL)
+        await second.refresh()
+        let parsed = await second.filesParsedInLastScan
+        let secondSessions = await second.sessions(from: dayStart(daysAgo: 3), to: now)
+        let after = try XCTUnwrap(secondSessions.first)
+
+        XCTAssertEqual(parsed, 0, "the cache answers without reopening a transcript")
+        XCTAssertEqual(after.models.count, 4)
+        XCTAssertEqual(after.models, before.models, "keys, efforts, turns and per-category dollars")
+    }
+
     // MARK: - The chat's name
 
     func testATitleIsCollapsedAndCutAtEightyCharacters() {
@@ -724,13 +851,17 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(after.title, "Ledger 0.3.3", "the name is cached with the chat")
     }
 
-    func testAVersionThreeCacheIsRejectedAndTheChatsAreReadAgain() async throws {
+    func testAVersionFourCacheIsRejectedAndTheChatsAreReadAgain() async throws {
         try writeChatFixture()
 
         // A snapshot in the *current* shape wearing the old version number, carrying a
         // chat the logs cannot produce. Only the version check can reject it — a decode
         // failure would prove nothing about the bump.
         func snapshot(version: Int) -> Data {
+            let tokens: [String: Any] = [
+                "input": 7_777, "output": 0, "cacheRead": 0,
+                "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
+            ]
             let object: [String: Any] = [
                 "version": version,
                 "root": root.path,
@@ -747,16 +878,18 @@ final class JSONLSessionsTests: XCTestCase {
                         "days": [[
                             "day": ISO8601DateFormatter().string(from: dayStart(daysAgo: 1)),
                             "turns": 77,
-                            "tokens": [
-                                "input": 7_777, "output": 0, "cacheRead": 0,
-                                "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
-                            ],
-                            "mainTokens": [
-                                "input": 7_777, "output": 0, "cacheRead": 0,
-                                "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
-                            ],
+                            "tokens": tokens,
+                            "mainTokens": tokens,
                         ]],
                         "agents": [String: Any](),
+                        "byModel": [
+                            "claude-sonnet-4-5|high": [
+                                "model": "claude-sonnet-4-5",
+                                "effort": "high",
+                                "turns": 77,
+                                "tokens": tokens,
+                            ],
+                        ],
                     ],
                 ],
                 "titles": ["ffffffff-0000-0000-0000-000000000000": "A chat from the old cache"],
@@ -765,27 +898,27 @@ final class JSONLSessionsTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 3).write(to: cacheURL)
+        try snapshot(version: 4).write(to: cacheURL)
         let stale = aggregator(cache: cacheURL)
         await stale.refresh()
         let staleParsed = await stale.filesParsedInLastScan
         let staleSessions = await stale.sessions(from: dayStart(daysAgo: 3), to: now)
 
-        XCTAssertEqual(staleParsed, 3, "a version-3 snapshot means a full rescan of all three transcripts")
+        XCTAssertEqual(staleParsed, 3, "a version-4 snapshot means a full rescan of all three transcripts")
         XCTAssertEqual(staleSessions.map(\.id), [sessionID], "nothing from the old snapshot reaches the list")
 
-        // The control: the same bytes at version 4 ARE restored, so the assertions above
+        // The control: the same bytes at version 5 ARE restored, so the assertions above
         // are about the version number and not about an unreadable file.
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 4).write(to: currentURL)
+        try snapshot(version: 5).write(to: currentURL)
         let current = aggregator(cache: currentURL)
         await current.refresh()
         let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)
 
-        XCTAssertTrue(
-            restored.contains { $0.turns == 77 && $0.title == "A chat from the old cache" },
-            "a current snapshot restores its chats, names and all"
-        )
+        let old = try XCTUnwrap(restored.first { $0.title == "A chat from the old cache" })
+        XCTAssertEqual(old.turns, 77, "a current snapshot restores its chats, names and all")
+        XCTAssertEqual(old.models.map(\.id), ["claude-sonnet-4-5|high"], "model rows included")
+        XCTAssertEqual(old.models.first?.turns, 77)
     }
 
     // MARK: - Retention
