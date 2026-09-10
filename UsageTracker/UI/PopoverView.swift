@@ -237,7 +237,7 @@ struct PopoverView: View {
                 }
             }
             if OMCostTile.total(displayedServices) > 0 {
-                OMCostTile(services: displayedServices)
+                OMCostTile(services: displayedServices, today: state.todayCosts)
             }
             if hooksPromptVisible {
                 OMHooksPromptRow(onEnable: enableClaudeHooks, onDismiss: dismissHooksPrompt)
