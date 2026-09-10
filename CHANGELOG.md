@@ -5,6 +5,15 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] — 2026-09-10
+
+### Added
+- **The status line opens with the model and its context window**: `Fable [####------] 42%`
+  in front of Omelette's numbers, read from the session JSON Claude Code pipes in,
+  coloured green / yellow / red as the context fills. `--no-color` drops the escape codes.
+- Settings shows a GitHub row under the version, so the link is everywhere the version is.
+- README and the Settings caption say how to add the status line by hand.
+
 ## [2.5.0] — 2026-09-10
 
 ### Added
