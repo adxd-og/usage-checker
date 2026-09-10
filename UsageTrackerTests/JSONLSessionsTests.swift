@@ -586,4 +586,114 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(chat.tokens.output, 200_000)
         XCTAssertEqual(chat.mainTokens.output, 0, "a sub-agent's tokens are not the main thread's")
     }
+
+    /// The brief a sub-agent is started with: `type: user`, `isSidechain`, `agentId`,
+    /// and — like every `type: user` record that is not the user — no `origin` at all.
+    private func agentBriefLine(_ text: String, at date: Date, agentID: String,
+                                session: String? = nil) -> String {
+        """
+        {"parentUuid":null,"isSidechain":true,\
+        "promptId":"969c0b2a-d1a9-4869-9f04-4222ac5471dc","agentId":"\(agentID)",\
+        "type":"user","message":{"role":"user","content":"\(text)"},\
+        "uuid":"e355214c-92e0-4fcc-bfea-2f00341b4a4a",\
+        "timestamp":"\(Self.iso.string(from: date))","userType":"external",\
+        "entrypoint":"cli","cwd":"~/Projects/alpha","sessionId":"\(session ?? sessionID)",\
+        "version":"2.1.263","gitBranch":"main","slug":"lovely-questing-crown"}
+        """
+    }
+
+    // MARK: - The chat's name
+
+    func testATitleIsCollapsedAndCutAtEightyCharacters() {
+        XCTAssertEqual(SessionTitle.collapse("  Ledger   0.3.3\n"), "Ledger 0.3.3")
+        XCTAssertEqual(
+            SessionTitle.collapse("Привет!\nМожет нам в нашу туллу добавить такое?)"),
+            "Привет! Может нам в нашу туллу добавить такое?)",
+            "a newline in the middle of a prompt is one space, not a broken row"
+        )
+        XCTAssertNil(SessionTitle.collapse("   \n\t "), "whitespace is not a name")
+        XCTAssertNil(SessionTitle.collapse(""))
+
+        let long = String(repeating: "a", count: 200)
+        let cut = try? XCTUnwrap(SessionTitle.collapse(long))
+        XCTAssertEqual(cut?.count, 80, "eighty characters including the ellipsis")
+        XCTAssertEqual(cut?.last, "…")
+
+        // The cut lands mid-word: no dangling space before the ellipsis.
+        let sentence = String(repeating: "word ", count: 40)
+        XCTAssertFalse(
+            (SessionTitle.collapse(sentence) ?? "").hasSuffix(" …"),
+            "a space before the ellipsis is a typographic accident"
+        )
+    }
+
+    func testAContentArrayIsReadAsItsTextParts() {
+        XCTAssertEqual(
+            SessionTitle.firstPrompt(from: [
+                ["type": "text", "text": "Прочитай"],
+                ["type": "image", "source": ["type": "base64"]],
+                ["type": "text", "text": "леджер"],
+            ] as [[String: Any]]),
+            "Прочитай леджер"
+        )
+        XCTAssertEqual(SessionTitle.firstPrompt(from: "плоская строка"), "плоская строка")
+        XCTAssertNil(SessionTitle.firstPrompt(from: 42))
+        XCTAssertNil(SessionTitle.firstPrompt(from: nil))
+    }
+
+    func testTheAiTitleNamesTheChatAndTheLastOneWins() async throws {
+        try writeMain([
+            humanPromptLine("Привет! прочитай леджер 0.3.3)", at: at(daysAgo: 1, hour: 9)),
+            titleLine("Ledger"),
+            mainTurn(id: "msg_m1", at: at(daysAgo: 1, hour: 10), input: 1_000_000),
+            titleLine("Ledger 0.3.3"),
+        ])
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+        XCTAssertEqual(chat.title, "Ledger 0.3.3", "a chat carries many ai-titles; the last wins")
+    }
+
+    func testWithoutAnAiTitleTheFirstHumanPromptNamesTheChat() async throws {
+        try writeMain([
+            // The `<local-command-caveat>` record comes first and is not the user talking.
+            metaUserLine(at: at(daysAgo: 1, hour: 8)),
+            humanPromptLine("Привет! прочитай леджер 0.3.3)", at: at(daysAgo: 1, hour: 9)),
+            humanPromptLine("И ещё раз", at: at(daysAgo: 1, hour: 11)),
+            mainTurn(id: "msg_m1", at: at(daysAgo: 1, hour: 10), input: 1_000_000),
+        ])
+        // A sub-agent's brief is a `type: user` record too, and never names the chat —
+        // it carries the same `sessionId` and would otherwise win, being read first
+        // whenever the enumerator reaches the sub-agent's transcript before the main one.
+        try writeSubagent(
+            [
+                agentBriefLine("Write the plan for package P1", at: at(daysAgo: 1, hour: 9),
+                               agentID: "a06ceeae2762ca204"),
+                agentTurn(id: "msg_a1", at: at(daysAgo: 1, hour: 10),
+                          agentID: "a06ceeae2762ca204", kind: "planner", input: 1_000),
+            ],
+            agentID: "a06ceeae2762ca204"
+        )
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+        XCTAssertEqual(chat.title, "Привет! прочитай леджер 0.3.3)", "the first human prompt, not the second")
+    }
+
+    func testAChatWithNeitherNameHasNoTitle() async throws {
+        try writeMain([
+            metaUserLine(at: at(daysAgo: 1, hour: 8)),
+            mainTurn(id: "msg_m1", at: at(daysAgo: 1, hour: 10), input: 1_000_000),
+        ])
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+        XCTAssertNil(chat.title, "the caveat record is the tool talking to itself")
+    }
 }

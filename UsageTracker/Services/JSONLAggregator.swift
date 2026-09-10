@@ -103,6 +103,48 @@ struct StringPool {
     }
 }
 
+/// The chat's name, as the two records that can carry one leave it.
+enum SessionTitle {
+    /// Eighty characters, ellipsis included: about what a row of the session list has
+    /// room for, and a prompt is often a whole pasted paragraph.
+    static let limit = 80
+
+    /// `ai-title`'s own string. Collapsed and cut like a prompt, so a name nobody
+    /// bounded cannot push a row off the screen.
+    static func clean(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        return collapse(raw)
+    }
+
+    /// The first human prompt as a name. `message.content` is a plain string in every
+    /// transcript on this Mac and `[{"type":"text","text":…}]` in the shape the logs
+    /// also allow; anything else has no text to show.
+    static func firstPrompt(from content: Any?) -> String? {
+        if let text = content as? String { return collapse(text) }
+        if let parts = content as? [[String: Any]] {
+            let text = parts
+                .filter { ($0["type"] as? String) == "text" }
+                .compactMap { $0["text"] as? String }
+                .joined(separator: " ")
+            return collapse(text)
+        }
+        return nil
+    }
+
+    /// Every run of whitespace — the newlines a pasted prompt is full of included —
+    /// becomes one space, and the result is cut to `limit` characters with an ellipsis
+    /// as the last one. nil when there is nothing but whitespace left.
+    static func collapse(_ raw: String) -> String? {
+        let words = raw.split(whereSeparator: { $0.isWhitespace })
+        guard !words.isEmpty else { return nil }
+        let collapsed = words.joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        var cut = String(collapsed.prefix(limit - 1))
+        while cut.last?.isWhitespace == true { cut.removeLast() }
+        return cut + "…"
+    }
+}
+
 struct CLIDailySummary: Sendable, Identifiable {
     let day: Date
     let totalCost: Double
@@ -354,6 +396,11 @@ actor JSONLAggregator: CostLogAggregating {
     /// `sessionId` — the spec's `sessions` map, named apart from the
     /// `sessions(from:to:)` method it feeds. Sums only; see `SessionAgg`.
     private var sessionAggs: [String: SessionAgg] = [:]
+    /// `ai-title` per chat, the last one Claude Code wrote.
+    private var titles: [String: String] = [:]
+    /// The first human prompt per chat, already collapsed and cut — the name a chat
+    /// with no `ai-title` goes by.
+    private var firstPrompts: [String: String] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     /// Same format without the fractional-seconds requirement. Real Claude Code logs
@@ -676,7 +723,7 @@ actor JSONLAggregator: CostLogAggregating {
             summaries.append(SessionSummary(
                 id: id,
                 providerID: "claude",
-                title: nil,
+                title: titles[id] ?? firstPrompts[id],
                 projectSlug: agg.projectSlug,
                 origin: nil,
                 firstAt: agg.firstAt,
@@ -705,23 +752,39 @@ actor JSONLAggregator: CostLogAggregating {
     private func ingest(_ records: [ParsedRecord]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         for record in records {
-            guard case .turn(let turn) = record else { continue }
-            let hash = Self.stableHash(turn.id)
-            // A repeat of an id we already hold is the same response told again, with
-            // better numbers; anything else about it (time, model, project) is settled
-            // by the first record.
-            guard seenMessageIDs.insert(hash).inserted else {
-                replaceIfLater(turn, hash: hash)
+            switch record {
+            case .title(let sessionID, let title):
+                if titles[sessionID] != title {
+                    titles[sessionID] = title
+                    dirty = true
+                }
                 continue
-            }
-            // Synthetic / internal Claude Code events aren't user-facing models.
-            if ModelPricing.isSynthetic(turn.model) { continue }
-            applyToSession(turn)
-            if turn.timestamp < recentCutoff {
-                fold(turn)
-            } else {
-                recentIndexByID[hash] = recentTurns.count
-                recentTurns.append(turn)
+            case .prompt(let sessionID, let text):
+                // The first one wins: a transcript is read in order, and every later
+                // prompt is the same chat still going.
+                if firstPrompts[sessionID] == nil {
+                    firstPrompts[sessionID] = text
+                    dirty = true
+                }
+                continue
+            case .turn(let turn):
+                let hash = Self.stableHash(turn.id)
+                // A repeat of an id we already hold is the same response told again, with
+                // better numbers; anything else about it (time, model, project) is settled
+                // by the first record.
+                guard seenMessageIDs.insert(hash).inserted else {
+                    replaceIfLater(turn, hash: hash)
+                    continue
+                }
+                // Synthetic / internal Claude Code events aren't user-facing models.
+                if ModelPricing.isSynthetic(turn.model) { continue }
+                applyToSession(turn)
+                if turn.timestamp < recentCutoff {
+                    fold(turn)
+                } else {
+                    recentIndexByID[hash] = recentTurns.count
+                    recentTurns.append(turn)
+                }
             }
         }
     }
@@ -1122,6 +1185,25 @@ actor JSONLAggregator: CostLogAggregating {
             return parseTurn(
                 any, projectSlug: projectSlug, iso: iso, isoNoFraction: isoNoFraction, pool: &pool
             ).map(ParsedRecord.turn)
+        case "ai-title":
+            guard let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let title = SessionTitle.clean(any["aiTitle"] as? String)
+            else { return nil }
+            return .title(sessionID: pool.intern(sessionID), title: title)
+        case "user":
+            // Only the user's own prompt names a chat. Everything else Claude Code
+            // writes as `type: user` — tool results, the `<local-command-caveat>` meta
+            // records, task notifications, a sub-agent's brief — carries no `origin` or
+            // another kind, and would name the chat after the tool's own plumbing.
+            // `promptSource` is deliberately not part of this: a session driven through
+            // the SDK says `sdk` on a prompt the user really typed.
+            guard (any["origin"] as? [String: Any])?["kind"] as? String == "human",
+                  (any["isSidechain"] as? Bool) != true,
+                  let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let message = any["message"] as? [String: Any],
+                  let text = SessionTitle.firstPrompt(from: message["content"])
+            else { return nil }
+            return .prompt(sessionID: pool.intern(sessionID), text: text)
         default:
             return nil
         }
