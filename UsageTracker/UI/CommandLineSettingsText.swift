@@ -20,6 +20,35 @@ enum CommandLineSettingsText {
 
     static let mcpCodexCaption = "Adds an `[mcp_servers.omelette]` table at the end of ~/.codex/config.toml. Other tables are left exactly as they are. Restart Codex to pick it up."
 
+    /// The buttons on an installer row, decided here rather than in the view so the
+    /// one state that matters can be tested: an entry that is ours but is not what
+    /// this build writes — an older home, or a missing `refreshInterval` — keeps the
+    /// write action, worded as an update, with Disable beside it. `nil` means there
+    /// is nothing to write.
+    static func installButtonTitle(_ status: HookInstallStatus) -> String? {
+        switch status {
+        case .notInstalled, .conflict: return "Enable"
+        case .outdated: return "Update"
+        case .installed: return nil
+        }
+    }
+
+    /// A conflict shows the button greyed rather than hiding it: the row has to say
+    /// that writing is the thing that is unavailable.
+    static func installButtonIsEnabled(_ status: HookInstallStatus) -> Bool {
+        if case .conflict = status { return false }
+        return true
+    }
+
+    static func showsDisableButton(_ status: HookInstallStatus) -> Bool {
+        switch status {
+        case .installed, .outdated: return true
+        case .notInstalled, .conflict: return false
+        }
+    }
+
+    static let disableButtonTitle = "Disable"
+
     /// A status line someone else owns. Shown with their command so the user can decide
     /// what to do about it — Omelette never overwrites it.
     static func conflictCaption(_ command: String) -> String {

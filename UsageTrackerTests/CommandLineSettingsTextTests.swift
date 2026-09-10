@@ -83,4 +83,53 @@ final class CommandLineSettingsTextTests: XCTestCase {
             XCTAssertFalse(caption.contains("!"), "the app's Settings copy has no exclamation marks")
         }
     }
+
+    // MARK: - The installer row
+
+    /// Spec § Design: no new state is added for an entry missing its refresh
+    /// interval — the write action stays where it was, worded as an update.
+    func testAnEntryOlderThanThisBuildKeepsTheWriteActionAsUpdate() {
+        XCTAssertEqual(CommandLineSettingsText.installButtonTitle(.outdated), "Update")
+        XCTAssertTrue(CommandLineSettingsText.installButtonIsEnabled(.outdated))
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(.outdated),
+                      "an update the user did not want is one click from being undone")
+    }
+
+    func testTheOtherThreeStatesKeepTheButtonsTheyHad() {
+        XCTAssertEqual(CommandLineSettingsText.installButtonTitle(.notInstalled), "Enable")
+        XCTAssertTrue(CommandLineSettingsText.installButtonIsEnabled(.notInstalled))
+        XCTAssertFalse(CommandLineSettingsText.showsDisableButton(.notInstalled))
+
+        XCTAssertNil(CommandLineSettingsText.installButtonTitle(.installed),
+                     "nothing to write over an entry that is already ours")
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(.installed))
+
+        // Greyed out rather than hidden: the row has to say that writing is the
+        // thing that is unavailable, not leave an empty space where it was.
+        XCTAssertEqual(CommandLineSettingsText.installButtonTitle(.conflict("theirs")), "Enable")
+        XCTAssertFalse(CommandLineSettingsText.installButtonIsEnabled(.conflict("theirs")))
+        XCTAssertFalse(CommandLineSettingsText.showsDisableButton(.conflict("theirs")))
+
+        XCTAssertEqual(CommandLineSettingsText.disableButtonTitle, "Disable")
+    }
+
+    /// The seam, end to end: a settings.json written before 2.6.0 has our command
+    /// and no interval, and the row over it reads "Installed — older than this
+    /// build" with an Update button — not "Not installed", and not a conflict.
+    func testAStatusLineFromAnOlderBuildOffersAnUpdateButton() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CommandLineSettingsTextTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let settingsURL = root.appendingPathComponent("settings.json")
+        let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette"
+        try Data(#"{"statusLine":{"type":"command","command":"'/Users/tester/Library/Application Support/UsageTracker/bin/omelette' statusline"}}"#.utf8)
+            .write(to: settingsURL)
+
+        let status = StatusLineInstaller.status(settingsURL: settingsURL, cliPath: cli)
+
+        XCTAssertEqual(status, .outdated)
+        XCTAssertEqual(CommandLineSettingsText.installButtonTitle(status), "Update")
+        XCTAssertEqual(AgentsSettingsText.hookStatusLabel(status), "Installed — older than this build")
+    }
 }

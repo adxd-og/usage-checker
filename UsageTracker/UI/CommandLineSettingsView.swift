@@ -165,13 +165,12 @@ struct CommandLineSettingsView: View {
         remove: @escaping () throws -> Void
     ) -> some View {
         HStack {
-            switch status {
-            case .notInstalled: Button("Enable") { run(install) }
-            case .outdated:
-                Button("Update") { run(install) }
-                Button("Disable") { run(remove) }
-            case .installed: Button("Disable") { run(remove) }
-            case .conflict: Button("Enable") {}.disabled(true)
+            if let title = CommandLineSettingsText.installButtonTitle(status) {
+                Button(title) { run(install) }
+                    .disabled(!CommandLineSettingsText.installButtonIsEnabled(status))
+            }
+            if CommandLineSettingsText.showsDisableButton(status) {
+                Button(CommandLineSettingsText.disableButtonTitle) { run(remove) }
             }
             Spacer()
             Button(openTitle) { NSWorkspace.shared.open(fileURL) }
