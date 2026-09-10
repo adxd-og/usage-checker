@@ -220,6 +220,90 @@ actor JSONLAggregator: CostLogAggregating {
         let byFamily: [String: Double]
     }
 
+    /// One chat's sums, and nothing finer: per session, per agent, per day.
+    ///
+    /// A month of this Mac's transcripts is a few hundred of these and a few hundred
+    /// kilobytes. Keeping the turns instead — which is what `recentTurns` costs — would
+    /// pin tens of megabytes to draw a list of ten rows.
+    ///
+    /// There is deliberately no session-level total: every figure `sessions(from:to:)`
+    /// reports is summed from `days`, so a revised turn has one place to be fixed and a
+    /// clipped range can never disagree with an unclipped one.
+    private struct SessionAgg: Codable {
+        var projectSlug: String
+        var firstAt: Date
+        var lastAt: Date
+        /// Ascending in practice — a transcript's turns arrive in near-chronological
+        /// runs — but only `sessions(from:to:)` promises the order it hands out.
+        var days: [DayTotals]
+        /// Keyed by `agentId`.
+        var agents: [String: AgentTotals]
+
+        struct DayTotals: Codable {
+            let day: Date
+            var turns: Int
+            var tokens: TokenBreakdown
+            /// The main thread's share of `tokens`. The day is the only place that split
+            /// survives clipping, so `SessionSummary.mainTokens` is summed from here.
+            var mainTokens: TokenBreakdown
+        }
+
+        struct AgentTotals: Codable {
+            var kind: String
+            var model: String?
+            var effort: String?
+            var firstAt: Date
+            var lastAt: Date
+            var turns: Int
+            var tokens: TokenBreakdown
+        }
+
+        init(projectSlug: String, at date: Date) {
+            self.projectSlug = projectSlug
+            self.firstAt = date
+            self.lastAt = date
+            self.days = []
+            self.agents = [:]
+        }
+
+        /// The turn's counters, added where they belong. A day is found by its last
+        /// entry first: turns arrive in near-chronological runs, so that is almost
+        /// always the answer, and the linear fallback is over at most 92 entries.
+        mutating func add(_ turn: CLITurn, on day: Date) {
+            let isMain = turn.agentID == nil
+            if let index = days.lastIndex(where: { $0.day == day }) {
+                days[index].turns += 1
+                days[index].tokens += turn.tokens
+                if isMain { days[index].mainTokens += turn.tokens }
+            } else {
+                days.append(DayTotals(
+                    day: day, turns: 1, tokens: turn.tokens,
+                    mainTokens: isMain ? turn.tokens : .zero
+                ))
+            }
+
+            guard let agentID = turn.agentID else { return }
+            var agent = agents[agentID] ?? AgentTotals(
+                // Every sub-agent transcript on this Mac carries `attributionAgent`;
+                // the fallback is for shapes that predate it.
+                kind: turn.agentKind ?? "sub-agent", model: nil, effort: nil,
+                firstAt: turn.timestamp, lastAt: .distantPast, turns: 0, tokens: .zero
+            )
+            if turn.timestamp < agent.firstAt { agent.firstAt = turn.timestamp }
+            if turn.timestamp >= agent.lastAt {
+                // Last seen wins: an agent can be resumed on another model, and an
+                // effort the record omits leaves the last one that said something.
+                agent.lastAt = turn.timestamp
+                agent.model = turn.model
+                agent.effort = turn.effort ?? agent.effort
+                if let kind = turn.agentKind { agent.kind = kind }
+            }
+            agent.turns += 1
+            agent.tokens += turn.tokens
+            agents[agentID] = agent
+        }
+    }
+
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
     /// gigabytes of transcripts. Rejected wholesale if it was written by another
     /// version or for another log root.
@@ -253,6 +337,10 @@ actor JSONLAggregator: CostLogAggregating {
     private var recentTurns: [CLITurn] = []
     /// Day-level aggregates for turns older than `recentWindow` — all `daily` needs.
     private var oldDays: [Date: DayAgg] = [:]
+    /// One entry per chat we have counted a turn for, keyed by Claude Code's
+    /// `sessionId` — the spec's `sessions` map, named apart from the
+    /// `sessions(from:to:)` method it feeds. Sums only; see `SessionAgg`.
+    private var sessionAggs: [String: SessionAgg] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     /// Same format without the fractional-seconds requirement. Real Claude Code logs
@@ -514,6 +602,85 @@ actor JSONLAggregator: CostLogAggregating {
         )
     }
 
+    /// Every chat with a turn inside the range, clipped to it at day granularity.
+    ///
+    /// Day granularity is what makes this cheap and what makes a five-hour window mean
+    /// "today": the aggregate keeps a day's sums, not a turn's, so a range is read as
+    /// the local days it touches — `[startOfDay(start) … startOfDay(end)]`. A window
+    /// shorter than a day therefore widens to the day it falls in, which is what the
+    /// History subtitle says out loud.
+    ///
+    /// `firstAt` and `lastAt` are the chat's own and are never clipped: a row's job is
+    /// to identify the chat, and "this one started three months ago" is information.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] {
+        let firstDay = calendar.startOfDay(for: start)
+        let lastDay = calendar.startOfDay(for: end)
+        guard firstDay <= lastDay else { return [] }
+        let afterLastDay = calendar.date(byAdding: .day, value: 1, to: lastDay)
+            ?? lastDay.addingTimeInterval(86_400)
+
+        var summaries: [SessionSummary] = []
+        summaries.reserveCapacity(sessionAggs.count)
+
+        for (id, agg) in sessionAggs {
+            let days = agg.days
+                .filter { $0.day >= firstDay && $0.day <= lastDay && $0.turns > 0 }
+                .sorted { $0.day < $1.day }
+            guard !days.isEmpty else { continue }
+
+            var turns = 0
+            var tokens = TokenBreakdown.zero
+            var mainTokens = TokenBreakdown.zero
+            for day in days {
+                turns += day.turns
+                tokens += day.tokens
+                mainTokens += day.mainTokens
+            }
+
+            // An agent's own days are not stored — it runs inside one turn of the parent
+            // and hardly ever crosses midnight — so an agent is in the range whole or
+            // not at all.
+            let agents = agg.agents
+                .filter { $0.value.lastAt >= firstDay && $0.value.firstAt < afterLastDay }
+                .map { entry in
+                    SessionAgentSummary(
+                        id: entry.key,
+                        kind: entry.value.kind,
+                        model: entry.value.model,
+                        effort: entry.value.effort,
+                        firstAt: entry.value.firstAt,
+                        lastAt: entry.value.lastAt,
+                        turns: entry.value.turns,
+                        tokens: entry.value.tokens
+                    )
+                }
+                .sorted { lhs, rhs in
+                    let l = lhs.tokens.cost?.total ?? 0
+                    let r = rhs.tokens.cost?.total ?? 0
+                    return l == r ? lhs.id < rhs.id : l > r
+                }
+
+            summaries.append(SessionSummary(
+                id: id,
+                providerID: "claude",
+                title: nil,
+                projectSlug: agg.projectSlug,
+                origin: nil,
+                firstAt: agg.firstAt,
+                lastAt: agg.lastAt,
+                turns: turns,
+                tokens: tokens,
+                mainTokens: mainTokens,
+                agents: agents,
+                days: days.map {
+                    SessionDaySummary(day: $0.day, turns: $0.turns, tokens: $0.tokens)
+                }
+            ))
+        }
+
+        return summaries.sorted { $0.lastAt == $1.lastAt ? $0.id < $1.id : $0.lastAt > $1.lastAt }
+    }
+
     // MARK: - Ingest
 
     /// One response is one turn, however many lines log it — but the *last* line is the
@@ -536,6 +703,7 @@ actor JSONLAggregator: CostLogAggregating {
             }
             // Synthetic / internal Claude Code events aren't user-facing models.
             if ModelPricing.isSynthetic(turn.model) { continue }
+            applyToSession(turn)
             if turn.timestamp < recentCutoff {
                 fold(turn)
             } else {
@@ -593,6 +761,27 @@ actor JSONLAggregator: CostLogAggregating {
         agg.turns += 1
         agg.byFamily[ModelPricing.family(for: t.model), default: 0] += t.cost
         oldDays[day] = agg
+    }
+
+    /// A chat's sums take the turn once, when it first arrives — before the branch that
+    /// decides whether it joins `recentTurns` or goes straight into `oldDays`. That is
+    /// why the fold has nothing to do here: a turn ageing out of `recentTurns` was
+    /// already counted when it was read.
+    private func applyToSession(_ turn: CLITurn) {
+        guard !turn.sessionID.isEmpty else { return }
+        var agg = sessionAggs[turn.sessionID]
+            ?? SessionAgg(projectSlug: turn.projectSlug, at: turn.timestamp)
+        if turn.timestamp < agg.firstAt { agg.firstAt = turn.timestamp }
+        if turn.timestamp >= agg.lastAt {
+            agg.lastAt = turn.timestamp
+            // The chat's project follows its latest turn, the same rule Codex's file
+            // uses for the latest `turn_context.cwd`: a chat resumed somewhere else
+            // belongs where it is now.
+            agg.projectSlug = turn.projectSlug
+        }
+        agg.add(turn, on: dayStart(for: turn.timestamp))
+        sessionAggs[turn.sessionID] = agg
+        dirty = true
     }
 
     private func pruneAndFold() {

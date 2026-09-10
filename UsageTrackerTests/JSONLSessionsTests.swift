@@ -345,4 +345,188 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(turn.sessionID, "")
         XCTAssertEqual(turn.inputTokens, 1000)
     }
+
+    // MARK: - One chat's sums
+
+    /// One chat: two main-thread turns yesterday, one the day before, and two
+    /// sub-agents that ran yesterday.
+    private func writeChatFixture() throws {
+        try writeMain([
+            mainTurn(id: "msg_m1", at: at(daysAgo: 2, hour: 9), input: 1_000_000),
+            mainTurn(id: "msg_m2", at: at(daysAgo: 1, hour: 10), input: 1_000_000, output: 100_000),
+            mainTurn(id: "msg_m3", at: at(daysAgo: 1, hour: 11), input: 1_000_000),
+        ])
+        try writeSubagent(
+            [agentTurn(
+                id: "msg_a1", at: at(daysAgo: 1, hour: 10), agentID: "a06ceeae2762ca204",
+                kind: "planner", input: 1_000_000
+            )],
+            agentID: "a06ceeae2762ca204"
+        )
+        try writeSubagent(
+            [agentTurn(
+                id: "msg_a2", at: at(daysAgo: 1, hour: 11), agentID: "aa4259fe7add3bfe9",
+                kind: "test-verifier", model: "claude-sonnet-4-5", input: 2_000_000
+            )],
+            agentID: "aa4259fe7add3bfe9"
+        )
+    }
+
+    func testAChatSumsItsMainThreadAndItsSubAgentsApart() async throws {
+        try writeChatFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(chat.id, sessionID)
+        XCTAssertEqual(chat.providerID, "claude")
+        XCTAssertNil(chat.origin, "origin is Codex's field")
+        XCTAssertEqual(chat.projectSlug, alphaSlug)
+        XCTAssertEqual(chat.turns, 5, "three main-thread turns and two sub-agent turns")
+        XCTAssertEqual(chat.tokens.input, 6_000_000, "the chat is the main thread plus its agents")
+        XCTAssertEqual(chat.mainTokens.input, 3_000_000, "the main thread on its own")
+        XCTAssertEqual(chat.mainTokens.output, 100_000)
+        XCTAssertEqual(chat.firstAt, at(daysAgo: 2, hour: 9))
+        XCTAssertEqual(chat.lastAt, at(daysAgo: 1, hour: 11))
+        // Main thread on Sonnet: $3.00 + ($3.00 + $1.50 of output) + $3.00 = $10.50.
+        // Agents: $5.00 for a million Opus input, $6.00 for two million Sonnet input.
+        XCTAssertEqual(try XCTUnwrap(chat.tokens.cost).total, 21.5, accuracy: 1e-9)
+        XCTAssertEqual(try XCTUnwrap(chat.mainTokens.cost).total, 10.5, accuracy: 1e-9)
+    }
+
+    func testAChatsSubAgentsAreListedByKindModelAndEffort() async throws {
+        try writeChatFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.agents.map(\.kind), ["test-verifier", "planner"], "ranked by cost")
+        XCTAssertEqual(chat.agents.map(\.id), ["aa4259fe7add3bfe9", "a06ceeae2762ca204"])
+        XCTAssertEqual(chat.agents[0].model, "claude-sonnet-4-5")
+        XCTAssertEqual(chat.agents[0].effort, "xhigh")
+        XCTAssertEqual(chat.agents[0].turns, 1)
+        XCTAssertEqual(chat.agents[0].tokens.input, 2_000_000)
+        XCTAssertEqual(try XCTUnwrap(chat.agents[0].tokens.cost).total, 6.0, accuracy: 1e-9)
+        XCTAssertEqual(chat.agents[1].model, "claude-opus-4-5")
+        XCTAssertEqual(try XCTUnwrap(chat.agents[1].tokens.cost).total, 5.0, accuracy: 1e-9)
+        XCTAssertEqual(
+            chat.tokens.input,
+            chat.mainTokens.input + chat.agents.reduce(0) { $0 + $1.tokens.input },
+            "the chat's tokens are the main thread's plus every agent's"
+        )
+    }
+
+    func testADayOfAChatIsOneRowHoweverManyTurnsItHolds() async throws {
+        try writeChatFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.days.map(\.day), [dayStart(daysAgo: 2), dayStart(daysAgo: 1)],
+                       "ascending, one row per day and no per-turn rows at all")
+        XCTAssertEqual(chat.days[0].turns, 1)
+        XCTAssertEqual(chat.days[1].turns, 4, "two main-thread turns and two sub-agent turns")
+        XCTAssertEqual(chat.days[1].tokens.input, 5_000_000)
+        XCTAssertEqual(chat.turns, chat.days.reduce(0) { $0 + $1.turns })
+    }
+
+    func testARangeIsClippedToWholeLocalDays() async throws {
+        try writeChatFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        // A range that starts in the middle of the day before yesterday still takes that
+        // whole day: the aggregate keeps a day's sums, not a turn's.
+        let sessions = await aggregator.sessions(
+            from: at(daysAgo: 2, hour: 18), to: at(daysAgo: 1, hour: 10)
+        )
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.days.count, 2, "both days the range touches, whole")
+        XCTAssertEqual(chat.turns, 5)
+        XCTAssertEqual(chat.tokens.input, 6_000_000)
+
+        // And a range that touches only yesterday drops the older day outright.
+        let narrow = await aggregator.sessions(
+            from: at(daysAgo: 1, hour: 0), to: at(daysAgo: 1, hour: 23)
+        )
+        let clipped = try XCTUnwrap(narrow.first)
+
+        XCTAssertEqual(clipped.days.map(\.day), [dayStart(daysAgo: 1)])
+        XCTAssertEqual(clipped.turns, 4)
+        XCTAssertEqual(clipped.tokens.input, 5_000_000)
+        XCTAssertEqual(clipped.mainTokens.input, 2_000_000, "the main thread's share is clipped too")
+        XCTAssertEqual(
+            clipped.firstAt, at(daysAgo: 2, hour: 9),
+            "only the counters are clipped — the chat still says when it started"
+        )
+    }
+
+    func testAFiveHourWindowWidensToTheDayItFallsIn() async throws {
+        try writeChatFixture()
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        // Five hours ending at 14:00 yesterday: no turn is inside it, both of
+        // yesterday's are inside the day it falls in.
+        let anchor = at(daysAgo: 1, hour: 14)
+        let sessions = await aggregator.sessions(from: anchor.addingTimeInterval(-5 * 3600), to: anchor)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.days.map(\.day), [dayStart(daysAgo: 1)])
+        XCTAssertEqual(chat.turns, 4, "the window is a day, so the whole day counts")
+    }
+
+    func testAnAgentThatRanOutsideTheRangeIsNotListed() async throws {
+        try writeChatFixture()
+        // One more agent, on the older day, so the clip has something to drop.
+        try writeSubagent(
+            [agentTurn(
+                id: "msg_a0", at: at(daysAgo: 2, hour: 9), agentID: "acfa466bf5542f6e0",
+                kind: "executor", input: 500_000
+            )],
+            agentID: "acfa466bf5542f6e0"
+        )
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let wholeRange = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        let whole = try XCTUnwrap(wholeRange.first)
+        XCTAssertEqual(Set(whole.agents.map(\.id)),
+                       ["a06ceeae2762ca204", "aa4259fe7add3bfe9", "acfa466bf5542f6e0"])
+
+        let yesterdayRange = await aggregator.sessions(
+            from: at(daysAgo: 1, hour: 0), to: at(daysAgo: 1, hour: 23)
+        )
+        let yesterday = try XCTUnwrap(yesterdayRange.first)
+        XCTAssertEqual(Set(yesterday.agents.map(\.id)), ["a06ceeae2762ca204", "aa4259fe7add3bfe9"],
+                       "an agent whose whole run is outside the range is not in it")
+    }
+
+    func testAChatWithNoTurnInTheRangeIsNotListedAtAll() async throws {
+        try writeChatFixture()
+        try writeMain(
+            [mainTurn(id: "msg_o1", at: at(daysAgo: 6, hour: 9), input: 1_000_000,
+                      session: otherSessionID)],
+            session: otherSessionID
+        )
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let recent = await aggregator.sessions(from: dayStart(daysAgo: 3), to: now)
+        XCTAssertEqual(recent.map(\.id), [sessionID], "the six-day-old chat is outside the range")
+
+        let both = await aggregator.sessions(from: dayStart(daysAgo: 7), to: now)
+        XCTAssertEqual(both.map(\.id), [sessionID, otherSessionID], "newest chat first")
+
+        let empty = await aggregator.sessions(from: dayStart(daysAgo: 5), to: dayStart(daysAgo: 4))
+        XCTAssertTrue(empty.isEmpty, "no chat ran in those two days")
+    }
 }
