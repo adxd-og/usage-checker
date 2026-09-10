@@ -39,8 +39,10 @@ struct OMRing: View {
     }
 
     /// How much of the window is **used**, 0…100 (anything outside is clamped).
+    /// `nil` is "no window at all": the ring draws an empty track and says nothing,
+    /// in both modes — a provider that has never reported is not "100% left".
     /// The mode decides what is drawn; the colour never leaves this number.
-    let used: Double
+    let used: Double?
     /// Which way this ring counts. Deliberately without a default: every call site
     /// has to say, so a new gauge cannot quietly ignore the user's choice.
     let mode: PercentDisplay.Mode
@@ -64,9 +66,13 @@ struct OMRing: View {
     }
 
     nonisolated static func geometry(
-        used: Double, mode: PercentDisplay.Mode, pace: Double? = nil, color: Color? = nil
+        used: Double?, mode: PercentDisplay.Mode, pace: Double? = nil, color: Color? = nil
     ) -> Geometry {
-        Geometry(
+        guard let used else {
+            return Geometry(trim: 0, color: color ?? .secondary, label: "—",
+                            pace: nil, accessibilityValue: "No data")
+        }
+        return Geometry(
             trim: max(0.004, PercentDisplay.shown(used, mode: mode) / 100),
             // The one thing that stays on `used`: at 5% left this ring is red,
             // exactly as it is at 95% used.

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct OverviewView: View {
     @ObservedObject var appState: AppState
+    /// Observed, so the switch repaints an open dashboard rather than waiting for
+    /// the next poll.
+    @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject var dashboard: DashboardState
 
     private var service: ServiceSnapshot? {
@@ -61,7 +64,7 @@ struct OverviewView: View {
                 sessionBuckets: service.buckets.filter { $0.kind == .session }
             )
             VStack(alignment: .leading, spacing: OMSpacing.xs) {
-                OMHero(hero: hero, mode: .used, verdict: verdict)
+                OMHero(hero: hero, mode: settings.percentMode, verdict: verdict)
                     .opacity(service.isRetained ? 0.55 : 1)
                 // A spend limit's ring is a percentage of a number nobody keeps in
                 // their head. The provider tab prints both amounts; so does this.
@@ -108,7 +111,9 @@ struct OverviewView: View {
                     .font(OMFont.bodyStrong)
             }
             Spacer()
-            OMRing(used: bucket?.clampedPercent ?? 0, mode: .used, size: .medium)
+            // No ranked window: an empty ring, not a full one. `?? 0` here would draw
+            // a complete circle the moment the app is counting down.
+            OMRing(used: bucket?.clampedPercent, mode: settings.percentMode, size: .medium)
         }
         .dashboardCard(padding: 14)
     }
@@ -183,6 +188,7 @@ struct OverviewView: View {
                         label: b.label,
                         value: ResetCopy.both(resetsAt: b.resetsAt, now: now) ?? "resets —",
                         barUsedPercent: b.clampedPercent,
+                        barMode: settings.percentMode,
                         pace: b.elapsedFraction(),
                         help: ResetCopy.absolute(resetsAt: b.resetsAt, now: now).map { "Resets \($0)" } ?? ""
                     )
