@@ -5,6 +5,38 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] — 2026-09-10
+
+### Added
+- **Sessions in History.** The dashboard's History tab gets a third mode
+  alongside Cost and Tokens: your last 10 chats plus the 5 most expensive,
+  for Claude Code and Codex, each expandable to its input/output/cache
+  split, the sub-agents it launched, and a per-day breakdown. "Show all"
+  reveals every chat with a Recent / Cost sort.
+- **`get_sessions`**, a third MCP tool, lists the same recent chats with
+  their tokens, cost and sub-agent count. `omelette status --json` now
+  carries them too.
+- Spend-limit and extra-usage providers show both dollar amounts under the
+  ring ("$431 of $1,500") on the dashboard hero and the All-tab tile, not
+  just a bare percentage.
+- The app version now links to the GitHub page from the popover footer and
+  the dashboard sidebar, not only from Settings.
+- **Show remaining instead of used.** A switch in Settings → General turns
+  every ring, bar and percent around, widgets and CLI included.
+
+### Changed
+- **All-tab tiles lead with the 5-hour session window** instead of
+  whichever window is most constrained that day, matching the provider
+  tab; the weekly window keeps the second line.
+- **The cost tile shows today's spend first**, with the 7-day total and
+  the per-provider split underneath.
+- **Codex accounting now counts compaction calls.** Its cumulative counter
+  never included them (7% of a session here); billing now comes from each
+  response's own record when a rollout writes one, so compaction is
+  counted exactly once. `~/.codex/archived_sessions` is scanned too.
+- In Claude Code's logs, a sub-agent's spend is now attributed to the
+  project that launched it, instead of a bare "subagents" project.
+
 ## [2.4.1] — 2026-09-06
 
 ### Added
