@@ -187,10 +187,15 @@ shell, so `$HOME` expands):
 {
   "statusLine": {
     "type": "command",
-    "command": "\"$HOME/Library/Application Support/UsageTracker/bin/omelette\" statusline"
+    "command": "\"$HOME/Library/Application Support/UsageTracker/bin/omelette\" statusline",
+    "refreshInterval": 60
   }
 }
 ```
+
+`refreshInterval` re-runs the command on a timer as well as on Claude Code's
+own events, so the countdown keeps ticking while the session is idle. The
+one-click install writes it too.
 
 `omelette mcp` answers three tools. Nothing is written, nothing leaves your
 Mac.

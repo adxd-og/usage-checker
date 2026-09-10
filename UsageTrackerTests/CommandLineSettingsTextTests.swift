@@ -74,6 +74,22 @@ final class CommandLineSettingsTextTests: XCTestCase {
         )
     }
 
+    /// Claude Code re-runs the command on events only, so an entry added by hand
+    /// without the interval shows a countdown that stopped. The caption is the only
+    /// place a hand-writer learns that, and the number in it is read from the
+    /// installer so the two cannot drift apart.
+    func testTheStatusLineCaptionSaysWhatTheRefreshIntervalIsFor() {
+        let caption = CommandLineSettingsText.statusLineCaption
+        XCTAssertTrue(
+            caption.contains(#""refreshInterval": \#(StatusLineInstaller.refreshInterval)"#),
+            caption
+        )
+        XCTAssertTrue(
+            caption.contains("so the countdown keeps ticking while the session is idle"),
+            caption
+        )
+    }
+
     func testTheCaptionsSayWhatTheThingDoes() {
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("status"))
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("~/.claude/settings.json"),
