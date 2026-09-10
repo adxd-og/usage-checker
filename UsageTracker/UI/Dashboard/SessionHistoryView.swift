@@ -760,18 +760,24 @@ private struct SessionRowView: View {
             .frame(width: 16, height: 16)
     }
 
+    /// The chat's name and its chips. The name is the one thing on the row that has no
+    /// length: it is a prompt's first line, and it yields — `fixedSize` keeps the chips
+    /// whole and the name gives up the space instead. It truncates at the tail, not the
+    /// middle: a title that keeps its last twenty characters spends them on the end of a
+    /// system prompt, and what tells two chats apart is how they open.
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: OMSpacing.xs) {
                 Text(SessionCopy.rowTitle(session))
                     .font(OMFont.bodyStrong)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                    .truncationMode(.tail)
+                    .layoutPriority(0)
                 if row.isTop {
-                    OMChip(text: SessionCopy.topSpendChip, tint: .orange)
+                    OMChip(text: SessionCopy.topSpendChip, tint: .orange).fixedSize()
                 }
                 if let origin = SessionCopy.originChip(session.origin) {
-                    OMChip(text: origin, tint: .secondary)
+                    OMChip(text: origin, tint: .secondary).fixedSize()
                 }
             }
             Text(SessionCopy.projectName(providerID: session.providerID, projectSlug: session.projectSlug))
@@ -785,36 +791,49 @@ private struct SessionRowView: View {
         SessionCopy.lastActive(session.lastAt, now: now)
     }
 
+    /// The four numeric columns keep their widths and their priority; the title takes
+    /// what is left and truncates. A row is read down its columns, so a long chat name
+    /// must never be the reason a figure moves or gets clipped.
     private var wideSummary: some View {
         HStack(spacing: OMSpacing.s) {
             chevron
-            titleBlock.frame(minWidth: 160, alignment: .leading)
+            titleBlock
+                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+                .layoutPriority(0)
             Spacer(minLength: OMSpacing.s)
             Text(lastActiveText)
                 .font(OMFont.body).foregroundStyle(.secondary)
                 .frame(width: 104, alignment: .trailing)
+                .layoutPriority(1)
             Text("\(session.turns)")
                 .font(OMFont.numeral).monospacedDigit()
                 .frame(width: 64, alignment: .trailing)
+                .layoutPriority(1)
             Text(TokenFormat.formatTokens(session.tokens.total))
                 .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
                 .frame(width: 84, alignment: .trailing)
+                .layoutPriority(1)
             Text(SessionCopy.cost(session.tokens.cost?.total))
                 .font(OMFont.numeral).monospacedDigit()
                 .frame(width: 76, alignment: .trailing)
+                .layoutPriority(1)
         }
     }
 
     /// The same five figures with the last three folded onto a caption line, for a
-    /// window too narrow to hold five columns.
+    /// window too narrow to hold five columns. The cost is rigid here for the reason the
+    /// columns are rigid in the wide row: it is the figure the row exists to show, and
+    /// the title yields to it rather than clipping it.
     private var narrowSummary: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: OMSpacing.s) {
                 chevron
-                titleBlock
+                titleBlock.layoutPriority(0)
                 Spacer(minLength: OMSpacing.s)
                 Text(SessionCopy.cost(session.tokens.cost?.total))
                     .font(OMFont.numeral).monospacedDigit()
+                    .fixedSize()
+                    .layoutPriority(1)
             }
             Text([
                 lastActiveText,
