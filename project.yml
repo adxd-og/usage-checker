@@ -228,6 +228,10 @@ targets:
     settings:
       base:
         PRODUCT_NAME: omelette
+        # The app's module is `Omelette`. On a case-insensitive filesystem a tool
+        # module named `omelette` would share its .swiftmodule directory and the
+        # test target's `@testable import Omelette` fails on a clean build.
+        PRODUCT_MODULE_NAME: OmeletteCLI
         # signing.xcconfig hands every target the app's bundle id; a nested
         # executable needs its own code-signing identifier.
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.cli
