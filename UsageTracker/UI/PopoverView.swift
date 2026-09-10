@@ -284,64 +284,91 @@ struct PopoverView: View {
             Rectangle()
                 .fill(OMSurface.hairline)
                 .frame(height: 0.5)
-            HStack(spacing: 8) {
-                GlassGroup(spacing: 6) {
-                    HStack(spacing: 6) {
-                        Button {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openWindow(id: "dashboard")
-                        } label: {
-                            Label("Dashboard", systemImage: "chart.bar.doc.horizontal")
-                                .labelStyle(.titleAndIcon)
-                        }
-                        .glassButtonStyle()
-                        .keyboardShortcut("d", modifiers: .command)
-                        .help("Open dashboard (⌘D)")
-
-                        Button {
-                            FloatingWindowController.shared.toggle()
-                        } label: {
-                            Image(systemName: FloatingWindowController.shared.isOpen
-                                  ? "pip.exit" : "pip.enter")
-                        }
-                        .glassButtonStyle()
-                        .help(FloatingWindowController.shared.isOpen
-                              ? "Close floating window" : "Show floating mini window")
-
-                        Button {
-                            NSApp.activate(ignoringOtherApps: true)
-                            openSettings()
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                        .glassButtonStyle()
-                        .keyboardShortcut(",", modifiers: .command)
-                        .help("Settings (⌘,)")
-
-                        Button {
-                            state.refreshNow()
-                        } label: {
-                            Image(systemName: "arrow.clockwise")
-                        }
-                        .glassButtonStyle()
-                        .keyboardShortcut("r", modifiers: .command)
-                        .help("Refresh now (⌘R)")
+            // 328 pt is not much room for four controls, a version and Quit. The
+            // version rides in the row when it fits and takes its own line when it
+            // doesn't — Quit is never the thing that gets pushed off the edge.
+            ViewThatFits(in: .horizontal) {
+                footerRow(showsVersion: true)
+                VStack(alignment: .leading, spacing: 6) {
+                    footerRow(showsVersion: false)
+                    HStack(spacing: 0) {
+                        versionLink
+                        Spacer(minLength: 0)
                     }
                 }
-
-                Spacer()
-
-                Button {
-                    NSApp.terminate(nil)
-                } label: {
-                    Text("Quit")
-                        .font(OMFont.caption)
-                }
-                .buttonStyle(.borderless)
-                .foregroundStyle(.secondary)
-                .keyboardShortcut("q", modifiers: .command)
             }
         }
+    }
+
+    private func footerRow(showsVersion: Bool) -> some View {
+        HStack(spacing: 8) {
+            GlassGroup(spacing: 6) {
+                HStack(spacing: 6) {
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        openWindow(id: "dashboard")
+                    } label: {
+                        Label("Dashboard", systemImage: "chart.bar.doc.horizontal")
+                            .labelStyle(.titleAndIcon)
+                    }
+                    .glassButtonStyle()
+                    .keyboardShortcut("d", modifiers: .command)
+                    .help("Open dashboard (⌘D)")
+
+                    Button {
+                        FloatingWindowController.shared.toggle()
+                    } label: {
+                        Image(systemName: FloatingWindowController.shared.isOpen
+                              ? "pip.exit" : "pip.enter")
+                    }
+                    .glassButtonStyle()
+                    .help(FloatingWindowController.shared.isOpen
+                          ? "Close floating window" : "Show floating mini window")
+
+                    Button {
+                        NSApp.activate(ignoringOtherApps: true)
+                        openSettings()
+                    } label: {
+                        Image(systemName: "gearshape")
+                    }
+                    .glassButtonStyle()
+                    .keyboardShortcut(",", modifiers: .command)
+                    .help("Settings (⌘,)")
+
+                    Button {
+                        state.refreshNow()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .glassButtonStyle()
+                    .keyboardShortcut("r", modifiers: .command)
+                    .help("Refresh now (⌘R)")
+                }
+            }
+
+            Spacer()
+
+            if showsVersion { versionLink }
+
+            Button {
+                NSApp.terminate(nil)
+            } label: {
+                Text("Quit")
+                    .font(OMFont.caption)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .keyboardShortcut("q", modifiers: .command)
+        }
+    }
+
+    /// "Omelette 2.4.1", and the way to the project page. Settings keeps the exact
+    /// build number; this is the version you can read without going looking for it.
+    private var versionLink: some View {
+        Link(AppVersion.current, destination: AppVersion.githubURL)
+            .font(OMFont.caption)
+            .foregroundStyle(.secondary)
+            .help("Open the GitHub page")
     }
 }
 
