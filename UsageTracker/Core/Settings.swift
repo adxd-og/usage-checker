@@ -61,6 +61,7 @@ final class SettingsStore: ObservableObject {
         static let lastDailySummaryDay = ""
         static let menuBarHiddenServicesRaw = ""
         static let menuBarNumberMode = MenuBarNumberMode.auto
+        static let showsRemaining = false
         static let hasSeenOnboarding = false
         static let agentsNotifyNeedsYou = true
         static let agentsNeedsYouBypassQuietHours = true
@@ -116,6 +117,32 @@ final class SettingsStore: ObservableObject {
     @AppStorage("menuBarHiddenServices") var menuBarHiddenServicesRaw: String = Defaults.menuBarHiddenServicesRaw
     @AppStorage("menuBarNumberMode") var menuBarNumberMode: MenuBarNumberMode = Defaults.menuBarNumberMode
 
+    /// Defaults key for the display mode. Spelled out because it is read by name in
+    /// the tests, and because the property below is not `@AppStorage`.
+    static let showsRemainingKey = "showsRemaining"
+
+    /// "Show remaining instead of used": every ring, bar and number counts down from
+    /// 100 instead of up from 0.
+    ///
+    /// Deliberately not `@AppStorage` like its neighbours. `@AppStorage` is a
+    /// `DynamicProperty`: inside an `ObservableObject` it reads and writes
+    /// `UserDefaults` correctly but never sends `objectWillChange`, so nothing that
+    /// observes this store is invalidated when it moves. Every other preference here
+    /// can live with that — they gate a poll, a notification or a pill that redraws
+    /// on the next snapshot. This one has to repaint every ring in the app the
+    /// instant the switch moves, so it is a plain `@Published` over an explicit
+    /// read and write of the same key.
+    @Published var showsRemaining: Bool = Defaults.showsRemaining {
+        didSet {
+            guard oldValue != showsRemaining else { return }
+            UserDefaults.standard.set(showsRemaining, forKey: Self.showsRemainingKey)
+        }
+    }
+
+    /// What every surface asks for. One computed property rather than each view
+    /// spelling out the ternary, so "off means used" is decided once.
+    var percentMode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
+
     @AppStorage("hasSeenOnboarding") var hasSeenOnboarding: Bool = Defaults.hasSeenOnboarding
 
     /// A session stopped and is waiting for a permission decision.
@@ -168,6 +195,7 @@ final class SettingsStore: ObservableObject {
         lastDailySummaryDay = Defaults.lastDailySummaryDay
         menuBarHiddenServicesRaw = Defaults.menuBarHiddenServicesRaw
         menuBarNumberMode = Defaults.menuBarNumberMode
+        showsRemaining = Defaults.showsRemaining
         hasSeenOnboarding = Defaults.hasSeenOnboarding
         agentsNotifyNeedsYou = Defaults.agentsNotifyNeedsYou
         agentsNeedsYouBypassQuietHours = Defaults.agentsNeedsYouBypassQuietHours
@@ -207,7 +235,11 @@ final class SettingsStore: ObservableObject {
         menuBarHiddenServices = hidden
     }
 
-    private init() {}
+    private init() {
+        // Property observers do not fire from an initializer, which is exactly what
+        // is wanted here: reading the stored value must not write it back.
+        showsRemaining = UserDefaults.standard.bool(forKey: Self.showsRemainingKey)
+    }
 
     var interval: TimeInterval {
         TimeInterval(refreshIntervalSeconds)

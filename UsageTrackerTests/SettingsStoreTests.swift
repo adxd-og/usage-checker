@@ -48,6 +48,7 @@ final class SettingsStoreTests: XCTestCase {
         s.lastDailySummaryDay = "2026-01-01T00:00:00Z"
         s.menuBarHiddenServicesRaw = "codex,gemini"
         s.menuBarNumberMode = .never
+        s.showsRemaining = !SettingsStore.Defaults.showsRemaining
         s.hasSeenOnboarding = !SettingsStore.Defaults.hasSeenOnboarding
         s.agentsNotifyNeedsYou = !SettingsStore.Defaults.agentsNotifyNeedsYou
         s.agentsNeedsYouBypassQuietHours = !SettingsStore.Defaults.agentsNeedsYouBypassQuietHours
@@ -93,6 +94,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.lastDailySummaryDay, SettingsStore.Defaults.lastDailySummaryDay, message)
         XCTAssertEqual(s.menuBarHiddenServicesRaw, SettingsStore.Defaults.menuBarHiddenServicesRaw, message)
         XCTAssertEqual(s.menuBarNumberMode, SettingsStore.Defaults.menuBarNumberMode, message)
+        XCTAssertEqual(s.showsRemaining, SettingsStore.Defaults.showsRemaining, message)
         XCTAssertEqual(s.hasSeenOnboarding, SettingsStore.Defaults.hasSeenOnboarding, message)
         XCTAssertEqual(s.agentsNotifyNeedsYou, SettingsStore.Defaults.agentsNotifyNeedsYou, message)
         XCTAssertEqual(s.agentsNeedsYouBypassQuietHours, SettingsStore.Defaults.agentsNeedsYouBypassQuietHours, message)

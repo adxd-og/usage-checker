@@ -103,7 +103,7 @@ struct OnboardingView: View {
                     .shadow(color: .black.opacity(0.15), radius: 6, y: 3)
                 // The gauge the whole product is built on, at a comfortable
                 // reading — the first screen shows what it is about to do.
-                OMRing(percent: 37, size: .hero)
+                OMRing(used: 37, mode: .used, size: .hero)
             }
             Text("Welcome to Omelette")
                 .font(OMFont.screenTitle)

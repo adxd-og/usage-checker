@@ -40,6 +40,22 @@ enum FloatingMiniLayout {
         )
     }
 
+    /// The number at the end of one bar row: "76%" / "24%".
+    static func rowPercentText(_ bucket: UsageBucket, mode: PercentDisplay.Mode) -> String {
+        PercentDisplay.percentText(bucket.clampedPercent, mode: mode)
+    }
+
+    /// What VoiceOver reads for the ring at the top of the panel.
+    static func heroAccessibilityLabel(_ hero: UsageBucket, mode: PercentDisplay.Mode) -> String {
+        "\(hero.label), \(PercentDisplay.spoken(hero.clampedPercent, mode: mode))"
+    }
+
+    /// What VoiceOver reads for one bar row. The full window name, not the 62 pt
+    /// column's shortened one: a screen reader has no column to fit.
+    static func rowAccessibilityLabel(_ bucket: UsageBucket, mode: PercentDisplay.Mode) -> String {
+        "\(bucket.label), \(PercentDisplay.spoken(bucket.clampedPercent, mode: mode))"
+    }
+
     // MARK: - Private
 
     /// Other session windows first — mid-week a weekly often reads higher than the

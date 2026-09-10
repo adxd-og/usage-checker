@@ -111,11 +111,12 @@ enum WindowRanking {
     /// floating window, where there is no room for a wall-clock time.
     static func sessionRowValue(
         _ bucket: UsageBucket,
+        mode: PercentDisplay.Mode = .used,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> String {
-        let percent = "\(Int(bucket.clampedPercent.rounded()))%"
+        let percent = PercentDisplay.percentText(bucket.clampedPercent, mode: mode)
         guard let reset = ResetCopy.both(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale)
         else { return percent }
         return "\(percent) · \(reset)"

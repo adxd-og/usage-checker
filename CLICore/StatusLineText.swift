@@ -2,7 +2,8 @@ import Foundation
 
 /// `omelette statusline` — one line for Claude Code's status bar, and never more.
 ///
-/// `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`. Parts with nothing to say are
+/// `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1` — or `◐ 58% left · …` when the app
+/// is showing what is left. Parts with nothing to say are
 /// dropped rather than shown empty, and a snapshot that is missing or stale renders as
 /// the empty string: a status line that lies is worse than one that is blank, and an
 /// error message in that bar would sit there for the rest of the session.
@@ -24,7 +25,7 @@ enum StatusLineText {
 
         let service = snapshot.service(id: provider)
         if let window = service.flatMap(headlineWindow) {
-            parts.append("\(gauge) \(Int(window.percent.rounded()))%")
+            parts.append("\(gauge) \(PercentDisplay.percentPhrase(window.percent, mode: snapshot.percentMode))")
             if let at = window.resetsAt, let reset = ResetCopy.relative(resetsAt: at, now: now) {
                 // The status bar is the one surface where width is scarce; the absolute
                 // time `ResetCopy.both` adds belongs in the popover, not here.

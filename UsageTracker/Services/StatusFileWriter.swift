@@ -122,7 +122,8 @@ actor StatusFileWriter {
         agents: AgentSummary,
         now: Date,
         calendar: Calendar = .current,
-        locale: Locale = .current
+        locale: Locale = .current,
+        mode: PercentDisplay.Mode = .used
     ) -> StatusSnapshot {
         StatusSnapshot(
             version: StatusSnapshot.currentVersion,
@@ -150,7 +151,8 @@ actor StatusFileWriter {
             },
             agents: StatusSnapshot.Agents(
                 needsYou: agents.needsYou, working: agents.working, sessions: agents.sessions
-            )
+            ),
+            showsRemaining: mode == .remaining
         )
     }
 
