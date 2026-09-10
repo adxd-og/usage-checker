@@ -6,6 +6,36 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.5.0</title>
+      <pubDate>Thu, 10 Sep 2026 18:29:07 +0300</pubDate>
+      <sparkle:version>40</sparkle:version>
+      <sparkle:shortVersionString>2.5.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>Sessions in History.</b> The dashboard's History tab gets a third mode alongside Cost and Tokens: your last 10 chats plus the 5 most expensive, for Claude Code and Codex, each expandable to its input/output/cache split, the sub-agents it launched, and a per-day breakdown. "Show all" reveals every chat with a Recent / Cost sort.</li>
+<li><b><code>get_sessions</code></b>, a third MCP tool, lists the same recent chats with their tokens, cost and sub-agent count. <code>omelette status --json</code> now carries them too.</li>
+<li>Spend-limit and extra-usage providers show both dollar amounts under the ring ("$431 of $1,500") on the dashboard hero and the All-tab tile, not just a bare percentage.</li>
+<li>The app version now links to the GitHub page from the popover footer and the dashboard sidebar, not only from Settings.</li>
+<li><b>Show remaining instead of used.</b> A switch in Settings → General turns every ring, bar and percent around, widgets and CLI included.</li>
+</ul>
+<h3>Changed</h3>
+<ul>
+<li><b>All-tab tiles lead with the 5-hour session window</b> instead of whichever window is most constrained that day, matching the provider tab; the weekly window keeps the second line.</li>
+<li><b>The cost tile shows today's spend first</b>, with the 7-day total and the per-provider split underneath.</li>
+<li><b>Codex accounting now counts compaction calls.</b> Its cumulative counter never included them (7% of a session here); billing now comes from each response's own record when a rollout writes one, so compaction is counted exactly once. <code>~/.codex/archived_sessions</code> is scanned too.</li>
+<li>In Claude Code's logs, a sub-agent's spend is now attributed to the project that launched it, instead of a bare "subagents" project.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.5.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.5.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="19y9z/pFJO1PfAMT9gHxcVw4ImInYFjmxReJluMZ5HPuduGecDxV23CAunYnlDVOmAg7k89eFrIUZ7dcFMjDBA=="
+        length="25050779"/>
+    </item>
+    <item>
       <title>Omelette v2.4.1</title>
       <pubDate>Sun, 06 Sep 2026 13:24:18 +0300</pubDate>
       <sparkle:version>39</sparkle:version>
