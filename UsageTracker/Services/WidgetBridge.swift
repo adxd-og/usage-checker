@@ -5,11 +5,23 @@ import WidgetKit
 /// and tells WidgetKit to refresh its timelines.
 @MainActor
 enum WidgetBridge {
-    static func publish(_ services: [ServiceSnapshot], at date: Date) {
-        let widgetServices = widgetServices(from: services)
-        guard !widgetServices.isEmpty else { return }
-        SharedWidgetStore.write(WidgetSnapshot(services: widgetServices, updatedAt: date))
+    static func publish(_ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode) {
+        let snapshot = snapshot(from: services, at: date, mode: mode)
+        guard !snapshot.services.isEmpty else { return }
+        SharedWidgetStore.write(snapshot)
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// The whole file as a value. `publish` writes into the App Group container,
+    /// which only the real app can reach, so everything it decides is decided here.
+    nonisolated static func snapshot(
+        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode
+    ) -> WidgetSnapshot {
+        WidgetSnapshot(
+            services: widgetServices(from: services),
+            updatedAt: date,
+            showsRemaining: mode == .remaining
+        )
     }
 
     /// The mapping on its own: `publish` writes into the App Group container, which

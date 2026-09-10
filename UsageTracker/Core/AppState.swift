@@ -290,7 +290,7 @@ final class AppState: ObservableObject {
         }
 
         if next.hasAnyData {
-            WidgetBridge.publish(next.services, at: next.fetchedAt)
+            WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
         }
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.

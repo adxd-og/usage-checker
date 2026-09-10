@@ -88,6 +88,21 @@ extension WidgetService {
 struct WidgetSnapshot: Codable, Equatable, Sendable {
     let services: [WidgetService]
     let updatedAt: Date
+    /// The user's "show remaining instead of used" switch. The extension is a
+    /// separate process and cannot read the app's preferences, so the mode rides in
+    /// the file next to the numbers — which stay "used" either way. Defaulted, and
+    /// decoded through the extension below for the same reason
+    /// `WidgetService.isRetained` is: a property default is not a *decoding*
+    /// default, and one `keyNotFound` empties every widget on the desktop.
+    var showsRemaining: Bool = false
+
+    /// Spelled out because the decoder below needs them.
+    enum CodingKeys: String, CodingKey {
+        case services, updatedAt, showsRemaining
+    }
+
+    /// What every ring and number in the extension reads.
+    var mode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
 
     func service(id: String) -> WidgetService? {
         services.first(where: { $0.id == id })
@@ -116,6 +131,18 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
         ],
         updatedAt: Date()
     )
+}
+
+/// Reading a snapshot an older build wrote — see the note on `WidgetService`'s own
+/// decoder above; this is the envelope's half of the same rule. In an extension, so
+/// the memberwise initializer `WidgetBridge` builds snapshots with survives.
+extension WidgetSnapshot {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.services = try c.decodeIfPresent([WidgetService].self, forKey: .services) ?? []
+        self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        self.showsRemaining = try c.decodeIfPresent(Bool.self, forKey: .showsRemaining) ?? false
+    }
 }
 
 enum SharedWidgetStore {

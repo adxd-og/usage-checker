@@ -56,6 +56,9 @@ struct ProviderEntry: TimelineEntry {
     let provider: ProviderChoice
     let service: WidgetService?
     let updatedAt: Date
+    /// Which way this entry's numbers count. The extension cannot read the app's
+    /// preferences, so the mode arrives with the snapshot it read off disk.
+    let mode: PercentDisplay.Mode
 }
 
 private func timelineEntries<E>(now: Date, make: (Date) -> E) -> Timeline<E> {
@@ -69,7 +72,7 @@ private func timelineEntries<E>(now: Date, make: (Date) -> E) -> Timeline<E> {
 struct ProviderTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> ProviderEntry {
         let snap = WidgetSnapshot.placeholder
-        return ProviderEntry(date: Date(), provider: .claude, service: snap.service(id: "claude"), updatedAt: snap.updatedAt)
+        return ProviderEntry(date: Date(), provider: .claude, service: snap.service(id: "claude"), updatedAt: snap.updatedAt, mode: snap.mode)
     }
 
     func snapshot(for configuration: SelectProviderIntent, in context: Context) async -> ProviderEntry {
@@ -86,7 +89,8 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
             date: date,
             provider: provider,
             service: snap.service(id: provider.rawValue),
-            updatedAt: snap.updatedAt
+            updatedAt: snap.updatedAt,
+            mode: snap.mode
         )
     }
 }
@@ -165,10 +169,10 @@ struct ProviderWidgetEntryView: View {
         if let service = entry.service {
             Group {
                 switch family {
-                case .systemSmall: SmallProviderView(service: service)
-                case .systemMedium: MediumProviderView(service: service, updatedAt: entry.updatedAt)
-                case .systemLarge: LargeProviderView(service: service, updatedAt: entry.updatedAt)
-                default: SmallProviderView(service: service)
+                case .systemSmall: SmallProviderView(service: service, mode: entry.mode)
+                case .systemMedium: MediumProviderView(service: service, updatedAt: entry.updatedAt, mode: entry.mode)
+                case .systemLarge: LargeProviderView(service: service, updatedAt: entry.updatedAt, mode: entry.mode)
+                default: SmallProviderView(service: service, mode: entry.mode)
                 }
             }
             // Last known, not current — same 55% the app uses.
@@ -200,10 +204,11 @@ struct NoDataView: View {
 
 struct SmallProviderView: View {
     let service: WidgetService
+    let mode: PercentDisplay.Mode
 
     var body: some View {
         ZStack {
-            OMRing(used: service.headlineBucket?.percent ?? 0, mode: .used, size: .widget, showsLabel: false)
+            OMRing(used: service.headlineBucket?.percent, mode: mode, size: .widget, showsLabel: false)
             VStack(spacing: 0) {
                 Text(service.name)
                     .font(.system(size: 10, weight: .medium))
@@ -229,7 +234,7 @@ struct SmallProviderView: View {
 
     /// Percent when there's a window; the dollar figure when there isn't.
     private var headlineText: String {
-        if let bucket = service.headlineBucket { return "\(Int(bucket.percent.rounded()))%" }
+        if let bucket = service.headlineBucket { return PercentDisplay.percentText(bucket.percent, mode: mode) }
         return service.spendLabel.map { $0.replacingOccurrences(of: " last 7 days", with: "") } ?? "—"
     }
 }
@@ -239,12 +244,13 @@ struct SmallProviderView: View {
 struct MediumProviderView: View {
     let service: WidgetService
     let updatedAt: Date
+    let mode: PercentDisplay.Mode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ServiceHeader(service: service, updatedAt: updatedAt)
             ForEach(displayBuckets) { bucket in
-                WidgetBucketRow(bucket: bucket)
+                WidgetBucketRow(bucket: bucket, mode: mode)
             }
             if displayBuckets.isEmpty, let spend = service.spendLabel {
                 SpendRow(label: spend)
@@ -269,16 +275,17 @@ struct MediumProviderView: View {
 struct LargeProviderView: View {
     let service: WidgetService
     let updatedAt: Date
+    let mode: PercentDisplay.Mode
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ServiceHeader(service: service, updatedAt: nil)
             Divider()
             ForEach(service.sessionBuckets.prefix(2)) { bucket in
-                WidgetBucketRow(bucket: bucket)
+                WidgetBucketRow(bucket: bucket, mode: mode)
             }
             ForEach(service.nonSessionBuckets.prefix(5)) { bucket in
-                WidgetBucketRow(bucket: bucket)
+                WidgetBucketRow(bucket: bucket, mode: mode)
             }
             if service.buckets.isEmpty, let spend = service.spendLabel {
                 SpendRow(label: spend)
@@ -304,7 +311,7 @@ struct AllProvidersWidgetView: View {
                     ServiceHeader(service: service, updatedAt: nil)
                     // The worst two windows tell the story; details live in the app.
                     ForEach(topBuckets(of: service)) { bucket in
-                        WidgetBucketRow(bucket: bucket, compact: true)
+                        WidgetBucketRow(bucket: bucket, mode: snapshot.mode, compact: true)
                     }
                     if service.buckets.isEmpty, let spend = service.spendLabel {
                         SpendRow(label: spend, compact: true)
@@ -378,6 +385,7 @@ struct ServiceHeader: View {
 
 struct WidgetBucketRow: View {
     let bucket: WidgetBucket
+    let mode: PercentDisplay.Mode
     var compact: Bool = false
 
     var body: some View {
@@ -388,7 +396,7 @@ struct WidgetBucketRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 Spacer()
-                Text("\(Int(bucket.percent.rounded()))%")
+                Text(PercentDisplay.percentText(bucket.percent, mode: mode))
                     .font(.system(size: compact ? 11 : 12, weight: .semibold, design: .rounded))
                     .monospacedDigit()
                     .foregroundStyle(.primary)
@@ -398,7 +406,7 @@ struct WidgetBucketRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            BarSegment(used: bucket.percent, mode: .used, height: compact ? 5 : 6)
+            BarSegment(used: bucket.percent, mode: mode, height: compact ? 5 : 6)
         }
     }
 }
@@ -442,26 +450,26 @@ enum WidgetTime {
 }
 
 #Preview("Small") {
-    SmallProviderView(service: WidgetSnapshot.placeholder.services[0])
+    SmallProviderView(service: WidgetSnapshot.placeholder.services[0], mode: .used)
         .frame(width: 158, height: 158)
         .background(.regularMaterial)
 }
 
 #Preview("Small — dark") {
-    SmallProviderView(service: WidgetSnapshot.placeholder.services[0])
+    SmallProviderView(service: WidgetSnapshot.placeholder.services[0], mode: .used)
         .frame(width: 158, height: 158)
         .background(.regularMaterial)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Medium") {
-    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date())
+    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date(), mode: .used)
         .frame(width: 338, height: 158)
         .background(.regularMaterial)
 }
 
 #Preview("Medium — dark") {
-    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date())
+    MediumProviderView(service: WidgetSnapshot.placeholder.services[0], updatedAt: Date(), mode: .used)
         .frame(width: 338, height: 158)
         .background(.regularMaterial)
         .preferredColorScheme(.dark)
