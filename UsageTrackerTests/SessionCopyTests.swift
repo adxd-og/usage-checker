@@ -128,6 +128,21 @@ final class SessionCopyTests: XCTestCase {
         XCTAssertEqual(SessionCopy.listHeader(shown: 1, total: 1), "1 chat")
     }
 
+    /// Without a header the three figures on a chat row are unlabelled digits. The
+    /// titles are the row's own columns, in the row's order: the chat, then the four
+    /// values the wide row draws to its right.
+    func testTheColumnTitlesNameEveryFigureOnAChatRow() {
+        XCTAssertEqual(
+            SessionCopy.listColumns,
+            ["Chat", "Last active", "Turns", "Tokens", "Cost"]
+        )
+        XCTAssertEqual(SessionCopy.listColumns.first, "Chat", "the title column comes first, as on the row")
+        XCTAssertEqual(
+            SessionCopy.listColumns.count, 1 + 4,
+            "the title column plus the four values the row draws: last active, turns, tokens, cost"
+        )
+    }
+
     func testTheShowAllButtonNamesTheNumberAndTheWayBack() {
         XCTAssertEqual(SessionCopy.showAll(count: 34, expanded: false), "Show all 34")
         XCTAssertEqual(SessionCopy.showAll(count: 34, expanded: true), "Show fewer")

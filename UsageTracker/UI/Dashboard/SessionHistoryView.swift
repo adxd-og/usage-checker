@@ -545,6 +545,8 @@ struct SessionHistoryView: View {
         let rows = sessionRows
         return VStack(alignment: .leading, spacing: 0) {
             sessionListControls(shown: rows.count)
+            // The empty list has its own sentence; a header over nothing is furniture.
+            if !rows.isEmpty { sessionColumnHeader }
             ForEach(rows) { row in
                 SessionRowView(
                     row: row,
@@ -556,6 +558,38 @@ struct SessionHistoryView: View {
             }
         }
         .padding(.horizontal, 24)
+    }
+
+    /// Names the figures on a chat row, the way the by-day tables above name theirs.
+    /// The widths are `SessionRowView.wideSummary`'s, so a title sits over its own
+    /// column; the fallback is the narrow row, which keeps only the chat and its cost
+    /// on the first line and folds the rest into a caption.
+    private var sessionColumnHeader: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: OMSpacing.s) {
+                Color.clear.frame(width: 16, height: 1)  // the row's chevron
+                Text(sessionColumnTitle(0)).frame(minWidth: 160, alignment: .leading)
+                Spacer(minLength: OMSpacing.s)
+                Text(sessionColumnTitle(1)).frame(width: 104, alignment: .trailing)
+                Text(sessionColumnTitle(2)).frame(width: 64, alignment: .trailing)
+                Text(sessionColumnTitle(3)).frame(width: 84, alignment: .trailing)
+                Text(sessionColumnTitle(4)).frame(width: 76, alignment: .trailing)
+            }
+            HStack(spacing: OMSpacing.s) {
+                Color.clear.frame(width: 16, height: 1)
+                Text(sessionColumnTitle(0))
+                Spacer(minLength: OMSpacing.s)
+                Text(sessionColumnTitle(4))
+            }
+        }
+        .font(OMFont.body)
+        .foregroundStyle(.secondary)
+        .padding(.bottom, 6)
+    }
+
+    private func sessionColumnTitle(_ index: Int) -> String {
+        let titles = SessionCopy.listColumns
+        return titles.indices.contains(index) ? titles[index] : ""
     }
 
     private func sessionListControls(shown: Int) -> some View {
