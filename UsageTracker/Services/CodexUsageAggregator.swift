@@ -114,6 +114,9 @@ actor CodexUsageAggregator: CostLogAggregating {
         var isSubagent = false
         var agentKind: String?
         var origin: String?
+        /// Set once this file has contributed a first prompt, so the rest of its
+        /// `response_item` lines are skipped instead of re-examined.
+        var sawPrompt = false
     }
 
     /// One local day of a chat. `mainTokens` is kept alongside `tokens` because a
@@ -171,6 +174,15 @@ actor CodexUsageAggregator: CostLogAggregating {
     private var recentTurns: [Turn] = []
     private var oldDays: [Date: DayAgg] = [:]
     private var sessionAggs: [String: SessionAgg] = [:]
+    /// `thread_name` per session id, from `~/.codex/session_index.jsonl`.
+    private var names: [String: String] = [:]
+    /// What the index looked like when it was last read. The file is rewritten on every
+    /// rename, so size-and-mtime is enough to skip re-parsing it on a quiet poll.
+    private var indexMark: (size: UInt64, mtime: Date)?
+    /// The first thing the user typed in a chat, for the chats Codex never named — it
+    /// writes no index entry for `codex exec` sessions. Kept with the timestamp so the
+    /// earliest wins when a session spans two rollouts.
+    private var firstPrompts: [String: (text: String, at: Date)] = [:]
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the month
     /// boundary is never clipped.
@@ -451,7 +463,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         sessionAggs
             .compactMap {
                 Self.summary(
-                    sessionID: $0.key, agg: $0.value, title: nil,
+                    sessionID: $0.key, agg: $0.value, title: title(for: $0.key),
                     from: start, to: end, calendar: calendar
                 )
             }
@@ -477,8 +489,102 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - Ingest
 
     private func ingestAll() {
+        reloadNamesIfChanged()
         scanAndIngest()
         pruneAndFold()
+    }
+
+    /// Re-reads `session_index.jsonl` only when it has actually changed. Codex rewrites
+    /// the whole file on every rename, so a poll that finds the same size and timestamp
+    /// has nothing new to learn.
+    private func reloadNamesIfChanged() {
+        guard let indexURL else { return }
+        // `FileManager`, not `URL.resourceValues`: a `URL` caches the resource values it
+        // has already been asked for, and this one is a stored property, so the gate
+        // would keep seeing the timestamp of the first poll for the life of the process.
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: indexURL.path),
+              let mtime = attributes[.modificationDate] as? Date else {
+            names = [:]
+            indexMark = nil
+            return
+        }
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        if let mark = indexMark, mark.size == size, mark.mtime == mtime { return }
+        indexMark = (size, mtime)
+        names = Self.parseIndex(try? Data(contentsOf: indexURL))
+    }
+
+    /// `{"id","thread_name","updated_at"}`, several lines per id — Codex renames a
+    /// thread seconds after opening it — so the latest `updated_at` wins and a tie goes
+    /// to the later line. A line we cannot read is skipped, not fatal: the index is a
+    /// convenience and the first prompt is still there.
+    nonisolated static func parseIndex(_ data: Data?) -> [String: String] {
+        guard let data, !data.isEmpty else { return [:] }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+
+        var best: [String: (name: String, at: Date)] = [:]
+        for line in data.split(separator: 0x0A) where !line.isEmpty {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let id = obj["id"] as? String,
+                  let name = obj["thread_name"] as? String,
+                  !name.isEmpty else { continue }
+            let stamp = obj["updated_at"] as? String
+            let at = stamp.flatMap { fractional.date(from: $0) ?? plain.date(from: $0) }
+                ?? .distantPast
+            if let current = best[id], current.at > at { continue }
+            best[id] = (name, at)
+        }
+        return best.mapValues(\.name)
+    }
+
+    /// A chat Codex never named is still recognisable by what it was asked to do.
+    /// § Facts: the first user message whose `content_item_kinds` says `user.text`;
+    /// failing that the first `input_text` that does not open with `<` or `#`, which is
+    /// how the AGENTS.md and environment preambles arrive under the user role. A
+    /// sub-agent's log opens with the task it was handed, which is not what the user
+    /// typed, so those files are never asked.
+    private func captureFirstPrompt(_ obj: [String: Any], state: inout FileState) {
+        guard !state.sawPrompt, !state.isSubagent, let sessionID = state.sessionID else { return }
+        guard let payload = obj["payload"] as? [String: Any],
+              payload["role"] as? String == "user",
+              let content = payload["content"] as? [[String: Any]] else { return }
+        guard let raw = content.first(where: { $0["type"] as? String == "input_text" })?["text"] as? String
+        else { return }
+
+        let meta = payload["internal_chat_message_metadata_passthrough"] as? [String: Any]
+        let kinds = meta?["content_item_kinds"] as? [String]
+        if let kinds {
+            // A kinds list that is not `user.text` is machinery, whatever it looks like.
+            guard kinds.contains("user.text") else { return }
+        } else {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.hasPrefix("<"), !trimmed.hasPrefix("#") else { return }
+        }
+        guard let title = Self.promptTitle(raw) else { return }
+
+        // `.distantFuture` for a line we cannot date: it fills an empty slot and never
+        // displaces a prompt that knows when it was typed.
+        let at = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? .distantFuture
+        state.sawPrompt = true
+        if let existing = firstPrompts[sessionID], existing.at <= at { return }
+        firstPrompts[sessionID] = (title, at)
+    }
+
+    /// Whitespace-collapsed and cut at 80 characters — the same shape § 2 gives
+    /// Claude's first prompts, so a row is the same width whichever provider wrote it.
+    nonisolated static func promptTitle(_ raw: String) -> String? {
+        let collapsed = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > 80 else { return collapsed }
+        return String(collapsed.prefix(80)) + "…"
+    }
+
+    /// Codex's own name for the chat, or the first thing the user typed in it.
+    private func title(for sessionID: String) -> String? {
+        names[sessionID] ?? firstPrompts[sessionID]?.text
     }
 
     private func ingest(_ turns: [Turn]) {
@@ -574,6 +680,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         let sessionCutoff = Date().addingTimeInterval(-sessionRetention)
         if sessionAggs.contains(where: { $0.value.lastAt < sessionCutoff }) {
             sessionAggs = sessionAggs.filter { $0.value.lastAt >= sessionCutoff }
+            firstPrompts = firstPrompts.filter { sessionAggs[$0.key] != nil }
         }
     }
 
@@ -752,6 +859,11 @@ actor CodexUsageAggregator: CostLogAggregating {
         // top level, so it falls through every branch here.
         if type == "token_usage_record" {
             return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug, fileKey: fileKey)
+        }
+
+        if type == "response_item" {
+            captureFirstPrompt(obj, state: &state)
+            return nil
         }
 
         guard type == "event_msg",
