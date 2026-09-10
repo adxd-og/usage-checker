@@ -125,6 +125,13 @@ struct SettingsView: View {
                 }
             }
 
+            Section("Percentages") {
+                Toggle("Show remaining instead of used", isOn: $settings.showsRemaining)
+                Text("Rings, bars and numbers count down from 100% instead of up from 0% — in the menu bar, the popover, the dashboard, the widgets and the omelette command. Colours and alerts keep following how much you have used, so red still means nearly out.")
+                    .font(OMFont.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Shortcut") {
                 KeyboardShortcuts.Recorder("Peek at usage", name: .peekUsage)
                 Text("Opens the popover from any app. Unset by default — click the field and press a combination.")
@@ -312,7 +319,7 @@ struct SettingsView: View {
                                 }
                             }
                             Spacer()
-                            Text(usageSummary(svc))
+                            Text(Self.usageSummary(svc, mode: settings.percentMode))
                                 .font(OMFont.caption)
                                 .monospacedDigit()
                                 .foregroundStyle(.secondary)
@@ -467,17 +474,19 @@ struct SettingsView: View {
     }
 
     /// What this service is actually reporting, in the words the rest of the app
-    /// uses — "3 buckets" was an internal count nobody outside the code reads.
-    /// The two windows closest to their limit, or the pay-as-you-go spend, and a
-    /// dash when the service has reported nothing (the state label above says why).
-    private func usageSummary(_ svc: ServiceSnapshot) -> String {
+    /// uses: the two windows closest to their limit, or the pay-as-you-go spend, or
+    /// a dash when it has reported nothing (the state label beside it says why).
+    ///
+    /// Which two windows is a question about usage and never changes; what they
+    /// print is the user's choice. Pure, so both halves of that are tested.
+    nonisolated static func usageSummary(_ svc: ServiceSnapshot, mode: PercentDisplay.Mode) -> String {
         let worst = svc.buckets
             .filter { !$0.isPromotional }
             .sorted { $0.clampedPercent > $1.clampedPercent }
             .prefix(2)
         if !worst.isEmpty {
             return worst
-                .map { "\(shortWindowName($0)) \(Int($0.clampedPercent.rounded()))%" }
+                .map { "\(shortWindowName($0)) \(PercentDisplay.percentText($0.clampedPercent, mode: mode))" }
                 .joined(separator: " · ")
         }
         if let extra = svc.extraUsage, extra.isEnabled, extra.monthlyLimit > 0 {
@@ -489,7 +498,7 @@ struct SettingsView: View {
         return "—"
     }
 
-    private func shortWindowName(_ b: UsageBucket) -> String {
+    nonisolated static func shortWindowName(_ b: UsageBucket) -> String {
         switch b.kind {
         case .session: return "Session"
         case .weekly: return "Week"
