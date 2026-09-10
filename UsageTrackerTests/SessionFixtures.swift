@@ -80,6 +80,17 @@ enum SessionFixture {
         SessionDaySummary(day: startOfDay(daysBefore: days), turns: turns, tokens: tokens)
     }
 
+    /// One row of a chat's by-model split. The defaults are the pair this Mac's own
+    /// chats spend most of their money on.
+    static func model(
+        model: String = "claude-opus-4-5",
+        effort: String? = "xhigh",
+        turns: Int = 4,
+        tokens: TokenBreakdown = SessionFixture.tokens(input: 1_000, output: 100)
+    ) -> SessionModelSummary {
+        SessionModelSummary(model: model, effort: effort, turns: turns, tokens: tokens)
+    }
+
     /// `mainTokens` defaults to `tokens`: a chat with no sub-agents spent all of it on
     /// its own thread, which is what both aggregators report.
     static func session(
@@ -94,7 +105,8 @@ enum SessionFixture {
         tokens: TokenBreakdown = SessionFixture.tokens(input: 1_000, output: 100),
         mainTokens: TokenBreakdown? = nil,
         agents: [SessionAgentSummary] = [],
-        days: [SessionDaySummary] = []
+        days: [SessionDaySummary] = [],
+        models: [SessionModelSummary] = []
     ) -> SessionSummary {
         SessionSummary(
             id: id,
@@ -108,7 +120,8 @@ enum SessionFixture {
             tokens: tokens,
             mainTokens: mainTokens ?? tokens,
             agents: agents,
-            days: days
+            days: days,
+            models: models
         )
     }
 

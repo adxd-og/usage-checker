@@ -454,7 +454,10 @@ actor CodexUsageAggregator: CostLogAggregating {
             tokens: tokens,
             mainTokens: mainTokens,
             agents: agents,
-            days: daySummaries
+            days: daySummaries,
+            // Filled in by the by-model package's Codex task; empty here so the type
+            // change lands on its own.
+            models: []
         )
     }
 

@@ -758,7 +758,10 @@ actor JSONLAggregator: CostLogAggregating {
                 agents: agents,
                 days: days.map {
                     SessionDaySummary(day: $0.day, turns: $0.turns, tokens: $0.tokens)
-                }
+                },
+                // Filled in by the by-model package's Claude task; empty here so the
+                // type change lands on its own.
+                models: []
             ))
         }
 
