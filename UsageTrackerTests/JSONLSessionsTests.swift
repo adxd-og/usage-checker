@@ -787,4 +787,52 @@ final class JSONLSessionsTests: XCTestCase {
             "a current snapshot restores its chats, names and all"
         )
     }
+
+    // MARK: - Retention
+
+    func testAChatWhoseLastTurnIsOlderThanNinetyTwoDaysIsDropped() async throws {
+        // The file is new, so the ninety-day mtime window still lets the scanner read
+        // it; only the records are old.
+        try writeMain(
+            [
+                humanPromptLine("Очень старый чат", at: at(daysAgo: 100, hour: 9),
+                                session: otherSessionID),
+                mainTurn(id: "msg_ancient", at: at(daysAgo: 100, hour: 10), input: 1_000_000,
+                         session: otherSessionID),
+            ],
+            session: otherSessionID
+        )
+        try writeMain([mainTurn(id: "msg_recent", at: at(daysAgo: 1, hour: 10), input: 1_000_000)])
+
+        let aggregator = aggregator()
+        await aggregator.refresh()
+        let sessions = await aggregator.sessions(from: at(daysAgo: 200, hour: 0), to: now)
+
+        XCTAssertEqual(sessions.map(\.id), [sessionID], "a chat is kept for 92 days after its last turn")
+    }
+
+    func testALivingChatDropsOnlyItsDaysPastTheWindow() async throws {
+        try writeMain([
+            mainTurn(id: "msg_ancient", at: at(daysAgo: 100, hour: 10), input: 1_000_000),
+            mainTurn(id: "msg_recent", at: at(daysAgo: 1, hour: 10), input: 2_000_000),
+        ])
+        try writeSubagent(
+            [agentTurn(
+                id: "msg_old_agent", at: at(daysAgo: 100, hour: 11),
+                agentID: "acfa466bf5542f6e0", kind: "executor", input: 1_000_000
+            )],
+            agentID: "acfa466bf5542f6e0"
+        )
+
+        let aggregator = aggregator()
+        await aggregator.refresh()
+        let sessions = await aggregator.sessions(from: at(daysAgo: 200, hour: 0), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.days.map(\.day), [dayStart(daysAgo: 1)], "the hundred-day-old day is gone")
+        XCTAssertEqual(chat.turns, 1)
+        XCTAssertEqual(chat.tokens.input, 2_000_000)
+        XCTAssertTrue(chat.agents.isEmpty, "so is the agent that only ran that day")
+        XCTAssertEqual(chat.firstAt, at(daysAgo: 100, hour: 10), "the chat still says when it started")
+    }
 }

@@ -357,6 +357,13 @@ actor JSONLAggregator: CostLogAggregating {
                 agents[agentID] = agent
             }
         }
+
+        /// Nothing older than the cutoff is kept: the ranges never ask for it, and a
+        /// chat resumed for months would otherwise grow a row per day forever.
+        mutating func drop(before cutoff: Date) {
+            days.removeAll { $0.day < cutoff }
+            agents = agents.filter { $0.value.lastAt >= cutoff }
+        }
     }
 
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
@@ -418,6 +425,14 @@ actor JSONLAggregator: CostLogAggregating {
     /// us every turn's timestamp.
     private let isoFormatterNoFraction: ISO8601DateFormatter
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
+    /// How long a chat outlives its last turn. Two days longer than the ninety the
+    /// History ranges reach, so a chat on the ninetieth day is still whole.
+    private let sessionWindow: TimeInterval = 92 * 24 * 3600
+    /// A name can arrive on a poll whose chunk carries no assistant record yet — Claude
+    /// Code re-emits `ai-title` throughout a transcript — so an unknown session id is
+    /// not proof the chat has none. Names are only swept when the two maps together
+    /// pass this, which no real machine reaches.
+    private let titleCap = 2_000
     /// The rolling figures reach back 30 days; keep turns one day longer so the
     /// month boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
@@ -688,7 +703,6 @@ actor JSONLAggregator: CostLogAggregating {
         guard firstDay <= lastDay else { return [] }
         let afterLastDay = calendar.date(byAdding: .day, value: 1, to: lastDay)
             ?? lastDay.addingTimeInterval(86_400)
-
         var summaries: [SessionSummary] = []
         summaries.reserveCapacity(sessionAggs.count)
 
@@ -903,6 +917,36 @@ actor JSONLAggregator: CostLogAggregating {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
             dirty = true
         }
+        let sessionCutoff = dayStart(for: Date().addingTimeInterval(-sessionWindow))
+        var sessionsChanged = false
+        // A snapshot of the keys: the loop rewrites the dictionary it walks.
+        for id in Array(sessionAggs.keys) {
+            guard var agg = sessionAggs[id] else { continue }
+            if agg.lastAt < sessionCutoff {
+                sessionAggs.removeValue(forKey: id)
+                titles.removeValue(forKey: id)
+                firstPrompts.removeValue(forKey: id)
+                sessionsChanged = true
+                continue
+            }
+            let before = (agg.days.count, agg.agents.count)
+            agg.drop(before: sessionCutoff)
+            if (agg.days.count, agg.agents.count) != before {
+                sessionAggs[id] = agg
+                sessionsChanged = true
+            }
+        }
+        // Names whose chat we have never seen a turn for: kept until there are enough of
+        // them to be worth sweeping, because the chunk that named the chat can arrive
+        // before the chunk that pays for it.
+        if titles.count + firstPrompts.count > titleCap {
+            let known = Set(sessionAggs.keys)
+            let counts = (titles.count, firstPrompts.count)
+            titles = titles.filter { known.contains($0.key) }
+            firstPrompts = firstPrompts.filter { known.contains($0.key) }
+            if (titles.count, firstPrompts.count) != counts { sessionsChanged = true }
+        }
+        if sessionsChanged { dirty = true }
     }
 
     private func dayStart(for date: Date) -> Date {
