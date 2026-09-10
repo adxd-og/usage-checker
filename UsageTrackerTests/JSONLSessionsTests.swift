@@ -696,4 +696,95 @@ final class JSONLSessionsTests: XCTestCase {
         let chat = try XCTUnwrap(sessions.first)
         XCTAssertNil(chat.title, "the caveat record is the tool talking to itself")
     }
+
+    // MARK: - The on-disk cache
+
+    func testAChatSurvivesARelaunchWithoutReopeningATranscript() async throws {
+        try writeChatFixture()
+        try writeMain([
+            mainTurn(id: "msg_m1", at: at(daysAgo: 2, hour: 9), input: 1_000_000),
+            mainTurn(id: "msg_m2", at: at(daysAgo: 1, hour: 10), input: 1_000_000, output: 100_000),
+            mainTurn(id: "msg_m3", at: at(daysAgo: 1, hour: 11), input: 1_000_000),
+            titleLine("Ledger 0.3.3"),
+        ])
+
+        let first = aggregator(cache: cacheURL)
+        await first.refresh()
+        let firstSessions = await first.sessions(from: dayStart(daysAgo: 3), to: now)
+        let before = try XCTUnwrap(firstSessions.first)
+
+        let second = aggregator(cache: cacheURL)
+        await second.refresh()
+        let parsed = await second.filesParsedInLastScan
+        let secondSessions = await second.sessions(from: dayStart(daysAgo: 3), to: now)
+        let after = try XCTUnwrap(secondSessions.first)
+
+        XCTAssertEqual(parsed, 0, "the cache answers without reopening a transcript")
+        XCTAssertEqual(after, before, "every field, agents, days and per-category dollars included")
+        XCTAssertEqual(after.title, "Ledger 0.3.3", "the name is cached with the chat")
+    }
+
+    func testAVersionThreeCacheIsRejectedAndTheChatsAreReadAgain() async throws {
+        try writeChatFixture()
+
+        // A snapshot in the *current* shape wearing the old version number, carrying a
+        // chat the logs cannot produce. Only the version check can reject it — a decode
+        // failure would prove nothing about the bump.
+        func snapshot(version: Int) -> Data {
+            let object: [String: Any] = [
+                "version": version,
+                "root": root.path,
+                "savedAt": ISO8601DateFormatter().string(from: now),
+                "fileMarks": [String: Any](),
+                "recentTurns": [Any](),
+                "oldDays": [Any](),
+                "seenMessageIDs": [Any](),
+                "sessions": [
+                    "ffffffff-0000-0000-0000-000000000000": [
+                        "projectSlug": alphaSlug,
+                        "firstAt": ISO8601DateFormatter().string(from: at(daysAgo: 1, hour: 9)),
+                        "lastAt": ISO8601DateFormatter().string(from: at(daysAgo: 1, hour: 9)),
+                        "days": [[
+                            "day": ISO8601DateFormatter().string(from: dayStart(daysAgo: 1)),
+                            "turns": 77,
+                            "tokens": [
+                                "input": 7_777, "output": 0, "cacheRead": 0,
+                                "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
+                            ],
+                            "mainTokens": [
+                                "input": 7_777, "output": 0, "cacheRead": 0,
+                                "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0,
+                            ],
+                        ]],
+                        "agents": [String: Any](),
+                    ],
+                ],
+                "titles": ["ffffffff-0000-0000-0000-000000000000": "A chat from the old cache"],
+                "firstPrompts": [String: Any](),
+            ]
+            return try! JSONSerialization.data(withJSONObject: object)
+        }
+
+        try snapshot(version: 3).write(to: cacheURL)
+        let stale = aggregator(cache: cacheURL)
+        await stale.refresh()
+        let staleParsed = await stale.filesParsedInLastScan
+        let staleSessions = await stale.sessions(from: dayStart(daysAgo: 3), to: now)
+
+        XCTAssertEqual(staleParsed, 3, "a version-3 snapshot means a full rescan of all three transcripts")
+        XCTAssertEqual(staleSessions.map(\.id), [sessionID], "nothing from the old snapshot reaches the list")
+
+        // The control: the same bytes at version 4 ARE restored, so the assertions above
+        // are about the version number and not about an unreadable file.
+        let currentURL = cacheFile(named: "control")
+        try snapshot(version: 4).write(to: currentURL)
+        let current = aggregator(cache: currentURL)
+        await current.refresh()
+        let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)
+
+        XCTAssertTrue(
+            restored.contains { $0.turns == 77 && $0.title == "A chat from the old cache" },
+            "a current snapshot restores its chats, names and all"
+        )
+    }
 }

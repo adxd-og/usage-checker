@@ -370,12 +370,22 @@ actor JSONLAggregator: CostLogAggregating {
         let recentTurns: [CLITurn]
         let oldDays: [DayEntry]
         let seenMessageIDs: [UInt64]
+        /// One entry per chat: sums per agent and per day, never a turn. A busy month is
+        /// a few hundred kilobytes beside the tens of megabytes `recentTurns` costs.
+        let sessions: [String: SessionAgg]
+        let titles: [String: String]
+        let firstPrompts: [String: String]
     }
 
+    /// 4: the snapshot carries one aggregate per chat, so a snapshot written before
+    /// them has no chats to restore and would leave the session list empty until every
+    /// transcript happened to be rewritten. Rejected wholesale, like 2 → 3 before it:
+    /// one cold rebuild, then business as usual.
+    ///
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 3
+    private static let cacheVersion = 4
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
@@ -1118,9 +1128,12 @@ actor JSONLAggregator: CostLogAggregating {
         }
         oldDays = days
         seenMessageIDs = Set(snapshot.seenMessageIDs)
+        sessionAggs = snapshot.sessions
+        titles = snapshot.titles
+        firstPrompts = snapshot.firstPrompts
         NSLog(
-            "[UT] cost cache restored: %ld files, %ld recent turns",
-            fileMarks.count, recentTurns.count
+            "[UT] cost cache restored: %ld files, %ld recent turns, %ld chats",
+            fileMarks.count, recentTurns.count, sessionAggs.count
         )
     }
 
@@ -1153,7 +1166,10 @@ actor JSONLAggregator: CostLogAggregating {
                          breakdown: $0.value.breakdown, turns: $0.value.turns,
                          byFamily: $0.value.byFamily)
             },
-            seenMessageIDs: Array(seenMessageIDs)
+            seenMessageIDs: Array(seenMessageIDs),
+            sessions: sessionAggs,
+            titles: titles,
+            firstPrompts: firstPrompts
         )
         do {
             let data = try encoder.encode(snapshot)
