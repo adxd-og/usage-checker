@@ -24,12 +24,17 @@ enum CLIText {
     Usage:
       omelette status [--json]              every provider's windows, costs and agents
       omelette statusline [--provider ID]   one line for a status bar (default: claude)
+                          [--no-color]
       omelette mcp                          Model Context Protocol server on stdio
       omelette --version
       omelette --help
 
+    When Claude Code pipes its session JSON into `statusline`, the line opens with the
+    model and a bar of how full its context window is, coloured for a status bar;
+    `--no-color` prints the same line without the escape codes.
+
     Reads ~/Library/Application Support/UsageTracker/status.json, which Omelette
     writes after every poll. It never starts the app: with Omelette closed, `status`
-    exits 2 and `statusline` prints an empty line.
+    exits 2 and `statusline` prints the session's half of the line, or an empty one.
     """
 }
