@@ -340,7 +340,7 @@ final class JSONLAggregatorVerificationTests: XCTestCase {
         let object: [String: Any] = [
             // The current version, so the rejection under test is the root's and not
             // the version's.
-            "version": 3,
+            "version": 4,
             "root": "/completely/different/root/that/is/not/this/tests/root",
             "savedAt": ISO8601DateFormatter().string(from: now),
             "fileMarks": [String: Any](),
@@ -357,6 +357,9 @@ final class JSONLAggregatorVerificationTests: XCTestCase {
                 "byFamily": ["sonnet": 42.0],
             ]],
             "seenMessageIDs": [Any](),
+            "sessions": [String: Any](),
+            "titles": [String: Any](),
+            "firstPrompts": [String: Any](),
         ]
         try JSONSerialization.data(withJSONObject: object).write(to: cacheURL)
 

@@ -10,6 +10,17 @@ struct CLITurn: Sendable, Codable {
     /// parses carries a per-category dollar split.
     let tokens: TokenBreakdown
     let projectSlug: String
+    /// The chat this turn belongs to: Claude Code's `sessionId`, the same value on the
+    /// main transcript and on every sub-agent transcript that chat spawned. `""` for a
+    /// log line old enough not to carry one — such a turn still counts towards the day
+    /// and window figures, it just belongs to no chat.
+    var sessionID: String = ""
+    /// `agentId` when the record is a sub-agent's, nil on the main thread.
+    var agentID: String? = nil
+    /// `attributionAgent`: the agent's type (`general-purpose`, `executor`, `planner`, …).
+    var agentKind: String? = nil
+    /// `effort` as the record carries it (`high`, `xhigh`, …).
+    var effort: String? = nil
 
     // The five counters the rest of the app still reads by name.
     var inputTokens: Int { tokens.input }
@@ -35,6 +46,102 @@ struct CLITurn: Sendable, Codable {
               + Double(cacheReadTokens) * p.cacheReadPerM
               + Double(cacheCreate5mTokens) * p.cacheCreate5mPerM
               + Double(cacheCreate1hTokens) * p.cacheCreate1hPerM) / 1_000_000.0
+    }
+}
+
+extension CLITurn {
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, model, tokens, projectSlug
+        case sessionID, agentID, agentKind, effort
+    }
+
+    /// Hand-written so the four fields default rather than throw when they are absent.
+    /// The cache version bump discards every snapshot written before them anyway; this
+    /// is so a snapshot that reaches the decoder some other way reports "an older
+    /// shape" by producing a turn without a chat, not "unreadable".
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            timestamp: try c.decode(Date.self, forKey: .timestamp),
+            model: try c.decode(String.self, forKey: .model),
+            tokens: try c.decode(TokenBreakdown.self, forKey: .tokens),
+            projectSlug: try c.decode(String.self, forKey: .projectSlug),
+            sessionID: try c.decodeIfPresent(String.self, forKey: .sessionID) ?? "",
+            agentID: try c.decodeIfPresent(String.self, forKey: .agentID),
+            agentKind: try c.decodeIfPresent(String.self, forKey: .agentKind),
+            effort: try c.decodeIfPresent(String.self, forKey: .effort)
+        )
+    }
+}
+
+/// What one transcript line says. Claude Code's log is not only turns — the chat's
+/// name and the user's first prompt live in it too — and one JSON parse per line has
+/// to answer for all three.
+enum ParsedRecord {
+    case turn(CLITurn)
+    /// `{"type":"ai-title","aiTitle":…,"sessionId":…}`. A chat carries many; the last wins.
+    case title(sessionID: String, title: String)
+    /// The first human prompt of a chat, already collapsed and cut.
+    case prompt(sessionID: String, text: String)
+}
+
+/// One `String` instance per distinct value in a transcript.
+///
+/// A session id is 36 bytes — past the 15 Swift keeps inline — so without this every
+/// turn held in `recentTurns` pins its own copy of an id it shares with thousands of
+/// others: several megabytes across a month of turns for a handful of distinct chats.
+struct StringPool {
+    private var pool: [String: String] = [:]
+    /// A transcript holds a handful of distinct ids; the cap only guards a corrupt file.
+    private let limit = 512
+
+    mutating func intern(_ s: String) -> String {
+        if let hit = pool[s] { return hit }
+        if pool.count < limit { pool[s] = s }
+        return s
+    }
+}
+
+/// The chat's name, as the two records that can carry one leave it.
+enum SessionTitle {
+    /// Eighty characters, ellipsis included: about what a row of the session list has
+    /// room for, and a prompt is often a whole pasted paragraph.
+    static let limit = 80
+
+    /// `ai-title`'s own string. Collapsed and cut like a prompt, so a name nobody
+    /// bounded cannot push a row off the screen.
+    static func clean(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        return collapse(raw)
+    }
+
+    /// The first human prompt as a name. `message.content` is a plain string in every
+    /// transcript on this Mac and `[{"type":"text","text":…}]` in the shape the logs
+    /// also allow; anything else has no text to show.
+    static func firstPrompt(from content: Any?) -> String? {
+        if let text = content as? String { return collapse(text) }
+        if let parts = content as? [[String: Any]] {
+            let text = parts
+                .filter { ($0["type"] as? String) == "text" }
+                .compactMap { $0["text"] as? String }
+                .joined(separator: " ")
+            return collapse(text)
+        }
+        return nil
+    }
+
+    /// Every run of whitespace — the newlines a pasted prompt is full of included —
+    /// becomes one space, and the result is cut to `limit` characters with an ellipsis
+    /// as the last one. nil when there is nothing but whitespace left.
+    static func collapse(_ raw: String) -> String? {
+        let words = raw.split(whereSeparator: { $0.isWhitespace })
+        guard !words.isEmpty else { return nil }
+        let collapsed = words.joined(separator: " ")
+        guard collapsed.count > limit else { return collapsed }
+        var cut = String(collapsed.prefix(limit - 1))
+        while cut.last?.isWhitespace == true { cut.removeLast() }
+        return cut + "…"
     }
 }
 
@@ -155,6 +262,110 @@ actor JSONLAggregator: CostLogAggregating {
         let byFamily: [String: Double]
     }
 
+    /// One chat's sums, and nothing finer: per session, per agent, per day.
+    ///
+    /// A month of this Mac's transcripts is a few hundred of these and a few hundred
+    /// kilobytes. Keeping the turns instead — which is what `recentTurns` costs — would
+    /// pin tens of megabytes to draw a list of ten rows.
+    ///
+    /// There is deliberately no session-level total: every figure `sessions(from:to:)`
+    /// reports is summed from `days`, so a revised turn has one place to be fixed and a
+    /// clipped range can never disagree with an unclipped one.
+    private struct SessionAgg: Codable {
+        var projectSlug: String
+        var firstAt: Date
+        var lastAt: Date
+        /// Ascending in practice — a transcript's turns arrive in near-chronological
+        /// runs — but only `sessions(from:to:)` promises the order it hands out.
+        var days: [DayTotals]
+        /// Keyed by `agentId`.
+        var agents: [String: AgentTotals]
+
+        struct DayTotals: Codable {
+            let day: Date
+            var turns: Int
+            var tokens: TokenBreakdown
+            /// The main thread's share of `tokens`. The day is the only place that split
+            /// survives clipping, so `SessionSummary.mainTokens` is summed from here.
+            var mainTokens: TokenBreakdown
+        }
+
+        struct AgentTotals: Codable {
+            var kind: String
+            var model: String?
+            var effort: String?
+            var firstAt: Date
+            var lastAt: Date
+            var turns: Int
+            var tokens: TokenBreakdown
+        }
+
+        init(projectSlug: String, at date: Date) {
+            self.projectSlug = projectSlug
+            self.firstAt = date
+            self.lastAt = date
+            self.days = []
+            self.agents = [:]
+        }
+
+        /// The turn's counters, added where they belong. A day is found by its last
+        /// entry first: turns arrive in near-chronological runs, so that is almost
+        /// always the answer, and the linear fallback is over at most 92 entries.
+        mutating func add(_ turn: CLITurn, on day: Date) {
+            let isMain = turn.agentID == nil
+            if let index = days.lastIndex(where: { $0.day == day }) {
+                days[index].turns += 1
+                days[index].tokens += turn.tokens
+                if isMain { days[index].mainTokens += turn.tokens }
+            } else {
+                days.append(DayTotals(
+                    day: day, turns: 1, tokens: turn.tokens,
+                    mainTokens: isMain ? turn.tokens : .zero
+                ))
+            }
+
+            guard let agentID = turn.agentID else { return }
+            var agent = agents[agentID] ?? AgentTotals(
+                // Every sub-agent transcript on this Mac carries `attributionAgent`;
+                // the fallback is for shapes that predate it.
+                kind: turn.agentKind ?? "sub-agent", model: nil, effort: nil,
+                firstAt: turn.timestamp, lastAt: .distantPast, turns: 0, tokens: .zero
+            )
+            if turn.timestamp < agent.firstAt { agent.firstAt = turn.timestamp }
+            if turn.timestamp >= agent.lastAt {
+                // Last seen wins: an agent can be resumed on another model, and an
+                // effort the record omits leaves the last one that said something.
+                agent.lastAt = turn.timestamp
+                agent.model = turn.model
+                agent.effort = turn.effort ?? agent.effort
+                if let kind = turn.agentKind { agent.kind = kind }
+            }
+            agent.turns += 1
+            agent.tokens += turn.tokens
+            agents[agentID] = agent
+        }
+
+        /// A later record for a message id already counted: the difference goes to the
+        /// same day and the same agent, and the turn count does not move.
+        mutating func revise(day: Date, delta: TokenBreakdown, isMain: Bool, agentID: String?) {
+            if let index = days.lastIndex(where: { $0.day == day }) {
+                days[index].tokens += delta
+                if isMain { days[index].mainTokens += delta }
+            }
+            if let agentID, var agent = agents[agentID] {
+                agent.tokens += delta
+                agents[agentID] = agent
+            }
+        }
+
+        /// Nothing older than the cutoff is kept: the ranges never ask for it, and a
+        /// chat resumed for months would otherwise grow a row per day forever.
+        mutating func drop(before cutoff: Date) {
+            days.removeAll { $0.day < cutoff }
+            agents = agents.filter { $0.value.lastAt >= cutoff }
+        }
+    }
+
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
     /// gigabytes of transcripts. Rejected wholesale if it was written by another
     /// version or for another log root.
@@ -166,14 +377,28 @@ actor JSONLAggregator: CostLogAggregating {
         let recentTurns: [CLITurn]
         let oldDays: [DayEntry]
         let seenMessageIDs: [UInt64]
+        /// One entry per chat: sums per agent and per day, never a turn. A busy month is
+        /// a few hundred kilobytes beside the tens of megabytes `recentTurns` costs.
+        let sessions: [String: SessionAgg]
+        let titles: [String: String]
+        let firstPrompts: [String: String]
     }
 
+    /// 4: the snapshot carries one aggregate per chat, so a snapshot written before
+    /// them has no chats to restore and would leave the session list empty until every
+    /// transcript happened to be rewritten. Rejected wholesale, like 2 → 3 before it:
+    /// one cold rebuild, then business as usual.
+    ///
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 3
+    private static let cacheVersion = 4
 
     private let rootURL: URL
+    /// The calendar every day boundary in this actor comes from — the fold's, the
+    /// daily rows', and the range `sessions(from:to:)` is asked about. One calendar so
+    /// the bins and the query can never disagree.
+    private let calendar: Calendar
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
     private let cacheURL: URL?
     /// Per file, what we already consumed and what the file looked like when we did.
@@ -184,6 +409,15 @@ actor JSONLAggregator: CostLogAggregating {
     private var recentTurns: [CLITurn] = []
     /// Day-level aggregates for turns older than `recentWindow` — all `daily` needs.
     private var oldDays: [Date: DayAgg] = [:]
+    /// One entry per chat we have counted a turn for, keyed by Claude Code's
+    /// `sessionId` — the spec's `sessions` map, named apart from the
+    /// `sessions(from:to:)` method it feeds. Sums only; see `SessionAgg`.
+    private var sessionAggs: [String: SessionAgg] = [:]
+    /// `ai-title` per chat, the last one Claude Code wrote.
+    private var titles: [String: String] = [:]
+    /// The first human prompt per chat, already collapsed and cut — the name a chat
+    /// with no `ai-title` goes by.
+    private var firstPrompts: [String: String] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     /// Same format without the fractional-seconds requirement. Real Claude Code logs
@@ -191,6 +425,14 @@ actor JSONLAggregator: CostLogAggregating {
     /// us every turn's timestamp.
     private let isoFormatterNoFraction: ISO8601DateFormatter
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
+    /// How long a chat outlives its last turn. Two days longer than the ninety the
+    /// History ranges reach, so a chat on the ninetieth day is still whole.
+    private let sessionWindow: TimeInterval = 92 * 24 * 3600
+    /// A name can arrive on a poll whose chunk carries no assistant record yet — Claude
+    /// Code re-emits `ai-title` throughout a transcript — so an unknown session id is
+    /// not proof the chat has none. Names are only swept when the two maps together
+    /// pass this, which no real machine reaches.
+    private let titleCap = 2_000
     /// The rolling figures reach back 30 days; keep turns one day longer so the
     /// month boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
@@ -238,16 +480,20 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// Injectable log root and cache location — the tests point both at a temp
     /// directory instead of the real `~/.claude/projects` and Application Support.
-    /// A nil `cacheURL` turns persistence off.
+    /// A nil `cacheURL` turns persistence off. The calendar is injectable too: it is
+    /// the one that bins turns into days and the one `sessions(from:to:)` reads a
+    /// range with, so a test can pin both to the same time zone.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true),
         cacheURL: URL? = JSONLAggregator.defaultCacheURL,
-        saveInterval: TimeInterval = 300
+        saveInterval: TimeInterval = 300,
+        calendar: Calendar = .current
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
         self.saveInterval = saveInterval
+        self.calendar = calendar
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
@@ -280,7 +526,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     func breakdown() -> CLIBreakdown {
         let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        let startOfDay = calendar.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
@@ -441,6 +687,84 @@ actor JSONLAggregator: CostLogAggregating {
         )
     }
 
+    /// Every chat with a turn inside the range, clipped to it at day granularity.
+    ///
+    /// Day granularity is what makes this cheap and what makes a five-hour window mean
+    /// "today": the aggregate keeps a day's sums, not a turn's, so a range is read as
+    /// the local days it touches — `[startOfDay(start) … startOfDay(end)]`. A window
+    /// shorter than a day therefore widens to the day it falls in, which is what the
+    /// History subtitle says out loud.
+    ///
+    /// `firstAt` and `lastAt` are the chat's own and are never clipped: a row's job is
+    /// to identify the chat, and "this one started three months ago" is information.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] {
+        let firstDay = calendar.startOfDay(for: start)
+        let lastDay = calendar.startOfDay(for: end)
+        guard firstDay <= lastDay else { return [] }
+        let afterLastDay = calendar.date(byAdding: .day, value: 1, to: lastDay)
+            ?? lastDay.addingTimeInterval(86_400)
+        var summaries: [SessionSummary] = []
+        summaries.reserveCapacity(sessionAggs.count)
+
+        for (id, agg) in sessionAggs {
+            let days = agg.days
+                .filter { $0.day >= firstDay && $0.day <= lastDay && $0.turns > 0 }
+                .sorted { $0.day < $1.day }
+            guard !days.isEmpty else { continue }
+
+            var turns = 0
+            var tokens = TokenBreakdown.zero
+            var mainTokens = TokenBreakdown.zero
+            for day in days {
+                turns += day.turns
+                tokens += day.tokens
+                mainTokens += day.mainTokens
+            }
+
+            // An agent's own days are not stored — it runs inside one turn of the parent
+            // and hardly ever crosses midnight — so an agent is in the range whole or
+            // not at all.
+            let agents = agg.agents
+                .filter { $0.value.lastAt >= firstDay && $0.value.firstAt < afterLastDay }
+                .map { entry in
+                    SessionAgentSummary(
+                        id: entry.key,
+                        kind: entry.value.kind,
+                        model: entry.value.model,
+                        effort: entry.value.effort,
+                        firstAt: entry.value.firstAt,
+                        lastAt: entry.value.lastAt,
+                        turns: entry.value.turns,
+                        tokens: entry.value.tokens
+                    )
+                }
+                .sorted { lhs, rhs in
+                    let l = lhs.tokens.cost?.total ?? 0
+                    let r = rhs.tokens.cost?.total ?? 0
+                    return l == r ? lhs.id < rhs.id : l > r
+                }
+
+            summaries.append(SessionSummary(
+                id: id,
+                providerID: "claude",
+                title: titles[id] ?? firstPrompts[id],
+                projectSlug: agg.projectSlug,
+                origin: nil,
+                firstAt: agg.firstAt,
+                lastAt: agg.lastAt,
+                turns: turns,
+                tokens: tokens,
+                mainTokens: mainTokens,
+                agents: agents,
+                days: days.map {
+                    SessionDaySummary(day: $0.day, turns: $0.turns, tokens: $0.tokens)
+                }
+            ))
+        }
+
+        return summaries.sorted { $0.lastAt == $1.lastAt ? $0.id < $1.id : $0.lastAt > $1.lastAt }
+    }
+
     // MARK: - Ingest
 
     /// One response is one turn, however many lines log it — but the *last* line is the
@@ -449,24 +773,42 @@ actor JSONLAggregator: CostLogAggregating {
     /// usage (`output_tokens: 2`, no thinking, `stop_reason: null`) and later ones the
     /// final counts. Keeping the first and dropping the rest is what the dedupe used to
     /// do, and it threw away most of the output on this machine's own logs.
-    private func ingest(_ turns: [CLITurn]) {
+    private func ingest(_ records: [ParsedRecord]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
-        for turn in turns {
-            let hash = Self.stableHash(turn.id)
-            // A repeat of an id we already hold is the same response told again, with
-            // better numbers; anything else about it (time, model, project) is settled
-            // by the first record.
-            guard seenMessageIDs.insert(hash).inserted else {
-                replaceIfLater(turn, hash: hash)
+        for record in records {
+            switch record {
+            case .title(let sessionID, let title):
+                if titles[sessionID] != title {
+                    titles[sessionID] = title
+                    dirty = true
+                }
                 continue
-            }
-            // Synthetic / internal Claude Code events aren't user-facing models.
-            if ModelPricing.isSynthetic(turn.model) { continue }
-            if turn.timestamp < recentCutoff {
-                fold(turn)
-            } else {
-                recentIndexByID[hash] = recentTurns.count
-                recentTurns.append(turn)
+            case .prompt(let sessionID, let text):
+                // The first one wins: a transcript is read in order, and every later
+                // prompt is the same chat still going.
+                if firstPrompts[sessionID] == nil {
+                    firstPrompts[sessionID] = text
+                    dirty = true
+                }
+                continue
+            case .turn(let turn):
+                let hash = Self.stableHash(turn.id)
+                // A repeat of an id we already hold is the same response told again, with
+                // better numbers; anything else about it (time, model, project) is settled
+                // by the first record.
+                guard seenMessageIDs.insert(hash).inserted else {
+                    replaceIfLater(turn, hash: hash)
+                    continue
+                }
+                // Synthetic / internal Claude Code events aren't user-facing models.
+                if ModelPricing.isSynthetic(turn.model) { continue }
+                applyToSession(turn)
+                if turn.timestamp < recentCutoff {
+                    fold(turn)
+                } else {
+                    recentIndexByID[hash] = recentTurns.count
+                    recentTurns.append(turn)
+                }
             }
         }
     }
@@ -491,9 +833,29 @@ actor JSONLAggregator: CostLogAggregating {
             timestamp: stored.timestamp,
             model: stored.model,
             tokens: turn.tokens,
-            projectSlug: stored.projectSlug
+            projectSlug: stored.projectSlug,
+            sessionID: stored.sessionID,
+            agentID: stored.agentID,
+            agentKind: stored.agentKind,
+            effort: stored.effort
         )
+        reviseSession(from: stored, to: turn)
         dirty = true
+    }
+
+    /// The chat's sums took the stored counters when the turn arrived; the difference
+    /// belongs to the same day and the same agent. Ids already folded out of
+    /// `recentTurns` never reach here, so a chat is revised exactly where `recentTurns`
+    /// is — and, like `oldDays`, is left alone where it is not.
+    private func reviseSession(from stored: CLITurn, to replacement: CLITurn) {
+        guard !stored.sessionID.isEmpty, var agg = sessionAggs[stored.sessionID] else { return }
+        agg.revise(
+            day: dayStart(for: stored.timestamp),
+            delta: Self.minus(replacement.tokens, stored.tokens),
+            isMain: stored.agentID == nil,
+            agentID: stored.agentID
+        )
+        sessionAggs[stored.sessionID] = agg
     }
 
     /// `recentTurns` is append-only apart from the fold, so the index only has to be
@@ -517,6 +879,27 @@ actor JSONLAggregator: CostLogAggregating {
         oldDays[day] = agg
     }
 
+    /// A chat's sums take the turn once, when it first arrives — before the branch that
+    /// decides whether it joins `recentTurns` or goes straight into `oldDays`. That is
+    /// why the fold has nothing to do here: a turn ageing out of `recentTurns` was
+    /// already counted when it was read.
+    private func applyToSession(_ turn: CLITurn) {
+        guard !turn.sessionID.isEmpty else { return }
+        var agg = sessionAggs[turn.sessionID]
+            ?? SessionAgg(projectSlug: turn.projectSlug, at: turn.timestamp)
+        if turn.timestamp < agg.firstAt { agg.firstAt = turn.timestamp }
+        if turn.timestamp >= agg.lastAt {
+            agg.lastAt = turn.timestamp
+            // The chat's project follows its latest turn, the same rule Codex's file
+            // uses for the latest `turn_context.cwd`: a chat resumed somewhere else
+            // belongs where it is now.
+            agg.projectSlug = turn.projectSlug
+        }
+        agg.add(turn, on: dayStart(for: turn.timestamp))
+        sessionAggs[turn.sessionID] = agg
+        dirty = true
+    }
+
     private func pruneAndFold() {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         if recentTurns.contains(where: { $0.timestamp < recentCutoff }) {
@@ -534,11 +917,41 @@ actor JSONLAggregator: CostLogAggregating {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
             dirty = true
         }
+        let sessionCutoff = dayStart(for: Date().addingTimeInterval(-sessionWindow))
+        var sessionsChanged = false
+        // A snapshot of the keys: the loop rewrites the dictionary it walks.
+        for id in Array(sessionAggs.keys) {
+            guard var agg = sessionAggs[id] else { continue }
+            if agg.lastAt < sessionCutoff {
+                sessionAggs.removeValue(forKey: id)
+                titles.removeValue(forKey: id)
+                firstPrompts.removeValue(forKey: id)
+                sessionsChanged = true
+                continue
+            }
+            let before = (agg.days.count, agg.agents.count)
+            agg.drop(before: sessionCutoff)
+            if (agg.days.count, agg.agents.count) != before {
+                sessionAggs[id] = agg
+                sessionsChanged = true
+            }
+        }
+        // Names whose chat we have never seen a turn for: kept until there are enough of
+        // them to be worth sweeping, because the chunk that named the chat can arrive
+        // before the chunk that pays for it.
+        if titles.count + firstPrompts.count > titleCap {
+            let known = Set(sessionAggs.keys)
+            let counts = (titles.count, firstPrompts.count)
+            titles = titles.filter { known.contains($0.key) }
+            firstPrompts = firstPrompts.filter { known.contains($0.key) }
+            if (titles.count, firstPrompts.count) != counts { sessionsChanged = true }
+        }
+        if sessionsChanged { dirty = true }
     }
 
     private func dayStart(for date: Date) -> Date {
         if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = Calendar.current
+        let cal = calendar
         let start = cal.startOfDay(for: date)
         let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
         dayCache = (start, next)
@@ -554,6 +967,54 @@ actor JSONLAggregator: CostLogAggregating {
             h = h &* 0x0000_0100_0000_01b3
         }
         return h
+    }
+
+    /// `a - b`, for the one case this file has: a turn whose provisional counters were
+    /// already added to a chat's sums and now have to be swapped for the real ones.
+    /// Both sides come from the same parser and are priced, so the dollars subtract with
+    /// the tokens; a side without dollars leaves the difference without them, exactly as
+    /// `TokenBreakdown.+` does. Overflow clamps rather than traps — the counters come
+    /// out of log files nobody validates.
+    private static func minus(_ a: TokenBreakdown, _ b: TokenBreakdown) -> TokenBreakdown {
+        var delta = TokenBreakdown(
+            input: subtracting(a.input, b.input),
+            output: subtracting(a.output, b.output),
+            cacheRead: subtracting(a.cacheRead, b.cacheRead),
+            cacheWrite5m: subtracting(a.cacheWrite5m, b.cacheWrite5m),
+            cacheWrite1h: subtracting(a.cacheWrite1h, b.cacheWrite1h),
+            thinking: subtracting(a.thinking, b.thinking)
+        )
+        if let ac = a.cost, let bc = b.cost {
+            delta.cost = TokenCostBreakdown(
+                input: ac.input - bc.input,
+                output: ac.output - bc.output,
+                cacheRead: ac.cacheRead - bc.cacheRead,
+                cacheWrite: ac.cacheWrite - bc.cacheWrite
+            )
+        }
+        return delta
+    }
+
+    private static func subtracting(_ lhs: Int, _ rhs: Int) -> Int {
+        let (difference, overflowed) = lhs.subtractingReportingOverflow(rhs)
+        guard overflowed else { return difference }
+        return rhs > 0 ? .min : .max
+    }
+
+    /// Which project a transcript belongs to: the log root's own child directory.
+    ///
+    /// A main session is `<root>/<slug>/<sessionId>.jsonl`, a sub-agent's is
+    /// `<root>/<slug>/<sessionId>/subagents/agent-<id>.jsonl` and a workflow journal one
+    /// level deeper again. Taking the file's parent directory — which this did — named
+    /// every sub-agent's project "subagents": a row for a project that does not exist,
+    /// with spend taken off the project that really paid for it.
+    static func projectSlug(for url: URL, root: URL) -> String {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let components = url.standardizedFileURL.pathComponents
+        guard components.count > rootComponents.count,
+              Array(components.prefix(rootComponents.count)) == rootComponents
+        else { return url.deletingLastPathComponent().lastPathComponent }
+        return components[rootComponents.count]
     }
 
     // MARK: - File scanning
@@ -627,17 +1088,18 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// `size` and `mtime` are what the file looked like *before* the read: a write that
     /// lands while we parse must leave the mark stale, so the next poll comes back for it.
-    private func parseFile(at url: URL, from start: UInt64, size: UInt64, mtime: Date) -> [CLITurn] {
+    private func parseFile(at url: URL, from start: UInt64, size: UInt64, mtime: Date) -> [ParsedRecord] {
         let path = url.path
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
         do { try handle.seek(toOffset: start) } catch { return [] }
         guard let data = try? handle.readToEnd() else { return [] }
 
-        // Claude Code stores sessions under ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
-        // The project slug is the parent directory name (an encoded absolute path).
-        let projectSlug = url.deletingLastPathComponent().lastPathComponent
-        var turns: [CLITurn] = []
+        // Claude Code stores a session at ~/.claude/projects/<project-slug>/<uuid>.jsonl
+        // and its sub-agents under <project-slug>/<uuid>/subagents/.
+        let projectSlug = Self.projectSlug(for: url, root: rootURL)
+        var records: [ParsedRecord] = []
+        var pool = StringPool()
         var consumedInChunk = 0
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let base = raw.baseAddress else { return }
@@ -646,8 +1108,11 @@ actor JSONLAggregator: CostLogAggregating {
                 if raw.load(fromByteOffset: i, as: UInt8.self) == 0x0A {
                     if i > lineStart {
                         let line = Data(bytes: base.advanced(by: lineStart), count: i - lineStart)
-                        if let t = parseLine(line, projectSlug: projectSlug) {
-                            turns.append(t)
+                        if let record = Self.parseRecord(
+                            line, projectSlug: projectSlug, iso: isoFormatter,
+                            isoNoFraction: isoFormatterNoFraction, pool: &pool
+                        ) {
+                            records.append(record)
                         }
                     }
                     lineStart = i + 1
@@ -663,7 +1128,7 @@ actor JSONLAggregator: CostLogAggregating {
         // at all, which is the same situation stretched over more than one poll.
         fileMarks[path] = FileMark(offset: start + UInt64(consumedInChunk), size: size, mtime: mtime)
         dirty = true
-        return turns
+        return records
     }
 
     // MARK: - The on-disk cache
@@ -707,9 +1172,12 @@ actor JSONLAggregator: CostLogAggregating {
         }
         oldDays = days
         seenMessageIDs = Set(snapshot.seenMessageIDs)
+        sessionAggs = snapshot.sessions
+        titles = snapshot.titles
+        firstPrompts = snapshot.firstPrompts
         NSLog(
-            "[UT] cost cache restored: %ld files, %ld recent turns",
-            fileMarks.count, recentTurns.count
+            "[UT] cost cache restored: %ld files, %ld recent turns, %ld chats",
+            fileMarks.count, recentTurns.count, sessionAggs.count
         )
     }
 
@@ -742,7 +1210,10 @@ actor JSONLAggregator: CostLogAggregating {
                          breakdown: $0.value.breakdown, turns: $0.value.turns,
                          byFamily: $0.value.byFamily)
             },
-            seenMessageIDs: Array(seenMessageIDs)
+            seenMessageIDs: Array(seenMessageIDs),
+            sessions: sessionAggs,
+            titles: titles,
+            firstPrompts: firstPrompts
         )
         do {
             let data = try encoder.encode(snapshot)
@@ -757,9 +1228,54 @@ actor JSONLAggregator: CostLogAggregating {
         }
     }
 
-    private func parseLine(_ data: Data, projectSlug: String) -> CLITurn? {
-        guard let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard let type = any["type"] as? String, type == "assistant" else { return nil }
+    /// One log line → what it says, as a pure function of the bytes: `static` and
+    /// formatter-injected so a test can read a record's identity straight out of a line
+    /// copied from a real transcript, with no actor and no log root.
+    static func parseRecord(
+        _ data: Data,
+        projectSlug: String,
+        iso: ISO8601DateFormatter,
+        isoNoFraction: ISO8601DateFormatter,
+        pool: inout StringPool
+    ) -> ParsedRecord? {
+        guard let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = any["type"] as? String else { return nil }
+        switch type {
+        case "assistant":
+            return parseTurn(
+                any, projectSlug: projectSlug, iso: iso, isoNoFraction: isoNoFraction, pool: &pool
+            ).map(ParsedRecord.turn)
+        case "ai-title":
+            guard let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let title = SessionTitle.clean(any["aiTitle"] as? String)
+            else { return nil }
+            return .title(sessionID: pool.intern(sessionID), title: title)
+        case "user":
+            // Only the user's own prompt names a chat. Everything else Claude Code
+            // writes as `type: user` — tool results, the `<local-command-caveat>` meta
+            // records, task notifications, a sub-agent's brief — carries no `origin` or
+            // another kind, and would name the chat after the tool's own plumbing.
+            // `promptSource` is deliberately not part of this: a session driven through
+            // the SDK says `sdk` on a prompt the user really typed.
+            guard (any["origin"] as? [String: Any])?["kind"] as? String == "human",
+                  (any["isSidechain"] as? Bool) != true,
+                  let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let message = any["message"] as? [String: Any],
+                  let text = SessionTitle.firstPrompt(from: message["content"])
+            else { return nil }
+            return .prompt(sessionID: pool.intern(sessionID), text: text)
+        default:
+            return nil
+        }
+    }
+
+    private static func parseTurn(
+        _ any: [String: Any],
+        projectSlug: String,
+        iso: ISO8601DateFormatter,
+        isoNoFraction: ISO8601DateFormatter,
+        pool: inout StringPool
+    ) -> CLITurn? {
         guard let message = any["message"] as? [String: Any] else { return nil }
         guard let usage = message["usage"] as? [String: Any] else { return nil }
 
@@ -794,7 +1310,7 @@ actor JSONLAggregator: CostLogAggregating {
         // whatever rate window happens to be open, which is the one place a wrong
         // answer is worse than no answer. Fractions first (what Claude Code writes),
         // then plain ISO8601 for a writer that stops emitting them.
-        guard let ts = isoFormatter.date(from: tsStr) ?? isoFormatterNoFraction.date(from: tsStr)
+        guard let ts = iso.date(from: tsStr) ?? isoNoFraction.date(from: tsStr)
         else { return nil }
         // Older logs may lack a message id — fall back to a content identity so exact
         // duplicate lines still dedupe. `thinking` is part of that identity: two
@@ -822,7 +1338,14 @@ actor JSONLAggregator: CostLogAggregating {
                 cacheWrite1h: c1h,
                 thinking: thinking
             ).priced(model: model),
-            projectSlug: projectSlug
+            projectSlug: projectSlug,
+            // The record's own fields, never the file name: a sub-agent transcript is
+            // named after the agent, and nothing but the record says which chat it
+            // belongs to or what kind of agent wrote it.
+            sessionID: pool.intern((any["sessionId"] as? String) ?? ""),
+            agentID: (any["agentId"] as? String).map { pool.intern($0) },
+            agentKind: (any["attributionAgent"] as? String).map { pool.intern($0) },
+            effort: (any["effort"] as? String).map { pool.intern($0) }
         )
     }
 }
