@@ -20,7 +20,7 @@ enum StatusText {
     ) -> String {
         let width = nameWidth(snapshot.services)
         var lines = snapshot.services.map {
-            serviceLine($0, width: width, now: now, calendar: calendar, locale: locale)
+            serviceLine($0, width: width, mode: snapshot.percentMode, now: now, calendar: calendar, locale: locale)
         }
         if let agents = agentsLine(snapshot.agents) { lines.append(agents) }
         guard !lines.isEmpty else { return emptyLine + "\n" }
@@ -32,10 +32,12 @@ enum StatusText {
     }
 
     static func serviceLine(
-        _ service: StatusSnapshot.Service, width: Int, now: Date,
+        _ service: StatusSnapshot.Service, width: Int, mode: PercentDisplay.Mode = .used, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
     ) -> String {
-        var parts = service.windows.map { windowText($0, now: now, calendar: calendar, locale: locale) }
+        var parts = service.windows.map {
+            windowText($0, mode: mode, now: now, calendar: calendar, locale: locale)
+        }
         parts.append(contentsOf: costParts(service))
         // Neither windows nor dollars: the state is the answer to "why is this here?".
         if parts.isEmpty { parts.append(stateText(service.state)) }
@@ -52,14 +54,15 @@ enum StatusText {
         return name + columnGap + parts.joined(separator: " · ")
     }
 
-    /// `Session 42%, resets in 1h 40m (13:00)`. The comma keeps a reset attached to its
-    /// own window: with " · " between the two halves, a second window's percent would
-    /// look like it belonged to the first window's reset.
+    /// `Session 42%, resets in 1h 40m (13:00)`, or `Session 58% left, …` when the app
+    /// is counting down. The comma keeps a reset attached to its own window: with
+    /// " · " between the two halves, a second window's percent would look like it
+    /// belonged to the first window's reset.
     static func windowText(
-        _ window: StatusSnapshot.Window, now: Date,
+        _ window: StatusSnapshot.Window, mode: PercentDisplay.Mode = .used, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
     ) -> String {
-        let head = "\(window.label) \(Int(window.percent.rounded()))%"
+        let head = "\(window.label) \(PercentDisplay.percentPhrase(window.percent, mode: mode))"
         guard let at = window.resetsAt,
               let reset = ResetCopy.both(resetsAt: at, now: now, calendar: calendar, locale: locale)
         else { return head }

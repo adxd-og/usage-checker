@@ -51,9 +51,14 @@ enum PercentDisplay {
     /// `omelette status`, the status line. The word appears in `remaining` only:
     /// "42%" has meant used since 1.0 and every script that greps those lines
     /// expects it, while a bare "58%" would be a lie.
+    ///
+    /// Counting up, the reading is printed as it stands — a spend limit at 104% is a
+    /// real answer and text, unlike a ring, has no arc to overflow. Counting down it
+    /// is clamped, because a window past its limit has nothing left rather than less
+    /// than nothing.
     static func percentPhrase(_ used: Double, mode: Mode) -> String {
-        let text = percentText(used, mode: mode)
-        return mode == .remaining ? "\(text) \(suffix(mode: mode))" : text
+        guard mode == .remaining else { return "\(Int(used.rounded()))%" }
+        return "\(percentText(used, mode: mode)) \(suffix(mode: mode))"
     }
 
     /// "42 percent used" / "58 percent left". VoiceOver reads words, never glyphs,

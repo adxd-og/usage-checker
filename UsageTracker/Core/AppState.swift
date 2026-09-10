@@ -368,7 +368,8 @@ final class AppState: ObservableObject {
             costs: costs,
             sessions: sessions,
             agents: StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
-            now: Date()
+            now: Date(),
+            mode: SettingsStore.shared.percentMode
         )
         Task { [weak self] in
             let wrote = await StatusFileWriter.shared.write(built)

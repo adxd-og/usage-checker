@@ -32,6 +32,25 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
     var updatedAt: Date
     var services: [Service]
     var agents: Agents
+    /// The app's "show remaining instead of used" switch. The numbers above stay
+    /// "used": this file is a machine contract, `omelette status --json` prints it
+    /// verbatim, and inverting them would break every script that reads it. Only the
+    /// human-readable lines `StatusText` and `StatusLineText` render follow this.
+    ///
+    /// Defaulted, and decoded as optional (see the extension below), so a file
+    /// written before 2.5 still opens: it is the same v2 shape with one key missing,
+    /// not a different version, and bumping the version would make every already
+    /// installed `omelette` refuse a file it can read perfectly.
+    var showsRemaining: Bool = false
+
+    /// Spelled out because the decoder below needs them, and so a renamed property
+    /// cannot silently orphan a key that is already on disk.
+    enum CodingKeys: String, CodingKey {
+        case version, updatedAt, services, agents, showsRemaining
+    }
+
+    /// The mode the two renderers read.
+    var percentMode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
 
     /// One provider, in the words the app already uses for it.
     struct Service: Codable, Equatable, Sendable {
@@ -132,6 +151,22 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
 
     func service(id: String) -> Service? {
         services.first { $0.id == id }
+    }
+}
+
+/// Reading a file an older build wrote. A property default is not a *decoding*
+/// default — the synthesized `init(from:)` would throw `keyNotFound` on a 2.4.1
+/// file — and the CLI answers any decode failure with "Omelette is not running",
+/// which would be a lie. In an extension so the memberwise initializer every call
+/// site and every test uses survives.
+extension StatusSnapshot {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.version = try c.decode(Int.self, forKey: .version)
+        self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        self.services = try c.decodeIfPresent([Service].self, forKey: .services) ?? []
+        self.agents = try c.decodeIfPresent(Agents.self, forKey: .agents) ?? .none
+        self.showsRemaining = try c.decodeIfPresent(Bool.self, forKey: .showsRemaining) ?? false
     }
 }
 
