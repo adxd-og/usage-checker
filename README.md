@@ -179,7 +179,18 @@ agents.
 | `omelette --version` / `--help` | version and usage |
 
 `omelette statusline` installs with one click from Settings → General →
-Command line: `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`.
+Command line: `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`. Or add it
+yourself to `~/.claude/settings.json` (Claude Code runs the command through a
+shell, so `$HOME` expands):
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "\"$HOME/Library/Application Support/UsageTracker/bin/omelette\" statusline"
+  }
+}
+```
 
 `omelette mcp` answers three tools. Nothing is written, nothing leaves your
 Mac.
