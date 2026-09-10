@@ -73,6 +73,7 @@ final class FloatingWindowController {
 struct FloatingMiniView: View {
     @ObservedObject var state: AppState
     @ObservedObject private var dashboard = DashboardState.shared
+    @ObservedObject private var settings = SettingsStore.shared
     /// Observed here rather than in a slot view: the whole window is four rows,
     /// so re-evaluating it on a hook event costs less than the extra view does.
     @ObservedObject private var agents = AgentSessionStore.shared
@@ -93,6 +94,7 @@ struct FloatingMiniView: View {
     var body: some View {
         FloatingMiniContent(
             service: service,
+            mode: settings.percentMode,
             agents: FloatingMiniLayout.agents(agents.sessions),
             onClose: onClose
         )
@@ -103,6 +105,7 @@ struct FloatingMiniView: View {
 /// both colour schemes and every empty state be previewed without a running app.
 struct FloatingMiniContent: View {
     let service: ServiceSnapshot?
+    let mode: PercentDisplay.Mode
     var agents: OMAgentsPill.Appearance? = nil
     let onClose: () -> Void
 
@@ -190,7 +193,7 @@ struct FloatingMiniContent: View {
 
     private func heroRow(_ hero: UsageBucket) -> some View {
         HStack(spacing: OMSpacing.m) {
-            OMRing(used: hero.clampedPercent, mode: .used, size: .medium, pace: hero.elapsedFraction())
+            OMRing(used: hero.clampedPercent, mode: mode, size: .medium, pace: hero.elapsedFraction())
             VStack(alignment: .leading, spacing: 2) {
                 Text(hero.label)
                     .font(OMFont.bodyStrong)
@@ -205,7 +208,7 @@ struct FloatingMiniContent: View {
             Spacer(minLength: 0)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(hero.label), \(Int(hero.clampedPercent.rounded())) percent used")
+        .accessibilityLabel(FloatingMiniLayout.heroAccessibilityLabel(hero, mode: mode))
     }
 
     private func windowRow(_ bucket: UsageBucket) -> some View {
@@ -217,18 +220,18 @@ struct FloatingMiniContent: View {
                 .frame(width: Self.rowLabelWidth, alignment: .leading)
             BarSegment(
                 used: bucket.clampedPercent,
-                mode: .used,
+                mode: mode,
                 height: 4,
                 showsLabel: false,
                 pace: bucket.elapsedFraction()
             )
-            Text("\(Int(bucket.clampedPercent.rounded()))%")
+            Text(FloatingMiniLayout.rowPercentText(bucket, mode: mode))
                 .font(OMFont.caption.weight(.semibold))
                 .monospacedDigit()
                 .frame(width: 32, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(bucket.label), \(Int(bucket.clampedPercent.rounded())) percent used")
+        .accessibilityLabel(FloatingMiniLayout.rowAccessibilityLabel(bucket, mode: mode))
     }
 }
 
@@ -263,6 +266,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
 #Preview("Floating — two agents, light") {
     FloatingMiniContent(
         service: floatingPreviewService(buckets: floatingPreviewBuckets),
+        mode: .used,
         agents: OMAgentsPill.Appearance.make(needsYou: 0, working: 2, total: 3),
         onClose: {}
     )
@@ -272,6 +276,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
 #Preview("Floating — two agents, dark") {
     FloatingMiniContent(
         service: floatingPreviewService(buckets: floatingPreviewBuckets),
+        mode: .used,
         agents: OMAgentsPill.Appearance.make(needsYou: 0, working: 2, total: 3),
         onClose: {}
     )
@@ -282,6 +287,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
 #Preview("Floating — one needs you") {
     FloatingMiniContent(
         service: floatingPreviewService(buckets: floatingPreviewBuckets),
+        mode: .used,
         agents: OMAgentsPill.Appearance.make(needsYou: 1, working: 2, total: 4),
         onClose: {}
     )
@@ -291,6 +297,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
 #Preview("Floating — no agents") {
     FloatingMiniContent(
         service: floatingPreviewService(buckets: floatingPreviewBuckets),
+        mode: .used,
         agents: nil,
         onClose: {}
     )
@@ -298,7 +305,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
 }
 
 #Preview("Floating — nothing tracked yet") {
-    FloatingMiniContent(service: floatingPreviewService(buckets: []), agents: nil, onClose: {})
+    FloatingMiniContent(service: floatingPreviewService(buckets: []), mode: .used, agents: nil, onClose: {})
         .frame(width: 260, height: 130)
 }
 #endif
