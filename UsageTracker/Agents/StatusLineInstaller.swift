@@ -42,8 +42,15 @@ enum StatusLineInstaller {
     /// Exactly the object the Enable and the Update button write. `commandPath` is the
     /// path to the `omelette` CLI — the same value the rest of this file calls
     /// `cliPath`; the shell quoting is this function's business, not the caller's.
+    /// `refreshInterval` is what keeps the countdown moving between Claude Code's own
+    /// events; it sits beside `type` and `command`, and the file's key order is
+    /// whatever `SettingsFile`'s sorted-key writer gives it.
     static func desiredEntry(commandPath: String) -> [String: Any] {
-        ["type": "command", "command": command(cliPath: commandPath)]
+        [
+            "type": "command",
+            "command": command(cliPath: commandPath),
+            "refreshInterval": refreshInterval,
+        ]
     }
 
     /// Whether an entry that is already ours — `isOurs` decides that, this does not —
@@ -68,6 +75,10 @@ enum StatusLineInstaller {
             return .conflict(unreadableReason)
         }
         guard isOurs(existing) else { return .conflict(existing) }
+        // Two ways to be ours and still not be what this build writes — a missing or
+        // foreign refresh interval, and a command pointing at an older home. Both are
+        // `.outdated`, which is the row that offers Update.
+        if needsUpdate(existing: object) { return .outdated }
         return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(desiredEntry(commandPath: cliPath))
             ? .installed : .outdated
     }
