@@ -108,6 +108,13 @@ protocol CostLogAggregating: Actor {
     func refresh() async
     func breakdown() async -> CLIBreakdown
     func usage(from start: Date, to end: Date) async -> WindowUsage
+    /// Every chat with at least one turn in `[start, end]`, clipped to the range at
+    /// day granularity. Default: none, until an aggregator keeps session aggregates.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary]
+}
+
+extension CostLogAggregating {
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] { [] }
 }
 
 actor JSONLAggregator: CostLogAggregating {
