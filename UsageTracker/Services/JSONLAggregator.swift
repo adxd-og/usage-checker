@@ -174,6 +174,10 @@ actor JSONLAggregator: CostLogAggregating {
     private static let cacheVersion = 3
 
     private let rootURL: URL
+    /// The calendar every day boundary in this actor comes from — the fold's, the
+    /// daily rows', and the range `sessions(from:to:)` is asked about. One calendar so
+    /// the bins and the query can never disagree.
+    private let calendar: Calendar
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
     private let cacheURL: URL?
     /// Per file, what we already consumed and what the file looked like when we did.
@@ -238,16 +242,20 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// Injectable log root and cache location — the tests point both at a temp
     /// directory instead of the real `~/.claude/projects` and Application Support.
-    /// A nil `cacheURL` turns persistence off.
+    /// A nil `cacheURL` turns persistence off. The calendar is injectable too: it is
+    /// the one that bins turns into days and the one `sessions(from:to:)` reads a
+    /// range with, so a test can pin both to the same time zone.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true),
         cacheURL: URL? = JSONLAggregator.defaultCacheURL,
-        saveInterval: TimeInterval = 300
+        saveInterval: TimeInterval = 300,
+        calendar: Calendar = .current
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
         self.saveInterval = saveInterval
+        self.calendar = calendar
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
@@ -280,7 +288,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     func breakdown() -> CLIBreakdown {
         let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        let startOfDay = calendar.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
@@ -538,7 +546,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     private func dayStart(for date: Date) -> Date {
         if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = Calendar.current
+        let cal = calendar
         let start = cal.startOfDay(for: date)
         let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
         dayCache = (start, next)
@@ -554,6 +562,22 @@ actor JSONLAggregator: CostLogAggregating {
             h = h &* 0x0000_0100_0000_01b3
         }
         return h
+    }
+
+    /// Which project a transcript belongs to: the log root's own child directory.
+    ///
+    /// A main session is `<root>/<slug>/<sessionId>.jsonl`, a sub-agent's is
+    /// `<root>/<slug>/<sessionId>/subagents/agent-<id>.jsonl` and a workflow journal one
+    /// level deeper again. Taking the file's parent directory — which this did — named
+    /// every sub-agent's project "subagents": a row for a project that does not exist,
+    /// with spend taken off the project that really paid for it.
+    static func projectSlug(for url: URL, root: URL) -> String {
+        let rootComponents = root.standardizedFileURL.pathComponents
+        let components = url.standardizedFileURL.pathComponents
+        guard components.count > rootComponents.count,
+              Array(components.prefix(rootComponents.count)) == rootComponents
+        else { return url.deletingLastPathComponent().lastPathComponent }
+        return components[rootComponents.count]
     }
 
     // MARK: - File scanning
@@ -634,9 +658,9 @@ actor JSONLAggregator: CostLogAggregating {
         do { try handle.seek(toOffset: start) } catch { return [] }
         guard let data = try? handle.readToEnd() else { return [] }
 
-        // Claude Code stores sessions under ~/.claude/projects/<project-slug>/<session-uuid>.jsonl
-        // The project slug is the parent directory name (an encoded absolute path).
-        let projectSlug = url.deletingLastPathComponent().lastPathComponent
+        // Claude Code stores a session at ~/.claude/projects/<project-slug>/<uuid>.jsonl
+        // and its sub-agents under <project-slug>/<uuid>/subagents/.
+        let projectSlug = Self.projectSlug(for: url, root: rootURL)
         var turns: [CLITurn] = []
         var consumedInChunk = 0
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
