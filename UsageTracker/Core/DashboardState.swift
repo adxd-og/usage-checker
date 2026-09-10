@@ -64,6 +64,10 @@ final class DashboardState: ObservableObject {
     @Published var range: TimeRange = .sevenDays
     @Published private(set) var history: [HistoryRecord] = []
     @Published private(set) var cliBreakdown: CLIBreakdown?
+    /// The selected provider's chats over the selected range, for History's Sessions
+    /// mode. Empty for a provider whose log names no chat (Grok, and everything with no
+    /// cost log at all) and for a range that holds none.
+    @Published private(set) var sessions: [SessionSummary] = []
     /// Burn rate for the selected provider's leading window.
     @Published private(set) var sessionBurn: BurnRatePrediction?
     /// Burn rate for *every* provider that has one, keyed by service id. The popover's
@@ -119,6 +123,7 @@ final class DashboardState: ObservableObject {
     /// is deliberately absent: agent runs are not a provider's data.
     private func clearProviderScopedState() {
         cliBreakdown = nil
+        sessions = []
         sessionWindow = nil
         sessionBurn = nil
         burnBucket = nil
@@ -168,6 +173,25 @@ final class DashboardState: ObservableObject {
         default: return nil
         }
     }
+
+    /// Whether this provider's log identifies a chat, which is a narrower question than
+    /// whether it can be costed. Claude Code writes a `sessionId` on every record and
+    /// Codex a `session_meta`; the Grok CLI writes per-turn costs and nothing that says
+    /// which conversation they belonged to, so its `sessions(from:to:)` keeps the
+    /// protocol's default and answers `[]` forever. History asks this, not
+    /// `costSource.hasBreakdown`, before offering the Sessions mode.
+    nonisolated static func hasSessionLog(for serviceID: String) -> Bool {
+        serviceID == "claude" || serviceID == "codex"
+    }
+
+    /// One cached answer per provider, range and ingest stamp.
+    private struct SessionCacheKey: Hashable, Sendable {
+        let service: String
+        let range: TimeRange
+        let updatedAt: Date
+    }
+
+    private var sessionCache: [SessionCacheKey: [SessionSummary]] = [:]
 
     /// The command a user would type to produce this provider's log — what the
     /// history tab's empty state asks them to run. Not derived from `costSource`:
@@ -293,6 +317,48 @@ final class DashboardState: ObservableObject {
         let breakdown = await aggregator.breakdown()
         guard canPublish(pass) else { return }
         cliBreakdown = breakdown
+        // Same pass, same actor, immediately after the numbers it is keyed against: the
+        // session aggregate is already in the aggregator's memory once `refresh()` has
+        // run, so this is a read of a map, not a second walk of the log tree.
+        await refreshSessions()
+    }
+
+    /// The selected provider's chats over the selected range.
+    ///
+    /// Cached per `(provider, range, ingest stamp)`, because the range picker is a
+    /// control the user clicks: switching from 7d to 30d and back must not re-enter the
+    /// aggregator twice. A refresh moves `cliBreakdown.updatedAt` and retires every
+    /// entry that came before it, so the cache can never serve numbers older than the
+    /// chart above them.
+    ///
+    /// Called both from `refreshCLI` (so the list is ready when the tab opens) and from
+    /// the History view when the range or the provider changes.
+    func refreshSessions() async {
+        let pass = begin()
+        guard Self.hasSessionLog(for: pass.service),
+              let aggregator = Self.costAggregator(for: pass.service)
+        else {
+            if canPublish(pass) { sessions = [] }
+            return
+        }
+        let range = self.range
+        let stamp = cliBreakdown?.updatedAt ?? .distantPast
+        let key = SessionCacheKey(service: pass.service, range: range, updatedAt: stamp)
+        if let cached = sessionCache[key] {
+            if canPublish(pass), self.range == range { sessions = cached }
+            return
+        }
+        let end = Date()
+        // Anything shorter than a day is widened to that day by the aggregators (§ 1);
+        // the subtitle says so, and nothing here needs to know about it.
+        let start = end.addingTimeInterval(-range.seconds)
+        let loaded = await aggregator.sessions(from: start, to: end)
+        guard canPublish(pass), self.range == range else { return }
+        // One provider and one ingest stamp at a time: a refresh has moved every
+        // range's numbers, and a provider switch already threw its published list away.
+        sessionCache = sessionCache.filter { $0.key.service == pass.service && $0.key.updatedAt == stamp }
+        sessionCache[key] = loaded
+        sessions = loaded
     }
 
     func refreshDerived() async {

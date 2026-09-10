@@ -179,16 +179,19 @@ final class HistoryChartModeTests: XCTestCase {
     func testTheStoredValuesAreStable() {
         XCTAssertEqual(HistoryChartMode.cost.rawValue, "cost")
         XCTAssertEqual(HistoryChartMode.tokens.rawValue, "tokens")
+        XCTAssertEqual(HistoryChartMode.sessions.rawValue, "sessions")
     }
 
-    func testBothModesAreOfferedInOrderWithCostFirst() {
-        // Cost is the default and the question the tab has always answered.
-        XCTAssertEqual(HistoryChartMode.allCases, [.cost, .tokens])
+    func testTheThreeModesAreOfferedInOrderWithCostFirst() {
+        // Cost is the default and the question the tab has always answered; Sessions is
+        // the newest and the narrowest, so it goes last.
+        XCTAssertEqual(HistoryChartMode.allCases, [.cost, .tokens, .sessions])
     }
 
     func testTheSegmentsAreLabelledForPeopleNotForStorage() {
         XCTAssertEqual(HistoryChartMode.cost.displayName, "Cost")
         XCTAssertEqual(HistoryChartMode.tokens.displayName, "Tokens")
+        XCTAssertEqual(HistoryChartMode.sessions.displayName, "Sessions")
     }
 
     func testAnUnknownStoredValueIsNotADecodableMode() {

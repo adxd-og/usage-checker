@@ -15,6 +15,16 @@ struct SessionHistoryView: View {
     /// so this is the same story the cost chart tells, in the only unit available.
     private var showsQuota: Bool { !dashboard.costSource.hasBreakdown }
 
+    /// Whether the selected provider's log identifies a chat at all.
+    private var hasSessionLog: Bool {
+        DashboardState.hasSessionLog(for: dashboard.selectedService)
+    }
+
+    /// `chartMode` corrected for the provider on screen — see `effectiveMode`.
+    private var mode: HistoryChartMode {
+        Self.effectiveMode(stored: chartMode, hasSessionLog: hasSessionLog)
+    }
+
     // Built off the main actor: a 90-day range is six figures' worth of history
     // records and every one of them is touched per bucket (same pattern as
     // ActivityGridView's GridCache).
@@ -86,7 +96,7 @@ struct SessionHistoryView: View {
                     quotaContent
                 } else if data.isEmpty {
                     placeholder
-                } else if chartMode == .tokens {
+                } else if mode == .tokens {
                     tokensChart
                     Divider().padding(.horizontal, 24)
                     tokensTable
@@ -121,10 +131,11 @@ struct SessionHistoryView: View {
             showsQuota: showsQuota,
             providerName: dashboard.displayName(for: dashboard.selectedService),
             longName: dashboard.costSource.longName,
-            mode: chartMode,
+            mode: mode,
             isPayAsYouGo: appState.snapshot.services
                 .first { $0.id == dashboard.selectedService }
-                .map(CostCopy.isPayAsYouGo) ?? false
+                .map(CostCopy.isPayAsYouGo) ?? false,
+            range: dashboard.range
         )
     }
 
@@ -136,9 +147,13 @@ struct SessionHistoryView: View {
         providerName: String,
         longName: String?,
         mode: HistoryChartMode,
-        isPayAsYouGo: Bool
+        isPayAsYouGo: Bool,
+        range: TimeRange = .sevenDays
     ) -> String {
         if showsQuota { return "How full \(providerName)'s usage windows ran" }
+        if mode == .sessions {
+            return sessionsSubtitle(source: longName, range: range, isPayAsYouGo: isPayAsYouGo)
+        }
         let base = costSubtitle(mode: mode, source: longName)
         guard mode == .cost,
               let caption = CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo)
@@ -150,6 +165,40 @@ struct SessionHistoryView: View {
     nonisolated static func costSubtitle(mode: HistoryChartMode, source: String?) -> String {
         let unit = mode == .tokens ? "Daily tokens by type" : "Daily cost"
         return source.map { "\(unit) from \($0)" } ?? unit
+    }
+
+    /// The Sessions header line. The dollars are qualified inside the sentence rather
+    /// than by the long `CostCopy` caption the Cost mode appends: this subtitle already
+    /// lists three things, and a fourth clause pushes the header into its stacked
+    /// layout at any ordinary window width.
+    ///
+    /// The five-hour range is the one control that does not mean what it says — the
+    /// aggregators widen anything shorter than a day to the local day it falls in — so
+    /// this is where that is said out loud.
+    nonisolated static func sessionsSubtitle(
+        source: String?, range: TimeRange, isPayAsYouGo: Bool
+    ) -> String {
+        let dollars = isPayAsYouGo ? "cost" : "API-equivalent cost"
+        let head = source.map { "Chats from \($0), tokens and \(dollars)" }
+            ?? "Chats, tokens and \(dollars)"
+        guard range == .fiveHours else { return head }
+        return head + " · today, not the last 5 hours"
+    }
+
+    /// The mode actually in force. `historyChartMode` is one persisted value across
+    /// every provider, and Grok writes a per-turn cost log but nothing that names a
+    /// chat — landing on its tab with Sessions remembered must show the cost chart.
+    /// The stored choice is deliberately left alone, so switching back to Claude
+    /// restores it.
+    nonisolated static func effectiveMode(
+        stored: HistoryChartMode, hasSessionLog: Bool
+    ) -> HistoryChartMode {
+        stored == .sessions && !hasSessionLog ? .cost : stored
+    }
+
+    /// The segments the picker offers for this provider.
+    nonisolated static func modes(hasSessionLog: Bool) -> [HistoryChartMode] {
+        HistoryChartMode.allCases.filter { $0 != .sessions || hasSessionLog }
     }
 
     // MARK: - Quota
@@ -423,13 +472,14 @@ struct SessionHistoryView: View {
 /// reopens on whichever question the user was last asking. Internal rather than
 /// private: the raw values are a storage contract and are asserted in tests.
 enum HistoryChartMode: String, CaseIterable, Identifiable {
-    case cost, tokens
+    case cost, tokens, sessions
     var id: String { rawValue }
 
     var displayName: String {
         switch self {
         case .cost: return "Cost"
         case .tokens: return "Tokens"
+        case .sessions: return "Sessions"
         }
     }
 }
