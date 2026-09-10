@@ -13,19 +13,37 @@ import Foundation
 /// A provider with no local cost log is simply absent from the result: "no log" and
 /// "spent nothing today" are different answers and the file keeps them apart.
 enum StatusCosts {
-    static func gather(serviceIDs: Set<String>) async -> [String: StatusFileWriter.CostEntry] {
-        var out: [String: StatusFileWriter.CostEntry] = [:]
+    /// What one poll gathers from the cost logs: the dollars every provider's file entry
+    /// carries, and — for the two providers whose logs identify a chat — the last seven
+    /// days of chats. Gathered together because both come off the same actor and the same
+    /// incremental `refresh()`; a second pass would re-enter every aggregator for numbers
+    /// it has already computed.
+    struct Gathered: Sendable {
+        var costs: [String: StatusFileWriter.CostEntry] = [:]
+        var sessions: [String: [SessionSummary]] = [:]
+    }
+
+    /// The window the file's chat list covers (§ 5).
+    static let sessionWindow: TimeInterval = 7 * 24 * 3600
+
+    static func gather(serviceIDs: Set<String>, now: Date = Date()) async -> Gathered {
+        var out = Gathered()
+        let start = now.addingTimeInterval(-sessionWindow)
         if serviceIDs.contains("claude") {
             await JSONLAggregator.shared.refresh()
-            out["claude"] = entry(await JSONLAggregator.shared.breakdown())
+            out.costs["claude"] = entry(await JSONLAggregator.shared.breakdown())
+            out.sessions["claude"] = await JSONLAggregator.shared.sessions(from: start, to: now)
         }
         if serviceIDs.contains("codex") {
             await CodexUsageAggregator.shared.refresh()
-            out["codex"] = entry(await CodexUsageAggregator.shared.breakdown())
+            out.costs["codex"] = entry(await CodexUsageAggregator.shared.breakdown())
+            out.sessions["codex"] = await CodexUsageAggregator.shared.sessions(from: start, to: now)
         }
+        // Grok is costed and never listed: its log prices a turn without saying which
+        // conversation the turn belonged to (`DashboardState.hasSessionLog`).
         if serviceIDs.contains("grok") {
             await GrokUsageAggregator.shared.refresh()
-            out["grok"] = entry(await GrokUsageAggregator.shared.breakdown())
+            out.costs["grok"] = entry(await GrokUsageAggregator.shared.breakdown())
         }
         return out
     }

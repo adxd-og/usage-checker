@@ -17,8 +17,10 @@ import Foundation
 /// lists), so the writer and the reader can never disagree about a key.
 struct StatusSnapshot: Codable, Equatable, Sendable {
     /// Bumped when a key changes meaning. The CLI refuses a file it does not know
-    /// rather than half-reading it.
-    static let currentVersion = 1
+    /// rather than half-reading it. 2 added `Service.sessions` — an `omelette` from
+    /// 2.4.1 has no idea what a chat is, and a list it cannot show is better refused
+    /// than silently dropped.
+    static let currentVersion = 2
 
     /// Older than this and the CLI says Omelette is not running. The poll runs every
     /// 60 s by default and the slowest setting is 5 minutes, so ten minutes of silence
@@ -53,6 +55,13 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         /// a subscription bills. False for a pay-as-you-go account, where the figure is
         /// close to the real bill. Absent when there are no dollars to qualify.
         var apiEquivalent: Bool?
+        /// The chats this provider's own session log knows about — the last seven days,
+        /// ranked by `SessionListRule.pick` and capped at `StatusFileWriter.maxFileSessions`.
+        /// Absent, not empty, for a provider whose log names no chat (Grok, Gemini,
+        /// Antigravity) and for a quiet week: "no chat log" and "no chats" are different
+        /// answers, and the optional is also what lets the synthesized decoder accept a
+        /// `Service` object written without the key.
+        var sessions: [SessionEntry]?
     }
 
     /// One rate-limit window of a service.
@@ -73,6 +82,30 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         var isPromotional: Bool {
             id.lowercased().contains("promo") || label.lowercased().contains("promo")
         }
+    }
+
+    /// One chat, as the file records it.
+    ///
+    /// `title` is a plain `String` and never nil: the app resolves the "<project> ·
+    /// <first day>" fallback through `SessionCopy.rowTitle` before writing. The CLI
+    /// target cannot see `SessionSummary` or `ProjectName`, and a second copy of that
+    /// fallback here would be a user-visible string decided outside a tested rule.
+    struct SessionEntry: Codable, Equatable, Sendable {
+        /// Provider-local session id.
+        let id: String
+        let title: String
+        /// The project's display name, already decoded from the provider's own slug.
+        let project: String
+        let lastAt: Date
+        let turns: Int
+        /// `TokenBreakdown.total`: the five disjoint buckets, thinking excluded.
+        let tokens: Int
+        /// nil for a provider that prices a turn as a whole and left no split.
+        var cost: Double?
+        /// How many sub-agents the chat launched.
+        let agents: Int
+        /// Codex `originator` (`codex-tui`, `codex_exec`, …); nil for Claude.
+        var origin: String?
     }
 
     /// The agent sessions Omelette can see, and the two counts the CLI shows.

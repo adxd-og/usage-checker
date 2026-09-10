@@ -139,12 +139,12 @@ final class CLIProcessVerificationTests: XCTestCase {
         XCTAssertTrue(run.stdout.isEmpty)
     }
 
-    /// `version: 2` — a file from a build ahead of this one. `StatusFile.load` refuses
+    /// `version: 3` — a file from a build ahead of this one. `StatusFile.load` refuses
     /// anything but `currentVersion`, so this must read exactly like "not running",
     /// never crash and never guess at unknown keys.
-    func testAFutureVersionTwoFileIsTreatedAsNotRunning() throws {
+    func testAFutureVersionFileIsTreatedAsNotRunning() throws {
         let text = """
-        {"version":2,"updatedAt":"2026-09-06T11:20:00Z","services":[],"agents":{"needsYou":0,"working":0,"sessions":[]}}
+        {"version":3,"updatedAt":"2026-09-06T11:20:00Z","services":[],"agents":{"needsYou":0,"working":0,"sessions":[]}}
         """
         try writeRaw(Data(text.utf8))
 
