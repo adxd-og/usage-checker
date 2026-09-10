@@ -6,6 +6,27 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.5.1</title>
+      <pubDate>Thu, 10 Sep 2026 19:26:38 +0300</pubDate>
+      <sparkle:version>41</sparkle:version>
+      <sparkle:shortVersionString>2.5.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>The status line opens with the model and its context window</b>: <code>Fable [####------] 42%</code> in front of Omelette's numbers, read from the session JSON Claude Code pipes in, coloured green / yellow / red as the context fills. <code>--no-color</code> drops the escape codes.</li>
+<li>Settings shows a GitHub row under the version, so the link is everywhere the version is.</li>
+<li>README and the Settings caption say how to add the status line by hand.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.5.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.5.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="QPJUhM2RtZGEwRRzgA4h7xDopr0rCAyU7PiSJtWkiTTi13U4udVjUxyo4F837aD1PDyG+fwaY+p2/7RV5lS6CA=="
+        length="25061236"/>
+    </item>
+    <item>
       <title>Omelette v2.5.0</title>
       <pubDate>Thu, 10 Sep 2026 18:29:07 +0300</pubDate>
       <sparkle:version>40</sparkle:version>
