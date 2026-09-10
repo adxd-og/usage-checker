@@ -5,6 +5,23 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] — 2026-09-11
+
+### Added
+- **By model.** An expanded chat in History → Sessions lists what each model
+  cost, with the effort level beside the model name, for Claude Code and Codex.
+  Closes #3.
+- The status-line installer now writes `refreshInterval: 60`, so the countdown
+  keeps ticking while a session idles; an entry installed by an older version
+  offers Update. The README snippet carries the key too.
+
+### Fixed
+- The chat list in History → Sessions has a header row naming its columns.
+- The chat list decides once whether it is wide or narrow, so the header and
+  the rows always agree, and a long chat title yields before the numbers do.
+
+This release ends the feature work for a month: 2.6.x fixes bugs reported in issues.
+
 ## [2.5.1] — 2026-09-10
 
 ### Added
