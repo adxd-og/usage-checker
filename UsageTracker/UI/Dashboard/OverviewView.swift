@@ -63,6 +63,16 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: OMSpacing.xs) {
                 OMHero(hero: hero, verdict: verdict)
                     .opacity(service.isRetained ? 0.55 : 1)
+                // A spend limit's ring is a percentage of a number nobody keeps in
+                // their head. The provider tab prints both amounts; so does this.
+                if hero.id == WindowRanking.extraUsageBucketID(for: service),
+                   let spend = SpendLimitCopy.caption(service.extraUsage, compact: false) {
+                    Text(spend)
+                        .font(OMFont.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .opacity(service.isRetained ? 0.55 : 1)
+                }
                 if verdict == nil {
                     // Stale, absent or too-flat to extrapolate: the hero would say
                     // nothing at all about the burn rate, so the burn card's own line

@@ -10,7 +10,7 @@ struct OMProviderTile: View {
     let service: ServiceSnapshot
     let action: () -> Void
 
-    private var hero: UsageBucket? { WindowRanking.heroBucket(for: service) }
+    private var hero: UsageBucket? { WindowRanking.tileHero(for: service) }
     private var secondary: UsageBucket? { WindowRanking.secondaryBucket(for: service) }
     /// "Has something to draw", not "is healthy" — that distinction is the whole fix.
     private var hasData: Bool { !service.buckets.isEmpty }
@@ -63,6 +63,14 @@ struct OMProviderTile: View {
                         if let remaining = WindowRanking.remainingText(until: hero.resetsAt) {
                             Text(remaining)
                                 .font(OMFont.caption.weight(.semibold))
+                        } else if hero.id == WindowRanking.extraUsageBucketID(for: service),
+                                  let spend = SpendLimitCopy.caption(service.extraUsage, compact: true) {
+                            // The slot the reset would have used: on a spend limit the
+                            // dollars are what the ring's percentage is measuring.
+                            Text(spend)
+                                .font(OMFont.caption.weight(.semibold))
+                                .monospacedDigit()
+                                .lineLimit(1)
                         }
                     }
                 }

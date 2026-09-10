@@ -35,7 +35,13 @@ final class AppState: ObservableObject {
     @Published private(set) var lastKnownServiceIDs: Set<String> = []
     /// The last dollars `StatusCosts` produced. The poll refreshes them; an agent
     /// starting a tool reuses them, because it did not change what you spent today.
-    private var lastCosts: [String: StatusFileWriter.CostEntry] = [:]
+    private var lastCosts: [String: StatusFileWriter.CostEntry] = [:] {
+        didSet { todayCosts = lastCosts.mapValues(\.todayCost) }
+    }
+    /// Today's dollars per service, mirrored out of `lastCosts` so the All-tab cost
+    /// tile can lead with today rather than with the week. A service with no local
+    /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
+    @Published private(set) var todayCosts: [String: Double] = [:]
     /// Keeps `status.json` current between polls. `$sessions` rather than the store's
     /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
     /// session moving from working to idle still changes what the file says.

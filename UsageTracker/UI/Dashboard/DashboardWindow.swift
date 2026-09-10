@@ -58,17 +58,23 @@ struct DashboardWindow: View {
     private var sourceFooter: some View {
         let name = dashboard.displayName(for: dashboard.selectedService)
         let source = dashboard.costSource
-        return Label(
-            source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
-            systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
-        )
+        return VStack(alignment: .leading, spacing: 4) {
+            Label(
+                source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
+                systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
+            )
+            .help(source.longName.map { "Charts are built from \(name) usage history and \($0)." }
+                  ?? "Usage windows come from this provider. " + (source.reason ?? ""))
+            // The version belongs where the app is being used, not three clicks away
+            // in Settings — and it is the way to the project page.
+            Link(AppVersion.current, destination: AppVersion.githubURL)
+                .help("Open the GitHub page")
+        }
         .font(OMFont.caption)
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .help(source.longName.map { "Charts are built from \(name) usage history and \($0)." }
-              ?? "Usage windows come from this provider. " + (source.reason ?? ""))
     }
 
     @ViewBuilder
