@@ -6,6 +6,31 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.6.0</title>
+      <pubDate>Fri, 11 Sep 2026 01:08:15 +0300</pubDate>
+      <sparkle:version>42</sparkle:version>
+      <sparkle:shortVersionString>2.6.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Added</h3>
+<ul>
+<li><b>By model.</b> An expanded chat in History → Sessions lists what each model cost, with the effort level beside the model name, for Claude Code and Codex. Closes #3.</li>
+<li>The status-line installer now writes <code>refreshInterval: 60</code>, so the countdown keeps ticking while a session idles; an entry installed by an older version offers Update. The README snippet carries the key too.</li>
+</ul>
+<h3>Fixed</h3>
+<ul>
+<li>The chat list in History → Sessions has a header row naming its columns.</li>
+<li>The chat list decides once whether it is wide or narrow, so the header and the rows always agree, and a long chat title yields before the numbers do. This release ends the feature work for a month: 2.6.x fixes bugs reported in issues.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.6.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.6.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="iK38a+4BA+rxXAcvR0btRFMD0ETpiyAT5NfNuCQLapY13l0MPkoTiDYYbHBIkUjopP7IBvhxCNjIe8zDPYyvCg=="
+        length="25150093"/>
+    </item>
+    <item>
       <title>Omelette v2.5.1</title>
       <pubDate>Thu, 10 Sep 2026 19:26:38 +0300</pubDate>
       <sparkle:version>41</sparkle:version>
