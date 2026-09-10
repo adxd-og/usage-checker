@@ -9,6 +9,9 @@ import Foundation
 enum AppVersion {
     /// The public repository. Anonymous handle: this is the name the app ships under.
     static let githubURL = URL(string: "https://github.com/adxd-og/usage-checker")!
+    /// The Settings row that carries the link, and its tooltip.
+    static let githubLabel = "GitHub"
+    static let githubHelp = "Open the GitHub page"
 
     /// "Omelette 2.4.1". The build number is deliberately absent: Settings' own row
     /// keeps "2.4.1 (39)" for bug reports, while a footer label is for recognition

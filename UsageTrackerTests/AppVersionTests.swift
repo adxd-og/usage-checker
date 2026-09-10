@@ -37,4 +37,11 @@ final class AppVersionTests: XCTestCase {
         XCTAssertTrue(AppVersion.current.hasPrefix("Omelette"), AppVersion.current)
         XCTAssertFalse(AppVersion.current.contains("("), AppVersion.current)
     }
+
+    func testTheSettingsRowNamesTheSiteAndTheLinkOpensTheRepository() {
+        XCTAssertEqual(AppVersion.githubLabel, "GitHub")
+        XCTAssertEqual(AppVersion.githubURL.host, "github.com")
+        XCTAssertEqual(AppVersion.githubURL.path, "/adxd-og/usage-checker")
+        XCTAssertFalse(AppVersion.githubHelp.isEmpty)
+    }
 }

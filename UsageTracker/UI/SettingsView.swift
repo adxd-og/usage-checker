@@ -225,6 +225,12 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
+                HStack {
+                    Text(AppVersion.githubLabel)
+                    Spacer()
+                    Link(AppVersion.githubURL.host ?? "", destination: AppVersion.githubURL)
+                        .help(AppVersion.githubHelp)
+                }
             }
         }
         .formStyle(.grouped)
