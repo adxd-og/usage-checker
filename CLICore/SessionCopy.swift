@@ -102,6 +102,11 @@ enum SessionCopy {
         return shown < total ? "\(shown) of \(total) \(noun)" : "\(total) \(noun)"
     }
 
+    /// The chat list's column titles, in the order the wide row draws them: the chat
+    /// itself, then the four values to its right. Three unlabelled figures on a row
+    /// are digits nobody can read; these are the same titles the by-day tables carry.
+    static let listColumns = ["Chat", "Last active", "Turns", "Tokens", "Cost"]
+
     static func showAll(count: Int, expanded: Bool) -> String {
         expanded ? "Show fewer" : "Show all \(count)"
     }
