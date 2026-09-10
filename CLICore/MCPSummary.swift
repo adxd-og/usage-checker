@@ -144,4 +144,93 @@ enum MCPSummary {
         default: return "idle"
         }
     }
+
+    // MARK: - get_sessions
+
+    /// What the tool answers with when the caller asks for no particular number.
+    static let defaultSessionLimit = 10
+    /// And the most it can ever answer with: `status.json` holds fifteen chats per
+    /// provider, so a bigger number is a promise the file cannot keep.
+    static let maxSessionLimit = 15
+
+    /// The `limit` argument, from whatever JSON the client actually sent. A model that
+    /// sends `"7"` or `7.0` gets seven; anything unreadable gets the default, because a
+    /// protocol error over an optional argument helps nobody.
+    static func sessionLimit(_ raw: Any?) -> Int {
+        let asked: Int
+        if let number = raw as? Int { asked = number }
+        else if let number = raw as? Double { asked = Int(number) }
+        else if let text = raw as? String, let number = Int(text) { asked = number }
+        else { return defaultSessionLimit }
+        return min(max(1, asked), maxSessionLimit)
+    }
+
+    /// One line per chat, newest first, then the stamp. Newline-separated rather than
+    /// run together like `usage`: this is a list, and a model quoting one row back to
+    /// the user should be able to find its edges.
+    static func sessions(
+        snapshot: StatusSnapshot, provider: String?, limit: Int, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        let rows = sessionRows(snapshot, provider: provider, limit: limit)
+        let stampText = stamp(snapshot, now: now, calendar: calendar, locale: locale)
+        guard !rows.isEmpty else { return "\(noSessions(provider: provider)) \(stampText)" }
+        let lines = rows.map {
+            sessionLine($0.service, $0.session, now: now, calendar: calendar, locale: locale)
+        }
+        return (lines + [stampText]).joined(separator: "\n")
+    }
+
+    /// The chats the file carries, merged across providers and cut to `limit`. No
+    /// re-ranking: the app already picked the fifteen worth keeping, and a second
+    /// ranking here would disagree with the dashboard.
+    static func sessionRows(
+        _ snapshot: StatusSnapshot, provider: String?, limit: Int
+    ) -> [(service: StatusSnapshot.Service, session: StatusSnapshot.SessionEntry)] {
+        // Written out rather than chained: the four-step pipeline over a labelled tuple
+        // is more than the type checker will solve in reasonable time.
+        typealias Row = (service: StatusSnapshot.Service, session: StatusSnapshot.SessionEntry)
+        var rows: [Row] = []
+        for service in snapshot.services where provider == nil || service.id == provider {
+            for session in service.sessions ?? [] {
+                rows.append(Row(service: service, session: session))
+            }
+        }
+        rows.sort {
+            $0.session.lastAt == $1.session.lastAt
+                ? $0.session.id < $1.session.id
+                : $0.session.lastAt > $1.session.lastAt
+        }
+        return Array(rows.prefix(max(0, limit)))
+    }
+
+    /// `Claude · Blume integration · Usage tracker · today 14:05 · 356 turns · 41.2M
+    /// tokens · $58.10 · 3 sub-agents`. Every part of it is `SessionCopy`'s spelling, so
+    /// the terminal and the dashboard describe the same chat the same way.
+    static func sessionLine(
+        _ service: StatusSnapshot.Service, _ session: StatusSnapshot.SessionEntry, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        var parts = [
+            service.name,
+            session.title,
+            session.project,
+            SessionCopy.lastActive(
+                session.lastAt, now: now, style: .sentence, calendar: calendar, locale: locale
+            ),
+            SessionCopy.turns(session.turns),
+            "\(TokenFormat.formatTokens(session.tokens)) tokens",
+            SessionCopy.cost(session.cost),
+        ]
+        if let agents = SessionCopy.subAgents(session.agents) { parts.append(agents) }
+        // A Codex chat another agent drove, rather than one the user typed — the same
+        // distinction the dashboard shows as a chip.
+        if let origin = SessionCopy.originChip(session.origin) { parts.append(origin) }
+        return parts.joined(separator: " · ")
+    }
+
+    static func noSessions(provider: String?) -> String {
+        guard let provider else { return "No chats in the last 7 days." }
+        return "No \(provider) chats in the last 7 days."
+    }
 }

@@ -51,6 +51,7 @@ final class CommandLineSettingsTextTests: XCTestCase {
     func testTheMCPCaptionsNameTheToolsAndTheRestart() {
         XCTAssertTrue(CommandLineSettingsText.mcpCaption.contains("get_usage"))
         XCTAssertTrue(CommandLineSettingsText.mcpCaption.contains("get_agents"))
+        XCTAssertTrue(CommandLineSettingsText.mcpCaption.contains("get_sessions"))
         XCTAssertTrue(CommandLineSettingsText.mcpCaption.lowercased().contains("read-only"))
         for caption in [CommandLineSettingsText.mcpClaudeCaption, CommandLineSettingsText.mcpCodexCaption] {
             XCTAssertTrue(caption.lowercased().contains("restart"), caption)
