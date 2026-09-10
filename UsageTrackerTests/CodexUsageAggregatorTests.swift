@@ -248,13 +248,15 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(third.cost, 0.0010125, accuracy: 1e-12)
     }
 
-    func testTheOtherLineTypesAreIgnored() async throws {
-        // `token_usage_record` sits next to every `token_count` in a real rollout and
-        // restates the same counters; billing it would double every figure. A
-        // `token_count` whose `info` is null appears in real logs too.
+    func testARecordBillsTheResponseAndTheTokenCountThatRestatesItDoesNot() async throws {
+        // `token_usage_record` sits just before every `token_count` in a recent rollout
+        // and describes the same response. The record is the bill (it is the only line
+        // that survives a compaction), the counter that restates it adds nothing, and a
+        // `token_count` whose `info` is null — which real logs contain — is skipped.
         let record = """
-        {"timestamp":"\(stamp(500))","ordinal":15,"type":"token_usage_record","payload":\
-        {"thread_id":"t","turn_id":"u","usage":{"input_tokens":1000,"cached_input_tokens":400,\
+        {"timestamp":"\(stamp(620))","ordinal":15,"type":"token_usage_record","payload":\
+        {"thread_id":"t","turn_id":"u","response_id":"resp_a",\
+        "usage":{"input_tokens":1000,"cached_input_tokens":400,\
         "cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":30,\
         "total_tokens":1100}}}
         """
@@ -271,7 +273,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
         ])
 
         let usage = await lastHour(loaded())
-        XCTAssertEqual(usage.turns, 1)
+        XCTAssertEqual(usage.turns, 1, "one response, billed once")
         XCTAssertEqual(usage.tokens, 1_100)
         XCTAssertEqual(usage.cost, 0.0018, accuracy: 1e-12)
     }
@@ -292,34 +294,36 @@ final class CodexUsageAggregatorTests: XCTestCase {
     }
 
     /// The over-counting bug filed against other Codex trackers (ccusage #1288): a
-    /// rollout that re-emits a `token_count` with the counters unchanged, next to the
-    /// `token_usage_record` that restates them again. Both together must add exactly
-    /// one turn — the first reading — and not one dollar more.
-    func testAReEmittedTokenCountIsNotASecondTurn() async throws {
-        let duplicateRecord = """
-        {"timestamp":"\(stamp(480))","ordinal":15,"type":"token_usage_record","payload":\
-        {"thread_id":"t","turn_id":"u","usage":{"input_tokens":1000,"cached_input_tokens":400,\
+    /// rollout that re-emits a `token_count` with the counters unchanged, after the
+    /// `token_usage_record` that already billed that response. All four lines together
+    /// must add exactly one turn — the record — and not one dollar more.
+    func testAReEmittedTokenCountAfterTheRecordIsNotASecondTurn() async throws {
+        let record = """
+        {"timestamp":"\(stamp(620))","ordinal":15,"type":"token_usage_record","payload":\
+        {"thread_id":"t","turn_id":"u","response_id":"resp_a",\
+        "usage":{"input_tokens":1000,"cached_input_tokens":400,\
         "cache_write_input_tokens":0,"output_tokens":100,"reasoning_output_tokens":30,\
         "total_tokens":1100}}}
         """
         try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 900),
             turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
+            // The record comes first, exactly as the CLI writes it.
+            record,
             tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
-            // The same cumulative totals, emitted again — a zero delta, not a turn.
+            // The same cumulative totals, emitted again — and again.
             tokenCount(secondsAgo: 500, input: 1_000, cached: 400, output: 100, reasoning: 30),
-            duplicateRecord,
             tokenCount(secondsAgo: 460, input: 1_000, cached: 400, output: 100, reasoning: 30),
         ])
 
         let usage = await lastHour(loaded())
-        XCTAssertEqual(usage.turns, 1, "three identical readings are one turn")
+        XCTAssertEqual(usage.turns, 1, "one record and three restatements are one turn")
         XCTAssertEqual(usage.tokens, 1_100)
         XCTAssertEqual(usage.breakdown.input, 600)
         XCTAssertEqual(usage.breakdown.cacheRead, 400)
         XCTAssertEqual(usage.breakdown.output, 100)
         // 600 fresh input @ $1.25/M + 400 cache read @ $0.125/M + 100 output @ $10/M.
-        XCTAssertEqual(usage.cost, 0.0018, accuracy: 1e-12, "billed once, at the first reading")
+        XCTAssertEqual(usage.cost, 0.0018, accuracy: 1e-12, "billed once, by the record")
     }
 
     func testOnlyTheAppendedTailIsParsedOnASecondRefresh() async throws {

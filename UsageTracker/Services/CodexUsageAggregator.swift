@@ -11,6 +11,14 @@ import Foundation
 /// `session_meta` is always line 1 and `turn_context` always precedes the first
 /// `token_count` (verified across the whole rollout tree, 2026-09-05).
 ///
+/// A rollout written by a recent CLI carries one `token_usage_record` per API response,
+/// written just before that response's `token_count`. Those records are the bill: the
+/// cumulative counter resets after long pauses and never includes compaction calls (on
+/// this Mac's 2026-09-06 17:25 session the records sum to 3,783,861 against the
+/// counter's 3,523,616 — 7 % of the session invisible to counters). A file that writes
+/// no records is billed from the counter's deltas exactly as before, and the decision is
+/// per file, not per CLI version: some 0.153 rollouts write only `token_count`.
+///
 /// Codex's `input_tokens` *includes* both the cached input and the tokens written to
 /// cache, so fresh input is OpenAI's `ordinary_input_tokens`: `input − cached −
 /// cache_write`. Each of the three bills at its own rate — cache writes at 1.25× the
@@ -20,10 +28,14 @@ import Foundation
 actor CodexUsageAggregator: CostLogAggregating {
     static let shared = CodexUsageAggregator()
 
-    /// One `token_count` delta: what the model call added to the session.
+    /// One billed API response: a `token_usage_record`, or — in a file that writes
+    /// none — one `token_count` delta.
     private struct Turn: Sendable {
         let timestamp: Date
         let model: String
+        /// The reasoning effort the `turn_context` named. nil in a rollout old enough
+        /// not to write one.
+        let effort: String?
         let projectSlug: String
         let cost: Double
         let tokens: TokenBreakdown
@@ -39,6 +51,12 @@ actor CodexUsageAggregator: CostLogAggregating {
         var reasoning = 0
     }
 
+    /// What a `turn_context` says about the turn it opens.
+    struct TurnContext: Equatable, Sendable {
+        var model: String?
+        var effort: String?
+    }
+
     /// Per-file incremental parse state. The cumulative-counter format means a resumed
     /// parse must carry the previous baseline, the selected model and the project the
     /// `session_meta` line named, so the active session file only has its new tail read
@@ -48,6 +66,8 @@ actor CodexUsageAggregator: CostLogAggregating {
         /// re-read on the next poll.
         var consumed: UInt64 = 0
         var currentModel: String?
+        /// The reasoning effort of the latest `turn_context`, carried the same way.
+        var currentEffort: String?
         /// The `session_meta` cwd, percent-encoded — see `encode(cwd:)`.
         var projectSlug: String?
         /// Cumulative counters as of the previous `token_count` event.
@@ -58,9 +78,29 @@ actor CodexUsageAggregator: CostLogAggregating {
         var pendingTokens: TokenBreakdown?
         /// When those tokens were first spent — the timestamp the recovered turn carries.
         var pendingSince: Date?
+        /// True from the first top-level `token_usage_record` this file writes. From
+        /// then on the records are the bill and `token_count` is only a baseline: the
+        /// counter is cumulative but never includes compaction calls, so a file that
+        /// has both would lose that spend if it billed from the counter, and would
+        /// double every response if it billed from both.
+        var sawRecord = false
+        /// FNV-1a hashes of `thread_id|response_id` for the responses this file has
+        /// already billed, so a re-read tail never bills one twice. Bounded by the
+        /// number of responses in one rollout (tens), and pruned with the file's state.
+        var seenResponses: Set<UInt64> = []
+        /// `turn_context` by `turn_id` — a record names the turn it belongs to, and a
+        /// rollout can carry several models and efforts after a resume.
+        var contexts: [String: TurnContext] = [:]
+        /// The latest `turn_context`, whatever its id: the label for a record whose
+        /// `turn_id` this file has no context for (a sub-agent rollout opens with the
+        /// parent's root turn).
+        var latestContext: TurnContext?
     }
 
     private let rootURL: URL
+    /// The calendar every day boundary is taken in. Injected so a session test can pin
+    /// UTC instead of drifting with the machine's time zone.
+    private let calendar: Calendar
     private var fileStates: [String: FileState] = [:]
     /// Turns young enough to feed the rolling today/week/month figures; older ones fold
     /// into `oldDays` and are released.
@@ -88,9 +128,13 @@ actor CodexUsageAggregator: CostLogAggregating {
 
     /// Injectable log root — the tests point it at a fixture tree instead of the real
     /// `~/.codex/sessions`.
-    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions", isDirectory: true)) {
+    init(
+        rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions", isDirectory: true),
+        calendar: Calendar = .current
+    ) {
         self.rootURL = rootURL
+        self.calendar = calendar
     }
 
     func refresh() async {
@@ -309,9 +353,8 @@ actor CodexUsageAggregator: CostLogAggregating {
 
     private func dayStart(for date: Date) -> Date {
         if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = Calendar.current
-        let start = cal.startOfDay(for: date)
-        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        let start = calendar.startOfDay(for: date)
+        let next = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
         dayCache = (start, next)
         return start
     }
@@ -407,7 +450,16 @@ actor CodexUsageAggregator: CostLogAggregating {
 
         if type == "turn_context" {
             if let payload = obj["payload"] as? [String: Any] {
-                if let model = payload["model"] as? String { state.currentModel = model }
+                let ctx = TurnContext(
+                    model: payload["model"] as? String,
+                    effort: payload["effort"] as? String
+                )
+                if ctx.model != nil || ctx.effort != nil {
+                    state.latestContext = ctx
+                    if let turnID = payload["turn_id"] as? String { state.contexts[turnID] = ctx }
+                }
+                if let model = ctx.model { state.currentModel = model }
+                if let effort = ctx.effort { state.currentEffort = effort }
                 // `session_meta` names the cwd on line 1 of every rollout; this is the
                 // fallback for a file whose first line we never saw.
                 if state.projectSlug == nil, let cwd = payload["cwd"] as? String {
@@ -421,11 +473,18 @@ actor CodexUsageAggregator: CostLogAggregating {
             let ts = state.pendingSince ?? Date()
             state.pendingTokens = nil
             state.pendingSince = nil
-            return turn(tokens: pending, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
+            return turn(tokens: pending, model: model, effort: state.currentEffort,
+                        at: ts, state: state, fallbackSlug: fallbackSlug)
         }
 
-        // `token_usage_record` restates the same counters under its own type; billing it
-        // would double every figure.
+        // The authoritative per-response bill, when the file writes one. `compacted`
+        // embeds a copy of the latest record under `payload.latest_token_usage_record`
+        // and is deliberately not parsed at all: it is not a `token_usage_record` at
+        // top level, so it falls through every branch here.
+        if type == "token_usage_record" {
+            return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug)
+        }
+
         guard type == "event_msg",
               let payload = obj["payload"] as? [String: Any],
               payload["type"] as? String == "token_count",
@@ -442,6 +501,11 @@ actor CodexUsageAggregator: CostLogAggregating {
         )
         let previous = state.prev
         state.prev = reading
+
+        // The counter keeps tracking whatever the file writes — a file that switches to
+        // records mid-way must not measure its next delta from a stale baseline — but
+        // once a record has been seen, the record is the bill.
+        if state.sawRecord { return nil }
 
         var delta = Counters(
             input: reading.input - previous.input,
@@ -481,7 +545,79 @@ actor CodexUsageAggregator: CostLogAggregating {
             return nil
         }
 
-        return turn(tokens: tokens, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
+        return turn(tokens: tokens, model: model, effort: state.currentEffort,
+                    at: ts, state: state, fallbackSlug: fallbackSlug)
+    }
+
+    /// One `token_usage_record`: the usage the API itself reported for one response.
+    /// Unlike the cumulative counter it covers compaction calls, which is the spend
+    /// `token_count` silently omits.
+    private func recordTurn(_ obj: [String: Any], state: inout FileState, fallbackSlug: String) -> Turn? {
+        guard let payload = obj["payload"] as? [String: Any],
+              let usage = payload["usage"] as? [String: Any] else { return nil }
+        // Set before the dedupe returns: a file that writes records bills from records
+        // even when this particular line is one it has already seen.
+        state.sawRecord = true
+
+        let responseID = (payload["response_id"] as? String) ?? ""
+        if !responseID.isEmpty {
+            let threadID = (payload["thread_id"] as? String) ?? ""
+            guard state.seenResponses
+                .insert(Self.stableHash("\(threadID)|\(responseID)")).inserted
+            else { return nil }
+        }
+
+        let input = Self.intValue(usage["input_tokens"])
+        let cacheRead = max(0, Self.intValue(usage["cached_input_tokens"]))
+        let cacheWrite = max(0, Self.intValue(usage["cache_write_input_tokens"]))
+        let output = max(0, Self.intValue(usage["output_tokens"]))
+        let reasoning = max(0, Self.intValue(usage["reasoning_output_tokens"]))
+        guard input > 0 || output > 0 else { return nil }
+
+        // OpenAI's own formula: ordinary_input = input − cached − cache_write. All
+        // three counters live inside `input_tokens`, so leaving the writes in would
+        // bill them twice and add them to the turn's total a second time.
+        let tokens = TokenBreakdown(
+            input: max(0, input - cacheRead - cacheWrite),
+            output: output,
+            cacheRead: cacheRead,
+            cacheWrite5m: cacheWrite,
+            cacheWrite1h: 0,
+            thinking: reasoning
+        )
+        let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
+        let ctx = Self.context(
+            forTurn: payload["turn_id"] as? String, in: state.contexts, latest: state.latestContext
+        )
+        guard let model = ctx?.model ?? state.currentModel else {
+            // Same recovery as the counter path: real tokens with nothing to price them
+            // wait for the first `turn_context` that follows.
+            state.pendingTokens = state.pendingTokens.map { $0 + tokens } ?? tokens
+            if state.pendingSince == nil { state.pendingSince = ts }
+            return nil
+        }
+        return turn(tokens: tokens, model: model, effort: ctx?.effort ?? state.currentEffort,
+                    at: ts, state: state, fallbackSlug: fallbackSlug)
+    }
+
+    /// The `turn_context` a record belongs to: the one that opened its `turn_id`, and
+    /// failing that the latest the file has seen.
+    nonisolated static func context(
+        forTurn turnID: String?, in contexts: [String: TurnContext], latest: TurnContext?
+    ) -> TurnContext? {
+        if let turnID, let exact = contexts[turnID] { return exact }
+        return latest
+    }
+
+    /// FNV-1a over UTF-8: 8 bytes per remembered response instead of a retained pair of
+    /// id strings, and stable for the life of the file's parse state.
+    nonisolated static func stableHash(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in s.utf8 {
+            h ^= UInt64(b)
+            h = h &* 0x0000_0100_0000_01b3
+        }
+        return h
     }
 
     /// Prices one delta and dresses it as a turn. A model models.dev doesn't know keeps
@@ -490,6 +626,7 @@ actor CodexUsageAggregator: CostLogAggregating {
     private func turn(
         tokens: TokenBreakdown,
         model: String,
+        effort: String?,
         at timestamp: Date,
         state: FileState,
         fallbackSlug: String
@@ -501,6 +638,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         return Turn(
             timestamp: timestamp,
             model: model,
+            effort: effort,
             projectSlug: state.projectSlug ?? fallbackSlug,
             cost: tokens.cost?.total ?? 0,
             tokens: tokens
