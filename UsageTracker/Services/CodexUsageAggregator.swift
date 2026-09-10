@@ -39,6 +39,18 @@ actor CodexUsageAggregator: CostLogAggregating {
         let projectSlug: String
         let cost: Double
         let tokens: TokenBreakdown
+        /// The chat this turn belongs to — a sub-agent's turns carry the PARENT's
+        /// `session_id`, which is what makes them part of the same chat.
+        let sessionID: String
+        /// The thread that spent the tokens: the session's own id on the main thread,
+        /// the agent's on a sub-agent rollout.
+        let threadID: String
+        /// Set exactly when the file is a sub-agent rollout; then it equals `threadID`.
+        let agentID: String?
+        /// `agent_nickname`, or `agent_path` when the nickname is missing.
+        let agentKind: String?
+        /// The `originator` of the rollout that produced the turn.
+        let origin: String?
     }
 
     /// One cumulative `total_token_usage` reading, and (as a difference of two) one
@@ -95,6 +107,52 @@ actor CodexUsageAggregator: CostLogAggregating {
         /// `turn_id` this file has no context for (a sub-agent rollout opens with the
         /// parent's root turn).
         var latestContext: TurnContext?
+        /// Identity, from the FIRST `session_meta` in the file and nothing else.
+        var sawMeta = false
+        var sessionID: String?
+        var threadID: String?
+        var isSubagent = false
+        var agentKind: String?
+        var origin: String?
+    }
+
+    /// One local day of a chat. `mainTokens` is kept alongside `tokens` because a
+    /// clipped summary has to answer "how much of this range was the main thread?" and
+    /// `SessionDaySummary` carries only the combined figure.
+    struct DaySlice: Equatable, Sendable {
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+    }
+
+    /// One sub-agent thread of a chat.
+    struct AgentAgg: Equatable, Sendable {
+        var kind: String
+        var model: String?
+        var effort: String?
+        var firstAt: Date
+        var lastAt: Date
+        var turns: Int
+        var tokens: TokenBreakdown
+    }
+
+    /// One chat: the main thread, its sub-agents, and its days. Kept for 92 days
+    /// (`sessionRetention`), independently of `recentTurns`, so a chat that started
+    /// last month still shows its whole span.
+    struct SessionAgg: Equatable, Sendable {
+        var projectSlug: String
+        var origin: String?
+        var firstAt: Date
+        var lastAt: Date
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+        var byDay: [Date: DaySlice] = [:]
+        var agents: [String: AgentAgg] = [:]
+        /// False until a main-thread turn has named the project and the originator. A
+        /// sub-agent file can be read first — the enumerator's order is not the
+        /// session's — and its slug and origin stand in until the parent's arrive.
+        var hasMainIdentity = false
     }
 
     private let rootURL: URL
@@ -112,6 +170,7 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// into `oldDays` and are released.
     private var recentTurns: [Turn] = []
     private var oldDays: [Date: DayAgg] = [:]
+    private var sessionAggs: [String: SessionAgg] = [:]
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the month
     /// boundary is never clipped.
@@ -310,6 +369,92 @@ actor CodexUsageAggregator: CostLogAggregating {
         )
     }
 
+    /// One chat as § 1 defines it, clipped to `[start, end]` at local-day granularity:
+    /// the days outside the range are dropped and the totals re-summed from what is
+    /// left, which is also how a range shorter than a day (the History tab's 5h) widens
+    /// to the day it falls in. `firstAt` / `lastAt` stay the chat's own span — the row
+    /// says when the chat ran, not when the range starts. Returns nil when no day of
+    /// the chat falls inside the range.
+    nonisolated static func summary(
+        sessionID: String,
+        agg: SessionAgg,
+        title: String?,
+        from start: Date,
+        to end: Date,
+        calendar: Calendar
+    ) -> SessionSummary? {
+        let lower = calendar.startOfDay(for: start)
+        let upper = calendar.startOfDay(for: end)
+        let days = agg.byDay.filter { $0.key >= lower && $0.key <= upper }
+        guard !days.isEmpty else { return nil }
+
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+        var daySummaries: [SessionDaySummary] = []
+        daySummaries.reserveCapacity(days.count)
+        for (day, slice) in days.sorted(by: { $0.key < $1.key }) {
+            turns += slice.turns
+            tokens += slice.tokens
+            mainTokens += slice.mainTokens
+            daySummaries.append(
+                SessionDaySummary(day: day, turns: slice.turns, tokens: slice.tokens)
+            )
+        }
+
+        // Agents are kept or dropped whole: only their span is stored, not a per-day
+        // split, so an agent that ran inside the range contributes all of its tokens.
+        let upperExclusive = calendar.date(byAdding: .day, value: 1, to: upper)
+            ?? upper.addingTimeInterval(86_400)
+        let agents = agg.agents
+            .filter { $0.value.lastAt >= lower && $0.value.firstAt < upperExclusive }
+            .map { id, a in
+                SessionAgentSummary(
+                    id: id, kind: a.kind, model: a.model, effort: a.effort,
+                    firstAt: a.firstAt, lastAt: a.lastAt, turns: a.turns, tokens: a.tokens
+                )
+            }
+            .sorted {
+                let l = $0.tokens.cost?.total ?? 0
+                let r = $1.tokens.cost?.total ?? 0
+                return l == r ? $0.id < $1.id : l > r
+            }
+
+        return SessionSummary(
+            id: sessionID,
+            providerID: "codex",
+            title: title,
+            projectSlug: agg.projectSlug,
+            origin: agg.origin,
+            firstAt: agg.firstAt,
+            lastAt: agg.lastAt,
+            turns: turns,
+            tokens: tokens,
+            mainTokens: mainTokens,
+            agents: agents,
+            days: daySummaries
+        )
+    }
+
+    /// Every chat with a day inside the range, newest first. Reads what `refresh()` has
+    /// already ingested, the way `breakdown()` and `usage(from:to:)` do.
+    ///
+    /// Spelled `async` — unlike `breakdown()`, which is not — to match
+    /// `CostLogAggregating.sessions(from:to:)` exactly. That requirement has a default
+    /// implementation returning `[]`, and a non-`async` method here would merely be an
+    /// overload of it: a direct call on `CodexUsageAggregator` then resolves to the
+    /// protocol extension and every chat silently disappears.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] {
+        sessionAggs
+            .compactMap {
+                Self.summary(
+                    sessionID: $0.key, agg: $0.value, title: nil,
+                    from: start, to: end, calendar: calendar
+                )
+            }
+            .sorted { $0.lastAt > $1.lastAt }
+    }
+
     private static func summaries(
         _ acc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)]
     ) -> [ProjectSummary] {
@@ -336,12 +481,66 @@ actor CodexUsageAggregator: CostLogAggregating {
     private func ingest(_ turns: [Turn]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         for turn in turns {
+            // Before the fold decision: the session aggregate reaches back 92 days,
+            // three times further than `recentTurns`.
+            record(turn)
             if turn.timestamp < recentCutoff {
                 fold(turn)
             } else {
                 recentTurns.append(turn)
             }
         }
+    }
+
+    /// Adds one turn to its chat's aggregate: the session totals, the local day, and —
+    /// when it came from a sub-agent rollout — that agent's own row.
+    private func record(_ t: Turn) {
+        var agg = sessionAggs[t.sessionID] ?? SessionAgg(
+            projectSlug: t.projectSlug, origin: t.origin,
+            firstAt: t.timestamp, lastAt: t.timestamp
+        )
+        agg.firstAt = min(agg.firstAt, t.timestamp)
+        agg.lastAt = max(agg.lastAt, t.timestamp)
+        agg.turns += 1
+        agg.tokens += t.tokens
+
+        let day = dayStart(for: t.timestamp)
+        var slice = agg.byDay[day] ?? DaySlice()
+        slice.turns += 1
+        slice.tokens += t.tokens
+
+        if let agentID = t.agentID {
+            var a = agg.agents[agentID] ?? AgentAgg(
+                kind: t.agentKind ?? "sub-agent", model: nil, effort: nil,
+                firstAt: t.timestamp, lastAt: t.timestamp, turns: 0, tokens: .zero
+            )
+            if let kind = t.agentKind { a.kind = kind }
+            a.firstAt = min(a.firstAt, t.timestamp)
+            // "Last model seen" is the last one in time, not the last one parsed: two
+            // rollouts of one session are read in whatever order the enumerator hands
+            // them over.
+            if t.timestamp >= a.lastAt {
+                a.lastAt = t.timestamp
+                a.model = t.model
+                a.effort = t.effort
+            }
+            a.turns += 1
+            a.tokens += t.tokens
+            agg.agents[agentID] = a
+        } else {
+            agg.mainTokens += t.tokens
+            slice.mainTokens += t.tokens
+            // The chat's project and originator are the main thread's; a sub-agent's
+            // only stand in until the parent's rollout has been read.
+            if !agg.hasMainIdentity || t.timestamp >= agg.lastAt {
+                agg.projectSlug = t.projectSlug
+                agg.origin = t.origin ?? agg.origin
+            }
+            agg.hasMainIdentity = true
+        }
+
+        agg.byDay[day] = slice
+        sessionAggs[t.sessionID] = agg
     }
 
     private func fold(_ t: Turn) {
@@ -490,8 +689,23 @@ actor CodexUsageAggregator: CostLogAggregating {
               let type = obj["type"] as? String else { return nil }
 
         if type == "session_meta" {
-            if let payload = obj["payload"] as? [String: Any], let cwd = payload["cwd"] as? String {
+            // Only the FIRST meta is this file's identity: a sub-agent rollout's second
+            // line is a verbatim copy of its parent's meta, and adopting it would hand
+            // the agent's tokens to the main thread.
+            guard !state.sawMeta, let payload = obj["payload"] as? [String: Any] else { return nil }
+            state.sawMeta = true
+            if let cwd = payload["cwd"] as? String {
                 state.projectSlug = Self.encode(cwd: cwd)
+            }
+            state.sessionID = payload["session_id"] as? String
+            state.threadID = payload["id"] as? String
+            state.origin = payload["originator"] as? String
+            if payload["thread_source"] as? String == "subagent" {
+                state.isSubagent = true
+                // `agent_nickname` is JSON null on a sub-agent that was never named, in
+                // which case its path is what the user would recognise.
+                state.agentKind = (payload["agent_nickname"] as? String)
+                    ?? (payload["agent_path"] as? String)
             }
             return nil
         }
@@ -522,7 +736,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             state.pendingTokens = nil
             state.pendingSince = nil
             return turn(tokens: pending, model: model, effort: state.currentEffort,
-                        at: ts, state: state, fallbackSlug: fallbackSlug)
+                        at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
         }
 
         // The authoritative per-response bill, when the file writes one. `compacted`
@@ -530,7 +744,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         // and is deliberately not parsed at all: it is not a `token_usage_record` at
         // top level, so it falls through every branch here.
         if type == "token_usage_record" {
-            return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug)
+            return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug, fileKey: fileKey)
         }
 
         guard type == "event_msg",
@@ -594,13 +808,15 @@ actor CodexUsageAggregator: CostLogAggregating {
         }
 
         return turn(tokens: tokens, model: model, effort: state.currentEffort,
-                    at: ts, state: state, fallbackSlug: fallbackSlug)
+                    at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
     }
 
     /// One `token_usage_record`: the usage the API itself reported for one response.
     /// Unlike the cumulative counter it covers compaction calls, which is the spend
     /// `token_count` silently omits.
-    private func recordTurn(_ obj: [String: Any], state: inout FileState, fallbackSlug: String) -> Turn? {
+    private func recordTurn(
+        _ obj: [String: Any], state: inout FileState, fallbackSlug: String, fileKey: String
+    ) -> Turn? {
         guard let payload = obj["payload"] as? [String: Any],
               let usage = payload["usage"] as? [String: Any] else { return nil }
         // Set before the dedupe returns: a file that writes records bills from records
@@ -645,7 +861,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             return nil
         }
         return turn(tokens: tokens, model: model, effort: ctx?.effort ?? state.currentEffort,
-                    at: ts, state: state, fallbackSlug: fallbackSlug)
+                    at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
     }
 
     /// The `turn_context` a record belongs to: the one that opened its `turn_id`, and
@@ -677,19 +893,28 @@ actor CodexUsageAggregator: CostLogAggregating {
         effort: String?,
         at timestamp: Date,
         state: FileState,
-        fallbackSlug: String
+        fallbackSlug: String,
+        fileKey: String
     ) -> Turn {
         var tokens = tokens
         if let price = ModelPricing.dynamicLookup(for: model) {
             tokens = tokens.priced(with: price)
         }
+        // A rollout whose first line we never read still has an identity: the thread
+        // uuid its file name ends with, which is exactly what the meta would have said.
+        let threadID = state.threadID ?? fileKey
         return Turn(
             timestamp: timestamp,
             model: model,
             effort: effort,
             projectSlug: state.projectSlug ?? fallbackSlug,
             cost: tokens.cost?.total ?? 0,
-            tokens: tokens
+            tokens: tokens,
+            sessionID: state.sessionID ?? threadID,
+            threadID: threadID,
+            agentID: state.isSubagent ? threadID : nil,
+            agentKind: state.isSubagent ? (state.agentKind ?? "sub-agent") : nil,
+            origin: state.origin
         )
     }
 
