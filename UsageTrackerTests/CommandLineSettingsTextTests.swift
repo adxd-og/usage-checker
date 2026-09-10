@@ -65,6 +65,15 @@ final class CommandLineSettingsTextTests: XCTestCase {
         XCTAssertTrue(CommandLineSettingsText.mcpClaudeCaption.contains(".claude.json.omelette-backup"))
     }
 
+    /// Half of the line is the session rather than the account, and this caption is the
+    /// only place that says so before the user installs it.
+    func testTheStatusLineCaptionNamesTheModelAndItsContext() {
+        XCTAssertTrue(
+            CommandLineSettingsText.statusLineCaption.contains("the model and how full its context is"),
+            CommandLineSettingsText.statusLineCaption
+        )
+    }
+
     func testTheCaptionsSayWhatTheThingDoes() {
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("status"))
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("~/.claude/settings.json"),
