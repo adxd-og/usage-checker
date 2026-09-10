@@ -6,7 +6,7 @@ enum CLIText {
     /// command-line tool has no Info.plist to read it out of, and inventing one to
     /// carry a single string would be a build-setting maze for no gain. The release
     /// task that bumps `project.yml` to 2.4.1 / build 39 bumps this line with it.
-    static let version = "2.4.1"
+    static let version = "2.5.0"
 
     /// The one sentence for every way the file can be missing: not written yet, too
     /// old, unreadable, from another version. They all mean the same thing to the user.
