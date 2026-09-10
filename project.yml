@@ -177,6 +177,10 @@ targets:
       - path: SharedUI
       # Via sources:, not resources: — see the app target's note on the same path.
       - path: SharedAssets/ProviderIcons.xcassets
+      # The one percent rule, by path: the extension draws rings and numbers and has
+      # to invert them exactly as the app does. Same trick as ResetCopy in the CLI
+      # target below — one folder is not shared, one file is.
+      - path: UsageTracker/Core/PercentDisplay.swift
     settings:
       base:
         PRODUCT_NAME: UsageTrackerWidget
@@ -225,6 +229,9 @@ targets:
       # By path, not by folder: ResetCopy is the app's own words for "when does this
       # window reset", and the terminal has to say exactly what the popover says.
       - path: UsageTracker/Core/ResetCopy.swift
+      # By path, for the same reason as ResetCopy above: `omelette status` prints
+      # percentages and must say "58% left" exactly when the app does.
+      - path: UsageTracker/Core/PercentDisplay.swift
     settings:
       base:
         PRODUCT_NAME: omelette
