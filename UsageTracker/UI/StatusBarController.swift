@@ -117,39 +117,54 @@ final class StatusBarController {
     }
 
     private func updateTooltip() {
-        let snap = AppState.shared.snapshot
-        // Every provider with data gets a block — the tooltip used to be
-        // hardcoded to Claude and stayed silent about the rest.
-        let services = snap.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
-        guard !services.isEmpty else {
-            statusItem.button?.toolTip = "Omelette — loading…"
-            return
-        }
+        statusItem.button?.toolTip = Self.tooltipText(
+            snapshot: AppState.shared.snapshot,
+            mode: SettingsStore.shared.percentMode
+        )
+    }
+
+    /// Every line of the status item's tooltip, from the snapshot alone. Pure, so
+    /// the wording — and which way each number counts — is unit-tested rather than
+    /// eyeballed on a hover.
+    ///
+    /// Every provider with data gets a block; a retained one is headed by the line
+    /// that says why its numbers aren't moving, a healthy one by its plan.
+    nonisolated static func tooltipText(
+        snapshot: UsageSnapshot,
+        mode: PercentDisplay.Mode = .used,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let services = snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
+        guard !services.isEmpty else { return "Omelette — loading…" }
         var lines: [String] = []
         for service in services {
             if !lines.isEmpty { lines.append("") }
-            // A retained provider's block needs a header that explains why the
-            // numbers under it aren't moving; a healthy one just names the plan.
             lines.append(service.isRetained
-                         ? MenuBarLabel.text(for: service)
+                         ? MenuBarLabel.text(for: service, mode: mode, now: now,
+                                             calendar: calendar, locale: locale)
                          : (service.plan ?? service.displayName))
+            // Which windows appear is a question about usage, not about display: an
+            // untouched window is hidden at 0% used, and it is still the untouched
+            // window when the app is counting down from 100.
             for b in service.buckets where b.clampedPercent > 0 || b.kind == .session || b.id == "seven_day" {
-                lines.append("  \(b.label): \(Int(b.clampedPercent.rounded()))%")
+                lines.append("  \(b.label): \(PercentDisplay.percentPhrase(b.clampedPercent, mode: mode))")
             }
             if let cost = service.weekCost {
                 lines.append(String(format: "  Last 7 days: $%.2f", cost))
             }
         }
-        let updated = snap.fetchedAt
+        let updated = snapshot.fetchedAt
         if updated.timeIntervalSince1970 > 1 {
             lines.append("")
-            lines.append("Updated \(formatAgo(updated))")
+            lines.append("Updated \(ago(updated, now: now))")
         }
-        statusItem.button?.toolTip = lines.joined(separator: "\n")
+        return lines.joined(separator: "\n")
     }
 
-    private func formatAgo(_ date: Date) -> String {
-        let delta = max(0, Date().timeIntervalSince(date))
+    nonisolated static func ago(_ date: Date, now: Date = Date()) -> String {
+        let delta = max(0, now.timeIntervalSince(date))
         if delta < 5 { return "just now" }
         if delta < 60 { return "\(Int(delta)) sec ago" }
         if delta < 3600 {

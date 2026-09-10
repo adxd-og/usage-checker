@@ -35,7 +35,8 @@ struct MenuBarLabel: View {
                     if service.buckets.isEmpty, let cost = service.weekCost {
                         MiniCostPill(service: service, weekCost: cost, isStale: snapshot.isStale)
                     } else {
-                        MiniServiceBar(service: service, isStale: snapshot.isStale, showsNumber: showsNumber)
+                        MiniServiceBar(service: service, isStale: snapshot.isStale,
+                                       showsNumber: showsNumber, mode: settings.percentMode)
                     }
                 }
             }
@@ -51,16 +52,21 @@ struct MenuBarLabel: View {
     /// "these numbers are an hour old", and the dimming alone is easy to miss.
     nonisolated static func text(
         for service: ServiceSnapshot,
+        mode: PercentDisplay.Mode = .used,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> String {
-        let percent = Int(service.headlinePercent.rounded())
+        let phrase = PercentDisplay.percentPhrase(service.headlinePercent, mode: mode)
         guard let at = service.retainedAt else {
-            return "\(service.displayName) usage \(percent)%"
+            // "Claude usage 37%" counting up; "Claude 63% left" counting down, where
+            // the word already carries what "usage" used to carry.
+            return mode == .remaining
+                ? "\(service.displayName) \(phrase)"
+                : "\(service.displayName) usage \(phrase)"
         }
         let stamp = RelativeStamp.asOf(at, now: now, calendar: calendar, locale: locale)
-        return "\(service.displayName): last known \(percent)% (as of \(stamp)) — \(RetainedCopy.chipText(for: service.state))"
+        return "\(service.displayName): last known \(phrase) (as of \(stamp)) — \(RetainedCopy.chipText(for: service.state))"
     }
 
     /// The agents pill. A separate view, not an `@ObservedObject` on `MenuBarLabel`
@@ -90,11 +96,17 @@ private struct MiniServiceBar: View {
     let service: ServiceSnapshot
     let isStale: Bool
     let showsNumber: Bool
+    let mode: PercentDisplay.Mode
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    private var percent: Double { service.headlinePercent }
-    private var barColor: Color { usageStatusColor(percent) }
-    private var isCritical: Bool { percent >= 95 }
+    /// How full the window is. Colour, criticality and the pulse all read this and
+    /// never the drawn number: a pill showing "4" because 4% is left is the same
+    /// emergency as one showing "96".
+    private var used: Double { service.headlinePercent }
+    /// How much bar to draw, and what the digits say.
+    private var shown: Double { PercentDisplay.shown(used, mode: mode) }
+    private var barColor: Color { usageStatusColor(used) }
+    private var isCritical: Bool { used >= 95 }
     /// A frozen 96% is not an emergency: the provider stopped reporting, so the
     /// number isn't climbing and the pulse would be crying wolf.
     private var shouldPulse: Bool { isCritical && !reduceMotion && !service.isRetained }
@@ -126,21 +138,21 @@ private struct MiniServiceBar: View {
                     .frame(width: 22, height: 8)
                 Capsule(style: .continuous)
                     .fill(barColor)
-                    .frame(width: max(2, 22 * percent / 100), height: 8)
+                    .frame(width: max(2, 22 * shown / 100), height: 8)
             }
             .opacity(pulse * retainedDim)
 
             if showsNumber {
-                Text("\(Int(percent.rounded()))")
+                Text(PercentDisplay.bareNumber(used, mode: mode))
                     .font(OMFont.menuNumeral)
                     .monospacedDigit()
                     .foregroundStyle(isStale ? Color.secondary : barColor)
                     .opacity(pulse * retainedDim)
             }
         }
-        .animation(.easeInOut(duration: 0.4), value: percent)
+        .animation(.easeInOut(duration: 0.4), value: shown)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(MenuBarLabel.text(for: service))
+        .accessibilityLabel(MenuBarLabel.text(for: service, mode: mode))
     }
 }
 
