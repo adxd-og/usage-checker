@@ -62,7 +62,7 @@ final class WindowRankingTests: XCTestCase {
     /// window is the big ring even when a weekly is further along.
     func testDetailHeroPrefersTheSessionEvenWhenTheWeeklyIsHotter() {
         let service = claude([session, weekly, opus])
-        XCTAssertEqual(WindowRanking.heroBucket(for: service)?.id, "seven_day", "the tile hero is unchanged")
+        XCTAssertEqual(WindowRanking.heroBucket(for: service)?.id, "seven_day", "ranked by constraint")
         XCTAssertEqual(WindowRanking.detailHero(for: service)?.id, "five_hour")
         // The weekly is still a window of the service, so the "Weekly limits"
         // ring row keeps listing "All models" instead of only the model-scoped one.
@@ -105,8 +105,16 @@ final class WindowRankingTests: XCTestCase {
         let hotSession = Fixture.bucket(id: "five_hour", label: "Current session", percent: 60, kind: .session)
         XCTAssertEqual(WindowRanking.secondaryBucket(for: claude([hotSession, weekly, opus]))?.id, "seven_day")
     }
+    /// Only a service without a session window leads its tile with the weekly, and
+    /// then the bar under the ring is the next-worst core window. A service that has
+    /// a session leads with it and keeps the weekly for the bar — see
+    /// `OMProviderTileTests`.
     func testSecondaryIsNextWorstCoreWhenWeeklyIsHero() {
-        XCTAssertEqual(WindowRanking.secondaryBucket(for: claude([session, weekly, opus]))?.id, "five_hour")
+        let quietWeekly = Fixture.bucket(id: "seven_day_other", label: "Other models", percent: 20, kind: .weekly)
+        XCTAssertEqual(
+            WindowRanking.secondaryBucket(for: claude([weekly, quietWeekly, opus]))?.id,
+            "seven_day_other"
+        )
     }
     func testSecondaryNilWithSingleWindow() {
         XCTAssertNil(WindowRanking.secondaryBucket(for: claude([session])))

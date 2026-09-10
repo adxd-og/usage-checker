@@ -25,16 +25,30 @@ enum WindowRanking {
     /// Provider-tab hero: the session window when the service has one — it
     /// answers "can I keep working right now" and the tab has room to show every
     /// other window underneath — otherwise the most-constrained window.
-    /// Tiles on the All tab keep `heroBucket`, where one ring is all there is.
+    /// The All-tab tiles lead with the same window (`tileHero`), so tapping a tile
+    /// never moves the big ring to a different number.
     static func detailHero(for service: ServiceSnapshot) -> UsageBucket? {
         service.buckets.first { $0.kind == .session && !$0.isPromotional } ?? heroBucket(for: service)
+    }
+
+    /// The ring on an All-tab tile. The same rule as the provider tab it opens:
+    /// mid-week the weekly is usually the worst window, and a tile that led with it
+    /// buried the 5-hour number people actually check under a thin bar — and changed
+    /// which window was big the moment you tapped it. `heroBucket` still ranks by
+    /// constraint for the surfaces that want the single worst number.
+    static func tileHero(for service: ServiceSnapshot) -> UsageBucket? {
+        detailHero(for: service)
     }
 
     /// The window shown under the hero on a tile: the all-models weekly when it
     /// is not already the hero, otherwise the next-worst core window. nil when
     /// the service has nothing else worth showing.
+    ///
+    /// Ranked against `tileHero`, because this is the tile's own second line: reading
+    /// it against the worst window instead would put the session in both the ring and
+    /// the bar on every service whose weekly is further along.
     static func secondaryBucket(for service: ServiceSnapshot) -> UsageBucket? {
-        guard let hero = heroBucket(for: service) else { return nil }
+        guard let hero = tileHero(for: service) else { return nil }
         if hero.id != "seven_day", let weekly = service.buckets.first(where: { $0.id == "seven_day" }) {
             return weekly
         }

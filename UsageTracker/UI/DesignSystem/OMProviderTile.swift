@@ -10,7 +10,7 @@ struct OMProviderTile: View {
     let service: ServiceSnapshot
     let action: () -> Void
 
-    private var hero: UsageBucket? { WindowRanking.heroBucket(for: service) }
+    private var hero: UsageBucket? { WindowRanking.tileHero(for: service) }
     private var secondary: UsageBucket? { WindowRanking.secondaryBucket(for: service) }
     /// "Has something to draw", not "is healthy" — that distinction is the whole fix.
     private var hasData: Bool { !service.buckets.isEmpty }
