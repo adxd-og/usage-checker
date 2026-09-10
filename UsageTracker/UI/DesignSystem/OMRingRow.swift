@@ -4,6 +4,7 @@ import SwiftUI
 /// untouched window keeps its ring (so the grid stays aligned) but dims.
 struct OMRingRow: View {
     let buckets: [UsageBucket]
+    let mode: PercentDisplay.Mode
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: OMSpacing.s), count: 4)
 
@@ -11,7 +12,7 @@ struct OMRingRow: View {
         LazyVGrid(columns: columns, spacing: OMSpacing.m) {
             ForEach(buckets) { bucket in
                 VStack(spacing: 5) {
-                    OMRing(used: bucket.clampedPercent, mode: .used, size: .small, pace: bucket.elapsedFraction())
+                    OMRing(used: bucket.clampedPercent, mode: mode, size: .small, pace: bucket.elapsedFraction())
                     Text(WindowRanking.shortWindowLabel(bucket.label))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)
@@ -24,7 +25,7 @@ struct OMRingRow: View {
                 // glance at a calendar to place "Thu 14:15".
                 .help(Self.tooltip(for: bucket))
                 .accessibilityElement(children: .combine)
-                .accessibilityLabel("\(Self.accessibilityText(for: bucket)), \(Int(bucket.clampedPercent.rounded())) percent used")
+                .accessibilityLabel(Self.accessibilityLabel(for: bucket, mode: mode))
             }
         }
     }
@@ -51,6 +52,13 @@ struct OMRingRow: View {
         return title
     }
 
+    /// The whole spoken line for one ring: the window (or the hint that explains an
+    /// empty one), then the number. Which of the two titles it gets is decided on
+    /// the used value, so a window nobody has touched never reads as a full tank.
+    nonisolated static func accessibilityLabel(for bucket: UsageBucket, mode: PercentDisplay.Mode) -> String {
+        "\(accessibilityText(for: bucket)), \(PercentDisplay.spoken(bucket.clampedPercent, mode: mode))"
+    }
+
     /// An untouched window can't say anything about pace, so its label explains the
     /// empty ring instead of repeating itself.
     nonisolated static func emptyHint(for bucket: UsageBucket) -> String {
@@ -67,6 +75,6 @@ struct OMRingRow: View {
     let mk = { (id: String, label: String, p: Double) in
         UsageBucket(id: id, label: label, utilization: p, resetsAt: Date().addingTimeInterval(86400 * 3), kind: .weekly)
     }
-    return OMRingRow(buckets: [mk("seven_day", "All models", 52), mk("seven_day_fable", "Fable only", 12), mk("seven_day_opus", "Opus only", 8), mk("seven_day_sonnet", "Sonnet only", 74), mk("seven_day_haiku", "Haiku only", 0)])
+    return OMRingRow(buckets: [mk("seven_day", "All models", 52), mk("seven_day_fable", "Fable only", 12), mk("seven_day_opus", "Opus only", 8), mk("seven_day_sonnet", "Sonnet only", 74), mk("seven_day_haiku", "Haiku only", 0)], mode: .used)
         .padding().frame(width: 328)
 }

@@ -61,7 +61,7 @@ struct OverviewView: View {
                 sessionBuckets: service.buckets.filter { $0.kind == .session }
             )
             VStack(alignment: .leading, spacing: OMSpacing.xs) {
-                OMHero(hero: hero, verdict: verdict)
+                OMHero(hero: hero, mode: .used, verdict: verdict)
                     .opacity(service.isRetained ? 0.55 : 1)
                 // A spend limit's ring is a percentage of a number nobody keeps in
                 // their head. The provider tab prints both amounts; so does this.

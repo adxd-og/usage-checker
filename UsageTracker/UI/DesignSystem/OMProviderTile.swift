@@ -8,6 +8,7 @@ import SwiftUI
 /// Only a provider with no numbers at all is reduced to its chip.
 struct OMProviderTile: View {
     let service: ServiceSnapshot
+    let mode: PercentDisplay.Mode
     let action: () -> Void
 
     private var hero: UsageBucket? { WindowRanking.tileHero(for: service) }
@@ -35,7 +36,7 @@ struct OMProviderTile: View {
         .buttonStyle(.plain)
         .focusEffectDisabled()
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Self.accessibilityText(for: service, hero: hero))
+        .accessibilityLabel(Self.accessibilityText(for: service, hero: hero, mode: mode))
     }
 
     private var header: some View {
@@ -55,7 +56,7 @@ struct OMProviderTile: View {
         HStack(spacing: 9) {
             if let hero {
                 HStack(spacing: 9) {
-                    OMRing(used: hero.clampedPercent, mode: .used, size: .medium, pace: hero.elapsedFraction())
+                    OMRing(used: hero.clampedPercent, mode: mode, size: .medium, pace: hero.elapsedFraction())
                     VStack(alignment: .leading, spacing: 2) {
                         Text(WindowRanking.shortWindowLabel(hero.label))
                             .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -96,15 +97,15 @@ struct OMProviderTile: View {
         if service.isRetained {
             VStack(alignment: .leading, spacing: 3) {
                 if let secondary {
-                    BarSegment(used: secondary.clampedPercent, mode: .used, height: 5, showsLabel: false)
+                    BarSegment(used: secondary.clampedPercent, mode: mode, height: 5, showsLabel: false)
                         .opacity(numbersOpacity)
                 }
                 stateRow
             }
         } else if service.state == .ok, let secondary {
             VStack(alignment: .leading, spacing: 3) {
-                BarSegment(used: secondary.clampedPercent, mode: .used, height: 5, showsLabel: false)
-                Text("\(WindowRanking.shortWindowLabel(secondary.label)) \(Int(secondary.clampedPercent.rounded()))%")
+                BarSegment(used: secondary.clampedPercent, mode: mode, height: 5, showsLabel: false)
+                Text("\(WindowRanking.shortWindowLabel(secondary.label)) \(PercentDisplay.percentText(secondary.clampedPercent, mode: mode))")
                     .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             }
         } else {
@@ -135,12 +136,14 @@ struct OMProviderTile: View {
 
     /// Pure so the wording is unit-tested: VoiceOver can't see that the ring is
     /// dimmed, so the label has to say the numbers are last known.
-    nonisolated static func accessibilityText(for service: ServiceSnapshot, hero: UsageBucket?) -> String {
+    nonisolated static func accessibilityText(
+        for service: ServiceSnapshot, hero: UsageBucket?, mode: PercentDisplay.Mode = .used
+    ) -> String {
         let state = RetainedCopy.chipText(for: service.state)
         guard let hero else { return "\(service.displayName), \(state)" }
-        let used = "\(hero.label) \(Int(hero.clampedPercent.rounded())) percent used"
-        guard service.isRetained else { return "\(service.displayName), \(used)" }
-        return "\(service.displayName), \(used), last known, \(state)"
+        let reading = "\(hero.label) \(PercentDisplay.spoken(hero.clampedPercent, mode: mode))"
+        guard service.isRetained else { return "\(service.displayName), \(reading)" }
+        return "\(service.displayName), \(reading), last known, \(state)"
     }
 }
 
@@ -151,9 +154,9 @@ struct OMProviderTile: View {
     let retained = ServiceSnapshot(id: "antigravity", displayName: "Antigravity", icon: "circle.grid.cross", plan: "Antigravity Pro", accountLabel: nil, buckets: [session, weekly], extraUsage: nil, weekCost: nil, state: .notRunning, stateMessage: "Antigravity isn't running", fetchedAt: Date().addingTimeInterval(-3600))
     let signedOut = ServiceSnapshot(id: "codex", displayName: "Codex", icon: "terminal", plan: nil, accountLabel: nil, buckets: [], extraUsage: nil, weekCost: nil, state: .notSignedIn, stateMessage: "Sign in", fetchedAt: Date())
     return LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-        OMProviderTile(service: ok) {}
-        OMProviderTile(service: retained) {}
-        OMProviderTile(service: signedOut) {}
+        OMProviderTile(service: ok, mode: .used) {}
+        OMProviderTile(service: retained, mode: .used) {}
+        OMProviderTile(service: signedOut, mode: .used) {}
     }
     .padding().frame(width: 328)
 }

@@ -2,6 +2,9 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var state: AppState
+    /// The display mode. Observed here rather than read once, so flipping the switch
+    /// in Settings repaints the popover under the cursor.
+    @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var dashboard = DashboardState.shared
     @ObservedObject private var agents = AgentSessionStore.shared
 
@@ -206,6 +209,7 @@ struct PopoverView: View {
             // that isn't on screen.
             ProviderDetail(
                 service: service,
+                mode: settings.percentMode,
                 burn: dashboard.burn(for: service.id),
                 hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
                 // The offer is about Claude's settings.json, so it belongs on
@@ -231,7 +235,7 @@ struct PopoverView: View {
                 spacing: OMSpacing.s
             ) {
                 ForEach(displayedServices) { service in
-                    OMProviderTile(service: service) {
+                    OMProviderTile(service: service, mode: settings.percentMode) {
                         withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
                     }
                 }
@@ -376,6 +380,7 @@ struct PopoverView: View {
 
 private struct ProviderDetail: View {
     let service: ServiceSnapshot
+    let mode: PercentDisplay.Mode
     let burn: BurnRatePrediction?
     let hooksInstalled: Bool
     var showsHooksPrompt: Bool = false
@@ -475,6 +480,7 @@ private struct ProviderDetail: View {
                 // same call the dashboard's hero makes (`OverviewView.heroCard`).
                 OMHero(
                     hero: hero,
+                    mode: mode,
                     verdict: service.isRetained
                         ? nil
                         : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
@@ -486,15 +492,16 @@ private struct ProviderDetail: View {
             ForEach(sessionRows) { bucket in
                 OMKeyValueRow(
                     label: bucket.label,
-                    value: WindowRanking.sessionRowValue(bucket),
+                    value: WindowRanking.sessionRowValue(bucket, mode: mode),
                     barUsedPercent: bucket.clampedPercent,
+                    barMode: mode,
                     pace: bucket.elapsedFraction(),
                     help: Self.resetTooltip(bucket)
                 )
             }
             if !weeklyForRow.isEmpty {
                 OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
-                OMRingRow(buckets: weeklyForRow)
+                OMRingRow(buckets: weeklyForRow, mode: mode)
                 unusedToggle
             } else if unusedWeekly.count > 1 {
                 unusedToggle
@@ -503,7 +510,8 @@ private struct ProviderDetail: View {
                 OMKeyValueRow(
                     label: extraUsageTitle(plan: service.plan),
                     value: "\(OMCostTile.money(extra.usedCredits)) / \(extra.monthlyLimit.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
-                    barUsedPercent: extra.utilization
+                    barUsedPercent: extra.utilization,
+                    barMode: mode
                 )
             }
             if hero != nil, let week = service.weekCost, week > 0 {
@@ -697,6 +705,7 @@ private struct ServiceStateChip: View {
             stateMessage: nil,
             fetchedAt: Date()
         ),
+        mode: .used,
         burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false),
         hooksInstalled: true,
         onEnableAgents: {}
