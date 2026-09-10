@@ -98,9 +98,15 @@ actor CodexUsageAggregator: CostLogAggregating {
     }
 
     private let rootURL: URL
+    /// `~/.codex/archived_sessions` — the same rollouts, moved out of the dated tree.
+    /// nil when the injected root is not a Codex home (see `sibling(of:named:)`).
+    private let archivedURL: URL?
+    /// `~/.codex/session_index.jsonl`, read in Task 5. Derived the same way.
+    private let indexURL: URL?
     /// The calendar every day boundary is taken in. Injected so a session test can pin
     /// UTC instead of drifting with the machine's time zone.
     private let calendar: Calendar
+    /// Per rollout, keyed by `fileKey(for:)` — the thread uuid, not the path.
     private var fileStates: [String: FileState] = [:]
     /// Turns young enough to feed the rolling today/week/month figures; older ones fold
     /// into `oldDays` and are released.
@@ -127,14 +133,28 @@ actor CodexUsageAggregator: CostLogAggregating {
     }()
 
     /// Injectable log root — the tests point it at a fixture tree instead of the real
-    /// `~/.codex/sessions`.
+    /// `~/.codex/sessions`. The archive and the name index are derived from it rather
+    /// than passed separately, so the app injects one path and a test injects one path.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions", isDirectory: true),
+        archivedURL: URL? = nil,
+        indexURL: URL? = nil,
         calendar: Calendar = .current
     ) {
         self.rootURL = rootURL
+        self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
+        self.indexURL = indexURL ?? Self.sibling(of: rootURL, named: "session_index.jsonl")
         self.calendar = calendar
+    }
+
+    /// `archived_sessions` and `session_index.jsonl` are siblings of the sessions root
+    /// inside `~/.codex`. They are derived only when the root really is named
+    /// `sessions`: a suite that injects its own temp directory then reads neither, and
+    /// stays hermetic without having to pass three paths at every construction site.
+    nonisolated static func sibling(of root: URL, named name: String) -> URL? {
+        guard root.lastPathComponent == "sessions" else { return nil }
+        return root.deletingLastPathComponent().appendingPathComponent(name)
     }
 
     func refresh() async {
@@ -362,24 +382,40 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - File scanning
 
     private func scanAndIngest() {
+        var seenKeys: Set<String> = []
+        for directory in [rootURL, archivedURL].compactMap({ $0 }) {
+            scan(directory, seenKeys: &seenKeys)
+        }
+        // Parse state for a rollout the enumerators no longer return — a deleted
+        // session, a tree that aged out of the mtime window — would otherwise stay
+        // pinned for the life of the process.
+        if fileStates.count > seenKeys.count {
+            fileStates = fileStates.filter { seenKeys.contains($0.key) }
+        }
+    }
+
+    private func scan(_ directory: URL, seenKeys: inout Set<String>) {
         guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
+            at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return }
 
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
-        var seenPaths: Set<String> = []
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            // Untouched for 90 days: too old to reach any figure we show, so it is never
-            // parsed and — by staying out of `seenPaths` — never remembered either.
+            // Untouched for 90 days: too old to reach any figure we show, so it is
+            // never parsed and — by staying out of `seenKeys` — never remembered.
             guard (values?.contentModificationDate ?? .distantPast) >= cutoff else { continue }
             let size = UInt64(values?.fileSize ?? 0)
-            seenPaths.insert(url.path)
+            // The thread the file belongs to, not where it currently sits: archiving a
+            // rollout moves it from the dated tree into `archived_sessions`, and a
+            // path key would make the copy a brand-new file and bill it all over again.
+            let key = Self.fileKey(for: url)
+            seenKeys.insert(key)
 
-            var state = fileStates[url.path] ?? FileState()
+            var state = fileStates[key] ?? FileState()
             if size < state.consumed {
                 // Truncated or rewritten in place — the carried baseline is invalid.
                 state = FileState()
@@ -387,19 +423,29 @@ actor CodexUsageAggregator: CostLogAggregating {
             if size > state.consumed {
                 // One file at a time inside an autorelease pool: a first scan over a
                 // long-lived session tree is a lot of JSON garbage otherwise.
-                autoreleasepool { parseTail(at: url, state: &state) }
+                autoreleasepool { parseTail(at: url, key: key, state: &state) }
             }
-            fileStates[url.path] = state
-        }
-        // A file that aged out of the mtime window, or was deleted, never hits the loop
-        // again — without eviction its parse state stays pinned for the life of the
-        // process.
-        if fileStates.count > seenPaths.count {
-            fileStates = fileStates.filter { seenPaths.contains($0.key) }
+            fileStates[key] = state
         }
     }
 
-    private func parseTail(at url: URL, state: inout FileState) {
+    /// A rollout's identity: the thread uuid its file name ends with
+    /// (`rollout-<timestamp>-<uuid>.jsonl`). Falls back to the path for anything that
+    /// does not look like one, which is then keyed exactly as it used to be.
+    nonisolated static func fileKey(for url: URL) -> String {
+        let name = url.deletingPathExtension().lastPathComponent
+        let tail = String(name.suffix(36))
+        return isUUID(tail) ? tail : url.path
+    }
+
+    private nonisolated static func isUUID(_ s: String) -> Bool {
+        guard s.count == 36 else { return false }
+        let groups = s.split(separator: "-", omittingEmptySubsequences: false)
+        guard groups.map(\.count) == [8, 4, 4, 4, 12] else { return false }
+        return s.allSatisfy { $0 == "-" || $0.isHexDigit }
+    }
+
+    private func parseTail(at url: URL, key: String, state: inout FileState) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
         defer { try? handle.close() }
         do { try handle.seek(toOffset: state.consumed) } catch { return }
@@ -419,7 +465,7 @@ actor CodexUsageAggregator: CostLogAggregating {
                 let i = UnsafeRawPointer(nl) - base
                 if i > lineStart {
                     let line = Data(bytes: base.advanced(by: lineStart), count: i - lineStart)
-                    if let turn = parseLine(line, state: &state, fallbackSlug: fallbackSlug) {
+                    if let turn = parseLine(line, state: &state, fallbackSlug: fallbackSlug, fileKey: key) {
                         turns.append(turn)
                     }
                 }
@@ -437,7 +483,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Folds `session_meta` / `turn_context` into the carried parse state and returns
     /// the turn a `token_count` delta completes, if any — or, at a `turn_context`, the
     /// turn that names deltas which arrived before the file had a model.
-    private func parseLine(_ data: Data, state: inout FileState, fallbackSlug: String) -> Turn? {
+    private func parseLine(
+        _ data: Data, state: inout FileState, fallbackSlug: String, fileKey: String
+    ) -> Turn? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String else { return nil }
 
