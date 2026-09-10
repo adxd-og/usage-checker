@@ -18,6 +18,10 @@ actor StatusFileWriter {
     /// open, and it keeps a runaway list from turning a 2 KB file into a 200 KB one.
     static let maxSessions = 20
 
+    /// The chat list is a glance too. § 5 caps it at fifteen, which is exactly what
+    /// `SessionListRule.pick` returns at its defaults — ten recent plus five expensive.
+    static let maxFileSessions = 15
+
     /// Today's and this week's dollars for one provider, from its own cost log.
     struct CostEntry: Equatable, Sendable {
         var todayCost: Double
@@ -114,8 +118,11 @@ actor StatusFileWriter {
     nonisolated static func build(
         services: [ServiceSnapshot],
         costs: [String: CostEntry],
+        sessions: [String: [SessionSummary]] = [:],
         agents: AgentSummary,
-        now: Date
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
     ) -> StatusSnapshot {
         StatusSnapshot(
             version: StatusSnapshot.currentVersion,
@@ -125,6 +132,7 @@ actor StatusFileWriter {
                 let today = cost?.todayCost
                 let week = cost?.weekCost ?? service.weekCost
                 let hasDollars = today != nil || week != nil
+                let chats = sessionEntries(sessions[service.id] ?? [], calendar: calendar, locale: locale)
                 return StatusSnapshot.Service(
                     id: service.id,
                     name: service.displayName,
@@ -136,13 +144,42 @@ actor StatusFileWriter {
                     todayCost: today,
                     weekCost: week,
                     todayTokens: cost?.todayTokens,
-                    apiEquivalent: hasDollars ? !isPayAsYouGo(service) : nil
+                    apiEquivalent: hasDollars ? !isPayAsYouGo(service) : nil,
+                    sessions: chats.isEmpty ? nil : chats
                 )
             },
             agents: StatusSnapshot.Agents(
                 needsYou: agents.needsYou, working: agents.working, sessions: agents.sessions
             )
         )
+    }
+
+    /// The chats the file carries for one provider: `SessionListRule.pick` — the same
+    /// ranking History shows — capped at `maxFileSessions`, with the title and the
+    /// project already in the words the dashboard uses.
+    nonisolated static func sessionEntries(
+        _ sessions: [SessionSummary],
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> [StatusSnapshot.SessionEntry] {
+        SessionListRule.pick(sessions: sessions)
+            .prefix(maxFileSessions)
+            .map { row in
+                let session = row.session
+                return StatusSnapshot.SessionEntry(
+                    id: session.id,
+                    title: SessionCopy.rowTitle(session, calendar: calendar, locale: locale),
+                    project: SessionCopy.projectName(
+                        providerID: session.providerID, projectSlug: session.projectSlug
+                    ),
+                    lastAt: session.lastAt,
+                    turns: session.turns,
+                    tokens: session.tokens.total,
+                    cost: session.tokens.cost?.total,
+                    agents: session.agents.count,
+                    origin: session.origin
+                )
+            }
     }
 
     /// The reported windows, plus the spend limit as one — the popover, the widget and

@@ -38,6 +38,10 @@ final class AppState: ObservableObject {
     private var lastCosts: [String: StatusFileWriter.CostEntry] = [:] {
         didSet { todayCosts = lastCosts.mapValues(\.todayCost) }
     }
+    /// The last chats `StatusCosts` produced, kept for exactly the same reason as
+    /// `lastCosts`: an agent starting a tool re-publishes the file, and it did not
+    /// change which chats ran this week.
+    private var lastSessions: [String: [SessionSummary]] = [:]
     /// Today's dollars per service, mirrored out of `lastCosts` so the All-tab cost
     /// tile can lead with today rather than with the week. A service with no local
     /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
@@ -328,11 +332,12 @@ final class AppState: ObservableObject {
     private func publishStatusFileAfterPoll() {
         let ids = Set(snapshot.services.map(\.id))
         Task { [weak self] in
-            let costs = await StatusCosts.gather(serviceIDs: ids)
+            let gathered = await StatusCosts.gather(serviceIDs: ids)
             await MainActor.run {
                 guard let self else { return }
-                self.lastCosts = costs
-                self.publishStatusFile(costs: costs)
+                self.lastCosts = gathered.costs
+                self.lastSessions = gathered.sessions
+                self.publishStatusFile(costs: gathered.costs, sessions: gathered.sessions)
             }
         }
     }
@@ -344,7 +349,9 @@ final class AppState: ObservableObject {
         agentObserver = AgentSessionStore.shared.$sessions
             .sink { _ in
                 MainActor.assumeIsolated {
-                    AppState.shared.publishStatusFile(costs: AppState.shared.lastCosts)
+                    AppState.shared.publishStatusFile(
+                        costs: AppState.shared.lastCosts, sessions: AppState.shared.lastSessions
+                    )
                 }
             }
     }
@@ -352,10 +359,14 @@ final class AppState: ObservableObject {
     /// Writes the file, or schedules one write for when the throttle allows it — the
     /// last change has to reach disk, or a status line spends the rest of the day
     /// showing a flag for an agent that stopped waiting an hour ago.
-    private func publishStatusFile(costs: [String: StatusFileWriter.CostEntry]) {
+    private func publishStatusFile(
+        costs: [String: StatusFileWriter.CostEntry],
+        sessions: [String: [SessionSummary]]
+    ) {
         let built = StatusFileWriter.build(
             services: snapshot.services,
             costs: costs,
+            sessions: sessions,
             agents: StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
             now: Date()
         )
@@ -374,7 +385,7 @@ final class AppState: ObservableObject {
             await MainActor.run {
                 guard let self else { return }
                 self.statusWriteScheduled = false
-                self.publishStatusFile(costs: self.lastCosts)
+                self.publishStatusFile(costs: self.lastCosts, sessions: self.lastSessions)
             }
         }
     }

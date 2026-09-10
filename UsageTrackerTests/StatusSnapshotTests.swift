@@ -40,7 +40,14 @@ final class StatusSnapshotTests: XCTestCase {
                     todayCost: 4.2,
                     weekCost: 31.7,
                     todayTokens: 1_234_567,
-                    apiEquivalent: true
+                    apiEquivalent: true,
+                    sessions: [
+                        StatusSnapshot.SessionEntry(
+                            id: "s1", title: "Интеграция Blume", project: "Usage tracker",
+                            lastAt: now.addingTimeInterval(-3 * 3600), turns: 356,
+                            tokens: 41_200_000, cost: 58.10, agents: 3, origin: nil
+                        ),
+                    ]
                 ),
             ],
             agents: StatusSnapshot.Agents(
@@ -70,6 +77,7 @@ final class StatusSnapshotTests: XCTestCase {
         XCTAssertTrue(text.contains("\"updatedAt\" : \"2026-09-06T11:20:00Z\""), text)
         XCTAssertFalse(text.contains("retainedAt"), "a live service stamps nothing")
         XCTAssertFalse(text.contains("\\/"), "escaped slashes make the file unreadable")
+        XCTAssertFalse(text.contains("\"origin\""), "a Claude chat stamps no originator")
     }
 
     func testAFileFromAnotherVersionIsNoFileAtAll() throws {

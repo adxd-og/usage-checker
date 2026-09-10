@@ -23,7 +23,7 @@ enum MCPServer {
     /// back unchanged, anything else comes back as one of ours.
     static let supportedProtocolVersions = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
 
-    static let instructions = "Ask get_usage before starting long or expensive work: it says how full each rate-limit window is and when it resets. get_agents says whether another session is waiting for the user."
+    static let instructions = "Ask get_usage before starting long or expensive work: it says how full each rate-limit window is and when it resets. get_agents says whether another session is waiting for the user. get_sessions lists the recent chats with their token and cost totals."
 
     /// Neither tool takes an argument. `additionalProperties: false` is what stops a
     /// model from inventing one and then explaining the resulting error to the user.
@@ -33,6 +33,29 @@ enum MCPServer {
         [
             "type": "object",
             "properties": [String: Any](),
+            "additionalProperties": false,
+        ]
+    }
+
+    /// `get_sessions`' two optional arguments. Both are constrained in the schema and
+    /// clamped again in `MCPSummary.sessionLimit`: a schema is documentation to a model,
+    /// not a guarantee to a server.
+    static var sessionsInputSchema: [String: Any] {
+        [
+            "type": "object",
+            "properties": [
+                "provider": [
+                    "type": "string",
+                    "enum": ["claude", "codex"],
+                    "description": "Only this provider's chats: claude or codex. Omit for both.",
+                ],
+                "limit": [
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 15,
+                    "description": "How many chats to list. Default 10, maximum 15.",
+                ],
+            ],
             "additionalProperties": false,
         ]
     }
@@ -50,6 +73,12 @@ enum MCPServer {
                 "title": "Agent sessions right now",
                 "description": "The Claude Code and Codex sessions Omelette can see: how many need a decision from the user, how many are working, and what each one is doing.",
                 "inputSchema": emptyInputSchema,
+            ],
+            [
+                "name": "get_sessions",
+                "title": "Recent chats",
+                "description": "The recent Claude Code and Codex chats Omelette can see, newest first: what each one is called, the project it ran in, when it was last active, its turns, tokens and cost, and how many sub-agents it launched.",
+                "inputSchema": sessionsInputSchema,
             ],
         ]
     }
@@ -148,6 +177,17 @@ enum MCPServer {
                 text: MCPSummary.agents(snapshot: snapshot, now: now),
                 data: agentsData(snapshot)
             ))
+        case "get_sessions":
+            guard let snapshot else { return result(id: id, notRunningResult) }
+            let arguments = params?["arguments"] as? [String: Any]
+            let provider = arguments?["provider"] as? String
+            let limit = MCPSummary.sessionLimit(arguments?["limit"])
+            return result(id: id, toolResult(
+                text: MCPSummary.sessions(
+                    snapshot: snapshot, provider: provider, limit: limit, now: now
+                ),
+                data: sessionsData(snapshot, provider: provider, limit: limit)
+            ))
         default:
             return error(id: id, code: -32602, message: "Unknown tool: \(name)")
         }
@@ -194,6 +234,30 @@ enum MCPServer {
         return [
             "updatedAt": object["updatedAt"] ?? NSNull(),
             "agents": object["agents"] ?? [String: Any](),
+        ]
+    }
+
+    /// The same chats the paragraph names, and nothing else: windows, dollars and plan
+    /// are `get_usage`'s answer, and repeating them here would have a model quote the
+    /// wrong tool's numbers. A provider left with no chats after the cut is dropped
+    /// rather than shown empty.
+    static func sessionsData(
+        _ snapshot: StatusSnapshot, provider: String?, limit: Int
+    ) -> [String: Any] {
+        let object = jsonObject(snapshot)
+        let kept = Set(MCPSummary.sessionRows(snapshot, provider: provider, limit: limit)
+            .map { "\($0.service.id)\u{0}\($0.session.id)" })
+        let services = ((object["services"] as? [[String: Any]]) ?? []).compactMap { service -> [String: Any]? in
+            let serviceID = (service["id"] as? String) ?? ""
+            let sessions = ((service["sessions"] as? [[String: Any]]) ?? []).filter {
+                kept.contains("\(serviceID)\u{0}\(($0["id"] as? String) ?? "")")
+            }
+            guard !sessions.isEmpty else { return nil }
+            return ["id": serviceID, "name": service["name"] ?? serviceID, "sessions": sessions]
+        }
+        return [
+            "updatedAt": object["updatedAt"] ?? NSNull(),
+            "services": services,
         ]
     }
 

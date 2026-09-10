@@ -166,13 +166,3 @@ enum TokenCategory: String, CaseIterable, Identifiable, Sendable {
         }
     }
 }
-
-/// Token counts as the UI prints them ("999", "12.3k", "1.5M"). One implementation,
-/// because two views had drifted copies of it.
-enum TokenFormat {
-    static func formatTokens(_ n: Int) -> String {
-        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
-        if n >= 1_000 { return String(format: "%.1fk", Double(n) / 1_000) }
-        return "\(n)"
-    }
-}

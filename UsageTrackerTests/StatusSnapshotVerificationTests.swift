@@ -4,8 +4,8 @@ import XCTest
 /// Independent verification of `StatusSnapshot` / `StatusFile`, derived from the
 /// spec's freshness and versioning rules, not from `StatusSnapshotTests`. Focus: the
 /// exact freshness boundary (the existing suite checks 599/601; this pins the boundary
-/// value itself), an empty-services round trip, and a `version: 2` file (the spec's own
-/// example of "future") rather than an arbitrary 99.
+/// value itself), an empty-services round trip, and the very next version up (3, since
+/// `currentVersion` became 2 with the chat list) rather than an arbitrary 99.
 final class StatusSnapshotVerificationTests: XCTestCase {
     private var directory: URL!
     private let now = Date(timeIntervalSince1970: 1_788_693_600)
@@ -51,13 +51,13 @@ final class StatusSnapshotVerificationTests: XCTestCase {
         XCTAssertEqual(loaded.agents.needsYou, 2)
     }
 
-    /// The spec's own worked example of a rejected file is `version: 2` (this build's
-    /// `currentVersion` is 1) — not an arbitrary large number. Pin that exact value.
-    func testVersionTwoIsRejectedEvenThoughItIsOnlyOneAhead() throws {
-        XCTAssertEqual(StatusSnapshot.currentVersion, 1, "this test's premise: 2 is the very next version")
+    /// The next version this build does not know is 3 (`currentVersion` is 2 since the
+    /// chat list arrived) — not an arbitrary large number. Pin that exact value.
+    func testTheNextVersionUpIsRejectedEvenThoughItIsOnlyOneAhead() throws {
+        XCTAssertEqual(StatusSnapshot.currentVersion, 2, "this test's premise: 3 is the very next version")
         let url = directory.appendingPathComponent("status.json")
         var future = snapshot()
-        future.version = 2
+        future.version = 3
         try StatusFile.encoder.encode(future).write(to: url)
 
         XCTAssertNil(StatusFile.load(from: url), "one version ahead is still a file this build cannot trust")
@@ -69,7 +69,7 @@ final class StatusSnapshotVerificationTests: XCTestCase {
     func testReadReturnsRawBytesEvenForAnUnknownVersion() throws {
         let url = directory.appendingPathComponent("status.json")
         var future = snapshot()
-        future.version = 2
+        future.version = 3
         let data = try StatusFile.encoder.encode(future)
         try data.write(to: url)
 
