@@ -216,4 +216,31 @@ final class CodexRealRolloutTests: XCTestCase {
         )
         XCTAssertEqual(breakdown.weekCost, 0.18324675, accuracy: 1e-9)
     }
+
+    func testARelaunchRereadsTheRolloutsAndBillsEachResponseExactlyOnce() async throws {
+        // § 3 asks for "cost cache version bumped". This aggregator has no cache to
+        // version: it holds its parse state in memory only, so a relaunch re-reads the
+        // tree under whatever rule the build carries and can never serve a figure
+        // computed under an older one. The two instances below are that relaunch.
+        let first = await loaded()
+        let firstSessions = await first.sessions(from: at(3 * 24 * 3600), to: now)
+        let firstBreakdown = await first.breakdown()
+
+        let second = tree.aggregator()
+        await second.refresh()
+        let secondSessions = await second.sessions(from: at(3 * 24 * 3600), to: now)
+        let secondBreakdown = await second.breakdown()
+
+        XCTAssertEqual(firstSessions, secondSessions, "a relaunch reads the same chats")
+        XCTAssertEqual(firstBreakdown.todayCost, secondBreakdown.todayCost, accuracy: 1e-12)
+        XCTAssertEqual(firstBreakdown.todayTurns, secondBreakdown.todayTurns)
+
+        // And a second poll on a live instance changes nothing: the dedupe is per file
+        // and per response id, and the tail offset has not moved.
+        await first.refresh()
+        let repolled = await first.sessions(from: at(3 * 24 * 3600), to: now)
+        XCTAssertEqual(repolled, firstSessions)
+        let repolledBreakdown = await first.breakdown()
+        XCTAssertEqual(repolledBreakdown.todayTurns, firstBreakdown.todayTurns)
+    }
 }

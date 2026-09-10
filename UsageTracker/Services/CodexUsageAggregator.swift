@@ -19,6 +19,13 @@ import Foundation
 /// no records is billed from the counter's deltas exactly as before, and the decision is
 /// per file, not per CLI version: some 0.153 rollouts write only `token_count`.
 ///
+/// Nothing here is persisted. Unlike `JSONLAggregator`, which keeps a versioned
+/// `cost-cache-claude-v1.json` and has to discard it when the billing rule changes,
+/// this aggregator rebuilds its parse state, its turns and its session aggregates from
+/// the rollout tree on every launch — the 90-day mtime window keeps that cheap — so a
+/// rule change takes effect the first time the new build runs and no stale figure can
+/// outlive it.
+///
 /// Codex's `input_tokens` *includes* both the cached input and the tokens written to
 /// cache, so fresh input is OpenAI's `ordinary_input_tokens`: `input − cached −
 /// cache_write`. Each of the three bills at its own rate — cache writes at 1.25× the
