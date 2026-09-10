@@ -127,6 +127,12 @@ struct SettingsView: View {
 
             Section("Percentages") {
                 Toggle("Show remaining instead of used", isOn: $settings.showsRemaining)
+                    // The app's own views observe the store and repaint on their own;
+                    // the widget extension and the omelette CLI read files, and those
+                    // have to be rewritten now rather than at the next poll.
+                    .onChange(of: settings.showsRemaining) { _, _ in
+                        AppState.shared.republishDisplayMode()
+                    }
                 Text("Rings, bars and numbers count down from 100% instead of up from 0% — in the menu bar, the popover, the dashboard, the widgets and the omelette command. Colours and alerts keep following how much you have used, so red still means nearly out.")
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)

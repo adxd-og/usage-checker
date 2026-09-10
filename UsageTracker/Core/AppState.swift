@@ -342,6 +342,25 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// The display mode changed. Not one number moved, but two files on disk carry
+    /// the mode with them — the widget's App Group snapshot and `status.json` — and
+    /// a desktop widget that keeps counting up until the next poll (five minutes, on
+    /// the slowest refresh setting) reads as a switch that does not work.
+    ///
+    /// The costs and chats are reused rather than re-gathered: flipping a display
+    /// preference did not change what was spent today, and re-walking two log trees
+    /// on a toggle would be a second of file I/O for no new information.
+    func republishDisplayMode() {
+        if snapshot.hasAnyData {
+            WidgetBridge.publish(
+                snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
+            )
+        }
+        // The writer's own throttle may swallow this one; it schedules a trailing
+        // write when it does, so the last state always reaches disk.
+        publishStatusFile(costs: lastCosts, sessions: lastSessions)
+    }
+
     /// The agent list changes far more often than the poll does, and the CLI's flag
     /// count comes from it. `@Published` sends on the main actor because the store is
     /// `@MainActor`, which is what makes `assumeIsolated` true here rather than hopeful.
