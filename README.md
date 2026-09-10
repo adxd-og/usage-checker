@@ -263,8 +263,8 @@ Next: [Settings](#settings).
 - **General**: refresh interval, menu bar (percentage mode, per-provider
   visibility), the global peek shortcut, launch at login, provider toggles
   with Forget last known numbers, Command line (PATH, status line, MCP
-  server, both installers above), and, coming in 2.5.0, a "Show remaining
-  instead of used" switch that turns every ring, bar and percent around
+  server, both installers above), and a "Show remaining instead of used"
+  switch that turns every ring, bar and percent around
 - **Notifications**: threshold %, session timing, quiet hours, daily summary
 - **Agents**: hooks status and install for Claude Code and Codex (with the
   Codex trust line), the Codex `notify` line, alert toggles, the Allow/Deny
