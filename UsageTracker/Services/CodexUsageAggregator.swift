@@ -175,6 +175,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// The rolling figures reach back 30 days; keep turns one day longer so the month
     /// boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
+    /// Chats are kept three times longer than turns: the History list reaches back a
+    /// quarter and holds one small aggregate per chat, not one record per turn.
+    private let sessionRetention: TimeInterval = 92 * 24 * 3600
     private var dayCache: (start: Date, next: Date)?
 
     private struct DayAgg {
@@ -567,6 +570,10 @@ actor CodexUsageAggregator: CostLogAggregating {
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
+        }
+        let sessionCutoff = Date().addingTimeInterval(-sessionRetention)
+        if sessionAggs.contains(where: { $0.value.lastAt < sessionCutoff }) {
+            sessionAggs = sessionAggs.filter { $0.value.lastAt >= sessionCutoff }
         }
     }
 
