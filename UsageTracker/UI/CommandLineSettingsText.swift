@@ -10,7 +10,7 @@ enum CommandLineSettingsText {
 
     static let pathCaption = "Add that line to ~/.zshrc and open a new terminal; `omelette status` then works from anywhere. Without it, call the tool by the full path above. Omelette keeps the link pointing at itself, so moving or updating the app changes nothing."
 
-    static let statusLineCaption = "Puts Omelette's numbers in Claude Code's status bar, after the model and how full its context is: the session window, when it resets, today's cost, and a flag when an agent is waiting for you. Restart Claude Code, or start a new session, to see it. Or add it yourself: a `statusLine` entry in ~/.claude/settings.json whose command is the path above followed by `statusline`."
+    static let statusLineCaption = #"Puts Omelette's numbers in Claude Code's status bar, after the model and how full its context is: the session window, when it resets, today's cost, and a flag when an agent is waiting for you. Restart Claude Code, or start a new session, to see it. Or add it yourself: a `statusLine` entry in ~/.claude/settings.json whose command is the path above followed by `statusline`, with "refreshInterval": 60 so the countdown keeps ticking while the session is idle."#
 
     static let statusLinePreviewTitle = "What will be written"
 
@@ -19,6 +19,35 @@ enum CommandLineSettingsText {
     static let mcpClaudeCaption = "Adds `omelette` to `mcpServers` in ~/.claude.json — the file Claude Code keeps its own state in, so Omelette rewrites it with sorted keys and keeps the original as .claude.json.omelette-backup. Restart Claude Code to pick it up."
 
     static let mcpCodexCaption = "Adds an `[mcp_servers.omelette]` table at the end of ~/.codex/config.toml. Other tables are left exactly as they are. Restart Codex to pick it up."
+
+    /// The buttons on an installer row, decided here rather than in the view so the
+    /// one state that matters can be tested: an entry that is ours but is not what
+    /// this build writes — an older home, or a missing `refreshInterval` — keeps the
+    /// write action, worded as an update, with Disable beside it. `nil` means there
+    /// is nothing to write.
+    static func installButtonTitle(_ status: HookInstallStatus) -> String? {
+        switch status {
+        case .notInstalled, .conflict: return "Enable"
+        case .outdated: return "Update"
+        case .installed: return nil
+        }
+    }
+
+    /// A conflict shows the button greyed rather than hiding it: the row has to say
+    /// that writing is the thing that is unavailable.
+    static func installButtonIsEnabled(_ status: HookInstallStatus) -> Bool {
+        if case .conflict = status { return false }
+        return true
+    }
+
+    static func showsDisableButton(_ status: HookInstallStatus) -> Bool {
+        switch status {
+        case .installed, .outdated: return true
+        case .notInstalled, .conflict: return false
+        }
+    }
+
+    static let disableButtonTitle = "Disable"
 
     /// A status line someone else owns. Shown with their command so the user can decide
     /// what to do about it — Omelette never overwrites it.

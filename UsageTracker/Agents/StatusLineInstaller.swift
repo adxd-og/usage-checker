@@ -16,6 +16,13 @@ enum StatusLineInstaller {
 
     static let subcommand = "statusline"
 
+    /// Seconds between re-runs of the status line command. Claude Code re-runs it on
+    /// events — a new assistant message, `/compact`, a mode change — with a 300 ms
+    /// debounce, so without a timer "resets in 4h 54m" sits there while a session
+    /// idles. 60 is one poll of ours and the countdown is minute-granular; anything
+    /// shorter spends a process to print the line it just printed.
+    static let refreshInterval = 60
+
     static let unreadableReason = "settings.json has a statusLine Omelette can't read — fix or move it and try again."
 
     /// A Claude Code `statusLine.command` is a shell command line, not an argv path,
@@ -32,13 +39,31 @@ enum StatusLineInstaller {
         command.contains(ourCommandMarker) && command.hasSuffix(" " + subcommand)
     }
 
-    static func template(cliPath: String) -> [String: Any] {
-        ["type": "command", "command": command(cliPath: cliPath)]
+    /// Exactly the object the Enable and the Update button write. `commandPath` is the
+    /// path to the `omelette` CLI — the same value the rest of this file calls
+    /// `cliPath`; the shell quoting is this function's business, not the caller's.
+    /// `refreshInterval` is what keeps the countdown moving between Claude Code's own
+    /// events; it sits beside `type` and `command`, and the file's key order is
+    /// whatever `SettingsFile`'s sorted-key writer gives it.
+    static func desiredEntry(commandPath: String) -> [String: Any] {
+        [
+            "type": "command",
+            "command": command(cliPath: commandPath),
+            "refreshInterval": refreshInterval,
+        ]
+    }
+
+    /// Whether an entry that is already ours — `isOurs` decides that, this does not —
+    /// is missing the refresh interval or carries one that is not ours. The single
+    /// clause the 2.6.0 update is about; everything else about the object is compared
+    /// by `status`.
+    static func needsUpdate(existing: [String: Any]) -> Bool {
+        (existing["refreshInterval"] as? Int) != refreshInterval
     }
 
     /// Exactly what the Enable button will write, for the Settings preview.
     static func previewJSON(cliPath: String) -> String {
-        SettingsFile.prettyJSON(["statusLine": template(cliPath: cliPath)]) ?? "{}"
+        SettingsFile.prettyJSON(["statusLine": desiredEntry(commandPath: cliPath)]) ?? "{}"
     }
 
     static func status(settingsURL: URL, cliPath: String) -> HookInstallStatus {
@@ -50,7 +75,11 @@ enum StatusLineInstaller {
             return .conflict(unreadableReason)
         }
         guard isOurs(existing) else { return .conflict(existing) }
-        return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(template(cliPath: cliPath))
+        // Two ways to be ours and still not be what this build writes — a missing or
+        // foreign refresh interval, and a command pointing at an older home. Both are
+        // `.outdated`, which is the row that offers Update.
+        if needsUpdate(existing: object) { return .outdated }
+        return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(desiredEntry(commandPath: cliPath))
             ? .installed : .outdated
     }
 
@@ -65,7 +94,7 @@ enum StatusLineInstaller {
             }
             guard isOurs(command) else { throw Error.conflict(command) }
         }
-        file["statusLine"] = template(cliPath: cliPath)
+        file["statusLine"] = desiredEntry(commandPath: cliPath)
         try SettingsFile.writeJSON(file, to: settingsURL)
     }
 

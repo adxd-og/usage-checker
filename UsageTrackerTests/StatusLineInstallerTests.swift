@@ -72,23 +72,84 @@ final class StatusLineInstallerTests: XCTestCase {
         XCTAssertEqual(String(decoding: output, as: UTF8.self), weird + " statusline")
     }
 
+    // MARK: - The entry
+
+    /// Claude Code re-runs the command on events — a new assistant message,
+    /// /compact, a mode change — and nothing else, so an idle session shows a
+    /// countdown that stopped. 60 s is one poll of ours, and the countdown is
+    /// minute-granular: anything shorter spends a process to reprint the same line.
+    func testTheRefreshIntervalIsSixtySeconds() {
+        XCTAssertEqual(StatusLineInstaller.refreshInterval, 60)
+    }
+
+    /// The entry an older build wrote: our command, no interval. This is the whole
+    /// question the Update button exists to answer.
+    func testAnEntryWithoutARefreshIntervalNeedsAnUpdate() {
+        let old: [String: Any] = [
+            "type": "command",
+            "command": StatusLineInstaller.command(cliPath: cli),
+        ]
+        XCTAssertTrue(StatusLineInstaller.needsUpdate(existing: old))
+    }
+
+    func testAnEntryCarryingOurIntervalNeedsNothing() {
+        let current: [String: Any] = [
+            "type": "command",
+            "command": StatusLineInstaller.command(cliPath: cli),
+            "refreshInterval": 60,
+        ]
+        XCTAssertFalse(StatusLineInstaller.needsUpdate(existing: current))
+    }
+
+    /// A number someone dialled to their own taste, a string, a boolean, a null:
+    /// none of them is the interval this build writes, so all of them are an update.
+    func testAnIntervalThatIsNotOursNeedsAnUpdate() {
+        let values: [Any] = [5, 300, "60", true, NSNull()]
+        for value in values {
+            let entry: [String: Any] = [
+                "type": "command",
+                "command": StatusLineInstaller.command(cliPath: cli),
+                "refreshInterval": value,
+            ]
+            XCTAssertTrue(StatusLineInstaller.needsUpdate(existing: entry), "\(value)")
+        }
+    }
+
+    /// `desiredEntry` is the only answer to "what do we write": the preview, the
+    /// install and the status comparison all read it, so a key added here reaches
+    /// all three at once.
+    func testTheDesiredEntryIsATypeAndTheQuotedCommand() {
+        let entry = StatusLineInstaller.desiredEntry(commandPath: cli)
+
+        XCTAssertEqual(entry["type"] as? String, "command")
+        XCTAssertEqual(entry["command"] as? String, StatusLineInstaller.command(cliPath: cli))
+    }
+
     func testThePreviewIsTheJSONWeActuallyWrite() throws {
         let preview = StatusLineInstaller.previewJSON(cliPath: cli)
         let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(preview.utf8)) as? [String: Any])
+        let entry = try XCTUnwrap(parsed["statusLine"] as? [String: Any])
 
-        XCTAssertNotNil(parsed["statusLine"] as? [String: Any])
+        XCTAssertEqual(entry["type"] as? String, "command")
+        XCTAssertEqual(entry["command"] as? String, StatusLineInstaller.command(cliPath: cli))
+        XCTAssertEqual(entry["refreshInterval"] as? Int, 60)
         XCTAssertTrue(preview.contains(cli), "the preview shows the real path, unescaped")
         XCTAssertFalse(preview.contains("\\/"))
+        // "What will be written" is a promise about characters, not about keys:
+        // Foundation's pretty printer puts spaces around the colon.
+        XCTAssertTrue(preview.contains("\"refreshInterval\" : 60"), preview)
     }
 
     // MARK: - Install
 
-    func testInstallCreatesAMissingFile() throws {
+    func testInstallCreatesAMissingFileWithTheThreeKeys() throws {
         try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cli)
 
         let line = try statusLine(at: settingsURL)
+        XCTAssertEqual(line.keys.sorted(), ["command", "refreshInterval", "type"])
         XCTAssertEqual(line["type"] as? String, "command")
         XCTAssertEqual(line["command"] as? String, StatusLineInstaller.command(cliPath: cli))
+        XCTAssertEqual(line["refreshInterval"] as? Int, 60)
         XCTAssertEqual(status, .installed)
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: SettingsFile.backupURL(for: settingsURL).path),
@@ -123,6 +184,80 @@ final class StatusLineInstallerTests: XCTestCase {
 
         try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cli)
         XCTAssertEqual(status, .installed)
+    }
+
+    // MARK: - Update
+
+    /// The entry 2.5.1 wrote: our command, no interval. The row has to offer an
+    /// Update, and taking it may not disturb anything else in the file — not the
+    /// keys Claude Code owns, not a hooks block belonging to another tool, and not
+    /// the backup taken the first time we touched the file.
+    func testAnEntryFromBeforeTheRefreshIntervalIsUpdatedInPlace() throws {
+        let before = #"""
+        {"model":"opus","hooks":{"Stop":[{"matcher":"","hooks":[{"type":"command","command":"'/opt/theirs/notify'"}]}]},"statusLine":{"type":"command","command":"'/Users/tester/Library/Application Support/UsageTracker/bin/omelette' statusline"}}
+        """#
+        try write(before, to: settingsURL)
+        let hooksBefore = SettingsFile.canonicalJSON(try XCTUnwrap(json(at: settingsURL)["hooks"] as? [String: Any]))
+
+        XCTAssertTrue(StatusLineInstaller.needsUpdate(existing: try statusLine(at: settingsURL)))
+        XCTAssertEqual(status, .outdated, "ours, but written before the interval existed")
+
+        try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cli)
+
+        XCTAssertEqual(status, .installed)
+        XCTAssertEqual(
+            SettingsFile.canonicalJSON(try statusLine(at: settingsURL)),
+            SettingsFile.canonicalJSON(StatusLineInstaller.desiredEntry(commandPath: cli))
+        )
+        let file = try json(at: settingsURL)
+        XCTAssertEqual(file["model"] as? String, "opus", "a key Claude Code owns")
+        XCTAssertEqual(
+            SettingsFile.canonicalJSON(try XCTUnwrap(file["hooks"] as? [String: Any])),
+            hooksBefore,
+            "someone else's hooks block is not ours to rewrite"
+        )
+        XCTAssertEqual(
+            String(decoding: try Data(contentsOf: SettingsFile.backupURL(for: settingsURL)), as: UTF8.self),
+            before,
+            "the backup is the file as it was before the update"
+        )
+    }
+
+    /// An interval someone dialled to their own taste is still not the one this build
+    /// writes, so the row offers an Update rather than pretending to be current —
+    /// and Disable sits next to it for anyone who meant it.
+    func testAnIntervalOfTheirOwnIsAnUpdateNotAConflict() throws {
+        try write(#"{"statusLine":{"type":"command","command":"'/Users/tester/Library/Application Support/UsageTracker/bin/omelette' statusline","refreshInterval":5}}"#, to: settingsURL)
+
+        XCTAssertEqual(status, .outdated)
+
+        try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cli)
+
+        XCTAssertEqual(try statusLine(at: settingsURL)["refreshInterval"] as? Int, 60)
+        XCTAssertEqual(status, .installed)
+    }
+
+    /// A hand-written 60.0 is 60: JSONSerialization hands back an NSNumber and the
+    /// double bridges. Nobody should see an Update button over an entry that already
+    /// does the right thing.
+    func testAnIntervalWrittenAsADecimalIsStillOurs() throws {
+        try write(#"{"statusLine":{"type":"command","command":"'/Users/tester/Library/Application Support/UsageTracker/bin/omelette' statusline","refreshInterval":60.0}}"#, to: settingsURL)
+
+        XCTAssertFalse(StatusLineInstaller.needsUpdate(existing: try statusLine(at: settingsURL)))
+        XCTAssertEqual(status, .installed)
+    }
+
+    /// The section is called "What will be written". It has to be true of the bytes,
+    /// not only of the keys.
+    func testThePreviewIsTheObjectTheInstallLeavesBehind() throws {
+        try StatusLineInstaller.install(settingsURL: settingsURL, cliPath: cli)
+
+        let written = try statusLine(at: settingsURL)
+        let previewed = try XCTUnwrap(
+            (try JSONSerialization.jsonObject(with: Data(StatusLineInstaller.previewJSON(cliPath: cli).utf8))
+                as? [String: Any])?["statusLine"] as? [String: Any]
+        )
+        XCTAssertEqual(SettingsFile.canonicalJSON(written), SettingsFile.canonicalJSON(previewed))
     }
 
     // MARK: - Conflict
