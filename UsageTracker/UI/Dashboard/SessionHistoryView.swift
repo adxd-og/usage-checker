@@ -86,7 +86,23 @@ struct SessionHistoryView: View {
             }
     }
 
+    /// The gutters `sessionList` pads itself with, taken off the tab's width before the
+    /// list decides how to draw.
+    private static let listGutters: CGFloat = 48
+
     var body: some View {
+        // Measured here, once, off the width the tab is given rather than off the width
+        // a row's content grew to: the Sessions list, its header and every one of its
+        // rows then draw to the same decision.
+        GeometryReader { proxy in
+            let isWide = SessionListRule.isWide(
+                availableWidth: proxy.size.width - Self.listGutters
+            )
+            scrollBody(isWide: isWide)
+        }
+    }
+
+    private func scrollBody(isWide: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
@@ -105,7 +121,7 @@ struct SessionHistoryView: View {
                 if showsQuota {
                     quotaContent
                 } else if mode == .sessions {
-                    sessionsContent
+                    sessionsContent(isWide: isWide)
                 } else if data.isEmpty {
                     placeholder
                 } else if mode == .tokens {
@@ -529,7 +545,7 @@ struct SessionHistoryView: View {
     /// The chart above the list is the cost chart, unchanged: the list answers "which
     /// chat", and the bars are the context that makes the answer mean something.
     @ViewBuilder
-    private var sessionsContent: some View {
+    private func sessionsContent(isWide: Bool) -> some View {
         if !data.isEmpty {
             chart
             Divider().padding(.horizontal, 24)
@@ -537,20 +553,21 @@ struct SessionHistoryView: View {
         if dashboard.sessions.isEmpty {
             sessionsPlaceholder
         } else {
-            sessionList
+            sessionList(isWide: isWide)
         }
     }
 
-    private var sessionList: some View {
+    private func sessionList(isWide: Bool) -> some View {
         let rows = sessionRows
         return VStack(alignment: .leading, spacing: 0) {
             sessionListControls(shown: rows.count)
             // The empty list has its own sentence; a header over nothing is furniture.
-            if !rows.isEmpty { sessionColumnHeader }
+            if !rows.isEmpty { sessionColumnHeader(isWide: isWide) }
             ForEach(rows) { row in
                 SessionRowView(
                     row: row,
                     now: Date(),
+                    isWide: isWide,
                     isExpanded: expandedSessionIDs.contains(row.id),
                     toggle: { toggleSession(row.id) }
                 )
@@ -562,24 +579,27 @@ struct SessionHistoryView: View {
 
     /// Names the figures on a chat row, the way the by-day tables above name theirs.
     /// The widths are `SessionRowView.wideSummary`'s, so a title sits over its own
-    /// column; the fallback is the narrow row, which keeps only the chat and its cost
-    /// on the first line and folds the rest into a caption.
-    private var sessionColumnHeader: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: OMSpacing.s) {
-                Color.clear.frame(width: 16, height: 1)  // the row's chevron
-                Text(sessionColumnTitle(0)).frame(minWidth: 160, alignment: .leading)
-                Spacer(minLength: OMSpacing.s)
-                Text(sessionColumnTitle(1)).frame(width: 104, alignment: .trailing)
-                Text(sessionColumnTitle(2)).frame(width: 64, alignment: .trailing)
-                Text(sessionColumnTitle(3)).frame(width: 84, alignment: .trailing)
-                Text(sessionColumnTitle(4)).frame(width: 76, alignment: .trailing)
-            }
-            HStack(spacing: OMSpacing.s) {
-                Color.clear.frame(width: 16, height: 1)
-                Text(sessionColumnTitle(0))
-                Spacer(minLength: OMSpacing.s)
-                Text(sessionColumnTitle(4))
+    /// column. Which of the two it draws is not its own decision — the list measured
+    /// that once, for the header and every row alike.
+    private func sessionColumnHeader(isWide: Bool) -> some View {
+        Group {
+            if isWide {
+                HStack(spacing: OMSpacing.s) {
+                    Color.clear.frame(width: 16, height: 1)  // the row's chevron
+                    Text(sessionColumnTitle(0)).frame(minWidth: 160, alignment: .leading)
+                    Spacer(minLength: OMSpacing.s)
+                    Text(sessionColumnTitle(1)).frame(width: 104, alignment: .trailing)
+                    Text(sessionColumnTitle(2)).frame(width: 64, alignment: .trailing)
+                    Text(sessionColumnTitle(3)).frame(width: 84, alignment: .trailing)
+                    Text(sessionColumnTitle(4)).frame(width: 76, alignment: .trailing)
+                }
+            } else {
+                HStack(spacing: OMSpacing.s) {
+                    Color.clear.frame(width: 16, height: 1)
+                    Text(sessionColumnTitle(0))
+                    Spacer(minLength: OMSpacing.s)
+                    Text(sessionColumnTitle(4))
+                }
             }
         }
         .font(OMFont.body)
@@ -665,8 +685,10 @@ enum HistoryChartMode: String, CaseIterable, Identifiable {
 /// nothing else.
 ///
 /// The dashboard's minimum is a 820 pt window with a 160 pt sidebar, which leaves about
-/// 612 pt here. The wide row asks for 520 and fits; `ViewThatFits` keeps the narrow
-/// stack for anything smaller (and for a user who has widened the sidebar).
+/// 611 pt here — more than the 560 the wide row asks for (`SessionListRule.isWide`), so
+/// that window draws five columns. `isWide` arrives from the list rather than being
+/// measured here: a row that decides for itself disagrees with the header above it and
+/// with the row below it, because what it measures is its own chat title.
 ///
 /// The expanded half is built into `@State` by `SessionDetail.build`, never computed in
 /// `body`: one chat on this Mac launched 1,235 sub-agents, and the eight the table draws
@@ -674,6 +696,8 @@ enum HistoryChartMode: String, CaseIterable, Identifiable {
 private struct SessionRowView: View {
     let row: SessionRow
     let now: Date
+    /// The list's one layout decision — see `SessionListRule.minimumWideWidth`.
+    let isWide: Bool
     let isExpanded: Bool
     let toggle: () -> Void
 
@@ -697,10 +721,7 @@ private struct SessionRowView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs) {
-            ViewThatFits(in: .horizontal) {
-                wideSummary
-                narrowSummary
-            }
+            if isWide { wideSummary } else { narrowSummary }
             if isExpanded { detailBlock }
         }
         .padding(.vertical, 6)
@@ -830,7 +851,9 @@ private struct SessionRowView: View {
     private var modelTable: some View {
         VStack(alignment: .leading, spacing: 0) {
             OMSectionHeader(title: SessionCopy.byModelTitle)
-            modelColumnHeader
+            // The header names four columns, so it is drawn only where four columns are
+            // drawn — the same one decision the chat rows above obey.
+            if isWide { modelColumnHeader }
             ForEach(detail.modelRows) { columns in
                 modelRow(columns)
             }
@@ -864,26 +887,29 @@ private struct SessionRowView: View {
     }
 
     private func modelRow(_ columns: SessionModelColumns) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: OMSpacing.s) {
-                modelName(columns).frame(minWidth: 120, alignment: .leading)
-                Spacer(minLength: OMSpacing.xs)
-                Text(columns.turns).font(OMFont.body).monospacedDigit()
-                    .frame(width: 48, alignment: .trailing)
-                Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
-                    .frame(width: 76, alignment: .trailing)
-                Text(columns.cost).font(OMFont.body).monospacedDigit()
-                    .frame(width: 72, alignment: .trailing)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack {
-                    modelName(columns)
-                    Spacer()
+        Group {
+            if isWide {
+                HStack(spacing: OMSpacing.s) {
+                    modelName(columns).frame(minWidth: 120, alignment: .leading)
+                    Spacer(minLength: OMSpacing.xs)
+                    Text(columns.turns).font(OMFont.body).monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                    Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
                     Text(columns.cost).font(OMFont.body).monospacedDigit()
+                        .frame(width: 72, alignment: .trailing)
                 }
-                Text("\(columns.turns) turns · \(columns.tokens)")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack {
+                        modelName(columns)
+                        Spacer()
+                        Text(columns.cost).font(OMFont.body).monospacedDigit()
+                    }
+                    Text("\(columns.turns) turns · \(columns.tokens)")
+                        .font(OMFont.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(.vertical, 2)
@@ -918,34 +944,37 @@ private struct SessionRowView: View {
     }
 
     private func columnsRow(_ columns: SessionColumns, strong: Bool) -> some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: OMSpacing.s) {
-                Text(columns.name)
-                    .font(strong ? OMFont.bodyStrong : OMFont.body)
-                    .lineLimit(1)
-                    .frame(minWidth: 120, alignment: .leading)
-                Spacer(minLength: OMSpacing.xs)
-                Text(columns.model).font(OMFont.body).foregroundStyle(.secondary)
-                    .lineLimit(1).frame(width: 96, alignment: .trailing)
-                Text(columns.effort).font(OMFont.body).foregroundStyle(.secondary)
-                    .lineLimit(1).frame(width: 64, alignment: .trailing)
-                Text(columns.turns).font(OMFont.body).monospacedDigit()
-                    .frame(width: 48, alignment: .trailing)
-                Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
-                    .frame(width: 76, alignment: .trailing)
-                Text(columns.cost).font(OMFont.body).monospacedDigit()
-                    .frame(width: 72, alignment: .trailing)
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack {
-                    Text(columns.name).font(strong ? OMFont.bodyStrong : OMFont.body).lineLimit(1)
-                    Spacer()
+        Group {
+            if isWide {
+                HStack(spacing: OMSpacing.s) {
+                    Text(columns.name)
+                        .font(strong ? OMFont.bodyStrong : OMFont.body)
+                        .lineLimit(1)
+                        .frame(minWidth: 120, alignment: .leading)
+                    Spacer(minLength: OMSpacing.xs)
+                    Text(columns.model).font(OMFont.body).foregroundStyle(.secondary)
+                        .lineLimit(1).frame(width: 96, alignment: .trailing)
+                    Text(columns.effort).font(OMFont.body).foregroundStyle(.secondary)
+                        .lineLimit(1).frame(width: 64, alignment: .trailing)
+                    Text(columns.turns).font(OMFont.body).monospacedDigit()
+                        .frame(width: 48, alignment: .trailing)
+                    Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
+                        .frame(width: 76, alignment: .trailing)
                     Text(columns.cost).font(OMFont.body).monospacedDigit()
+                        .frame(width: 72, alignment: .trailing)
                 }
-                Text([columns.model, columns.effort, "\(columns.turns) turns", columns.tokens]
-                    .joined(separator: " · "))
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
+            } else {
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack {
+                        Text(columns.name).font(strong ? OMFont.bodyStrong : OMFont.body).lineLimit(1)
+                        Spacer()
+                        Text(columns.cost).font(OMFont.body).monospacedDigit()
+                    }
+                    Text([columns.model, columns.effort, "\(columns.turns) turns", columns.tokens]
+                        .joined(separator: " · "))
+                        .font(OMFont.caption)
+                        .foregroundStyle(.tertiary)
+                }
             }
         }
         .padding(.vertical, 2)
