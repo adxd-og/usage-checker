@@ -10,6 +10,17 @@ struct CLITurn: Sendable, Codable {
     /// parses carries a per-category dollar split.
     let tokens: TokenBreakdown
     let projectSlug: String
+    /// The chat this turn belongs to: Claude Code's `sessionId`, the same value on the
+    /// main transcript and on every sub-agent transcript that chat spawned. `""` for a
+    /// log line old enough not to carry one — such a turn still counts towards the day
+    /// and window figures, it just belongs to no chat.
+    var sessionID: String = ""
+    /// `agentId` when the record is a sub-agent's, nil on the main thread.
+    var agentID: String? = nil
+    /// `attributionAgent`: the agent's type (`general-purpose`, `executor`, `planner`, …).
+    var agentKind: String? = nil
+    /// `effort` as the record carries it (`high`, `xhigh`, …).
+    var effort: String? = nil
 
     // The five counters the rest of the app still reads by name.
     var inputTokens: Int { tokens.input }
@@ -35,6 +46,60 @@ struct CLITurn: Sendable, Codable {
               + Double(cacheReadTokens) * p.cacheReadPerM
               + Double(cacheCreate5mTokens) * p.cacheCreate5mPerM
               + Double(cacheCreate1hTokens) * p.cacheCreate1hPerM) / 1_000_000.0
+    }
+}
+
+extension CLITurn {
+    private enum CodingKeys: String, CodingKey {
+        case id, timestamp, model, tokens, projectSlug
+        case sessionID, agentID, agentKind, effort
+    }
+
+    /// Hand-written so the four fields default rather than throw when they are absent.
+    /// The cache version bump discards every snapshot written before them anyway; this
+    /// is so a snapshot that reaches the decoder some other way reports "an older
+    /// shape" by producing a turn without a chat, not "unreadable".
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            timestamp: try c.decode(Date.self, forKey: .timestamp),
+            model: try c.decode(String.self, forKey: .model),
+            tokens: try c.decode(TokenBreakdown.self, forKey: .tokens),
+            projectSlug: try c.decode(String.self, forKey: .projectSlug),
+            sessionID: try c.decodeIfPresent(String.self, forKey: .sessionID) ?? "",
+            agentID: try c.decodeIfPresent(String.self, forKey: .agentID),
+            agentKind: try c.decodeIfPresent(String.self, forKey: .agentKind),
+            effort: try c.decodeIfPresent(String.self, forKey: .effort)
+        )
+    }
+}
+
+/// What one transcript line says. Claude Code's log is not only turns — the chat's
+/// name and the user's first prompt live in it too — and one JSON parse per line has
+/// to answer for all three.
+enum ParsedRecord {
+    case turn(CLITurn)
+    /// `{"type":"ai-title","aiTitle":…,"sessionId":…}`. A chat carries many; the last wins.
+    case title(sessionID: String, title: String)
+    /// The first human prompt of a chat, already collapsed and cut.
+    case prompt(sessionID: String, text: String)
+}
+
+/// One `String` instance per distinct value in a transcript.
+///
+/// A session id is 36 bytes — past the 15 Swift keeps inline — so without this every
+/// turn held in `recentTurns` pins its own copy of an id it shares with thousands of
+/// others: several megabytes across a month of turns for a handful of distinct chats.
+struct StringPool {
+    private var pool: [String: String] = [:]
+    /// A transcript holds a handful of distinct ids; the cap only guards a corrupt file.
+    private let limit = 512
+
+    mutating func intern(_ s: String) -> String {
+        if let hit = pool[s] { return hit }
+        if pool.count < limit { pool[s] = s }
+        return s
     }
 }
 
@@ -457,9 +522,10 @@ actor JSONLAggregator: CostLogAggregating {
     /// usage (`output_tokens: 2`, no thinking, `stop_reason: null`) and later ones the
     /// final counts. Keeping the first and dropping the rest is what the dedupe used to
     /// do, and it threw away most of the output on this machine's own logs.
-    private func ingest(_ turns: [CLITurn]) {
+    private func ingest(_ records: [ParsedRecord]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
-        for turn in turns {
+        for record in records {
+            guard case .turn(let turn) = record else { continue }
             let hash = Self.stableHash(turn.id)
             // A repeat of an id we already hold is the same response told again, with
             // better numbers; anything else about it (time, model, project) is settled
@@ -499,7 +565,11 @@ actor JSONLAggregator: CostLogAggregating {
             timestamp: stored.timestamp,
             model: stored.model,
             tokens: turn.tokens,
-            projectSlug: stored.projectSlug
+            projectSlug: stored.projectSlug,
+            sessionID: stored.sessionID,
+            agentID: stored.agentID,
+            agentKind: stored.agentKind,
+            effort: stored.effort
         )
         dirty = true
     }
@@ -651,7 +721,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// `size` and `mtime` are what the file looked like *before* the read: a write that
     /// lands while we parse must leave the mark stale, so the next poll comes back for it.
-    private func parseFile(at url: URL, from start: UInt64, size: UInt64, mtime: Date) -> [CLITurn] {
+    private func parseFile(at url: URL, from start: UInt64, size: UInt64, mtime: Date) -> [ParsedRecord] {
         let path = url.path
         guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
         defer { try? handle.close() }
@@ -661,7 +731,8 @@ actor JSONLAggregator: CostLogAggregating {
         // Claude Code stores a session at ~/.claude/projects/<project-slug>/<uuid>.jsonl
         // and its sub-agents under <project-slug>/<uuid>/subagents/.
         let projectSlug = Self.projectSlug(for: url, root: rootURL)
-        var turns: [CLITurn] = []
+        var records: [ParsedRecord] = []
+        var pool = StringPool()
         var consumedInChunk = 0
         data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) in
             guard let base = raw.baseAddress else { return }
@@ -670,8 +741,11 @@ actor JSONLAggregator: CostLogAggregating {
                 if raw.load(fromByteOffset: i, as: UInt8.self) == 0x0A {
                     if i > lineStart {
                         let line = Data(bytes: base.advanced(by: lineStart), count: i - lineStart)
-                        if let t = parseLine(line, projectSlug: projectSlug) {
-                            turns.append(t)
+                        if let record = Self.parseRecord(
+                            line, projectSlug: projectSlug, iso: isoFormatter,
+                            isoNoFraction: isoFormatterNoFraction, pool: &pool
+                        ) {
+                            records.append(record)
                         }
                     }
                     lineStart = i + 1
@@ -687,7 +761,7 @@ actor JSONLAggregator: CostLogAggregating {
         // at all, which is the same situation stretched over more than one poll.
         fileMarks[path] = FileMark(offset: start + UInt64(consumedInChunk), size: size, mtime: mtime)
         dirty = true
-        return turns
+        return records
     }
 
     // MARK: - The on-disk cache
@@ -781,9 +855,35 @@ actor JSONLAggregator: CostLogAggregating {
         }
     }
 
-    private func parseLine(_ data: Data, projectSlug: String) -> CLITurn? {
-        guard let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        guard let type = any["type"] as? String, type == "assistant" else { return nil }
+    /// One log line → what it says, as a pure function of the bytes: `static` and
+    /// formatter-injected so a test can read a record's identity straight out of a line
+    /// copied from a real transcript, with no actor and no log root.
+    static func parseRecord(
+        _ data: Data,
+        projectSlug: String,
+        iso: ISO8601DateFormatter,
+        isoNoFraction: ISO8601DateFormatter,
+        pool: inout StringPool
+    ) -> ParsedRecord? {
+        guard let any = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let type = any["type"] as? String else { return nil }
+        switch type {
+        case "assistant":
+            return parseTurn(
+                any, projectSlug: projectSlug, iso: iso, isoNoFraction: isoNoFraction, pool: &pool
+            ).map(ParsedRecord.turn)
+        default:
+            return nil
+        }
+    }
+
+    private static func parseTurn(
+        _ any: [String: Any],
+        projectSlug: String,
+        iso: ISO8601DateFormatter,
+        isoNoFraction: ISO8601DateFormatter,
+        pool: inout StringPool
+    ) -> CLITurn? {
         guard let message = any["message"] as? [String: Any] else { return nil }
         guard let usage = message["usage"] as? [String: Any] else { return nil }
 
@@ -818,7 +918,7 @@ actor JSONLAggregator: CostLogAggregating {
         // whatever rate window happens to be open, which is the one place a wrong
         // answer is worse than no answer. Fractions first (what Claude Code writes),
         // then plain ISO8601 for a writer that stops emitting them.
-        guard let ts = isoFormatter.date(from: tsStr) ?? isoFormatterNoFraction.date(from: tsStr)
+        guard let ts = iso.date(from: tsStr) ?? isoNoFraction.date(from: tsStr)
         else { return nil }
         // Older logs may lack a message id — fall back to a content identity so exact
         // duplicate lines still dedupe. `thinking` is part of that identity: two
@@ -846,7 +946,14 @@ actor JSONLAggregator: CostLogAggregating {
                 cacheWrite1h: c1h,
                 thinking: thinking
             ).priced(model: model),
-            projectSlug: projectSlug
+            projectSlug: projectSlug,
+            // The record's own fields, never the file name: a sub-agent transcript is
+            // named after the agent, and nothing but the record says which chat it
+            // belongs to or what kind of agent wrote it.
+            sessionID: pool.intern((any["sessionId"] as? String) ?? ""),
+            agentID: (any["agentId"] as? String).map { pool.intern($0) },
+            agentKind: (any["attributionAgent"] as? String).map { pool.intern($0) },
+            effort: (any["effort"] as? String).map { pool.intern($0) }
         )
     }
 }

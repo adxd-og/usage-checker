@@ -273,4 +273,76 @@ final class JSONLSessionsTests: XCTestCase {
         )
         XCTAssertEqual(usage.projects.first?.turns, 2)
     }
+
+    // MARK: - What one record says
+
+    func testAMainThreadRecordCarriesTheChatIdAndNoAgent() throws {
+        var pool = StringPool()
+        let line = mainTurn(
+            id: "msg_011CenRuz2JaQEpHjsmYr9DF", at: at(daysAgo: 1, hour: 12),
+            input: 42, output: 231, thinking: 34, effort: "high"
+        )
+
+        let record = try XCTUnwrap(JSONLAggregator.parseRecord(
+            Data(line.utf8), projectSlug: alphaSlug,
+            iso: Self.iso, isoNoFraction: Self.isoNoFraction, pool: &pool
+        ))
+        guard case .turn(let turn) = record else {
+            return XCTFail("a `type: assistant` record is a turn, got \(record)")
+        }
+
+        XCTAssertEqual(turn.sessionID, sessionID)
+        XCTAssertNil(turn.agentID, "the main thread is not an agent")
+        XCTAssertNil(turn.agentKind)
+        XCTAssertEqual(turn.effort, "high")
+        XCTAssertEqual(turn.inputTokens, 42, "the counters this file already reported are untouched")
+        XCTAssertEqual(turn.outputTokens, 231)
+        XCTAssertEqual(turn.tokens.thinking, 34)
+        XCTAssertEqual(turn.projectSlug, alphaSlug)
+    }
+
+    func testASubAgentRecordTakesItsIdentityFromTheRecordNotTheFileName() throws {
+        var pool = StringPool()
+        let line = agentTurn(
+            id: "msg_011CeqhfcrpPectFAXxS1pNw", at: at(daysAgo: 1, hour: 13),
+            agentID: "a06ceeae2762ca204", kind: "planner", input: 2, output: 1, effort: "xhigh"
+        )
+
+        let record = try XCTUnwrap(JSONLAggregator.parseRecord(
+            Data(line.utf8), projectSlug: alphaSlug,
+            iso: Self.iso, isoNoFraction: Self.isoNoFraction, pool: &pool
+        ))
+        guard case .turn(let turn) = record else {
+            return XCTFail("a sidechain assistant record is a turn, got \(record)")
+        }
+
+        XCTAssertEqual(turn.agentID, "a06ceeae2762ca204", "`agentId`, never the file name")
+        XCTAssertEqual(turn.agentKind, "planner", "`attributionAgent` is the agent's type")
+        XCTAssertEqual(turn.effort, "xhigh")
+        XCTAssertEqual(
+            turn.sessionID, sessionID,
+            "a sub-agent's transcript carries the parent chat's own session id"
+        )
+    }
+
+    func testARecordWithNoSessionIdStillParsesAsATurn() throws {
+        // Builds old enough to omit `sessionId` still spent money; the turn counts, it
+        // simply belongs to no chat.
+        var pool = StringPool()
+        let line = """
+        {"type":"assistant","timestamp":"\(Self.iso.string(from: at(daysAgo: 1, hour: 12)))",\
+        "message":{"id":"msg_old","model":"claude-sonnet-4-5",\
+        "usage":{"input_tokens":1000,"output_tokens":10,"cache_read_input_tokens":0}}}
+        """
+
+        let record = try XCTUnwrap(JSONLAggregator.parseRecord(
+            Data(line.utf8), projectSlug: alphaSlug,
+            iso: Self.iso, isoNoFraction: Self.isoNoFraction, pool: &pool
+        ))
+        guard case .turn(let turn) = record else {
+            return XCTFail("expected a turn, got \(record)")
+        }
+        XCTAssertEqual(turn.sessionID, "")
+        XCTAssertEqual(turn.inputTokens, 1000)
+    }
 }
