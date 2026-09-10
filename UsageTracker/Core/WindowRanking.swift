@@ -50,6 +50,14 @@ enum WindowRanking {
         service.buckets.filter { $0.kind == .session && $0.id != hero?.id }
     }
 
+    /// The id the synthetic spend-limit / extra-usage window carries. A surface that
+    /// wants to say something extra about that window keys on this, never on the
+    /// label — the label is "Spend limit" on Enterprise/Team and "Extra usage
+    /// credits" everywhere else.
+    static func extraUsageBucketID(for service: ServiceSnapshot) -> String {
+        "\(service.id)_extra_usage"
+    }
+
     /// "All models" → "All", "Opus only" → "Opus"; other labels untouched.
     static func shortWindowLabel(_ label: String) -> String {
         if label == "All models" { return "All" }
@@ -105,7 +113,7 @@ enum WindowRanking {
         var candidates = service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
         if let extra = service.extraUsage, extra.isEnabled {
             candidates.append(UsageBucket(
-                id: "\(service.id)_extra_usage",
+                id: extraUsageBucketID(for: service),
                 label: extraUsageTitle(plan: service.plan),
                 utilization: extra.utilization,
                 resetsAt: .distantFuture,

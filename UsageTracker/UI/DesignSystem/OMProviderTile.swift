@@ -63,6 +63,14 @@ struct OMProviderTile: View {
                         if let remaining = WindowRanking.remainingText(until: hero.resetsAt) {
                             Text(remaining)
                                 .font(OMFont.caption.weight(.semibold))
+                        } else if hero.id == WindowRanking.extraUsageBucketID(for: service),
+                                  let spend = SpendLimitCopy.caption(service.extraUsage, compact: true) {
+                            // The slot the reset would have used: on a spend limit the
+                            // dollars are what the ring's percentage is measuring.
+                            Text(spend)
+                                .font(OMFont.caption.weight(.semibold))
+                                .monospacedDigit()
+                                .lineLimit(1)
                         }
                     }
                 }
