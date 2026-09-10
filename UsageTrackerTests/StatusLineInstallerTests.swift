@@ -72,6 +72,59 @@ final class StatusLineInstallerTests: XCTestCase {
         XCTAssertEqual(String(decoding: output, as: UTF8.self), weird + " statusline")
     }
 
+    // MARK: - The entry
+
+    /// Claude Code re-runs the command on events — a new assistant message,
+    /// /compact, a mode change — and nothing else, so an idle session shows a
+    /// countdown that stopped. 60 s is one poll of ours, and the countdown is
+    /// minute-granular: anything shorter spends a process to reprint the same line.
+    func testTheRefreshIntervalIsSixtySeconds() {
+        XCTAssertEqual(StatusLineInstaller.refreshInterval, 60)
+    }
+
+    /// The entry an older build wrote: our command, no interval. This is the whole
+    /// question the Update button exists to answer.
+    func testAnEntryWithoutARefreshIntervalNeedsAnUpdate() {
+        let old: [String: Any] = [
+            "type": "command",
+            "command": StatusLineInstaller.command(cliPath: cli),
+        ]
+        XCTAssertTrue(StatusLineInstaller.needsUpdate(existing: old))
+    }
+
+    func testAnEntryCarryingOurIntervalNeedsNothing() {
+        let current: [String: Any] = [
+            "type": "command",
+            "command": StatusLineInstaller.command(cliPath: cli),
+            "refreshInterval": 60,
+        ]
+        XCTAssertFalse(StatusLineInstaller.needsUpdate(existing: current))
+    }
+
+    /// A number someone dialled to their own taste, a string, a boolean, a null:
+    /// none of them is the interval this build writes, so all of them are an update.
+    func testAnIntervalThatIsNotOursNeedsAnUpdate() {
+        let values: [Any] = [5, 300, "60", true, NSNull()]
+        for value in values {
+            let entry: [String: Any] = [
+                "type": "command",
+                "command": StatusLineInstaller.command(cliPath: cli),
+                "refreshInterval": value,
+            ]
+            XCTAssertTrue(StatusLineInstaller.needsUpdate(existing: entry), "\(value)")
+        }
+    }
+
+    /// `desiredEntry` is the only answer to "what do we write": the preview, the
+    /// install and the status comparison all read it, so a key added here reaches
+    /// all three at once.
+    func testTheDesiredEntryIsATypeAndTheQuotedCommand() {
+        let entry = StatusLineInstaller.desiredEntry(commandPath: cli)
+
+        XCTAssertEqual(entry["type"] as? String, "command")
+        XCTAssertEqual(entry["command"] as? String, StatusLineInstaller.command(cliPath: cli))
+    }
+
     func testThePreviewIsTheJSONWeActuallyWrite() throws {
         let preview = StatusLineInstaller.previewJSON(cliPath: cli)
         let parsed = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(preview.utf8)) as? [String: Any])
