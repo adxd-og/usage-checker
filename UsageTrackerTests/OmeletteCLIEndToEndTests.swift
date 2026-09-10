@@ -315,4 +315,80 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertFalse(output.contains("SwiftUI.framework"), output)
         XCTAssertTrue(output.contains("Foundation.framework"), output)
     }
+
+    // MARK: - Chats
+
+    /// The sample above, plus one chat — the shape `status.json` has carried since v2.
+    func sampleWithChats(updatedAt: Date? = nil) -> StatusSnapshot {
+        let at = updatedAt ?? Date()
+        var snapshot = sample(updatedAt: at)
+        snapshot.services[0] = StatusSnapshot.Service(
+            id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil,
+            plan: "Max 5x",
+            windows: snapshot.services[0].windows,
+            todayCost: 4.2, weekCost: 31.7, todayTokens: 1_234_567, apiEquivalent: true,
+            sessions: [
+                StatusSnapshot.SessionEntry(
+                    id: "s1", title: "Blume integration", project: "Usage tracker",
+                    lastAt: at.addingTimeInterval(-3 * 3600), turns: 356,
+                    tokens: 41_200_000, cost: 58.10, agents: 3, origin: nil
+                ),
+            ]
+        )
+        return snapshot
+    }
+
+    func testStatusJSONCarriesTheChatList() throws {
+        try publish(sampleWithChats())
+
+        let run = try runCLI(["status", "--json"])
+
+        XCTAssertEqual(run.status, 0)
+        let decoded = try XCTUnwrap(
+            StatusFile.decoder.decode(StatusSnapshot.self, from: Data(run.stdout.utf8))
+        )
+        XCTAssertEqual(decoded.version, 2)
+        let entry = try XCTUnwrap(decoded.services.first?.sessions?.first)
+        XCTAssertEqual(entry.title, "Blume integration")
+        XCTAssertEqual(entry.turns, 356)
+        XCTAssertEqual(entry.agents, 3)
+    }
+
+    /// § 5: "`omelette status` gains no new text (kept short)." A chat list would double
+    /// the height of a five-provider machine's output for a question nobody asked in a
+    /// status command.
+    func testPlainStatusStillSaysNothingAboutChats() throws {
+        let snapshot = sampleWithChats()
+        try publish(snapshot)
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertFalse(run.stdout.contains("Blume integration"), run.stdout)
+        XCTAssertFalse(run.stdout.lowercased().contains("chat"), run.stdout)
+        XCTAssertEqual(
+            run.stdout,
+            StatusText.render(snapshot: snapshot, now: Date()),
+            "the plain path is byte for byte what it was before chats existed"
+        )
+    }
+
+    func testTheMCPServerAnswersGetSessionsOverTheRealPipe() throws {
+        try publish(sampleWithChats())
+        let session = [
+            #"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
+            #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_sessions","arguments":{"limit":5}}}"#,
+        ].joined(separator: "\n") + "\n"
+
+        let run = try runCLI(["mcp"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stderr.isEmpty, run.stderr)
+        let lines = run.stdout.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
+        XCTAssertEqual(lines.count, 2)
+        XCTAssertTrue(lines[0].contains(#""name":"get_sessions""#), String(lines[0]))
+        XCTAssertTrue(lines[1].contains("Claude · Blume integration · Usage tracker"), String(lines[1]))
+        XCTAssertTrue(lines[1].contains("356 turns"), String(lines[1]))
+        XCTAssertTrue(lines[1].contains("41.2M tokens"), String(lines[1]))
+    }
 }
