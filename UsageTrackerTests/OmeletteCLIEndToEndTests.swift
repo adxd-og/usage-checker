@@ -198,19 +198,48 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(run.stderr.isEmpty)
     }
 
-    /// Claude Code writes its session JSON and closes the pipe. We must read it (or
-    /// their write can fail), print our own line, and be gone.
-    func testStatusLineIgnoresWhatClaudeCodeSendsOnStdin() throws {
+    /// Claude Code writes its session JSON and closes the pipe. We read the model and
+    /// the context window out of it, print one line, and are gone. Its `cost` is the
+    /// session's and stays out: the dollars on this line are the day's, from our own
+    /// log reading.
+    func testStatusLineOpensWithTheModelClaudeCodeSendsOnStdin() throws {
         try publish(sample())
-        let session = #"{"session_id":"abc","model":{"id":"claude-opus-5","display_name":"Opus"},"cost":{"total_cost_usd":9.99}}"#
+        let session = #"{"session_id":"abc","model":{"id":"claude-opus-5","display_name":"Opus"},"cost":{"total_cost_usd":9.99},"context_window":{"used_percentage":42.4}}"#
+
+        let run = try runCLI(["statusline", "--no-color"], stdin: session)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("Opus [####------] 42% · ◐ 42% · resets in "), run.stdout)
+        XCTAssertFalse(run.stdout.contains("9.99"), "the session's cost is not the day's")
+        XCTAssertTrue(run.stdout.contains("$4.20 today"))
+        XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1)
+        XCTAssertLessThan(run.elapsed, 1)
+    }
+
+    /// Claude Code renders the escape codes, so a payload on stdin means colour unless
+    /// the flag says otherwise. Nothing after the prefix is ever coloured.
+    func testAPipedPayloadIsColouredUnlessNoColorSaysOtherwise() throws {
+        try publish(sample())
+        let session = #"{"model":{"display_name":"Opus"},"context_window":{"used_percentage":91}}"#
 
         let run = try runCLI(["statusline"], stdin: session)
 
         XCTAssertEqual(run.status, 0)
-        XCTAssertFalse(run.stdout.contains("Opus"), "the line is about the account, not the session")
-        XCTAssertFalse(run.stdout.contains("9.99"))
-        XCTAssertTrue(run.stdout.contains("$4.20 today"))
-        XCTAssertLessThan(run.elapsed, 1)
+        XCTAssertTrue(
+            run.stdout.hasPrefix("\u{1B}[2;36mOpus\u{1B}[0m \u{1B}[2;31m[#########-]\u{1B}[0m \u{1B}[2m91%\u{1B}[0m · ◐ 42%"),
+            run.stdout
+        )
+    }
+
+    /// Nothing on stdin is a person running it by hand: there is no session to
+    /// describe and no escape code to print.
+    func testWithNothingOnStdinTheLineIsTheAccountAlone() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline"])
+
+        XCTAssertFalse(run.stdout.contains("\u{1B}"), run.stdout)
+        XCTAssertTrue(run.stdout.hasPrefix("◐ 42% · resets in "), run.stdout)
     }
 
     func testStatusLineWithNoFileIsAnEmptyLineAndExitZero() throws {

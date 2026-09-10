@@ -19,8 +19,8 @@ enum CLIMain {
             exit(0)
         case .status(let json):
             exit(status(json: json))
-        case .statusLine(let provider):
-            exit(statusLine(provider: provider))
+        case .statusLine(let provider, let colour):
+            exit(statusLine(provider: provider, colour: colour))
         case .mcp:
             exit(mcp())
         case .usageError(let message):
@@ -59,10 +59,21 @@ enum CLIMain {
 
     /// Always exit 0, always exactly one line. Claude Code shows whatever we print for
     /// the rest of the session, so "not running" is an empty line rather than a word.
-    static func statusLine(provider: String) -> Int32 {
-        drainStandardInput()
+    ///
+    /// Colour follows the pipe, not `--no-color` alone: a payload on stdin means
+    /// Claude Code is asking, and Claude Code renders the escape codes. Run by hand
+    /// there is no payload, so there is no prefix and nothing to colour anyway.
+    static func statusLine(provider: String, colour: Bool) -> Int32 {
+        let piped = readPipedStandardInput()
         let snapshot = StatusFile.load(from: StatusFile.url())
-        out(StatusLineText.render(snapshot: snapshot, provider: provider, now: Date()) + "\n")
+        let line = StatusLineText.render(
+            snapshot: snapshot,
+            provider: provider,
+            now: Date(),
+            input: StatusLineInput.parse(piped ?? Data()),
+            colour: colour && piped != nil
+        )
+        out(line + "\n")
         return 0
     }
 
@@ -100,16 +111,17 @@ enum CLIMain {
         FileHandle.standardError.write(Data(text.utf8))
     }
 
-    /// Claude Code writes its session JSON to our stdin and closes it. We read nothing
-    /// out of it — the numbers this line shows are Omelette's, not the session's, and
-    /// Claude Code already prints its own model name — but leaving the pipe unread
-    /// risks a write error on their side, so it is drained and dropped.
+    /// Claude Code writes its session JSON to our stdin and closes it. It has to be
+    /// read to the end whatever is in it — leaving the pipe unread risks a write error
+    /// on their side — and `StatusLineInput` takes the model and the context window
+    /// out of it.
     ///
     /// Only when stdin is a pipe: run by hand in a terminal there is nothing to read
-    /// and `readToEnd` would sit there until the user pressed ^D.
-    static func drainStandardInput() {
-        guard isatty(FileHandle.standardInput.fileDescriptor) == 0 else { return }
-        _ = try? FileHandle.standardInput.readToEnd()
+    /// and `readToEnd` would sit there until the user pressed ^D. nil is "nobody piped
+    /// anything in", which is also how the caller knows not to colour the line.
+    static func readPipedStandardInput() -> Data? {
+        guard isatty(FileHandle.standardInput.fileDescriptor) == 0 else { return nil }
+        return (try? FileHandle.standardInput.readToEnd()) ?? Data()
     }
 }
 

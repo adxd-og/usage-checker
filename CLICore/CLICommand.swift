@@ -7,7 +7,9 @@ enum CLICommand: Equatable, Sendable {
     case help
     case version
     case status(json: Bool)
-    case statusLine(provider: String)
+    /// `colour` is the `--no-color` flag, not the decision: the line is only coloured
+    /// when Claude Code piped a session in, and this can only take that away.
+    case statusLine(provider: String, colour: Bool)
     case mcp
     /// Bad arguments, with the sentence to print before the usage text.
     case usageError(String)
@@ -50,10 +52,13 @@ enum CLICommand: Equatable, Sendable {
 
     private static func parseStatusLine(_ arguments: [String]) -> CLICommand {
         var provider = StatusLineText.defaultProvider
+        var colour = true
         var index = 0
         while index < arguments.count {
             let argument = arguments[index]
             switch argument {
+            case "--no-color":
+                colour = false
             case "--provider":
                 index += 1
                 guard index < arguments.count, !arguments[index].hasPrefix("-") else {
@@ -65,6 +70,6 @@ enum CLICommand: Equatable, Sendable {
             }
             index += 1
         }
-        return .statusLine(provider: provider)
+        return .statusLine(provider: provider, colour: colour)
     }
 }

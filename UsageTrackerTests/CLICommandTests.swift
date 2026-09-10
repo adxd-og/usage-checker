@@ -23,8 +23,24 @@ final class CLICommandTests: XCTestCase {
     }
 
     func testStatusLineDefaultsToClaudeAndTakesAProvider() {
-        XCTAssertEqual(CLICommand.parse(["statusline"]), .statusLine(provider: "claude"))
-        XCTAssertEqual(CLICommand.parse(["statusline", "--provider", "codex"]), .statusLine(provider: "codex"))
+        XCTAssertEqual(CLICommand.parse(["statusline"]), .statusLine(provider: "claude", colour: true))
+        XCTAssertEqual(
+            CLICommand.parse(["statusline", "--provider", "codex"]), .statusLine(provider: "codex", colour: true)
+        )
+    }
+
+    /// The context bar is coloured for the status bar it was written for. A line going
+    /// into a file, a log, or a bar that prints escape codes verbatim asks for none.
+    func testStatusLineTakesNoColorInEitherOrder() {
+        XCTAssertEqual(CLICommand.parse(["statusline", "--no-color"]), .statusLine(provider: "claude", colour: false))
+        XCTAssertEqual(
+            CLICommand.parse(["statusline", "--no-color", "--provider", "codex"]),
+            .statusLine(provider: "codex", colour: false)
+        )
+        XCTAssertEqual(
+            CLICommand.parse(["statusline", "--provider", "codex", "--no-color"]),
+            .statusLine(provider: "codex", colour: false)
+        )
     }
 
     func testAProviderFlagWithNothingAfterItIsAUsageError() {
@@ -50,10 +66,17 @@ final class CLICommandTests: XCTestCase {
     }
 
     func testTheUsageTextNamesEveryCommand() {
-        for command in ["status", "statusline", "mcp", "--version", "--help"] {
+        for command in ["status", "statusline", "mcp", "--version", "--help", "--no-color"] {
             XCTAssertTrue(CLIText.usage.contains(command), "usage text forgot \(command)")
         }
         XCTAssertTrue(CLIText.usage.contains("status.json"))
+    }
+
+    /// Half of what the line now shows comes from Claude Code's stdin, and nothing but
+    /// the help text says so.
+    func testTheUsageTextSaysWhereTheModelAndTheBarComeFrom() {
+        XCTAssertTrue(CLIText.usage.contains("model"), CLIText.usage)
+        XCTAssertTrue(CLIText.usage.contains("context"), CLIText.usage)
     }
 
     func testTheExitCodesAreTheOnesDocumented() {
