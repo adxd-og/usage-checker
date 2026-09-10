@@ -124,6 +124,37 @@ enum SessionListRule {
         return Array(ordered.suffix(max(0, limit)))
     }
 
+    /// How many model rows an expanded chat draws before it asks. Six covers a chat
+    /// that changed model or effort a few times — the shape a long package day has —
+    /// and keeps the table shorter than the sub-agent one above it.
+    static let maxModelRows = 6
+
+    /// Most expensive first, ties by key. Sorted here rather than trusted from the
+    /// aggregator, exactly as `agentsByCost` is: the table's order is a UI decision and
+    /// belongs with a test.
+    static func modelsByCost(_ models: [SessionModelSummary]) -> [SessionModelSummary] {
+        models.sorted {
+            let left = $0.tokens.cost?.total ?? 0, right = $1.tokens.cost?.total ?? 0
+            return left == right ? $0.id < $1.id : left > right
+        }
+    }
+
+    /// The model rows worth drawing: the `top` most expensive.
+    static func pickModels(
+        _ models: [SessionModelSummary], top: Int = maxModelRows
+    ) -> [SessionModelSummary] {
+        Array(modelsByCost(models).prefix(max(0, top)))
+    }
+
+    /// Whether the by-model table says anything the rest of the expanded chat doesn't.
+    /// One model with no effort is the chat restated — the split line above it already
+    /// carries those tokens and those dollars. One model *with* an effort earns its
+    /// row: the effort is a fact nothing else on the row states.
+    static func showsModels(_ models: [SessionModelSummary]) -> Bool {
+        guard models.count == 1 else { return models.count > 1 }
+        return models[0].effort != nil
+    }
+
     private static func recentPickIDs(_ sessions: [SessionSummary], recent: Int) -> Set<String> {
         Set(byRecency(sessions).prefix(max(0, recent)).map(\.id))
     }

@@ -176,4 +176,68 @@ final class SessionListRuleTests: XCTestCase {
         let days = [SessionFixture.day(daysBefore: 2), SessionFixture.day(daysBefore: 1)]
         XCTAssertEqual(SessionListRule.pickDays(days).map(\.day), days.map(\.day))
     }
+
+    // MARK: - The model rows inside one chat
+
+    private func models(_ costs: [Double]) -> [SessionModelSummary] {
+        costs.enumerated().map { index, dollars in
+            SessionFixture.model(
+                model: "model-\(index)", effort: "high", turns: 1,
+                tokens: SessionFixture.tokens(
+                    input: 1_000, cost: SessionFixture.cost(input: dollars)
+                )
+            )
+        }
+    }
+
+    func testOnlyTheSixMostExpensiveModelsAreDrawn() {
+        let drawn = SessionListRule.pickModels(models([1, 9, 2, 8, 3, 7, 4, 6]))
+
+        XCTAssertEqual(drawn.count, 6, "six rows, and the button says how many are left")
+        XCTAssertEqual(
+            drawn.map { $0.tokens.cost?.total ?? -1 }, [9, 8, 7, 6, 4, 3],
+            "most expensive first, whatever order they arrived in"
+        )
+    }
+
+    func testAChatOnFewerModelsThanTheCapShowsThemAll() {
+        XCTAssertEqual(SessionListRule.pickModels(models([1, 2, 3])).count, 3)
+    }
+
+    func testModelsThatCostTheSameFallBackToTheirKey() {
+        let rows = [
+            SessionFixture.model(model: "claude-opus-4-5", effort: "xhigh", turns: 1),
+            SessionFixture.model(model: "claude-opus-4-5", effort: "high", turns: 1),
+            SessionFixture.model(model: "claude-haiku-4-5", effort: nil, turns: 1),
+        ]
+
+        XCTAssertEqual(
+            SessionListRule.modelsByCost(rows).map(\.id),
+            ["claude-haiku-4-5|", "claude-opus-4-5|high", "claude-opus-4-5|xhigh"],
+            "an unpriced row ranks as zero, and the key keeps the order from wandering"
+        )
+    }
+
+    func testTheModelTableIsWorthDrawingOnlyWhenItSplitsSomething() {
+        XCTAssertFalse(SessionListRule.showsModels([]), "a chat with no rows has no table")
+        XCTAssertFalse(
+            SessionListRule.showsModels([SessionFixture.model(effort: nil)]),
+            "one model and no effort is the chat restated"
+        )
+        XCTAssertTrue(
+            SessionListRule.showsModels([SessionFixture.model(effort: "xhigh")]),
+            "the effort is a fact no other row of the expanded chat carries"
+        )
+        XCTAssertTrue(
+            SessionListRule.showsModels([
+                SessionFixture.model(model: "claude-opus-4-5", effort: nil),
+                SessionFixture.model(model: "claude-haiku-4-5", effort: nil),
+            ]),
+            "two models always split something"
+        )
+    }
+
+    func testTheModelCapIsTheSpecsSix() {
+        XCTAssertEqual(SessionListRule.maxModelRows, 6)
+    }
 }

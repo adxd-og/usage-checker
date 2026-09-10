@@ -685,12 +685,14 @@ private struct SessionRowView: View {
     @State private var detail = SessionDetail.empty
     @State private var showsAllAgents = false
     @State private var showsAllDays = false
+    @State private var showsAllModels = false
 
     private struct DetailKey: Hashable {
         let id: String
         let expanded: Bool
         let allAgents: Bool
         let allDays: Bool
+        let allModels: Bool
     }
 
     var body: some View {
@@ -707,20 +709,24 @@ private struct SessionRowView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(SessionCopy.rowTitle(session))
         .accessibilityHint(isExpanded ? "Hides this chat's breakdown" : "Shows this chat's breakdown")
-        .task(id: DetailKey(id: row.id, expanded: isExpanded, allAgents: showsAllAgents, allDays: showsAllDays)) {
+        .task(id: DetailKey(id: row.id, expanded: isExpanded, allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels)) {
             guard isExpanded else {
                 detail = .empty
                 // Collapsing forgets the caps too: reopening a chat should start from
                 // the eight rows, not from a thousand somebody expanded last week.
                 showsAllAgents = false
                 showsAllDays = false
+                showsAllModels = false
                 return
             }
             let session = self.session
             let allAgents = showsAllAgents
             let allDays = showsAllDays
+            let allModels = showsAllModels
             detail = await Task.detached(priority: .userInitiated) {
-                SessionDetail.build(session: session, allAgents: allAgents, allDays: allDays)
+                SessionDetail.build(
+                    session: session, allAgents: allAgents, allDays: allDays, allModels: allModels
+                )
             }.value
         }
     }
@@ -809,11 +815,87 @@ private struct SessionRowView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            if !detail.modelRows.isEmpty { modelTable }
             if !detail.agentRows.isEmpty { agentTable }
             if !detail.dayRows.isEmpty { dayTable }
         }
         .padding(.leading, 16 + OMSpacing.s)
         .padding(.top, OMSpacing.xs)
+    }
+
+    /// Which models the chat ran on, most expensive first. The header row is the one
+    /// the by-day tables in this tab carry, at this table's own widths; the effort sits
+    /// beside the model name as a secondary label, so a chat whose log named none draws
+    /// no empty column.
+    private var modelTable: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            OMSectionHeader(title: SessionCopy.byModelTitle)
+            modelColumnHeader
+            ForEach(detail.modelRows) { columns in
+                modelRow(columns)
+            }
+            if detail.hiddenModels > 0 || showsAllModels {
+                Button(SessionCopy.showAllModels(count: detail.totalModels, expanded: showsAllModels)) {
+                    showsAllModels.toggle()
+                }
+                .buttonStyle(.link)
+                .font(OMFont.caption)
+                .padding(.top, 2)
+            }
+        }
+    }
+
+    private var modelColumnHeader: some View {
+        HStack(spacing: OMSpacing.s) {
+            Text(modelColumnTitle(0)).frame(minWidth: 120, alignment: .leading)
+            Spacer(minLength: OMSpacing.xs)
+            Text(modelColumnTitle(1)).frame(width: 48, alignment: .trailing)
+            Text(modelColumnTitle(2)).frame(width: 76, alignment: .trailing)
+            Text(modelColumnTitle(3)).frame(width: 72, alignment: .trailing)
+        }
+        .font(OMFont.body)
+        .foregroundStyle(.secondary)
+        .padding(.bottom, 6)
+    }
+
+    private func modelColumnTitle(_ index: Int) -> String {
+        let titles = SessionCopy.modelColumnTitles
+        return titles.indices.contains(index) ? titles[index] : ""
+    }
+
+    private func modelRow(_ columns: SessionModelColumns) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: OMSpacing.s) {
+                modelName(columns).frame(minWidth: 120, alignment: .leading)
+                Spacer(minLength: OMSpacing.xs)
+                Text(columns.turns).font(OMFont.body).monospacedDigit()
+                    .frame(width: 48, alignment: .trailing)
+                Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
+                    .frame(width: 76, alignment: .trailing)
+                Text(columns.cost).font(OMFont.body).monospacedDigit()
+                    .frame(width: 72, alignment: .trailing)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack {
+                    modelName(columns)
+                    Spacer()
+                    Text(columns.cost).font(OMFont.body).monospacedDigit()
+                }
+                Text("\(columns.turns) turns · \(columns.tokens)")
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func modelName(_ columns: SessionModelColumns) -> some View {
+        HStack(spacing: 4) {
+            Text(columns.model).font(OMFont.body).lineLimit(1)
+            if let effort = columns.effort {
+                Text(effort).font(OMFont.caption).foregroundStyle(.tertiary).lineLimit(1)
+            }
+        }
     }
 
     /// The header counts every sub-agent; the table draws the eight most expensive plus

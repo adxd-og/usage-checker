@@ -280,6 +280,11 @@ actor JSONLAggregator: CostLogAggregating {
         var days: [DayTotals]
         /// Keyed by `agentId`.
         var agents: [String: AgentTotals]
+        /// Keyed by `SessionModelSummary.key(model:effort:)`. Both the main thread's
+        /// turns and its sub-agents' land here: the row answers what the chat spent on
+        /// a model, not which thread spent it. A default so the property needs no line
+        /// in `init(projectSlug:at:)`; the cache always writes it (version 5).
+        var byModel: [String: ModelTotals] = [:]
 
         struct DayTotals: Codable {
             let day: Date
@@ -296,6 +301,16 @@ actor JSONLAggregator: CostLogAggregating {
             var effort: String?
             var firstAt: Date
             var lastAt: Date
+            var turns: Int
+            var tokens: TokenBreakdown
+        }
+
+        /// One (model, effort) pair's running totals. The pair is kept in the value as
+        /// well as in the key: a model id is a slug from a log nobody validates, and
+        /// splitting the key back apart on "|" would be a second parser.
+        struct ModelTotals: Codable {
+            var model: String
+            var effort: String?
             var turns: Int
             var tokens: TokenBreakdown
         }
@@ -324,6 +339,16 @@ actor JSONLAggregator: CostLogAggregating {
                 ))
             }
 
+            // Before the agent branch, so a sub-agent's turn counts towards the chat's
+            // model rows exactly as it counts towards the chat's day.
+            let effort = SessionModelSummary.effort(from: turn.effort)
+            let modelKey = SessionModelSummary.key(model: turn.model, effort: effort)
+            var model = byModel[modelKey]
+                ?? ModelTotals(model: turn.model, effort: effort, turns: 0, tokens: .zero)
+            model.turns += 1
+            model.tokens += turn.tokens
+            byModel[modelKey] = model
+
             guard let agentID = turn.agentID else { return }
             var agent = agents[agentID] ?? AgentTotals(
                 // Every sub-agent transcript on this Mac carries `attributionAgent`;
@@ -346,8 +371,17 @@ actor JSONLAggregator: CostLogAggregating {
         }
 
         /// A later record for a message id already counted: the difference goes to the
-        /// same day and the same agent, and the turn count does not move.
-        mutating func revise(day: Date, delta: TokenBreakdown, isMain: Bool, agentID: String?) {
+        /// same day, the same agent and the same model row, and the turn count does not
+        /// move.
+        ///
+        /// `modelKey` is the *stored* turn's, never the replacement's. A record's model
+        /// and effort are settled by the first line that carried its id (`replaceIfLater`
+        /// keeps them), so the two keys are the same string — asking for the stored one
+        /// makes that a rule instead of a coincidence. A key that is no longer there is
+        /// left alone, exactly as a dropped day and a dropped agent are.
+        mutating func revise(
+            day: Date, delta: TokenBreakdown, isMain: Bool, agentID: String?, modelKey: String
+        ) {
             if let index = days.lastIndex(where: { $0.day == day }) {
                 days[index].tokens += delta
                 if isMain { days[index].mainTokens += delta }
@@ -356,10 +390,18 @@ actor JSONLAggregator: CostLogAggregating {
                 agent.tokens += delta
                 agents[agentID] = agent
             }
+            if var model = byModel[modelKey] {
+                model.tokens += delta
+                byModel[modelKey] = model
+            }
         }
 
         /// Nothing older than the cutoff is kept: the ranges never ask for it, and a
         /// chat resumed for months would otherwise grow a row per day forever.
+        ///
+        /// `byModel` is deliberately untouched. A model row carries no span to prune by,
+        /// there are a handful of them per chat, and the row is the chat's whole split
+        /// by design — the same reason a range never clips one.
         mutating func drop(before cutoff: Date) {
             days.removeAll { $0.day < cutoff }
             agents = agents.filter { $0.value.lastAt >= cutoff }
@@ -384,6 +426,11 @@ actor JSONLAggregator: CostLogAggregating {
         let firstPrompts: [String: String]
     }
 
+    /// 5: the chat aggregate carries a per-model split (`byModel`), so a snapshot
+    /// written before it holds chats whose "By model" section would be empty until
+    /// something happened to rewrite every transcript. Rejected wholesale, like 3 → 4
+    /// before it: one cold rebuild, then business as usual.
+    ///
     /// 4: the snapshot carries one aggregate per chat, so a snapshot written before
     /// them has no chats to restore and would leave the session list empty until every
     /// transcript happened to be rewritten. Rejected wholesale, like 2 → 3 before it:
@@ -392,7 +439,7 @@ actor JSONLAggregator: CostLogAggregating {
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 4
+    private static let cacheVersion = 5
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
@@ -744,6 +791,22 @@ actor JSONLAggregator: CostLogAggregating {
                     return l == r ? lhs.id < rhs.id : l > r
                 }
 
+            // Every row the chat has, whenever the range starts: the model split is not
+            // stored per day, so a row is the chat's own total or nothing at all. Sorted
+            // here as well as in `SessionListRule`, the way agents are — a caller that
+            // never reaches the UI still gets the expensive model first.
+            let models = agg.byModel.values
+                .map {
+                    SessionModelSummary(
+                        model: $0.model, effort: $0.effort, turns: $0.turns, tokens: $0.tokens
+                    )
+                }
+                .sorted { lhs, rhs in
+                    let l = lhs.tokens.cost?.total ?? 0
+                    let r = rhs.tokens.cost?.total ?? 0
+                    return l == r ? lhs.id < rhs.id : l > r
+                }
+
             summaries.append(SessionSummary(
                 id: id,
                 providerID: "claude",
@@ -758,7 +821,8 @@ actor JSONLAggregator: CostLogAggregating {
                 agents: agents,
                 days: days.map {
                     SessionDaySummary(day: $0.day, turns: $0.turns, tokens: $0.tokens)
-                }
+                },
+                models: models
             ))
         }
 
@@ -853,7 +917,11 @@ actor JSONLAggregator: CostLogAggregating {
             day: dayStart(for: stored.timestamp),
             delta: Self.minus(replacement.tokens, stored.tokens),
             isMain: stored.agentID == nil,
-            agentID: stored.agentID
+            agentID: stored.agentID,
+            modelKey: SessionModelSummary.key(
+                model: stored.model,
+                effort: SessionModelSummary.effort(from: stored.effort)
+            )
         )
         sessionAggs[stored.sessionID] = agg
     }

@@ -124,4 +124,17 @@ enum SessionCopy {
         guard !expanded else { return "Show fewer" }
         return "Show all \(count) \(count == 1 ? "day" : "days")"
     }
+
+    static let byModelTitle = "By model"
+
+    /// The by-model table's column titles, in the order the wide row draws them. The
+    /// effort rides with the model name as a secondary label rather than as a column of
+    /// its own: a chat whose log never named one would otherwise draw a column of
+    /// dashes.
+    static let modelColumnTitles = ["Model", "Turns", "Tokens", "Cost"]
+
+    static func showAllModels(count: Int, expanded: Bool) -> String {
+        guard !expanded else { return "Show fewer" }
+        return "Show all \(count) \(count == 1 ? "model" : "models")"
+    }
 }

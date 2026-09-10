@@ -283,6 +283,64 @@ final class SessionCopySummaryTests: XCTestCase {
         XCTAssertEqual(SessionCopy.subAgentsTitle(count: 2), "Sub-agents (2)")
     }
 
+    // MARK: - (d) The by-model table
+
+    func testAModelRowShortensTheNameAndKeepsTheEffort() {
+        let row = SessionFixture.model(
+            model: "claude-opus-4-5-20251101", effort: "xhigh", turns: 12,
+            tokens: SessionFixture.tokens(input: 900_000, cost: SessionFixture.cost(input: 7.5))
+        )
+
+        XCTAssertEqual(
+            SessionCopy.modelColumns(row),
+            SessionModelColumns(
+                id: "claude-opus-4-5-20251101|xhigh", model: "Opus 4.5", effort: "xhigh",
+                turns: "12", tokens: "900.0k", cost: "$7.50"
+            )
+        )
+    }
+
+    func testAModelWithNoEffortCarriesNoLabelRatherThanADash() {
+        // The effort rides beside the model name, so "nothing to say" is nothing drawn;
+        // the sub-agent table's fixed-width column is the one that needs a dash.
+        let columns = SessionCopy.modelColumns(
+            SessionFixture.model(model: "gpt-5.6-terra", effort: nil, turns: 3)
+        )
+
+        XCTAssertNil(columns.effort)
+        XCTAssertEqual(columns.id, "gpt-5.6-terra|")
+        XCTAssertEqual(columns.turns, "3")
+    }
+
+    func testAnUnpricedModelRowShowsCountsAndNoDollars() {
+        XCTAssertEqual(
+            SessionCopy.modelColumns(SessionFixture.model(effort: "high", turns: 2)).cost,
+            "—"
+        )
+    }
+
+    func testAModelIdWithNoDisplayNameIsItsOwnName() {
+        // ModelPricing answers nil for a synthetic id; the row shows what the log wrote
+        // rather than an empty cell.
+        XCTAssertEqual(
+            SessionCopy.modelColumns(
+                SessionFixture.model(model: "<synthetic>", effort: nil)
+            ).model,
+            "<synthetic>"
+        )
+    }
+
+    func testTheByModelTitleAndColumnsAreTheSpecs() {
+        XCTAssertEqual(SessionCopy.byModelTitle, "By model")
+        XCTAssertEqual(SessionCopy.modelColumnTitles, ["Model", "Turns", "Tokens", "Cost"])
+    }
+
+    func testTheShowAllModelsButtonNamesWhatItIsHiding() {
+        XCTAssertEqual(SessionCopy.showAllModels(count: 9, expanded: false), "Show all 9 models")
+        XCTAssertEqual(SessionCopy.showAllModels(count: 1, expanded: false), "Show all 1 model")
+        XCTAssertEqual(SessionCopy.showAllModels(count: 9, expanded: true), "Show fewer")
+    }
+
     // MARK: - The whole expanded row, built once
 
     private func bigChat(agents: Int, days: Int) -> SessionSummary {
@@ -337,6 +395,57 @@ final class SessionCopySummaryTests: XCTestCase {
         XCTAssertTrue(detail.agentRows.isEmpty, "a Main thread row alone is a table about nothing")
         XCTAssertEqual(detail.totalAgents, 0)
         XCTAssertEqual(detail.hiddenAgents, 0)
+    }
+
+    private func manyModelChat(models count: Int) -> SessionSummary {
+        SessionFixture.session(
+            id: "s1", title: "Blume integration", turns: 40,
+            tokens: SessionFixture.tokens(input: 4_000_000, cost: SessionFixture.cost(input: 40)),
+            models: (1...count).map {
+                SessionFixture.model(
+                    model: "model-\($0)", effort: "high", turns: 2,
+                    tokens: SessionFixture.tokens(
+                        input: 1_000, cost: SessionFixture.cost(input: Double($0))
+                    )
+                )
+            }
+        )
+    }
+
+    func testAChatOnSevenModelsDrawsSixRowsAndCountsThemAll() {
+        let detail = SessionDetail.build(
+            session: manyModelChat(models: 7),
+            allAgents: false, allDays: false, calendar: calendar, locale: locale
+        )
+
+        XCTAssertEqual(detail.modelRows.count, 6)
+        XCTAssertEqual(detail.modelRows.first?.cost, "$7.00", "most expensive first")
+        XCTAssertEqual(detail.hiddenModels, 1)
+        XCTAssertEqual(detail.totalModels, 7, "the header count is never the capped one")
+    }
+
+    func testAskingForAllModelsGivesAllOfThem() {
+        let detail = SessionDetail.build(
+            session: manyModelChat(models: 7),
+            allAgents: false, allDays: false, allModels: true,
+            calendar: calendar, locale: locale
+        )
+
+        XCTAssertEqual(detail.modelRows.count, 7)
+        XCTAssertEqual(detail.hiddenModels, 0)
+    }
+
+    func testAChatOnOneModelWithNoEffortHasNoModelTableAtAll() {
+        let detail = SessionDetail.build(
+            session: SessionFixture.session(
+                id: "s1", models: [SessionFixture.model(model: "claude-opus-4-5", effort: nil)]
+            ),
+            allAgents: false, allDays: false, calendar: calendar, locale: locale
+        )
+
+        XCTAssertTrue(detail.modelRows.isEmpty, "the split line above already says all of it")
+        XCTAssertEqual(detail.hiddenModels, 0)
+        XCTAssertEqual(detail.totalModels, 1, "hidden is not the same as absent")
     }
 
     func testANinetyDayChatDrawsFourteenDaysAndCountsThemAll() {

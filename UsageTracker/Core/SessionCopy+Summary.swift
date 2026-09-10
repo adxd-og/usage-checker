@@ -26,6 +26,21 @@ struct SessionDayColumns: Identifiable, Equatable, Sendable {
     let cost: String
 }
 
+/// The by-model table's row. Separate from `SessionColumns` because the effort is a
+/// label beside the name here rather than a column, so "no effort" is nothing drawn
+/// instead of a dash — and because a model has no name of its own beyond the model.
+struct SessionModelColumns: Identifiable, Equatable, Sendable {
+    /// `SessionModelSummary.id` — the model and its effort, stable across a redraw.
+    let id: String
+    /// The short display name, or the raw id when `ModelPricing` has no name for it.
+    let model: String
+    /// nil when the log named no effort; the view then draws no label at all.
+    let effort: String?
+    let turns: String
+    let tokens: String
+    let cost: String
+}
+
 /// One expanded chat's three sections, already sorted, capped and turned into strings.
 ///
 /// A value type rather than a set of computed properties on the view for one measured
@@ -36,6 +51,13 @@ struct SessionDayColumns: Identifiable, Equatable, Sendable {
 /// its quota cache; a collapsed row builds nothing at all.
 struct SessionDetail: Equatable, Sendable {
     let split: String
+    /// The model rows the cap allows, most expensive first. Empty when the chat ran on
+    /// one model at one effort (§ Design: nothing to split) — the split line above
+    /// already says all of it.
+    let modelRows: [SessionModelColumns]
+    let hiddenModels: Int
+    /// The real number, whatever the cap drew — and whatever the table decided.
+    let totalModels: Int
     let agentsTitle: String
     /// "Main thread" first, then the agents the cap allows. Empty when the chat
     /// launched none — a Main thread row on its own is a table about nothing.
@@ -49,17 +71,28 @@ struct SessionDetail: Equatable, Sendable {
     let totalDays: Int
 
     static let empty = SessionDetail(
-        split: "", agentsTitle: "", agentRows: [], hiddenAgents: 0, totalAgents: 0,
+        split: "", modelRows: [], hiddenModels: 0, totalModels: 0,
+        agentsTitle: "", agentRows: [], hiddenAgents: 0, totalAgents: 0,
         dayRows: [], hiddenDays: 0, totalDays: 0
     )
 
+    /// `allModels` is defaulted where `allAgents` and `allDays` are not: the ten call
+    /// sites that predate the by-model section — four of them in a verifier's file —
+    /// keep asserting what they assert, and "a freshly opened chat starts at the cap"
+    /// is the honest default anyway.
     static func build(
         session: SessionSummary,
         allAgents: Bool,
         allDays: Bool,
+        allModels: Bool = false,
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> SessionDetail {
+        let models = session.models
+        let drawnModels = SessionListRule.showsModels(models)
+            ? (allModels ? SessionListRule.modelsByCost(models) : SessionListRule.pickModels(models))
+            : []
+
         let agents = session.agents
         let drawnAgents = allAgents
             ? SessionListRule.agentsByCost(agents)
@@ -75,6 +108,9 @@ struct SessionDetail: Equatable, Sendable {
 
         return SessionDetail(
             split: SessionCopy.splitLine(session.tokens),
+            modelRows: drawnModels.map(SessionCopy.modelColumns),
+            hiddenModels: max(0, drawnModels.isEmpty ? 0 : models.count - drawnModels.count),
+            totalModels: models.count,
             agentsTitle: SessionCopy.subAgentsTitle(count: agents.count),
             agentRows: agentRows,
             hiddenAgents: max(0, agents.count - drawnAgents.count),
@@ -156,6 +192,20 @@ extension SessionCopy {
             turns: "\(day.turns)",
             tokens: TokenFormat.formatTokens(day.tokens.total),
             cost: cost(day.tokens.cost?.total)
+        )
+    }
+
+    /// One row of the by-model table. The name is `ModelPricing`'s short one — "Opus
+    /// 4.5", "GPT 5.6 Terra" — falling back to the id the log wrote, which is what a
+    /// synthetic or unknown id has instead of a name.
+    static func modelColumns(_ model: SessionModelSummary) -> SessionModelColumns {
+        SessionModelColumns(
+            id: model.id,
+            model: ModelPricing.displayName(for: model.model) ?? model.model,
+            effort: model.effort,
+            turns: "\(model.turns)",
+            tokens: TokenFormat.formatTokens(model.tokens.total),
+            cost: cost(model.tokens.cost?.total)
         )
     }
 
