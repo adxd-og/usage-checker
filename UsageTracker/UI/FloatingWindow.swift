@@ -190,7 +190,7 @@ struct FloatingMiniContent: View {
 
     private func heroRow(_ hero: UsageBucket) -> some View {
         HStack(spacing: OMSpacing.m) {
-            OMRing(percent: hero.clampedPercent, size: .medium, pace: hero.elapsedFraction())
+            OMRing(used: hero.clampedPercent, mode: .used, size: .medium, pace: hero.elapsedFraction())
             VStack(alignment: .leading, spacing: 2) {
                 Text(hero.label)
                     .font(OMFont.bodyStrong)
@@ -216,7 +216,8 @@ struct FloatingMiniContent: View {
                 .lineLimit(1)
                 .frame(width: Self.rowLabelWidth, alignment: .leading)
             BarSegment(
-                percent: bucket.clampedPercent,
+                used: bucket.clampedPercent,
+                mode: .used,
                 height: 4,
                 showsLabel: false,
                 pace: bucket.elapsedFraction()

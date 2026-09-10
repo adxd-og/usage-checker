@@ -487,7 +487,7 @@ private struct ProviderDetail: View {
                 OMKeyValueRow(
                     label: bucket.label,
                     value: WindowRanking.sessionRowValue(bucket),
-                    barPercent: bucket.clampedPercent,
+                    barUsedPercent: bucket.clampedPercent,
                     pace: bucket.elapsedFraction(),
                     help: Self.resetTooltip(bucket)
                 )
@@ -503,7 +503,7 @@ private struct ProviderDetail: View {
                 OMKeyValueRow(
                     label: extraUsageTitle(plan: service.plan),
                     value: "\(OMCostTile.money(extra.usedCredits)) / \(extra.monthlyLimit.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
-                    barPercent: extra.utilization
+                    barUsedPercent: extra.utilization
                 )
             }
             if hero != nil, let week = service.weekCost, week > 0 {

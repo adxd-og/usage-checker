@@ -11,7 +11,7 @@ struct OMRingRow: View {
         LazyVGrid(columns: columns, spacing: OMSpacing.m) {
             ForEach(buckets) { bucket in
                 VStack(spacing: 5) {
-                    OMRing(percent: bucket.clampedPercent, size: .small, pace: bucket.elapsedFraction())
+                    OMRing(used: bucket.clampedPercent, mode: .used, size: .small, pace: bucket.elapsedFraction())
                     Text(WindowRanking.shortWindowLabel(bucket.label))
                         .font(.system(size: 10))
                         .foregroundStyle(.secondary)

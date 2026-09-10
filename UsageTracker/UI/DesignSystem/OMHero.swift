@@ -17,7 +17,7 @@ struct OMHero: View {
     var body: some View {
         let now = Date()
         return HStack(spacing: 14) {
-            OMRing(percent: hero.clampedPercent, size: .hero, pace: hero.elapsedFraction())
+            OMRing(used: hero.clampedPercent, mode: .used, size: .hero, pace: hero.elapsedFraction())
             VStack(alignment: .leading, spacing: 3) {
                 Text(hero.label).font(.system(size: 14, weight: .semibold))
                 if let reset = ResetCopy.both(resetsAt: hero.resetsAt, now: now) {

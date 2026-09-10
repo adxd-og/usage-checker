@@ -55,7 +55,7 @@ struct OMProviderTile: View {
         HStack(spacing: 9) {
             if let hero {
                 HStack(spacing: 9) {
-                    OMRing(percent: hero.clampedPercent, size: .medium, pace: hero.elapsedFraction())
+                    OMRing(used: hero.clampedPercent, mode: .used, size: .medium, pace: hero.elapsedFraction())
                     VStack(alignment: .leading, spacing: 2) {
                         Text(WindowRanking.shortWindowLabel(hero.label))
                             .font(.system(size: 10)).foregroundStyle(.secondary)
@@ -96,14 +96,14 @@ struct OMProviderTile: View {
         if service.isRetained {
             VStack(alignment: .leading, spacing: 3) {
                 if let secondary {
-                    BarSegment(percent: secondary.clampedPercent, height: 5, showsLabel: false)
+                    BarSegment(used: secondary.clampedPercent, mode: .used, height: 5, showsLabel: false)
                         .opacity(numbersOpacity)
                 }
                 stateRow
             }
         } else if service.state == .ok, let secondary {
             VStack(alignment: .leading, spacing: 3) {
-                BarSegment(percent: secondary.clampedPercent, height: 5, showsLabel: false)
+                BarSegment(used: secondary.clampedPercent, mode: .used, height: 5, showsLabel: false)
                 Text("\(WindowRanking.shortWindowLabel(secondary.label)) \(Int(secondary.clampedPercent.rounded()))%")
                     .font(.system(size: 10)).foregroundStyle(.secondary).monospacedDigit()
             }

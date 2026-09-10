@@ -203,7 +203,7 @@ struct SmallProviderView: View {
 
     var body: some View {
         ZStack {
-            OMRing(percent: service.headlineBucket?.percent ?? 0, size: .widget, showsLabel: false)
+            OMRing(used: service.headlineBucket?.percent ?? 0, mode: .used, size: .widget, showsLabel: false)
             VStack(spacing: 0) {
                 Text(service.name)
                     .font(.system(size: 10, weight: .medium))
@@ -398,7 +398,7 @@ struct WidgetBucketRow: View {
                         .foregroundStyle(.tertiary)
                 }
             }
-            BarSegment(percent: bucket.percent, height: compact ? 5 : 6)
+            BarSegment(used: bucket.percent, mode: .used, height: compact ? 5 : 6)
         }
     }
 }

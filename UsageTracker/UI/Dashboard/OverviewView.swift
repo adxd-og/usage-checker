@@ -108,7 +108,7 @@ struct OverviewView: View {
                     .font(OMFont.bodyStrong)
             }
             Spacer()
-            OMRing(percent: bucket?.clampedPercent ?? 0, size: .medium)
+            OMRing(used: bucket?.clampedPercent ?? 0, mode: .used, size: .medium)
         }
         .dashboardCard(padding: 14)
     }
@@ -182,7 +182,7 @@ struct OverviewView: View {
                     OMKeyValueRow(
                         label: b.label,
                         value: ResetCopy.both(resetsAt: b.resetsAt, now: now) ?? "resets —",
-                        barPercent: b.clampedPercent,
+                        barUsedPercent: b.clampedPercent,
                         pace: b.elapsedFraction(),
                         help: ResetCopy.absolute(resetsAt: b.resetsAt, now: now).map { "Resets \($0)" } ?? ""
                     )
