@@ -11,6 +11,21 @@ import Foundation
 /// `session_meta` is always line 1 and `turn_context` always precedes the first
 /// `token_count` (verified across the whole rollout tree, 2026-09-05).
 ///
+/// A rollout written by a recent CLI carries one `token_usage_record` per API response,
+/// written just before that response's `token_count`. Those records are the bill: the
+/// cumulative counter resets after long pauses and never includes compaction calls (on
+/// this Mac's 2026-09-06 17:25 session the records sum to 3,783,861 against the
+/// counter's 3,523,616 — 7 % of the session invisible to counters). A file that writes
+/// no records is billed from the counter's deltas exactly as before, and the decision is
+/// per file, not per CLI version: some 0.153 rollouts write only `token_count`.
+///
+/// Nothing here is persisted. Unlike `JSONLAggregator`, which keeps a versioned
+/// `cost-cache-claude-v1.json` and has to discard it when the billing rule changes,
+/// this aggregator rebuilds its parse state, its turns and its session aggregates from
+/// the rollout tree on every launch — the 90-day mtime window keeps that cheap — so a
+/// rule change takes effect the first time the new build runs and no stale figure can
+/// outlive it.
+///
 /// Codex's `input_tokens` *includes* both the cached input and the tokens written to
 /// cache, so fresh input is OpenAI's `ordinary_input_tokens`: `input − cached −
 /// cache_write`. Each of the three bills at its own rate — cache writes at 1.25× the
@@ -20,13 +35,29 @@ import Foundation
 actor CodexUsageAggregator: CostLogAggregating {
     static let shared = CodexUsageAggregator()
 
-    /// One `token_count` delta: what the model call added to the session.
+    /// One billed API response: a `token_usage_record`, or — in a file that writes
+    /// none — one `token_count` delta.
     private struct Turn: Sendable {
         let timestamp: Date
         let model: String
+        /// The reasoning effort the `turn_context` named. nil in a rollout old enough
+        /// not to write one.
+        let effort: String?
         let projectSlug: String
         let cost: Double
         let tokens: TokenBreakdown
+        /// The chat this turn belongs to — a sub-agent's turns carry the PARENT's
+        /// `session_id`, which is what makes them part of the same chat.
+        let sessionID: String
+        /// The thread that spent the tokens: the session's own id on the main thread,
+        /// the agent's on a sub-agent rollout.
+        let threadID: String
+        /// Set exactly when the file is a sub-agent rollout; then it equals `threadID`.
+        let agentID: String?
+        /// `agent_nickname`, or `agent_path` when the nickname is missing.
+        let agentKind: String?
+        /// The `originator` of the rollout that produced the turn.
+        let origin: String?
     }
 
     /// One cumulative `total_token_usage` reading, and (as a difference of two) one
@@ -39,6 +70,12 @@ actor CodexUsageAggregator: CostLogAggregating {
         var reasoning = 0
     }
 
+    /// What a `turn_context` says about the turn it opens.
+    struct TurnContext: Equatable, Sendable {
+        var model: String?
+        var effort: String?
+    }
+
     /// Per-file incremental parse state. The cumulative-counter format means a resumed
     /// parse must carry the previous baseline, the selected model and the project the
     /// `session_meta` line named, so the active session file only has its new tail read
@@ -48,6 +85,8 @@ actor CodexUsageAggregator: CostLogAggregating {
         /// re-read on the next poll.
         var consumed: UInt64 = 0
         var currentModel: String?
+        /// The reasoning effort of the latest `turn_context`, carried the same way.
+        var currentEffort: String?
         /// The `session_meta` cwd, percent-encoded — see `encode(cwd:)`.
         var projectSlug: String?
         /// Cumulative counters as of the previous `token_count` event.
@@ -58,18 +97,106 @@ actor CodexUsageAggregator: CostLogAggregating {
         var pendingTokens: TokenBreakdown?
         /// When those tokens were first spent — the timestamp the recovered turn carries.
         var pendingSince: Date?
+        /// True from the first top-level `token_usage_record` this file writes. From
+        /// then on the records are the bill and `token_count` is only a baseline: the
+        /// counter is cumulative but never includes compaction calls, so a file that
+        /// has both would lose that spend if it billed from the counter, and would
+        /// double every response if it billed from both.
+        var sawRecord = false
+        /// FNV-1a hashes of `thread_id|response_id` for the responses this file has
+        /// already billed, so a re-read tail never bills one twice. Bounded by the
+        /// number of responses in one rollout (tens), and pruned with the file's state.
+        var seenResponses: Set<UInt64> = []
+        /// `turn_context` by `turn_id` — a record names the turn it belongs to, and a
+        /// rollout can carry several models and efforts after a resume.
+        var contexts: [String: TurnContext] = [:]
+        /// The latest `turn_context`, whatever its id: the label for a record whose
+        /// `turn_id` this file has no context for (a sub-agent rollout opens with the
+        /// parent's root turn).
+        var latestContext: TurnContext?
+        /// Identity, from the FIRST `session_meta` in the file and nothing else.
+        var sawMeta = false
+        var sessionID: String?
+        var threadID: String?
+        var isSubagent = false
+        var agentKind: String?
+        var origin: String?
+        /// Set once this file has contributed a first prompt, so the rest of its
+        /// `response_item` lines are skipped instead of re-examined.
+        var sawPrompt = false
+    }
+
+    /// One local day of a chat. `mainTokens` is kept alongside `tokens` because a
+    /// clipped summary has to answer "how much of this range was the main thread?" and
+    /// `SessionDaySummary` carries only the combined figure.
+    struct DaySlice: Equatable, Sendable {
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+    }
+
+    /// One sub-agent thread of a chat.
+    struct AgentAgg: Equatable, Sendable {
+        var kind: String
+        var model: String?
+        var effort: String?
+        var firstAt: Date
+        var lastAt: Date
+        var turns: Int
+        var tokens: TokenBreakdown
+    }
+
+    /// One chat: the main thread, its sub-agents, and its days. Kept for 92 days
+    /// (`sessionRetention`), independently of `recentTurns`, so a chat that started
+    /// last month still shows its whole span.
+    struct SessionAgg: Equatable, Sendable {
+        var projectSlug: String
+        var origin: String?
+        var firstAt: Date
+        var lastAt: Date
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+        var byDay: [Date: DaySlice] = [:]
+        var agents: [String: AgentAgg] = [:]
+        /// False until a main-thread turn has named the project and the originator. A
+        /// sub-agent file can be read first — the enumerator's order is not the
+        /// session's — and its slug and origin stand in until the parent's arrive.
+        var hasMainIdentity = false
     }
 
     private let rootURL: URL
+    /// `~/.codex/archived_sessions` — the same rollouts, moved out of the dated tree.
+    /// nil when the injected root is not a Codex home (see `sibling(of:named:)`).
+    private let archivedURL: URL?
+    /// `~/.codex/session_index.jsonl`, read in Task 5. Derived the same way.
+    private let indexURL: URL?
+    /// The calendar every day boundary is taken in. Injected so a session test can pin
+    /// UTC instead of drifting with the machine's time zone.
+    private let calendar: Calendar
+    /// Per rollout, keyed by `fileKey(for:)` — the thread uuid, not the path.
     private var fileStates: [String: FileState] = [:]
     /// Turns young enough to feed the rolling today/week/month figures; older ones fold
     /// into `oldDays` and are released.
     private var recentTurns: [Turn] = []
     private var oldDays: [Date: DayAgg] = [:]
+    private var sessionAggs: [String: SessionAgg] = [:]
+    /// `thread_name` per session id, from `~/.codex/session_index.jsonl`.
+    private var names: [String: String] = [:]
+    /// What the index looked like when it was last read. The file is rewritten on every
+    /// rename, so size-and-mtime is enough to skip re-parsing it on a quiet poll.
+    private var indexMark: (size: UInt64, mtime: Date)?
+    /// The first thing the user typed in a chat, for the chats Codex never named — it
+    /// writes no index entry for `codex exec` sessions. Kept with the timestamp so the
+    /// earliest wins when a session spans two rollouts.
+    private var firstPrompts: [String: (text: String, at: Date)] = [:]
     private let mtimeWindow: TimeInterval = 90 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the month
     /// boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
+    /// Chats are kept three times longer than turns: the History list reaches back a
+    /// quarter and holds one small aggregate per chat, not one record per turn.
+    private let sessionRetention: TimeInterval = 92 * 24 * 3600
     private var dayCache: (start: Date, next: Date)?
 
     private struct DayAgg {
@@ -87,10 +214,28 @@ actor CodexUsageAggregator: CostLogAggregating {
     }()
 
     /// Injectable log root — the tests point it at a fixture tree instead of the real
-    /// `~/.codex/sessions`.
-    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".codex/sessions", isDirectory: true)) {
+    /// `~/.codex/sessions`. The archive and the name index are derived from it rather
+    /// than passed separately, so the app injects one path and a test injects one path.
+    init(
+        rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/sessions", isDirectory: true),
+        archivedURL: URL? = nil,
+        indexURL: URL? = nil,
+        calendar: Calendar = .current
+    ) {
         self.rootURL = rootURL
+        self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
+        self.indexURL = indexURL ?? Self.sibling(of: rootURL, named: "session_index.jsonl")
+        self.calendar = calendar
+    }
+
+    /// `archived_sessions` and `session_index.jsonl` are siblings of the sessions root
+    /// inside `~/.codex`. They are derived only when the root really is named
+    /// `sessions`: a suite that injects its own temp directory then reads neither, and
+    /// stays hermetic without having to pass three paths at every construction site.
+    nonisolated static func sibling(of root: URL, named name: String) -> URL? {
+        guard root.lastPathComponent == "sessions" else { return nil }
+        return root.deletingLastPathComponent().appendingPathComponent(name)
     }
 
     func refresh() async {
@@ -246,6 +391,92 @@ actor CodexUsageAggregator: CostLogAggregating {
         )
     }
 
+    /// One chat as § 1 defines it, clipped to `[start, end]` at local-day granularity:
+    /// the days outside the range are dropped and the totals re-summed from what is
+    /// left, which is also how a range shorter than a day (the History tab's 5h) widens
+    /// to the day it falls in. `firstAt` / `lastAt` stay the chat's own span — the row
+    /// says when the chat ran, not when the range starts. Returns nil when no day of
+    /// the chat falls inside the range.
+    nonisolated static func summary(
+        sessionID: String,
+        agg: SessionAgg,
+        title: String?,
+        from start: Date,
+        to end: Date,
+        calendar: Calendar
+    ) -> SessionSummary? {
+        let lower = calendar.startOfDay(for: start)
+        let upper = calendar.startOfDay(for: end)
+        let days = agg.byDay.filter { $0.key >= lower && $0.key <= upper }
+        guard !days.isEmpty else { return nil }
+
+        var turns = 0
+        var tokens = TokenBreakdown.zero
+        var mainTokens = TokenBreakdown.zero
+        var daySummaries: [SessionDaySummary] = []
+        daySummaries.reserveCapacity(days.count)
+        for (day, slice) in days.sorted(by: { $0.key < $1.key }) {
+            turns += slice.turns
+            tokens += slice.tokens
+            mainTokens += slice.mainTokens
+            daySummaries.append(
+                SessionDaySummary(day: day, turns: slice.turns, tokens: slice.tokens)
+            )
+        }
+
+        // Agents are kept or dropped whole: only their span is stored, not a per-day
+        // split, so an agent that ran inside the range contributes all of its tokens.
+        let upperExclusive = calendar.date(byAdding: .day, value: 1, to: upper)
+            ?? upper.addingTimeInterval(86_400)
+        let agents = agg.agents
+            .filter { $0.value.lastAt >= lower && $0.value.firstAt < upperExclusive }
+            .map { id, a in
+                SessionAgentSummary(
+                    id: id, kind: a.kind, model: a.model, effort: a.effort,
+                    firstAt: a.firstAt, lastAt: a.lastAt, turns: a.turns, tokens: a.tokens
+                )
+            }
+            .sorted {
+                let l = $0.tokens.cost?.total ?? 0
+                let r = $1.tokens.cost?.total ?? 0
+                return l == r ? $0.id < $1.id : l > r
+            }
+
+        return SessionSummary(
+            id: sessionID,
+            providerID: "codex",
+            title: title,
+            projectSlug: agg.projectSlug,
+            origin: agg.origin,
+            firstAt: agg.firstAt,
+            lastAt: agg.lastAt,
+            turns: turns,
+            tokens: tokens,
+            mainTokens: mainTokens,
+            agents: agents,
+            days: daySummaries
+        )
+    }
+
+    /// Every chat with a day inside the range, newest first. Reads what `refresh()` has
+    /// already ingested, the way `breakdown()` and `usage(from:to:)` do.
+    ///
+    /// Spelled `async` — unlike `breakdown()`, which is not — to match
+    /// `CostLogAggregating.sessions(from:to:)` exactly. That requirement has a default
+    /// implementation returning `[]`, and a non-`async` method here would merely be an
+    /// overload of it: a direct call on `CodexUsageAggregator` then resolves to the
+    /// protocol extension and every chat silently disappears.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] {
+        sessionAggs
+            .compactMap {
+                Self.summary(
+                    sessionID: $0.key, agg: $0.value, title: title(for: $0.key),
+                    from: start, to: end, calendar: calendar
+                )
+            }
+            .sorted { $0.lastAt > $1.lastAt }
+    }
+
     private static func summaries(
         _ acc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)]
     ) -> [ProjectSummary] {
@@ -265,19 +496,167 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - Ingest
 
     private func ingestAll() {
+        reloadNamesIfChanged()
         scanAndIngest()
         pruneAndFold()
+    }
+
+    /// Re-reads `session_index.jsonl` only when it has actually changed. Codex rewrites
+    /// the whole file on every rename, so a poll that finds the same size and timestamp
+    /// has nothing new to learn.
+    private func reloadNamesIfChanged() {
+        guard let indexURL else { return }
+        // `FileManager`, not `URL.resourceValues`: a `URL` caches the resource values it
+        // has already been asked for, and this one is a stored property, so the gate
+        // would keep seeing the timestamp of the first poll for the life of the process.
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: indexURL.path),
+              let mtime = attributes[.modificationDate] as? Date else {
+            names = [:]
+            indexMark = nil
+            return
+        }
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        if let mark = indexMark, mark.size == size, mark.mtime == mtime { return }
+        indexMark = (size, mtime)
+        names = Self.parseIndex(try? Data(contentsOf: indexURL))
+    }
+
+    /// `{"id","thread_name","updated_at"}`, several lines per id — Codex renames a
+    /// thread seconds after opening it — so the latest `updated_at` wins and a tie goes
+    /// to the later line. A line we cannot read is skipped, not fatal: the index is a
+    /// convenience and the first prompt is still there.
+    nonisolated static func parseIndex(_ data: Data?) -> [String: String] {
+        guard let data, !data.isEmpty else { return [:] }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+
+        var best: [String: (name: String, at: Date)] = [:]
+        for line in data.split(separator: 0x0A) where !line.isEmpty {
+            guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                  let id = obj["id"] as? String,
+                  let name = obj["thread_name"] as? String,
+                  !name.isEmpty else { continue }
+            let stamp = obj["updated_at"] as? String
+            let at = stamp.flatMap { fractional.date(from: $0) ?? plain.date(from: $0) }
+                ?? .distantPast
+            if let current = best[id], current.at > at { continue }
+            best[id] = (name, at)
+        }
+        return best.mapValues(\.name)
+    }
+
+    /// A chat Codex never named is still recognisable by what it was asked to do.
+    /// § Facts: the first user message whose `content_item_kinds` says `user.text`;
+    /// failing that the first `input_text` that does not open with `<` or `#`, which is
+    /// how the AGENTS.md and environment preambles arrive under the user role. A
+    /// sub-agent's log opens with the task it was handed, which is not what the user
+    /// typed, so those files are never asked.
+    private func captureFirstPrompt(_ obj: [String: Any], state: inout FileState) {
+        guard !state.sawPrompt, !state.isSubagent, let sessionID = state.sessionID else { return }
+        guard let payload = obj["payload"] as? [String: Any],
+              payload["role"] as? String == "user",
+              let content = payload["content"] as? [[String: Any]] else { return }
+        guard let raw = content.first(where: { $0["type"] as? String == "input_text" })?["text"] as? String
+        else { return }
+
+        let meta = payload["internal_chat_message_metadata_passthrough"] as? [String: Any]
+        let kinds = meta?["content_item_kinds"] as? [String]
+        if let kinds {
+            // A kinds list that is not `user.text` is machinery, whatever it looks like.
+            guard kinds.contains("user.text") else { return }
+        } else {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.hasPrefix("<"), !trimmed.hasPrefix("#") else { return }
+        }
+        guard let title = Self.promptTitle(raw) else { return }
+
+        // `.distantFuture` for a line we cannot date: it fills an empty slot and never
+        // displaces a prompt that knows when it was typed.
+        let at = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? .distantFuture
+        state.sawPrompt = true
+        if let existing = firstPrompts[sessionID], existing.at <= at { return }
+        firstPrompts[sessionID] = (title, at)
+    }
+
+    /// Whitespace-collapsed and cut at 80 characters — the same shape § 2 gives
+    /// Claude's first prompts, so a row is the same width whichever provider wrote it.
+    nonisolated static func promptTitle(_ raw: String) -> String? {
+        let collapsed = raw.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > 80 else { return collapsed }
+        return String(collapsed.prefix(80)) + "…"
+    }
+
+    /// Codex's own name for the chat, or the first thing the user typed in it.
+    private func title(for sessionID: String) -> String? {
+        names[sessionID] ?? firstPrompts[sessionID]?.text
     }
 
     private func ingest(_ turns: [Turn]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         for turn in turns {
+            // Before the fold decision: the session aggregate reaches back 92 days,
+            // three times further than `recentTurns`.
+            record(turn)
             if turn.timestamp < recentCutoff {
                 fold(turn)
             } else {
                 recentTurns.append(turn)
             }
         }
+    }
+
+    /// Adds one turn to its chat's aggregate: the session totals, the local day, and —
+    /// when it came from a sub-agent rollout — that agent's own row.
+    private func record(_ t: Turn) {
+        var agg = sessionAggs[t.sessionID] ?? SessionAgg(
+            projectSlug: t.projectSlug, origin: t.origin,
+            firstAt: t.timestamp, lastAt: t.timestamp
+        )
+        agg.firstAt = min(agg.firstAt, t.timestamp)
+        agg.lastAt = max(agg.lastAt, t.timestamp)
+        agg.turns += 1
+        agg.tokens += t.tokens
+
+        let day = dayStart(for: t.timestamp)
+        var slice = agg.byDay[day] ?? DaySlice()
+        slice.turns += 1
+        slice.tokens += t.tokens
+
+        if let agentID = t.agentID {
+            var a = agg.agents[agentID] ?? AgentAgg(
+                kind: t.agentKind ?? "sub-agent", model: nil, effort: nil,
+                firstAt: t.timestamp, lastAt: t.timestamp, turns: 0, tokens: .zero
+            )
+            if let kind = t.agentKind { a.kind = kind }
+            a.firstAt = min(a.firstAt, t.timestamp)
+            // "Last model seen" is the last one in time, not the last one parsed: two
+            // rollouts of one session are read in whatever order the enumerator hands
+            // them over.
+            if t.timestamp >= a.lastAt {
+                a.lastAt = t.timestamp
+                a.model = t.model
+                a.effort = t.effort
+            }
+            a.turns += 1
+            a.tokens += t.tokens
+            agg.agents[agentID] = a
+        } else {
+            agg.mainTokens += t.tokens
+            slice.mainTokens += t.tokens
+            // The chat's project and originator are the main thread's; a sub-agent's
+            // only stand in until the parent's rollout has been read.
+            if !agg.hasMainIdentity || t.timestamp >= agg.lastAt {
+                agg.projectSlug = t.projectSlug
+                agg.origin = t.origin ?? agg.origin
+            }
+            agg.hasMainIdentity = true
+        }
+
+        agg.byDay[day] = slice
+        sessionAggs[t.sessionID] = agg
     }
 
     private func fold(_ t: Turn) {
@@ -305,13 +684,17 @@ actor CodexUsageAggregator: CostLogAggregating {
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
         }
+        let sessionCutoff = Date().addingTimeInterval(-sessionRetention)
+        if sessionAggs.contains(where: { $0.value.lastAt < sessionCutoff }) {
+            sessionAggs = sessionAggs.filter { $0.value.lastAt >= sessionCutoff }
+            firstPrompts = firstPrompts.filter { sessionAggs[$0.key] != nil }
+        }
     }
 
     private func dayStart(for date: Date) -> Date {
         if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = Calendar.current
-        let start = cal.startOfDay(for: date)
-        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
+        let start = calendar.startOfDay(for: date)
+        let next = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
         dayCache = (start, next)
         return start
     }
@@ -319,24 +702,40 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - File scanning
 
     private func scanAndIngest() {
+        var seenKeys: Set<String> = []
+        for directory in [rootURL, archivedURL].compactMap({ $0 }) {
+            scan(directory, seenKeys: &seenKeys)
+        }
+        // Parse state for a rollout the enumerators no longer return — a deleted
+        // session, a tree that aged out of the mtime window — would otherwise stay
+        // pinned for the life of the process.
+        if fileStates.count > seenKeys.count {
+            fileStates = fileStates.filter { seenKeys.contains($0.key) }
+        }
+    }
+
+    private func scan(_ directory: URL, seenKeys: inout Set<String>) {
         guard let enumerator = FileManager.default.enumerator(
-            at: rootURL,
+            at: directory,
             includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) else { return }
 
         let cutoff = Date().addingTimeInterval(-mtimeWindow)
-        var seenPaths: Set<String> = []
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            // Untouched for 90 days: too old to reach any figure we show, so it is never
-            // parsed and — by staying out of `seenPaths` — never remembered either.
+            // Untouched for 90 days: too old to reach any figure we show, so it is
+            // never parsed and — by staying out of `seenKeys` — never remembered.
             guard (values?.contentModificationDate ?? .distantPast) >= cutoff else { continue }
             let size = UInt64(values?.fileSize ?? 0)
-            seenPaths.insert(url.path)
+            // The thread the file belongs to, not where it currently sits: archiving a
+            // rollout moves it from the dated tree into `archived_sessions`, and a
+            // path key would make the copy a brand-new file and bill it all over again.
+            let key = Self.fileKey(for: url)
+            seenKeys.insert(key)
 
-            var state = fileStates[url.path] ?? FileState()
+            var state = fileStates[key] ?? FileState()
             if size < state.consumed {
                 // Truncated or rewritten in place — the carried baseline is invalid.
                 state = FileState()
@@ -344,19 +743,29 @@ actor CodexUsageAggregator: CostLogAggregating {
             if size > state.consumed {
                 // One file at a time inside an autorelease pool: a first scan over a
                 // long-lived session tree is a lot of JSON garbage otherwise.
-                autoreleasepool { parseTail(at: url, state: &state) }
+                autoreleasepool { parseTail(at: url, key: key, state: &state) }
             }
-            fileStates[url.path] = state
-        }
-        // A file that aged out of the mtime window, or was deleted, never hits the loop
-        // again — without eviction its parse state stays pinned for the life of the
-        // process.
-        if fileStates.count > seenPaths.count {
-            fileStates = fileStates.filter { seenPaths.contains($0.key) }
+            fileStates[key] = state
         }
     }
 
-    private func parseTail(at url: URL, state: inout FileState) {
+    /// A rollout's identity: the thread uuid its file name ends with
+    /// (`rollout-<timestamp>-<uuid>.jsonl`). Falls back to the path for anything that
+    /// does not look like one, which is then keyed exactly as it used to be.
+    nonisolated static func fileKey(for url: URL) -> String {
+        let name = url.deletingPathExtension().lastPathComponent
+        let tail = String(name.suffix(36))
+        return isUUID(tail) ? tail : url.path
+    }
+
+    private nonisolated static func isUUID(_ s: String) -> Bool {
+        guard s.count == 36 else { return false }
+        let groups = s.split(separator: "-", omittingEmptySubsequences: false)
+        guard groups.map(\.count) == [8, 4, 4, 4, 12] else { return false }
+        return s.allSatisfy { $0 == "-" || $0.isHexDigit }
+    }
+
+    private func parseTail(at url: URL, key: String, state: inout FileState) {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
         defer { try? handle.close() }
         do { try handle.seek(toOffset: state.consumed) } catch { return }
@@ -376,7 +785,7 @@ actor CodexUsageAggregator: CostLogAggregating {
                 let i = UnsafeRawPointer(nl) - base
                 if i > lineStart {
                     let line = Data(bytes: base.advanced(by: lineStart), count: i - lineStart)
-                    if let turn = parseLine(line, state: &state, fallbackSlug: fallbackSlug) {
+                    if let turn = parseLine(line, state: &state, fallbackSlug: fallbackSlug, fileKey: key) {
                         turns.append(turn)
                     }
                 }
@@ -394,20 +803,46 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Folds `session_meta` / `turn_context` into the carried parse state and returns
     /// the turn a `token_count` delta completes, if any — or, at a `turn_context`, the
     /// turn that names deltas which arrived before the file had a model.
-    private func parseLine(_ data: Data, state: inout FileState, fallbackSlug: String) -> Turn? {
+    private func parseLine(
+        _ data: Data, state: inout FileState, fallbackSlug: String, fileKey: String
+    ) -> Turn? {
         guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String else { return nil }
 
         if type == "session_meta" {
-            if let payload = obj["payload"] as? [String: Any], let cwd = payload["cwd"] as? String {
+            // Only the FIRST meta is this file's identity: a sub-agent rollout's second
+            // line is a verbatim copy of its parent's meta, and adopting it would hand
+            // the agent's tokens to the main thread.
+            guard !state.sawMeta, let payload = obj["payload"] as? [String: Any] else { return nil }
+            state.sawMeta = true
+            if let cwd = payload["cwd"] as? String {
                 state.projectSlug = Self.encode(cwd: cwd)
+            }
+            state.sessionID = payload["session_id"] as? String
+            state.threadID = payload["id"] as? String
+            state.origin = payload["originator"] as? String
+            if payload["thread_source"] as? String == "subagent" {
+                state.isSubagent = true
+                // `agent_nickname` is JSON null on a sub-agent that was never named, in
+                // which case its path is what the user would recognise.
+                state.agentKind = (payload["agent_nickname"] as? String)
+                    ?? (payload["agent_path"] as? String)
             }
             return nil
         }
 
         if type == "turn_context" {
             if let payload = obj["payload"] as? [String: Any] {
-                if let model = payload["model"] as? String { state.currentModel = model }
+                let ctx = TurnContext(
+                    model: payload["model"] as? String,
+                    effort: payload["effort"] as? String
+                )
+                if ctx.model != nil || ctx.effort != nil {
+                    state.latestContext = ctx
+                    if let turnID = payload["turn_id"] as? String { state.contexts[turnID] = ctx }
+                }
+                if let model = ctx.model { state.currentModel = model }
+                if let effort = ctx.effort { state.currentEffort = effort }
                 // `session_meta` names the cwd on line 1 of every rollout; this is the
                 // fallback for a file whose first line we never saw.
                 if state.projectSlug == nil, let cwd = payload["cwd"] as? String {
@@ -421,11 +856,23 @@ actor CodexUsageAggregator: CostLogAggregating {
             let ts = state.pendingSince ?? Date()
             state.pendingTokens = nil
             state.pendingSince = nil
-            return turn(tokens: pending, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
+            return turn(tokens: pending, model: model, effort: state.currentEffort,
+                        at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
         }
 
-        // `token_usage_record` restates the same counters under its own type; billing it
-        // would double every figure.
+        // The authoritative per-response bill, when the file writes one. `compacted`
+        // embeds a copy of the latest record under `payload.latest_token_usage_record`
+        // and is deliberately not parsed at all: it is not a `token_usage_record` at
+        // top level, so it falls through every branch here.
+        if type == "token_usage_record" {
+            return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug, fileKey: fileKey)
+        }
+
+        if type == "response_item" {
+            captureFirstPrompt(obj, state: &state)
+            return nil
+        }
+
         guard type == "event_msg",
               let payload = obj["payload"] as? [String: Any],
               payload["type"] as? String == "token_count",
@@ -442,6 +889,11 @@ actor CodexUsageAggregator: CostLogAggregating {
         )
         let previous = state.prev
         state.prev = reading
+
+        // The counter keeps tracking whatever the file writes — a file that switches to
+        // records mid-way must not measure its next delta from a stale baseline — but
+        // once a record has been seen, the record is the bill.
+        if state.sawRecord { return nil }
 
         var delta = Counters(
             input: reading.input - previous.input,
@@ -481,7 +933,81 @@ actor CodexUsageAggregator: CostLogAggregating {
             return nil
         }
 
-        return turn(tokens: tokens, model: model, at: ts, state: state, fallbackSlug: fallbackSlug)
+        return turn(tokens: tokens, model: model, effort: state.currentEffort,
+                    at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
+    }
+
+    /// One `token_usage_record`: the usage the API itself reported for one response.
+    /// Unlike the cumulative counter it covers compaction calls, which is the spend
+    /// `token_count` silently omits.
+    private func recordTurn(
+        _ obj: [String: Any], state: inout FileState, fallbackSlug: String, fileKey: String
+    ) -> Turn? {
+        guard let payload = obj["payload"] as? [String: Any],
+              let usage = payload["usage"] as? [String: Any] else { return nil }
+        // Set before the dedupe returns: a file that writes records bills from records
+        // even when this particular line is one it has already seen.
+        state.sawRecord = true
+
+        let responseID = (payload["response_id"] as? String) ?? ""
+        if !responseID.isEmpty {
+            let threadID = (payload["thread_id"] as? String) ?? ""
+            guard state.seenResponses
+                .insert(Self.stableHash("\(threadID)|\(responseID)")).inserted
+            else { return nil }
+        }
+
+        let input = Self.intValue(usage["input_tokens"])
+        let cacheRead = max(0, Self.intValue(usage["cached_input_tokens"]))
+        let cacheWrite = max(0, Self.intValue(usage["cache_write_input_tokens"]))
+        let output = max(0, Self.intValue(usage["output_tokens"]))
+        let reasoning = max(0, Self.intValue(usage["reasoning_output_tokens"]))
+        guard input > 0 || output > 0 else { return nil }
+
+        // OpenAI's own formula: ordinary_input = input − cached − cache_write. All
+        // three counters live inside `input_tokens`, so leaving the writes in would
+        // bill them twice and add them to the turn's total a second time.
+        let tokens = TokenBreakdown(
+            input: max(0, input - cacheRead - cacheWrite),
+            output: output,
+            cacheRead: cacheRead,
+            cacheWrite5m: cacheWrite,
+            cacheWrite1h: 0,
+            thinking: reasoning
+        )
+        let ts = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? Date()
+        let ctx = Self.context(
+            forTurn: payload["turn_id"] as? String, in: state.contexts, latest: state.latestContext
+        )
+        guard let model = ctx?.model ?? state.currentModel else {
+            // Same recovery as the counter path: real tokens with nothing to price them
+            // wait for the first `turn_context` that follows.
+            state.pendingTokens = state.pendingTokens.map { $0 + tokens } ?? tokens
+            if state.pendingSince == nil { state.pendingSince = ts }
+            return nil
+        }
+        return turn(tokens: tokens, model: model, effort: ctx?.effort ?? state.currentEffort,
+                    at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
+    }
+
+    /// The `turn_context` a record belongs to: the one that opened its `turn_id`, and
+    /// failing that the latest the file has seen.
+    nonisolated static func context(
+        forTurn turnID: String?, in contexts: [String: TurnContext], latest: TurnContext?
+    ) -> TurnContext? {
+        if let turnID, let exact = contexts[turnID] { return exact }
+        return latest
+    }
+
+    /// FNV-1a over UTF-8: 8 bytes per remembered response instead of a retained pair of
+    /// id strings, and stable for the life of the file's parse state.
+    nonisolated static func stableHash(_ s: String) -> UInt64 {
+        var h: UInt64 = 0xcbf2_9ce4_8422_2325
+        for b in s.utf8 {
+            h ^= UInt64(b)
+            h = h &* 0x0000_0100_0000_01b3
+        }
+        return h
     }
 
     /// Prices one delta and dresses it as a turn. A model models.dev doesn't know keeps
@@ -490,20 +1016,31 @@ actor CodexUsageAggregator: CostLogAggregating {
     private func turn(
         tokens: TokenBreakdown,
         model: String,
+        effort: String?,
         at timestamp: Date,
         state: FileState,
-        fallbackSlug: String
+        fallbackSlug: String,
+        fileKey: String
     ) -> Turn {
         var tokens = tokens
         if let price = ModelPricing.dynamicLookup(for: model) {
             tokens = tokens.priced(with: price)
         }
+        // A rollout whose first line we never read still has an identity: the thread
+        // uuid its file name ends with, which is exactly what the meta would have said.
+        let threadID = state.threadID ?? fileKey
         return Turn(
             timestamp: timestamp,
             model: model,
+            effort: effort,
             projectSlug: state.projectSlug ?? fallbackSlug,
             cost: tokens.cost?.total ?? 0,
-            tokens: tokens
+            tokens: tokens,
+            sessionID: state.sessionID ?? threadID,
+            threadID: threadID,
+            agentID: state.isSubagent ? threadID : nil,
+            agentKind: state.isSubagent ? (state.agentKind ?? "sub-agent") : nil,
+            origin: state.origin
         )
     }
 

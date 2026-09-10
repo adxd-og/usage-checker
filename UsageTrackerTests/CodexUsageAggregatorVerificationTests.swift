@@ -120,7 +120,8 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
     private func tokenUsageRecord(secondsAgo: Double, input: Int, cached: Int, output: Int, reasoning: Int) -> String {
         """
         {"timestamp":"\(stamp(secondsAgo))","ordinal":15,"type":"token_usage_record","payload":\
-        {"thread_id":"t","turn_id":"u","usage":{"input_tokens":\(input),"cached_input_tokens":\(cached),\
+        {"thread_id":"t","turn_id":"u","response_id":"resp_a",\
+        "usage":{"input_tokens":\(input),"cached_input_tokens":\(cached),\
         "cache_write_input_tokens":0,"output_tokens":\(output),"reasoning_output_tokens":\(reasoning),\
         "total_tokens":\(input + output)}}}
         """
@@ -676,24 +677,26 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
         XCTAssertEqual(usage.cost, 0.0036, accuracy: 1e-9)
     }
 
-    func testATokenUsageRecordAndANullInfoEventNeitherCreateATurnNorTouchTheBaseline() async throws {
+    func testARecordBillsItsOwnUsageAndTheCounterThatFollowsOnlyMovesTheBaseline() async throws {
         try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 900),
             turnContext(model: model, cwd: alphaCwd, secondsAgo: 890),
-            // A bogus, much SMALLER reading under the wrong type — if this were
-            // mistakenly parsed as the baseline, the real token_count below would show
-            // a much bigger (wrong) delta than expected.
+            // A small response, billed from its own record.
             tokenUsageRecord(secondsAgo: 650, input: 100, cached: 50, output: 10, reasoning: 5),
             nullInfoTokenCount(secondsAgo: 620),
+            // The cumulative counter catching up. It must move the baseline and bill
+            // nothing: this file bills from records now.
             tokenCount(secondsAgo: 600, input: 1_000, cached: 400, output: 100, reasoning: 30),
+            tokenCount(secondsAgo: 560, input: 2_000, cached: 900, output: 200, reasoning: 60),
         ])
 
         let usage = await lastHour(loaded())
-        XCTAssertEqual(usage.turns, 1, "neither line produces a turn")
-        XCTAssertEqual(usage.breakdown.input, 600, "the real reading, taken from a zero baseline")
-        XCTAssertEqual(usage.breakdown.cacheRead, 400)
-        XCTAssertEqual(usage.breakdown.output, 100)
-        XCTAssertEqual(usage.tokens, 1_100)
+        XCTAssertEqual(usage.turns, 1, "only the record is a turn")
+        XCTAssertEqual(usage.breakdown.input, 50, "100 − 50 cached")
+        XCTAssertEqual(usage.breakdown.cacheRead, 50)
+        XCTAssertEqual(usage.breakdown.output, 10)
+        XCTAssertEqual(usage.breakdown.thinking, 5)
+        XCTAssertEqual(usage.tokens, 110)
     }
 }
 
