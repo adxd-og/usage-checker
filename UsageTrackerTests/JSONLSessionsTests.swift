@@ -529,4 +529,61 @@ final class JSONLSessionsTests: XCTestCase {
         let empty = await aggregator.sessions(from: dayStart(daysAgo: 5), to: dayStart(daysAgo: 4))
         XCTAssertTrue(empty.isEmpty, "no chat ran in those two days")
     }
+
+    // MARK: - The last record for a message id
+
+    /// Claude Code writes 2–4 assistant lines for one response under the same
+    /// `message.id`: the first carries a provisional usage, the last the real counts.
+    private func growingRecords(at date: Date) -> [String] {
+        [
+            mainTurn(id: "msg_grow", at: date, input: 1_000_000, output: 2, thinking: 0),
+            mainTurn(id: "msg_grow", at: date, input: 1_000_000, output: 100_000, thinking: 40_000),
+            mainTurn(id: "msg_grow", at: date, input: 1_000_000, output: 280_000, thinking: 149_000),
+        ]
+    }
+
+    func testALaterRecordForAMessageIdRevisesTheChatsSums() async throws {
+        try writeMain(growingRecords(at: at(daysAgo: 1, hour: 10)))
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.turns, 1, "one response is one turn, however many lines log it")
+        XCTAssertEqual(chat.tokens.output, 280_000, "the final count, not the provisional 2")
+        XCTAssertEqual(chat.mainTokens.output, 280_000)
+        XCTAssertEqual(chat.days[0].tokens.output, 280_000)
+        XCTAssertEqual(chat.tokens.input, 1_000_000, "counted once, not once per line")
+        // $3.00 of input + $4.20 of output, following the replaced counts.
+        XCTAssertEqual(try XCTUnwrap(chat.tokens.cost).total, 7.2, accuracy: 1e-9)
+    }
+
+    func testASubAgentsRevisedTurnFollowsTheAgentTooAndDoesNotRegress() async throws {
+        // Provisional, final, then the provisional again — which a re-scanned tail or a
+        // forked session can do. The rule is "later reading", not "last line seen".
+        let when = at(daysAgo: 1, hour: 10)
+        try writeSubagent(
+            [
+                agentTurn(id: "msg_ag", at: when, agentID: "a06ceeae2762ca204",
+                          kind: "planner", input: 1_000_000, output: 2),
+                agentTurn(id: "msg_ag", at: when, agentID: "a06ceeae2762ca204",
+                          kind: "planner", input: 1_000_000, output: 200_000),
+                agentTurn(id: "msg_ag", at: when, agentID: "a06ceeae2762ca204",
+                          kind: "planner", input: 1_000_000, output: 2),
+            ],
+            agentID: "a06ceeae2762ca204"
+        )
+        let aggregator = aggregator()
+        await aggregator.refresh()
+
+        let sessions = await aggregator.sessions(from: dayStart(daysAgo: 2), to: now)
+        let chat = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(chat.agents.count, 1)
+        XCTAssertEqual(chat.agents[0].turns, 1)
+        XCTAssertEqual(chat.agents[0].tokens.output, 200_000, "a smaller later record must not shrink it")
+        XCTAssertEqual(chat.tokens.output, 200_000)
+        XCTAssertEqual(chat.mainTokens.output, 0, "a sub-agent's tokens are not the main thread's")
+    }
 }

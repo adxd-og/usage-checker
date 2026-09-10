@@ -302,6 +302,19 @@ actor JSONLAggregator: CostLogAggregating {
             agent.tokens += turn.tokens
             agents[agentID] = agent
         }
+
+        /// A later record for a message id already counted: the difference goes to the
+        /// same day and the same agent, and the turn count does not move.
+        mutating func revise(day: Date, delta: TokenBreakdown, isMain: Bool, agentID: String?) {
+            if let index = days.lastIndex(where: { $0.day == day }) {
+                days[index].tokens += delta
+                if isMain { days[index].mainTokens += delta }
+            }
+            if let agentID, var agent = agents[agentID] {
+                agent.tokens += delta
+                agents[agentID] = agent
+            }
+        }
     }
 
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
@@ -739,7 +752,23 @@ actor JSONLAggregator: CostLogAggregating {
             agentKind: stored.agentKind,
             effort: stored.effort
         )
+        reviseSession(from: stored, to: turn)
         dirty = true
+    }
+
+    /// The chat's sums took the stored counters when the turn arrived; the difference
+    /// belongs to the same day and the same agent. Ids already folded out of
+    /// `recentTurns` never reach here, so a chat is revised exactly where `recentTurns`
+    /// is — and, like `oldDays`, is left alone where it is not.
+    private func reviseSession(from stored: CLITurn, to replacement: CLITurn) {
+        guard !stored.sessionID.isEmpty, var agg = sessionAggs[stored.sessionID] else { return }
+        agg.revise(
+            day: dayStart(for: stored.timestamp),
+            delta: Self.minus(replacement.tokens, stored.tokens),
+            isMain: stored.agentID == nil,
+            agentID: stored.agentID
+        )
+        sessionAggs[stored.sessionID] = agg
     }
 
     /// `recentTurns` is append-only apart from the fold, so the index only has to be
@@ -821,6 +850,38 @@ actor JSONLAggregator: CostLogAggregating {
             h = h &* 0x0000_0100_0000_01b3
         }
         return h
+    }
+
+    /// `a - b`, for the one case this file has: a turn whose provisional counters were
+    /// already added to a chat's sums and now have to be swapped for the real ones.
+    /// Both sides come from the same parser and are priced, so the dollars subtract with
+    /// the tokens; a side without dollars leaves the difference without them, exactly as
+    /// `TokenBreakdown.+` does. Overflow clamps rather than traps — the counters come
+    /// out of log files nobody validates.
+    private static func minus(_ a: TokenBreakdown, _ b: TokenBreakdown) -> TokenBreakdown {
+        var delta = TokenBreakdown(
+            input: subtracting(a.input, b.input),
+            output: subtracting(a.output, b.output),
+            cacheRead: subtracting(a.cacheRead, b.cacheRead),
+            cacheWrite5m: subtracting(a.cacheWrite5m, b.cacheWrite5m),
+            cacheWrite1h: subtracting(a.cacheWrite1h, b.cacheWrite1h),
+            thinking: subtracting(a.thinking, b.thinking)
+        )
+        if let ac = a.cost, let bc = b.cost {
+            delta.cost = TokenCostBreakdown(
+                input: ac.input - bc.input,
+                output: ac.output - bc.output,
+                cacheRead: ac.cacheRead - bc.cacheRead,
+                cacheWrite: ac.cacheWrite - bc.cacheWrite
+            )
+        }
+        return delta
+    }
+
+    private static func subtracting(_ lhs: Int, _ rhs: Int) -> Int {
+        let (difference, overflowed) = lhs.subtractingReportingOverflow(rhs)
+        guard overflowed else { return difference }
+        return rhs > 0 ? .min : .max
     }
 
     /// Which project a transcript belongs to: the log root's own child directory.
