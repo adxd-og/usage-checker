@@ -146,6 +146,16 @@ actor CodexUsageAggregator: CostLogAggregating {
         var tokens: TokenBreakdown
     }
 
+    /// One (model, effort) pair of a chat. The pair is kept in the value as well as in
+    /// the key: a model id is a slug from a log nobody validates, and splitting the key
+    /// back apart on "|" would be a second parser.
+    struct ModelAgg: Equatable, Sendable {
+        var model: String
+        var effort: String?
+        var turns: Int
+        var tokens: TokenBreakdown
+    }
+
     /// One chat: the main thread, its sub-agents, and its days. Kept for 92 days
     /// (`sessionRetention`), independently of `recentTurns`, so a chat that started
     /// last month still shows its whole span.
@@ -159,6 +169,10 @@ actor CodexUsageAggregator: CostLogAggregating {
         var mainTokens = TokenBreakdown.zero
         var byDay: [Date: DaySlice] = [:]
         var agents: [String: AgentAgg] = [:]
+        /// Keyed by `SessionModelSummary.key(model:effort:)`. The main thread's turns
+        /// and its sub-agents' both land here: the row answers what the chat spent on a
+        /// model, not which thread spent it.
+        var byModel: [String: ModelAgg] = [:]
         /// False until a main-thread turn has named the project and the originator. A
         /// sub-agent file can be read first — the enumerator's order is not the
         /// session's — and its slug and origin stand in until the parent's arrive.
@@ -442,6 +456,21 @@ actor CodexUsageAggregator: CostLogAggregating {
                 return l == r ? $0.id < $1.id : l > r
             }
 
+        // Kept whole, whatever the range clipped: no per-model day split is stored, so
+        // a row is the chat's own total or nothing at all. Sorted here as well as in
+        // `SessionListRule`, the way agents are.
+        let models = agg.byModel.values
+            .map {
+                SessionModelSummary(
+                    model: $0.model, effort: $0.effort, turns: $0.turns, tokens: $0.tokens
+                )
+            }
+            .sorted {
+                let l = $0.tokens.cost?.total ?? 0
+                let r = $1.tokens.cost?.total ?? 0
+                return l == r ? $0.id < $1.id : l > r
+            }
+
         return SessionSummary(
             id: sessionID,
             providerID: "codex",
@@ -455,9 +484,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             mainTokens: mainTokens,
             agents: agents,
             days: daySummaries,
-            // Filled in by the by-model package's Codex task; empty here so the type
-            // change lands on its own.
-            models: []
+            models: models
         )
     }
 
@@ -622,6 +649,19 @@ actor CodexUsageAggregator: CostLogAggregating {
         agg.lastAt = max(agg.lastAt, t.timestamp)
         agg.turns += 1
         agg.tokens += t.tokens
+
+        // Before the main/agent branch, so a sub-agent's response counts towards the
+        // chat's model rows. `t.model` and `t.effort` are already the answer of the
+        // `turn_id` join: `recordTurn` resolves each `token_usage_record` against the
+        // `turn_context` that opened its turn (else the file's latest), and the counter
+        // path against the model the file had named when the delta was read.
+        let effort = SessionModelSummary.effort(from: t.effort)
+        let modelKey = SessionModelSummary.key(model: t.model, effort: effort)
+        var model = agg.byModel[modelKey]
+            ?? ModelAgg(model: t.model, effort: effort, turns: 0, tokens: .zero)
+        model.turns += 1
+        model.tokens += t.tokens
+        agg.byModel[modelKey] = model
 
         let day = dayStart(for: t.timestamp)
         var slice = agg.byDay[day] ?? DaySlice()

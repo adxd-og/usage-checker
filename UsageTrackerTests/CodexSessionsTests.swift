@@ -41,7 +41,15 @@ final class CodexSessionsTests: XCTestCase {
             "gpt-5.6": ModelPrice(
                 inputPerM: 1.25, outputPerM: 10, cacheReadPerM: 0.125,
                 cacheCreate5mPerM: 1.5625, cacheCreate1hPerM: 2.5
-            )
+            ),
+            // The second model of the "turn_context switches mid-file" fixture, priced
+            // apart so a per-model row can be asserted on its dollars. `dynamicLookup`
+            // strips the variant suffix, so "gpt-6-astra" finds this and "gpt-5.6-terra"
+            // still finds the entry above.
+            "gpt-6": ModelPrice(
+                inputPerM: 2, outputPerM: 12, cacheReadPerM: 0.2,
+                cacheCreate5mPerM: 2.5, cacheCreate1hPerM: 4
+            ),
         ])
     }
 
@@ -300,5 +308,123 @@ final class CodexSessionsTests: XCTestCase {
             sessionID: "s", agg: agg, title: nil, from: day0, to: day0, calendar: calendar
         )
         XCTAssertEqual(s?.agents.map(\.id), ["c", "a", "b"])
+    }
+
+    // MARK: - The chat split by model
+
+    /// One rollout whose `turn_context` changes model and effort mid-file. The third
+    /// record names the FIRST turn again — a turn answered after the model moved on,
+    /// which is exactly what the `turn_id` join is for.
+    private func writeTwoModelRollout() throws {
+        try tree.writeRollout([
+            CodexRollout.sessionMeta(sessionID: sessionID, threadID: parentThread,
+                                     cwd: cwd, originator: "codex-tui", at: at(3_700)),
+            CodexRollout.turnContext(turnID: "turn-1", model: "gpt-5.6-terra",
+                                     effort: "high", cwd: cwd, at: at(3_690)),
+            CodexRollout.record(at: at(3_600), threadID: parentThread, sessionID: sessionID,
+                                turnID: "turn-1", responseID: "resp_1",
+                                input: 1_000, cached: 400, output: 100, reasoning: 30),
+            CodexRollout.turnContext(turnID: "turn-2", model: "gpt-6-astra",
+                                     effort: "xhigh", cwd: cwd, at: at(3_500)),
+            CodexRollout.record(at: at(3_400), threadID: parentThread, sessionID: sessionID,
+                                turnID: "turn-2", responseID: "resp_2",
+                                input: 2_000, cached: 0, output: 200, reasoning: 50),
+            CodexRollout.record(at: at(3_300), threadID: parentThread, sessionID: sessionID,
+                                turnID: "turn-1", responseID: "resp_3",
+                                input: 1_000, cached: 0, output: 100, reasoning: 0),
+        ], named: "rollout-2026-09-06T10-00-00-\(parentThread).jsonl")
+    }
+
+    func testARecordIsBilledToTheModelOfTheTurnItNames() async throws {
+        try writeTwoModelRollout()
+
+        let sessions = await allSessions(loaded())
+        let s = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(s.turns, 3)
+        XCTAssertEqual(
+            s.models.map(\.id), ["gpt-6-astra|xhigh", "gpt-5.6-terra|high"],
+            "most expensive first"
+        )
+        XCTAssertEqual(s.models[0].model, "gpt-6-astra", "the raw id, not a display name")
+        XCTAssertEqual(s.models[0].effort, "xhigh")
+        XCTAssertEqual(s.models[0].turns, 1)
+        XCTAssertEqual(s.models[0].tokens.total, 2_200)
+        // 2_000 fresh input at $2/M plus 200 output at $12/M.
+        XCTAssertEqual(s.models[0].tokens.cost?.total ?? -1, 0.0064, accuracy: 1e-12)
+
+        XCTAssertEqual(
+            s.models[1].turns, 2,
+            "both responses that named turn-1, including the one written after turn-2 opened"
+        )
+        XCTAssertEqual(s.models[1].tokens.input, 1_600)
+        XCTAssertEqual(s.models[1].tokens.cacheRead, 400)
+        XCTAssertEqual(s.models[1].tokens.output, 200)
+        XCTAssertEqual(s.models[1].tokens.thinking, 30)
+        // $0.0018 for the first response, $0.00225 for the third.
+        XCTAssertEqual(s.models[1].tokens.cost?.total ?? -1, 0.00405, accuracy: 1e-12)
+
+        XCTAssertEqual(s.models.reduce(0) { $0 + $1.turns }, s.turns)
+        XCTAssertEqual(
+            s.models.reduce(TokenBreakdown.zero) { $0 + $1.tokens }.total, s.tokens.total
+        )
+    }
+
+    func testASubAgentsTurnsAreOneOfTheChatsModelRows() async throws {
+        try writeParent()
+        try writeAgent()
+
+        let sessions = await allSessions(loaded())
+        let s = try XCTUnwrap(sessions.first)
+
+        XCTAssertEqual(
+            s.models.map(\.id), ["gpt-5.6-terra|low", "gpt-5.6-terra|high"],
+            "the agent ran the same model at another effort, and cost more"
+        )
+        XCTAssertEqual(s.models.map(\.turns), [1, 1])
+        XCTAssertEqual(s.models[0].tokens.total, 2_200, "the sub-agent's whole response")
+        XCTAssertEqual(s.models[0].tokens.cost?.total ?? -1, 0.003375, accuracy: 1e-12)
+        XCTAssertEqual(s.models[1].tokens.cost?.total ?? -1, 0.0018, accuracy: 1e-12)
+        XCTAssertEqual(s.models.reduce(0) { $0 + $1.turns }, s.turns)
+    }
+
+    func testTheSummaryRuleKeepsEveryModelRowWhateverTheRangeClips() throws {
+        let day0 = calendar.startOfDay(for: Date(timeIntervalSince1970: 1_788_700_000))
+        let day1 = calendar.date(byAdding: .day, value: 1, to: day0)!
+        let one = TokenBreakdown(input: 100, output: 10)
+        let two = TokenBreakdown(input: 200, output: 20)
+        let agg = CodexUsageAggregator.SessionAgg(
+            projectSlug: "slug", origin: nil,
+            firstAt: day0.addingTimeInterval(3_600), lastAt: day1.addingTimeInterval(3_600),
+            turns: 2, tokens: one + two, mainTokens: one + two,
+            byDay: [
+                day0: .init(turns: 1, tokens: one, mainTokens: one),
+                day1: .init(turns: 1, tokens: two, mainTokens: two),
+            ],
+            agents: [:],
+            byModel: [
+                "gpt-5.6-terra|high": .init(model: "gpt-5.6-terra", effort: "high",
+                                            turns: 1, tokens: one),
+                "gpt-6-astra|xhigh": .init(model: "gpt-6-astra", effort: "xhigh",
+                                           turns: 1, tokens: two),
+            ],
+            hasMainIdentity: true
+        )
+
+        let s = try XCTUnwrap(CodexUsageAggregator.summary(
+            sessionID: "s", agg: agg, title: nil,
+            from: day1, to: day1.addingTimeInterval(5_000), calendar: calendar
+        ))
+
+        XCTAssertEqual(s.days.map(\.day), [day1], "only the clipped day")
+        XCTAssertEqual(s.turns, 1)
+        XCTAssertEqual(
+            s.models.map(\.id), ["gpt-5.6-terra|high", "gpt-6-astra|xhigh"],
+            "no split, no dollars: both rank as zero and the key breaks the tie"
+        )
+        XCTAssertEqual(
+            s.models.reduce(0) { $0 + $1.turns }, 2,
+            "a model row is the chat's own total, so it can outnumber the clipped turns"
+        )
     }
 }
