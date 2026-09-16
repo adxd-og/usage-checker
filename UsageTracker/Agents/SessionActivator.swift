@@ -28,6 +28,66 @@ enum SessionActivator {
         return CmuxTarget(workspace: workspace, surface: surface, socketPath: socket)
     }
 
+    /// A tmux pane's whole address, as the app uses it: the server's socket, the pane,
+    /// and the tmux binary to run. Under tmux the helper reports no pid and no bundle
+    /// id, so nothing else names the window this session is in.
+    struct TmuxTarget: Equatable, Sendable {
+        let socketPath: String
+        let pane: String
+        let binary: String
+    }
+
+    /// Where tmux is when the helper could not read the server's own path — the server
+    /// had already gone, or the event came from an older helper. Homebrew first: that
+    /// is where a tmux on this machine normally lives, and a GUI app's `PATH` has never
+    /// heard of `/opt/homebrew/bin`.
+    static let tmuxBinaryFallbacks = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
+
+    /// A tmux session: the helper found both the socket and the pane. A reported
+    /// binary is taken as it stands — tmux was running when it was reported, and if it
+    /// has been uninstalled since, the call simply fails and the click falls back to
+    /// the Finder. Only the guesses are checked against the disk, and if none of them
+    /// is there this is no target at all: running a binary we could not find is not a
+    /// jump.
+    static func tmuxTarget(
+        for host: AgentHostInfo,
+        binaryExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> TmuxTarget? {
+        guard let socketPath = host.tmuxSocket, !socketPath.isEmpty,
+              let pane = host.tmuxPane, !pane.isEmpty
+        else { return nil }
+        if let binary = host.tmuxBinary, !binary.isEmpty {
+            return TmuxTarget(socketPath: socketPath, pane: pane, binary: binary)
+        }
+        guard let binary = tmuxBinaryFallbacks.first(where: binaryExists) else { return nil }
+        return TmuxTarget(socketPath: socketPath, pane: pane, binary: binary)
+    }
+
+    /// Which of the four ways to bring a session back, decided before anything is
+    /// activated so the choice itself is a test rather than a screenshot.
+    ///
+    /// The order is the whole rule. cmux wins because tmux started inside cmux
+    /// inherits the `CMUX_*` ids into the tmux server's environment, so both addresses
+    /// arrive — and only cmux can select its own tab. tmux wins over a pid because
+    /// under tmux the pid is precisely the terminal the parent walk could not find.
+    /// A pid wins over the project folder, which identifies nothing but the project.
+    enum Route: Equatable {
+        case cmux(CmuxTarget)
+        case tmux(TmuxTarget)
+        case process(pid: Int32)
+        case finder
+    }
+
+    static func route(
+        for host: AgentHostInfo,
+        tmuxBinaryExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
+    ) -> Route {
+        if let target = cmuxTarget(for: host) { return .cmux(target) }
+        if let target = tmuxTarget(for: host, binaryExists: tmuxBinaryExists) { return .tmux(target) }
+        if let pid = host.pid { return .process(pid: pid) }
+        return .finder
+    }
+
     @MainActor
     static func jump(to session: AgentSession) {
         // cmux first: its socket is the only thing that can select the tab, and the
