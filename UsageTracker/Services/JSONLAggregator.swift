@@ -426,6 +426,12 @@ actor JSONLAggregator: CostLogAggregating {
         let firstPrompts: [String: String]
     }
 
+    /// 6: a v5 snapshot carries "consumed" marks for every transcript the old 90-day
+    /// mtime window skipped without reading, and a mark is never revisited — the year
+    /// of day totals would arrive only as each of those files happened to be
+    /// rewritten. Rejected wholesale: one cold re-read of the logs on the first
+    /// launch after the update, then business as usual, exactly as 2.5 and 2.6 asked.
+    ///
     /// 5: the chat aggregate carries a per-model split (`byModel`), so a snapshot
     /// written before it holds chats whose "By model" section would be empty until
     /// something happened to rewrite every transcript. Rejected wholesale, like 3 → 4
@@ -439,7 +445,7 @@ actor JSONLAggregator: CostLogAggregating {
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 5
+    private static let cacheVersion = 6
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
