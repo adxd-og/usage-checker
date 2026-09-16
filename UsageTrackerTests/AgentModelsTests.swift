@@ -61,6 +61,32 @@ final class AgentModelsTests: XCTestCase {
         XCTAssertEqual(encoded?["cmux_socket"] as? String, "/tmp/cmux.sock")
     }
 
+    func testHostInfoDecodesTheTmuxAddress() throws {
+        // Under tmux the walk finds no terminal: pid and bundle id are null and the
+        // tty is the *pane's*. These three keys are the way back to the window.
+        let json = Data(#"{"pid":null,"bundle_id":null,"tty":"/dev/ttys012","tmux_socket":"/private/tmp/tmux-501/default","tmux_pane":"%3","tmux_bin":"/opt/homebrew/bin/tmux"}"#.utf8)
+        let host = try JSONDecoder().decode(AgentHostInfo.self, from: json)
+        XCTAssertNil(host.pid)
+        XCTAssertEqual(host.tty, "/dev/ttys012")
+        XCTAssertEqual(host.tmuxSocket, "/private/tmp/tmux-501/default")
+        XCTAssertEqual(host.tmuxPane, "%3")
+        XCTAssertEqual(host.tmuxBinary, "/opt/homebrew/bin/tmux")
+
+        let encoded = try JSONSerialization.jsonObject(with: JSONEncoder().encode(host)) as? [String: Any]
+        XCTAssertEqual(encoded?["tmux_socket"] as? String, "/private/tmp/tmux-501/default")
+        XCTAssertEqual(encoded?["tmux_pane"] as? String, "%3")
+        XCTAssertEqual(encoded?["tmux_bin"] as? String, "/opt/homebrew/bin/tmux")
+        XCTAssertNil(encoded?["tmuxBinary"], "the wire spelling is tmux_bin")
+    }
+
+    func testATerminalThatIsNotTmuxCarriesNoTmuxKeys() {
+        XCTAssertNil(AgentHostInfo.none.tmuxSocket)
+        XCTAssertNil(AgentHostInfo.none.tmuxPane)
+        XCTAssertNil(AgentHostInfo.none.tmuxBinary)
+        let iterm = AgentHostInfo(pid: 4242, bundleID: "com.googlecode.iterm2", tty: "/dev/ttys004")
+        XCTAssertNil(iterm.tmuxSocket)
+    }
+
     func testEventKindEquality() {
         XCTAssertEqual(AgentEvent.Kind.unknown("SubagentStop"), .unknown("SubagentStop"))
         XCTAssertNotEqual(AgentEvent.Kind.unknown("A"), .unknown("B"))
