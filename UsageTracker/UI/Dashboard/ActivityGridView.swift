@@ -271,7 +271,7 @@ private struct MonthMarker: Sendable {
     let label: String
 }
 
-private struct GridStat: Sendable, Identifiable {
+struct GridStat: Sendable, Identifiable {
     let label: String
     let value: String
     let sub: String?
@@ -284,13 +284,13 @@ private struct DayValue: Sendable {
     let tooltip: String
 }
 
-private struct GridCache: Sendable {
-    let weeksMatrix: [[Day]]
+struct GridCache: Sendable {
+    fileprivate let weeksMatrix: [[Day]]
     /// The value a fully saturated square stands for. Cost fits the scale to the data
     /// (dollars have no ceiling); quota fixes it at 100% (it does, and rescaling would
     /// make a quiet week look like a busy one).
     let scaleMax: Double
-    let monthMarkers: [MonthMarker]
+    fileprivate let monthMarkers: [MonthMarker]
     let stats: [GridStat]
     let legendLow: String
     let legendHigh: String
@@ -301,7 +301,12 @@ private struct GridCache: Sendable {
 
     // MARK: Cost
 
-    static func build(from dailies: [CLIDailySummary], weeks: Int) -> GridCache {
+    static func build(
+        from dailies: [CLIDailySummary],
+        weeks: Int,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> GridCache {
         let formatters = Formatters()
         var values: [Date: DayValue] = [:]
         for daily in dailies where daily.totalCost > 0 {
@@ -309,23 +314,25 @@ private struct GridCache: Sendable {
             values[daily.day] = DayValue(value: daily.totalCost, tooltip: tooltip)
         }
 
-        let now = Date()
-        let cutoff30 = now.addingTimeInterval(-30 * 24 * 3600)
-        let cutoff90 = now.addingTimeInterval(-90 * 24 * 3600)
-        let cutoffYear = now.addingTimeInterval(-365 * 24 * 3600)
+        // Day starts, not "this time of day N days ago": a daily row is keyed by a day
+        // start, so a cutoff mid-morning dropped the boundary day's whole total.
+        let cutoffs = ActivityCardRule.cutoffs(now: now, calendar: calendar)
         var c30 = 0.0, c90 = 0.0, cy = 0.0, active = 0
         var maxCost = 0.0
         for d in dailies {
             if d.totalCost > maxCost { maxCost = d.totalCost }
-            if d.day >= cutoffYear && d.totalCost > 0 {
+            if d.day >= cutoffs.year && d.totalCost > 0 {
                 cy += d.totalCost
                 active += 1
             }
-            if d.day >= cutoff90 { c90 += d.totalCost }
-            if d.day >= cutoff30 { c30 += d.totalCost }
+            if d.day >= cutoffs.ninety { c90 += d.totalCost }
+            if d.day >= cutoffs.thirty { c30 += d.totalCost }
         }
 
-        let layout = Layout(values: values, weeks: weeks, emptyTooltip: "no usage", formatters: formatters)
+        let layout = Layout(
+            values: values, weeks: weeks, emptyTooltip: "no usage",
+            formatters: formatters, now: now, calendar: calendar
+        )
         return GridCache(
             weeksMatrix: layout.matrix,
             scaleMax: maxCost,
@@ -369,7 +376,10 @@ private struct GridCache: Sendable {
             return "\(formatters.date.string(from: day.day)) · \(label)"
         }
 
-        let layout = Layout(values: values, weeks: weeks, emptyTooltip: "not recorded", formatters: formatters)
+        let layout = Layout(
+            values: values, weeks: weeks, emptyTooltip: "not recorded",
+            formatters: formatters, now: Date(), calendar: .current
+        )
         return GridCache(
             weeksMatrix: layout.matrix,
             scaleMax: 100,
@@ -422,9 +432,14 @@ private struct GridCache: Sendable {
         let matrix: [[Day]]
         let markers: [MonthMarker]
 
-        init(values: [Date: DayValue], weeks: Int, emptyTooltip: String, formatters: Formatters) {
-            let cal = Calendar.current
-            let now = Date()
+        init(
+            values: [Date: DayValue],
+            weeks: Int,
+            emptyTooltip: String,
+            formatters: Formatters,
+            now: Date,
+            calendar cal: Calendar
+        ) {
             let today = cal.startOfDay(for: now)
             let weekday = cal.component(.weekday, from: today) - 1
             let startOfThisWeek = cal.date(byAdding: .day, value: -weekday, to: today) ?? today
