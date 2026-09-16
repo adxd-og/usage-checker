@@ -27,6 +27,15 @@ struct ActivityGridView: View {
                 } else if let cache {
                     statCards(cache)
                         .padding(.horizontal, 24)
+                    if let note = Self.retentionNote(
+                        provider: dashboard.selectedService, showsQuota: showsQuota
+                    ) {
+                        Text(note)
+                            .font(OMFont.caption)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 24)
+                    }
                     gridBlock(cache)
                         .padding(.horizontal, 24)
                     if showsQuota { costFootnote }
@@ -229,6 +238,13 @@ struct ActivityGridView: View {
         let clamped = max(0, min(1, intensity))
         if clamped == 0 { return 0.12 }
         return 0.20 + clamped * 0.80
+    }
+
+    /// The caption under the stats row, or nil. Quota squares are percentages out of
+    /// our own history, which no transcript cleanup can shorten, so the note belongs
+    /// to the cost grid alone.
+    nonisolated static func retentionNote(provider: String, showsQuota: Bool) -> String? {
+        showsQuota ? nil : ActivityCopy.retentionNote(provider: provider)
     }
 
     private func legend(_ c: GridCache) -> some View {
