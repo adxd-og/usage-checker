@@ -706,4 +706,64 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let usage = await lastHour(loaded())
         XCTAssertEqual(usage.tokens, 1_010, "a zero total prices nothing; the rows do")
     }
+
+    // MARK: - Retention: a year of day totals
+
+    /// Where `write` put a session's log — the aggregator keys its offsets by this
+    /// path, and the mtime tests have to reach it.
+    private func updatesURL(project: String, session: String = "session-uuid") -> URL {
+        root
+            .appendingPathComponent(project, isDirectory: true)
+            .appendingPathComponent(session, isDirectory: true)
+            .appendingPathComponent("updates.jsonl")
+    }
+
+    /// A session log nobody has appended to since spring still owns its day on the
+    /// Activity grid: the first scan must parse it rather than skip it forever.
+    func testASessionUntouchedForTwoHundredDaysStillReachesTheDailyTotals() async throws {
+        let old: Double = 200 * 24 * 3600
+        try write([turnLine(
+            eventID: "old-1",
+            secondsAgo: old,
+            ticks: 200_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 1_000, output: 10, ticks: 200_000_000)]
+        )], project: alphaDir)
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-old)],
+            ofItemAtPath: updatesURL(project: alphaDir).path
+        )
+
+        let breakdown = await loaded().breakdown()
+        let expectedDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-old))
+
+        XCTAssertEqual(breakdown.daily.map(\.day), [expectedDay])
+        XCTAssertEqual(breakdown.daily.first?.totalCost ?? 0, 0.02, accuracy: 1e-9)
+    }
+
+    /// One file, written this minute, carrying both turns: the mtime window lets it
+    /// through and only `dayRetention` decides which day survives.
+    func testADayOlderThanAYearIsPruned() async throws {
+        let kept: Double = 200 * 24 * 3600
+        let dropped: Double = 400 * 24 * 3600
+        try write([
+            turnLine(
+                eventID: "kept",
+                secondsAgo: kept,
+                ticks: 200_000_000,
+                models: [ModelFixture("grok-4.6-build", input: 1_000, output: 10, ticks: 200_000_000)]
+            ),
+            turnLine(
+                eventID: "dropped",
+                secondsAgo: dropped,
+                ticks: 500_000_000,
+                models: [ModelFixture("grok-4.6-build", input: 2_000, output: 20, ticks: 500_000_000)]
+            ),
+        ], project: alphaDir)
+
+        let breakdown = await loaded().breakdown()
+        let keptDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-kept))
+
+        XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")
+        XCTAssertEqual(breakdown.daily.first?.totalCost ?? 0, 0.02, accuracy: 1e-9)
+    }
 }
