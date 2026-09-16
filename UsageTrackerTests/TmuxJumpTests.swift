@@ -114,4 +114,106 @@ final class TmuxJumpTests: XCTestCase {
         XCTAssertEqual(SessionActivator.route(for: iterm, tmuxBinaryExists: exists([])), .process(pid: 4242))
         XCTAssertEqual(SessionActivator.route(for: .none, tmuxBinaryExists: exists([])), .finder)
     }
+
+    // MARK: - TmuxJump
+
+    private let target = SessionActivator.TmuxTarget(
+        socketPath: "/private/tmp/tmux-501/default", pane: "%3", binary: "/opt/homebrew/bin/tmux"
+    )
+
+    /// Records what a jump would have run, so no test ever spawns tmux.
+    private final class Calls: @unchecked Sendable {
+        private let lock = NSLock()
+        private var made: [(binary: String, arguments: [String])] = []
+        var all: [(binary: String, arguments: [String])] {
+            lock.lock(); defer { lock.unlock() }
+            return made
+        }
+        func record(_ binary: String, _ arguments: [String]) {
+            lock.lock(); made.append((binary, arguments)); lock.unlock()
+        }
+    }
+
+    /// `-S <socket>` is a server option: tmux rejects it after the command name.
+    func testTheListClientsCallIsSpelledTheWayTmuxExpects() {
+        XCTAssertEqual(
+            TmuxJump.listClientsArguments(socketPath: "/private/tmp/tmux-501/default", pane: "%3"),
+            ["-S", "/private/tmp/tmux-501/default", "list-clients", "-F",
+             "#{client_pid}\t#{client_tty}\t#{client_activity}", "-t", "%3"]
+        )
+        XCTAssertEqual(TmuxJump.clientFormat, "#{client_pid}\t#{client_tty}\t#{client_activity}")
+    }
+
+    /// One call: switch-client selects the session, the window and the pane for that
+    /// client in one go.
+    func testTheSwitchClientCallNamesTheClientAndThePane() {
+        XCTAssertEqual(
+            TmuxJump.switchClientArguments(socketPath: "/private/tmp/tmux-501/default",
+                                           pane: "%3", clientTTY: "/dev/ttys004"),
+            ["-S", "/private/tmp/tmux-501/default", "switch-client", "-c", "/dev/ttys004", "-t", "%3"]
+        )
+    }
+
+    func testTheMostRecentlyActiveClientWins() {
+        // client_activity is a unix timestamp; the user's current window is the
+        // largest one. Two terminals attached to one session is the normal case for
+        // anyone who ever ran `tmux attach` twice.
+        let output = "701\t/dev/ttys004\t1789500000\n902\t/dev/ttys009\t1789600000\n"
+        XCTAssertEqual(TmuxJump.pickClient(from: output), TmuxJump.Client(pid: 902, tty: "/dev/ttys009"))
+    }
+
+    func testADetachedSessionHasNoClient() {
+        XCTAssertNil(TmuxJump.pickClient(from: ""))
+        XCTAssertNil(TmuxJump.pickClient(from: "\n\n"))
+    }
+
+    func testMalformedLinesAreSkippedRatherThanGuessed() {
+        let output = """
+        not a client line
+        0\t/dev/ttys001\t1789600001
+        701\t\t1789600002
+        702\t/dev/ttys005\tnot-a-time
+        703\t/dev/ttys006\t1789500000
+        """
+        XCTAssertEqual(TmuxJump.pickClient(from: output), TmuxJump.Client(pid: 703, tty: "/dev/ttys006"))
+    }
+
+    func testSelectPaneListsTheClientsThenSwitchesTheMostRecentOne() async {
+        let calls = Calls()
+
+        let client = await TmuxJump.selectPane(target) { binary, arguments in
+            calls.record(binary, arguments)
+            guard arguments.contains("list-clients") else { return "" }
+            return "701\t/dev/ttys004\t1789500000\n902\t/dev/ttys009\t1789600000\n"
+        }
+
+        XCTAssertEqual(client, TmuxJump.Client(pid: 902, tty: "/dev/ttys009"))
+        XCTAssertEqual(calls.all.count, 2)
+        XCTAssertEqual(calls.all[0].binary, "/opt/homebrew/bin/tmux")
+        XCTAssertEqual(calls.all[0].arguments,
+                       ["-S", "/private/tmp/tmux-501/default", "list-clients", "-F",
+                        "#{client_pid}\t#{client_tty}\t#{client_activity}", "-t", "%3"])
+        XCTAssertEqual(calls.all[1].binary, "/opt/homebrew/bin/tmux")
+        XCTAssertEqual(calls.all[1].arguments,
+                       ["-S", "/private/tmp/tmux-501/default", "switch-client", "-c", "/dev/ttys009", "-t", "%3"])
+    }
+
+    func testNothingAttachedSwitchesNothing() async {
+        // A detached session: there is no window to bring forward, so the click falls
+        // back to the Finder — and nothing is switched under a user who is not there.
+        let calls = Calls()
+
+        let client = await TmuxJump.selectPane(target) { binary, arguments in
+            calls.record(binary, arguments)
+            return ""
+        }
+
+        XCTAssertNil(client)
+        XCTAssertEqual(calls.all.count, 1, "nothing is attached, so there is nothing to switch")
+    }
+
+    func testATmuxThatCannotBeRunIsSilent() async {
+        let client = await TmuxJump.selectPane(target) { _, _ in nil }
+        XCTAssertNil(client)
+    }
 }
