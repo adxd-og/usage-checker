@@ -573,20 +573,20 @@ final class CodexUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(costs.today, 0.0018, accuracy: 1e-12)
     }
 
-    func testARolloutUntouchedForNinetyDaysIsNeitherReadNorRemembered() async throws {
+    func testARolloutUntouchedForAYearIsNeitherReadNorRemembered() async throws {
         let url = try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 60),
             turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
             tokenCount(secondsAgo: 1, input: 1_000, cached: 400, output: 100, reasoning: 30),
         ], named: "rollout-stale.jsonl")
         try FileManager.default.setAttributes(
-            [.modificationDate: now.addingTimeInterval(-100 * 24 * 3600)],
+            [.modificationDate: now.addingTimeInterval(-400 * 24 * 3600)],
             ofItemAtPath: url.path
         )
 
         let aggregator = await loaded()
         let breakdown = await aggregator.breakdown()
-        XCTAssertEqual(breakdown.todayCost, 0, "outside the mtime window, whatever its contents say")
+        XCTAssertEqual(breakdown.todayCost, 0, "outside the year window, whatever its contents say")
         XCTAssertTrue(breakdown.daily.isEmpty)
 
         // Touch it and it comes back — the skip is about the file's age, not a
@@ -596,5 +596,49 @@ final class CodexUsageAggregatorTests: XCTestCase {
         let after = await aggregator.breakdown()
         XCTAssertEqual(after.todayCost, 0.0018, accuracy: 1e-12)
         XCTAssertEqual(after.todayTurns, 1, "and it is read exactly once")
+    }
+
+    // MARK: - Retention: a year of day totals
+
+    /// A rollout nobody has touched since spring still owns its day on the Activity
+    /// grid. The mtime skip is the only thing between this file and the year card.
+    func testARolloutUntouchedForTwoHundredDaysStillReachesTheDailyTotals() async throws {
+        let old: Double = 200 * 24 * 3600
+        let url = try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: old),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: old),
+            tokenCount(secondsAgo: old, input: 1_000, cached: 0, output: 100, reasoning: 0),
+        ], day: "2026/03/01", named: "rollout-200d.jsonl")
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-old)], ofItemAtPath: url.path
+        )
+
+        let breakdown = await loaded().breakdown()
+        let expectedDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-old))
+
+        XCTAssertEqual(breakdown.daily.map(\.day), [expectedDay])
+        XCTAssertEqual(breakdown.daily.first?.totalCost ?? 0, 0.00225, accuracy: 1e-12)
+    }
+
+    /// Both rollouts were written this minute, so the mtime window lets both through
+    /// and only `dayRetention` decides.
+    func testADayOlderThanAYearIsPruned() async throws {
+        let kept: Double = 200 * 24 * 3600
+        let dropped: Double = 400 * 24 * 3600
+        try write([
+            sessionMeta(cwd: alphaCwd, secondsAgo: kept),
+            turnContext(model: model, cwd: alphaCwd, secondsAgo: kept),
+            tokenCount(secondsAgo: kept, input: 1_000, cached: 0, output: 100, reasoning: 0),
+        ], day: "2026/03/01", named: "rollout-200d.jsonl")
+        try write([
+            sessionMeta(cwd: betaCwd, secondsAgo: dropped),
+            turnContext(model: model, cwd: betaCwd, secondsAgo: dropped),
+            tokenCount(secondsAgo: dropped, input: 1_000, cached: 0, output: 100, reasoning: 0),
+        ], day: "2025/08/13", named: "rollout-400d.jsonl")
+
+        let breakdown = await loaded().breakdown()
+        let keptDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-kept))
+
+        XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")
     }
 }
