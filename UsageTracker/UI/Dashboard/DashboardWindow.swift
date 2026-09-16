@@ -40,6 +40,9 @@ struct DashboardWindow: View {
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                // Figures and chat titles are worth copying out of the app. One
+                // modifier on the detail root and every tab inherits it.
+                .textSelection(.enabled)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 820, idealWidth: 920, minHeight: 560, idealHeight: 640)
