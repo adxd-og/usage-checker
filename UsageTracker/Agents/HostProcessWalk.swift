@@ -26,7 +26,9 @@ struct ProcessRecord: Equatable, Sendable {
         return "/dev/" + String(cString: name)
     }
 
-    private static func executablePath(_ pid: pid_t) -> String? {
+    /// Not private: the hook asks it for the tmux server's own binary, which is the
+    /// only way a GUI app learns where a Homebrew tmux lives.
+    static func executablePath(_ pid: pid_t) -> String? {
         var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
         let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
         guard length > 0 else { return nil }

@@ -15,6 +15,14 @@ struct HostProcess {
     var cmuxWorkspace: String?
     var cmuxSurface: String?
     var cmuxSocket: String?
+    /// tmux only, and read out of the environment for the same reason cmux is: the
+    /// process tree cannot answer here at all. The pane's shell hangs off the tmux
+    /// server, a daemon under launchd, so the walk above ends with no pid and no
+    /// bundle id and the tty it reports is the pane's, not the terminal's.
+    var tmux: TmuxAddress?
+    /// `proc_pidpath` of the tmux server. nil when the pid is already gone; the app
+    /// then falls back to tmux's usual install paths.
+    var tmuxBinary: String?
 
     static let workspaceEnvironmentKey = "CMUX_WORKSPACE_ID"
     static let surfaceEnvironmentKey = "CMUX_SURFACE_ID"
@@ -34,6 +42,8 @@ struct HostProcess {
         result.cmuxWorkspace = nonEmpty(environment[workspaceEnvironmentKey])
         result.cmuxSurface = nonEmpty(environment[surfaceEnvironmentKey])
         result.cmuxSocket = nonEmpty(environment[socketEnvironmentKey])
+        result.tmux = TmuxAddress.parse(environment: environment)
+        result.tmuxBinary = result.tmux.flatMap { ProcessRecord.executablePath($0.serverPID) }
         return result
     }
 

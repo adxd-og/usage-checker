@@ -41,6 +41,14 @@ enum HookMain {
         if let workspace = host.cmuxWorkspace { hostObject["cmux_workspace"] = workspace }
         if let surface = host.cmuxSurface { hostObject["cmux_surface"] = surface }
         if let socket = host.cmuxSocket { hostObject["cmux_socket"] = socket }
+        // Same rule as the cmux keys above: a terminal that is not inside tmux has no
+        // such address, and an absent key says that plainly. Three optional keys are
+        // additive, so the wire version stays 2.
+        if let tmux = host.tmux {
+            hostObject["tmux_socket"] = tmux.socketPath
+            hostObject["tmux_pane"] = tmux.pane
+        }
+        if let binary = host.tmuxBinary { hostObject["tmux_bin"] = binary }
         var envelope: [String: Any] = [
             "v": wireVersion,
             "source": input.source,
