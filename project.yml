@@ -200,6 +200,10 @@ targets:
     deploymentTarget: "14.0"
     sources:
       - path: HookHelper
+      # By path, not by folder: the address a tmux pane is named by has to mean the
+      # same thing to the helper that writes it and the app that jumps with it. Same
+      # trick the OmeletteCLI target below uses for ResetCopy.swift.
+      - path: UsageTracker/Agents/TmuxAddress.swift
     settings:
       base:
         PRODUCT_NAME: omelette-hook
