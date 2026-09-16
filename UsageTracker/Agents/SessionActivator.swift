@@ -90,18 +90,38 @@ enum SessionActivator {
 
     @MainActor
     static func jump(to session: AgentSession) {
-        // cmux first: its socket is the only thing that can select the tab, and the
-        // selection has to happen before the window comes forward or the user watches
-        // the wrong tab appear and then swap.
-        if let target = cmuxTarget(for: session.host) {
+        switch route(for: session.host) {
+        case .cmux(let target):
+            // cmux's socket is the only thing that can select the tab, and the
+            // selection has to happen before the window comes forward or the user
+            // watches the wrong tab appear and then swap.
             CmuxSocket.send(
                 lines: CmuxRPC.requests(workspace: target.workspace, surface: target.surface),
                 to: target.socketPath
             )
             activate(pid: session.host.pid, bundleID: session.host.bundleID)
-            return
-        }
-        if let pid = session.host.pid, let app = NSRunningApplication(processIdentifier: pid) {
+        case .tmux(let target):
+            // Two short tmux calls and a walk up the client's parents, all off the
+            // main actor; only the activation and the Apple Event come back here.
+            let cwd = session.cwd
+            Task { @MainActor in
+                guard let client = await TmuxJump.selectPane(target) else {
+                    // Nothing is attached: the session is running in a detached tmux
+                    // and there is no window to bring forward.
+                    revealInFinder(cwd)
+                    return
+                }
+                let clientPID = client.pid
+                let terminal = await Task.detached { HostWalk.describe(from: clientPID) }.value
+                activate(pid: terminal.pid, bundleID: terminal.bundleID)
+                if let source = tmuxScript(bundleID: terminal.bundleID, client: client) { run(source) }
+            }
+        case .process(let pid):
+            guard let app = NSRunningApplication(processIdentifier: pid) else {
+                // The terminal has quit since the event; the folder is what is left.
+                revealInFinder(session.cwd)
+                return
+            }
             // macOS 14 activation model: hand Omelette's own activation to the
             // terminal — the user just clicked a row, so we are the active app and
             // may pass that on. (`.activateIgnoringOtherApps` is deprecated on 14.)
@@ -111,12 +131,28 @@ enum SessionActivator {
                let source = script(for: bundleID, tty: tty) {
                 run(source)
             }
-            return
+        case .finder:
+            revealInFinder(session.cwd)
         }
-        // No host process (passive scan, or the terminal has since quit): the
-        // project folder is the only thing left that still identifies the session.
-        guard let cwd = session.cwd, !cwd.isEmpty else { return }
+    }
+
+    /// No host process (passive scan, a detached tmux, or the terminal has since
+    /// quit): the project folder is the only thing left that still identifies the
+    /// session.
+    @MainActor
+    private static func revealInFinder(_ cwd: String?) {
+        guard let cwd, !cwd.isEmpty else { return }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+    }
+
+    /// The AppleScript for a tmux jump. The tty is always the attached *client's* —
+    /// this function cannot see `host.tty` on purpose, because the pane's tty belongs
+    /// to the shell inside tmux and matches no tab in any terminal. `bundleID` is what
+    /// the walk over the client's parents found; nil means no app to talk to, and
+    /// under cmux-hosted tmux this branch never runs at all (the cmux ids win first).
+    static func tmuxScript(bundleID: String?, client: TmuxJump.Client) -> String? {
+        guard let bundleID else { return nil }
+        return script(for: bundleID, tty: client.tty)
     }
 
     /// Bring the host app to the front: its own process when the pid is still valid,

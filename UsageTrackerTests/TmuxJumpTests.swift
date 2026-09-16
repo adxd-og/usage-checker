@@ -216,4 +216,34 @@ final class TmuxJumpTests: XCTestCase {
         let client = await TmuxJump.selectPane(target) { _, _ in nil }
         XCTAssertNil(client)
     }
+
+    // MARK: - The script a tmux jump runs
+
+    func testTheScriptIsBuiltWithTheClientTTYNotThePaneTTY() throws {
+        // host.tty is the *pane's* tty — the shell inside tmux. No terminal tab has
+        // ever had it; the tab that exists belongs to the attached client.
+        let paneTTY = try XCTUnwrap(tmuxHost().tty)
+        let client = TmuxJump.Client(pid: 701, tty: "/dev/ttys004")
+
+        let source = try XCTUnwrap(SessionActivator.tmuxScript(bundleID: "com.apple.Terminal", client: client))
+
+        XCTAssertTrue(source.contains("\"/dev/ttys004\""), source)
+        XCTAssertFalse(source.contains(paneTTY),
+                       "the pane's tty must never reach a terminal: \(source)")
+        XCTAssertTrue(source.contains("application id \"com.apple.Terminal\""), source)
+    }
+
+    func testITermGetsItsOwnScriptWithTheClientTTY() throws {
+        let client = TmuxJump.Client(pid: 701, tty: "/dev/ttys011")
+        let source = try XCTUnwrap(SessionActivator.tmuxScript(bundleID: "com.googlecode.iterm2", client: client))
+        XCTAssertTrue(source.contains("\"/dev/ttys011\""), source)
+        XCTAssertTrue(source.contains("sessions of t"), source)
+    }
+
+    func testATerminalWithNoAppleScriptGetsNoScript() {
+        let client = TmuxJump.Client(pid: 701, tty: "/dev/ttys004")
+        XCTAssertNil(SessionActivator.tmuxScript(bundleID: "com.mitchellh.ghostty", client: client))
+        XCTAssertNil(SessionActivator.tmuxScript(bundleID: nil, client: client),
+                     "the walk found no app, so there is nothing to talk to")
+    }
 }
