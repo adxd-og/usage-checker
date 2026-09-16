@@ -156,9 +156,11 @@ sessions you already have running.
   Codex refuses a hook until you trust it once with `/hooks` inside Codex;
   Settings → Agents says when that's still outstanding
 - **Jump to the tab**: clicking a row brings its terminal back. Terminal and
-  iTerm2 select the exact tab; cmux selects the exact workspace and surface
-  over its own socket; Ghostty, Warp, kitty, Alacritty, WezTerm, VS Code, VS
-  Code Insiders, Cursor and Windsurf all come to the front
+  iTerm2 select the exact tab; tmux brings the attached client's window
+  forward and selects the session, window and pane; cmux selects the exact
+  workspace and surface over its own socket; Ghostty, Warp, kitty, Alacritty,
+  WezTerm, VS Code, VS Code Insiders, Cursor and Windsurf all come to the
+  front
 
 Finished sessions and run history live in the dashboard's
 [Agents tab](#dashboard).
@@ -337,8 +339,8 @@ Next: [Requirements](#requirements).
   pay-as-you-go Enterprise accounts
 - Optional: Codex CLI (ChatGPT sign-in), Gemini CLI or Antigravity (Google
   sign-in), and/or Grok CLI (xAI sign-in) for their providers
-- No extra setup for the terminal: Terminal, iTerm2, cmux and every other
-  supported host work out of the box
+- No extra setup for the terminal: Terminal, iTerm2, tmux, cmux and every
+  other supported host work out of the box
 
 Next: [Install](#install).
 
