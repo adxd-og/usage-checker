@@ -361,6 +361,28 @@ struct WeekOverWeek {
     }
 }
 
+extension InsightsView {
+    /// The dearest day of the ninety this card has always covered.
+    ///
+    /// `CLIBreakdown.daily` reaches back a year now, because the Activity cards need
+    /// it to; "Biggest day" does not, and it carries no range in its title, so a peak
+    /// from last autumn would be a change of meaning rather than more information.
+    /// The cutoff is the Activity 90-day card's, so the two can never drift apart.
+    nonisolated static func peakDay(
+        in dailies: [CLIDailySummary],
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> (day: Date, cost: Double)? {
+        let cutoff = ActivityCardRule.cutoffs(now: now, calendar: calendar).ninety
+        guard let peak = dailies
+            .filter({ $0.day >= cutoff })
+            .max(by: { $0.totalCost < $1.totalCost }),
+            peak.totalCost > 0
+        else { return nil }
+        return (peak.day, peak.totalCost)
+    }
+}
+
 private struct Insights: Sendable {
     static let empty = Insights(from: nil, history: [], peakBucketID: nil)
 
@@ -381,11 +403,7 @@ private struct Insights: Sendable {
         let active = last30.filter { $0.totalCost > 0 }
         self.activeDays = active.count
         self.avgDailyCost = active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count)
-        if let p = dailies.max(by: { $0.totalCost < $1.totalCost }), p.totalCost > 0 {
-            self.peakDay = (p.day, p.totalCost)
-        } else {
-            self.peakDay = nil
-        }
+        self.peakDay = InsightsView.peakDay(in: dailies)
         if let top = cli?.byModelToday.first {
             self.topModel = (top.model, top.cost)
         } else {

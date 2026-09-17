@@ -63,7 +63,12 @@ actor GrokUsageAggregator: CostLogAggregating {
     private var recentTurns: [Turn] = []
     private var oldDays: [Date: DayAgg] = [:]
     private var initialized = false
-    private let mtimeWindow: TimeInterval = 90 * 24 * 3600
+    /// A session log untouched for longer than this is outside every figure we show,
+    /// so it is never parsed. A year and a day, to match `dayRetention` below.
+    private let mtimeWindow: TimeInterval = 366 * 24 * 3600
+    /// How long a day total survives in `oldDays`. A constant of its own, not
+    /// `mtimeWindow` again — see issue #7, where one name answered both questions.
+    private let dayRetention: TimeInterval = 366 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the
     /// month boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
@@ -282,7 +287,7 @@ actor GrokUsageAggregator: CostLogAggregating {
             }
             recentTurns = kept
         }
-        let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
+        let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
         }
@@ -330,7 +335,7 @@ actor GrokUsageAggregator: CostLogAggregating {
             if firstScan {
                 if mtime < cutoff {
                     // Too old to reach any figure we show — skip it forever instead of
-                    // parsing it once to throw the result away.
+                    // parsing a year-old log once to throw the result away.
                     fileOffsets[url.path] = UInt64(values?.fileSize ?? 0)
                     continue
                 }

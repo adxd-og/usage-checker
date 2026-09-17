@@ -204,7 +204,15 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// writes no index entry for `codex exec` sessions. Kept with the timestamp so the
     /// earliest wins when a session spans two rollouts.
     private var firstPrompts: [String: (text: String, at: Date)] = [:]
-    private let mtimeWindow: TimeInterval = 90 * 24 * 3600
+    /// A rollout untouched for longer than this is outside every figure we show, so it
+    /// is never parsed. A year and a day, to match `dayRetention` below: the Activity
+    /// cards reach back 365 days, and a file must still be readable on the last day it
+    /// can contribute to one.
+    private let mtimeWindow: TimeInterval = 366 * 24 * 3600
+    /// How long a day total survives in `oldDays`. A constant of its own, not
+    /// `mtimeWindow` again — see issue #7, where one name answered both questions and
+    /// the "Last year" card could never exceed "Last 90 days".
+    private let dayRetention: TimeInterval = 366 * 24 * 3600
     /// The rolling figures reach back 30 days; keep turns one day longer so the month
     /// boundary is never clipped.
     private let recentWindow: TimeInterval = 31 * 24 * 3600
@@ -723,7 +731,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             }
             recentTurns = kept
         }
-        let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
+        let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
         }
@@ -768,7 +776,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            // Untouched for 90 days: too old to reach any figure we show, so it is
+            // Untouched for a year: too old to reach any figure we show, so it is
             // never parsed and — by staying out of `seenKeys` — never remembered.
             guard (values?.contentModificationDate ?? .distantPast) >= cutoff else { continue }
             let size = UInt64(values?.fileSize ?? 0)

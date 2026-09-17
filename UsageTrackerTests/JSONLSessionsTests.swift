@@ -851,7 +851,7 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(after.title, "Ledger 0.3.3", "the name is cached with the chat")
     }
 
-    func testAVersionFourCacheIsRejectedAndTheChatsAreReadAgain() async throws {
+    func testAVersionFiveCacheIsRejectedAndTheChatsAreReadAgain() async throws {
         try writeChatFixture()
 
         // A snapshot in the *current* shape wearing the old version number, carrying a
@@ -898,19 +898,19 @@ final class JSONLSessionsTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 4).write(to: cacheURL)
+        try snapshot(version: 5).write(to: cacheURL)
         let stale = aggregator(cache: cacheURL)
         await stale.refresh()
         let staleParsed = await stale.filesParsedInLastScan
         let staleSessions = await stale.sessions(from: dayStart(daysAgo: 3), to: now)
 
-        XCTAssertEqual(staleParsed, 3, "a version-4 snapshot means a full rescan of all three transcripts")
+        XCTAssertEqual(staleParsed, 3, "a version-5 snapshot means a full rescan of all three transcripts")
         XCTAssertEqual(staleSessions.map(\.id), [sessionID], "nothing from the old snapshot reaches the list")
 
-        // The control: the same bytes at version 5 ARE restored, so the assertions above
+        // The control: the same bytes at version 6 ARE restored, so the assertions above
         // are about the version number and not about an unreadable file.
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 5).write(to: currentURL)
+        try snapshot(version: 6).write(to: currentURL)
         let current = aggregator(cache: currentURL)
         await current.refresh()
         let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)

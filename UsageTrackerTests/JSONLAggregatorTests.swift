@@ -539,7 +539,7 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(afterPoll[.size] as? Int, writtenSize)
     }
 
-    func testAVersionFourCacheIsRejectedAndTheLogsAreReRead() async throws {
+    func testAVersionFiveCacheIsRejectedAndTheLogsAreReRead() async throws {
         try writeStandardFixture()
 
         // A snapshot in the *current* shape, wearing the old version number, with a day
@@ -574,23 +574,23 @@ final class JSONLAggregatorTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 4).write(to: cacheURL)
+        try snapshot(version: 5).write(to: cacheURL)
         let stale = JSONLAggregator(rootURL: root, cacheURL: cacheURL)
         await stale.refresh()
         let staleParsed = await stale.filesParsedInLastScan
         let staleBreakdown = await stale.breakdown()
 
-        XCTAssertEqual(staleParsed, 2, "a version-4 snapshot means a full rescan")
+        XCTAssertEqual(staleParsed, 2, "a version-5 snapshot means a full rescan")
         XCTAssertFalse(
             staleBreakdown.daily.contains { $0.turns == 7 },
-            "nothing from the old snapshot may reach the figures"
+            "nothing from a snapshot written before the year window may reach the figures"
         )
         XCTAssertEqual(staleBreakdown.weekCost, 12.5, accuracy: 0.0001)
 
-        // The control: the same bytes at version 5 ARE restored, so the assertions
+        // The control: the same bytes at version 6 ARE restored, so the assertions
         // above are about the version number and not about an unreadable file.
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 5).write(to: currentURL)
+        try snapshot(version: 6).write(to: currentURL)
         let current = JSONLAggregator(rootURL: root, cacheURL: currentURL)
         await current.refresh()
         let currentBreakdown = await current.breakdown()
@@ -941,5 +941,66 @@ final class JSONLAggregatorTests: XCTestCase {
         XCTAssertEqual(usage.models.map(\.model), ["Opus 4.5", "Sonnet 4.5"])
         XCTAssertEqual(usage.models[0].breakdown.input, 2_000_000)
         XCTAssertEqual(usage.models[1].breakdown.thinking, 50_000)
+    }
+
+    // MARK: - Retention: a year of day totals
+
+    /// Claude Code keeps transcripts for `cleanupPeriodDays` — 30 by default, a year
+    /// when the user raises it. A transcript nobody has touched for two hundred days
+    /// is exactly what the Activity year card is about, so the scanner has to open it
+    /// instead of marking it consumed unread.
+    func testATranscriptUntouchedForTwoHundredDaysIsStillRead() async throws {
+        let daysAgo = 200.0
+        try write([
+            line(
+                id: "msg_200d", minutesAgo: daysAgo * 24 * 60,
+                model: "claude-sonnet-4-5", input: 1_000_000
+            ),
+        ], project: alphaSlug)
+        let file = root
+            .appendingPathComponent(alphaSlug, isDirectory: true)
+            .appendingPathComponent("session.jsonl")
+        try FileManager.default.setAttributes(
+            [.modificationDate: now.addingTimeInterval(-daysAgo * 24 * 3600)],
+            ofItemAtPath: file.path
+        )
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let parsed = await aggregator.filesParsedInLastScan
+        let daily = await aggregator.breakdown().daily
+        let expectedDay = Calendar.current.startOfDay(
+            for: now.addingTimeInterval(-daysAgo * 24 * 3600)
+        )
+
+        XCTAssertEqual(parsed, 1, "inside the year window the file is opened, not marked consumed")
+        XCTAssertEqual(daily.map(\.day), [expectedDay])
+        XCTAssertEqual(daily.first?.totalCost ?? 0, 3.0, accuracy: 0.0001)
+    }
+
+    /// The prune is the other half. Both turns below live in a file written this
+    /// minute, so the mtime window lets both through and only `dayRetention` decides:
+    /// two hundred days stays, four hundred goes.
+    func testADayOlderThanAYearIsPruned() async throws {
+        try write([
+            line(
+                id: "msg_200d", minutesAgo: 200 * 24 * 60,
+                model: "claude-sonnet-4-5", input: 1_000_000
+            ),
+            line(
+                id: "msg_400d", minutesAgo: 400 * 24 * 60,
+                model: "claude-sonnet-4-5", input: 1_000_000
+            ),
+        ], project: alphaSlug)
+
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil)
+        await aggregator.refresh()
+        let daily = await aggregator.breakdown().daily
+        let cal = Calendar.current
+        let kept = cal.startOfDay(for: now.addingTimeInterval(-200 * 24 * 3600))
+        let dropped = cal.startOfDay(for: now.addingTimeInterval(-400 * 24 * 3600))
+
+        XCTAssertEqual(daily.map(\.day), [kept])
+        XCTAssertFalse(daily.contains { $0.day == dropped }, "a day past the year is pruned")
     }
 }

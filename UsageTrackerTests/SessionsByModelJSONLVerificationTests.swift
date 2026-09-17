@@ -287,9 +287,9 @@ final class SessionsByModelJSONLVerificationTests: XCTestCase {
         XCTAssertEqual(after.models, before.models, "keys, efforts, turns and every dollar, unchanged")
     }
 
-    // MARK: - A version-4 cache is rejected; a version-5 file with the same bytes is not
+    // MARK: - A version-5 cache is rejected; a version-6 file with the same bytes is not
 
-    func testAVersionFourCostCacheIsRejectedButAVersionFiveFileWithIdenticalBytesIsAccepted() async throws {
+    func testAVersionFiveCostCacheIsRejectedButAVersionSixFileWithIdenticalBytesIsAccepted() async throws {
         // A small real fixture so a rejected snapshot forces a real rescan.
         try writeMain([
             rawTurn(id: "msg_real", at: at(daysAgo: 1, hour: 9), model: "claude-sonnet-4-5",
@@ -337,27 +337,27 @@ final class SessionsByModelJSONLVerificationTests: XCTestCase {
             return try! JSONSerialization.data(withJSONObject: object)
         }
 
-        try snapshot(version: 4).write(to: cacheURL)
+        try snapshot(version: 5).write(to: cacheURL)
         let stale = aggregator(cache: cacheURL)
         await stale.refresh()
         let staleSessions = await stale.sessions(from: dayStart(daysAgo: 3), to: now)
         let staleParsed = await stale.filesParsedInLastScan
 
-        XCTAssertEqual(staleParsed, 1, "a version-4 snapshot is discarded wholesale, forcing a rescan")
+        XCTAssertEqual(staleParsed, 1, "a version-5 snapshot is discarded wholesale, forcing a rescan")
         XCTAssertFalse(
             staleSessions.contains { $0.title == "A chat only the cache remembers" },
             "nothing from the rejected snapshot may reach the session list"
         )
 
         let controlURL = cacheFile(named: "control")
-        try snapshot(version: 5).write(to: controlURL)
+        try snapshot(version: 6).write(to: controlURL)
         let current = aggregator(cache: controlURL)
         await current.refresh()
         let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)
 
         let old = try XCTUnwrap(
             restored.first { $0.title == "A chat only the cache remembers" },
-            "the identical bytes at version 5 prove the version guard, not a decode failure, rejected version 4"
+            "the identical bytes at version 6 prove the version guard, not a decode failure, rejected version 5"
         )
         XCTAssertEqual(old.models.map(\.id), ["claude-haiku-4-5|low"])
         XCTAssertEqual(old.models.first?.turns, 42)

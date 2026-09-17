@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Text in the Dashboard and the popover can be selected and copied. Closes #9.
 
 ### Fixed
+- **Activity reaches back a year.** The 30-day, 90-day and one-year cards and
+  the heat map count every day the CLIs' logs still hold, for Claude Code,
+  Codex and Grok — "Last year" could never exceed "Last 90 days" before, and
+  three quarters of the grid was always empty. Each card now counts whole
+  calendar days, so the boundary day is no longer dropped. Closes #7.
+- The first launch after this update re-reads Claude Code's transcripts once,
+  to fill in the days the old 90-day window skipped.
 - **Clicking an agent that runs inside tmux jumps to its pane.** The terminal
   attached to that tmux session comes forward and the session, window and pane
   are selected; before, the click opened the project folder in Finder, because

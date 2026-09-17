@@ -243,7 +243,10 @@ the popover footer or ⌘D.
   split, the sub-agents it launched, and a per-day breakdown. "Show all"
   reveals every chat with a Recent / Cost sort
 - **Insights**: top project, week-over-week change, peak day, busiest hour
-- **Activity**: a GitHub-style heatmap of the last 52 weeks
+- **Activity**: a GitHub-style heatmap of the last 52 weeks, with 30-day,
+  90-day and one-year totals above it. Claude Code deletes local transcripts
+  after 30 days by default, so a fresh install can show less than a year —
+  see [How it works](#how-it-works)
 - **Agents tab**: live sessions plus the run history: sessions, agent
   time, approval requests and busiest project over the range you pick,
   finished sessions grouped by day
@@ -304,6 +307,17 @@ never refreshes that token itself; Claude Code owns its own refresh cycle.
 Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server, the
 Gemini CLI's Google sign-in, or the local Grok CLI (with a grok.com fallback).
+
+Cost and Activity are read from the CLIs' own logs, so they reach back as far
+as those logs do — up to a year. Claude Code deletes its local transcripts
+after 30 days by default; raise `cleanupPeriodDays` in `~/.claude/settings.json`
+to keep a year of them:
+
+```json
+{
+  "cleanupPeriodDays": 365
+}
+```
 
 - Uses only your own credentials, already obtained by the tools themselves.
   It never asks you to log in anywhere

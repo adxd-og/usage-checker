@@ -426,6 +426,12 @@ actor JSONLAggregator: CostLogAggregating {
         let firstPrompts: [String: String]
     }
 
+    /// 6: a v5 snapshot carries "consumed" marks for every transcript the old 90-day
+    /// mtime window skipped without reading, and a mark is never revisited — the year
+    /// of day totals would arrive only as each of those files happened to be
+    /// rewritten. Rejected wholesale: one cold re-read of the logs on the first
+    /// launch after the update, then business as usual, exactly as 2.5 and 2.6 asked.
+    ///
     /// 5: the chat aggregate carries a per-model split (`byModel`), so a snapshot
     /// written before it holds chats whose "By model" section would be empty until
     /// something happened to rewrite every transcript. Rejected wholesale, like 3 → 4
@@ -439,7 +445,7 @@ actor JSONLAggregator: CostLogAggregating {
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 5
+    private static let cacheVersion = 6
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
@@ -452,7 +458,7 @@ actor JSONLAggregator: CostLogAggregating {
     private var fileMarks: [String: FileMark] = [:]
     /// Turns young enough to feed the rolling today/week/month figures. Turns
     /// that age past `recentWindow` are folded into `oldDays` and released —
-    /// holding every turn of the 90-day window pinned tens of MB permanently.
+    /// holding every turn of the retained year would pin hundreds of MB permanently.
     private var recentTurns: [CLITurn] = []
     /// Day-level aggregates for turns older than `recentWindow` — all `daily` needs.
     private var oldDays: [Date: DayAgg] = [:]
@@ -471,7 +477,16 @@ actor JSONLAggregator: CostLogAggregating {
     /// always carry fractions, but a writer that stops doing so must not silently cost
     /// us every turn's timestamp.
     private let isoFormatterNoFraction: ISO8601DateFormatter
-    private let mtimeWindow: TimeInterval = 90 * 24 * 3600
+    /// A transcript untouched for longer than this is outside every figure we show, so
+    /// it is marked consumed without ever being opened. A year and a day: the Activity
+    /// cards reach back 365 days, and a file must still be readable on the last day it
+    /// can contribute to one.
+    private let mtimeWindow: TimeInterval = 366 * 24 * 3600
+    /// How long a day total survives in `oldDays`. Deliberately a constant of its own
+    /// rather than `mtimeWindow` again: one says how far back we read, the other how
+    /// far back we remember, and tying them together by name is what kept the "Last
+    /// year" card from ever exceeding "Last 90 days" (issue #7).
+    private let dayRetention: TimeInterval = 366 * 24 * 3600
     /// How long a chat outlives its last turn. Two days longer than the ninety the
     /// History ranges reach, so a chat on the ninetieth day is still whole.
     private let sessionWindow: TimeInterval = 92 * 24 * 3600
@@ -980,7 +995,7 @@ actor JSONLAggregator: CostLogAggregating {
             rebuildRecentIndex()
             dirty = true
         }
-        let dayCutoff = dayStart(for: Date().addingTimeInterval(-mtimeWindow))
+        let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
             dirty = true
@@ -1118,8 +1133,8 @@ actor JSONLAggregator: CostLogAggregating {
                 // read it from the top. The `seenMessageIDs` dedupe makes the replay free.
                 start = size < mark.offset ? 0 : mark.offset
             } else {
-                // Nothing written here for the whole 90-day window is outside every
-                // figure we report; record it consumed rather than reading it.
+                // Nothing written here for a whole year is outside every figure we
+                // report; record it consumed rather than reading it.
                 if mtime < cutoff {
                     fileMarks[path] = FileMark(offset: size, size: size, mtime: mtime)
                     dirty = true
