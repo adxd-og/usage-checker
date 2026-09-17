@@ -25,7 +25,7 @@ PUB_DATE="$(LC_ALL=C date "+%a, %d %b %Y %H:%M:%S %z")"
 CHANGELOG="$ROOT/CHANGELOG.md"
 
 export VERSION BUILD SIG_LINE PUB_DATE REPO_URL CHANGELOG
-python3 - "$APPCAST" <<'PY'
+/usr/bin/python3 - "$APPCAST" <<'PY'
 import html, os, re, sys
 
 path = sys.argv[1]
