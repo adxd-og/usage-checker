@@ -8,7 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.6.1] — 2026-09-17
 
 ### Added
-- Text in the Dashboard and the popover can be selected and copied.
+- Text in the Dashboard and the popover can be selected and copied. Closes #9.
+
+### Fixed
+- **Clicking an agent that runs inside tmux jumps to its pane.** The terminal
+  attached to that tmux session comes forward and the session, window and pane
+  are selected; before, the click opened the project folder in Finder, because
+  the search for the terminal ends at the tmux server. Terminal and iTerm2 also
+  select the right tab. A tmux nobody is attached to still opens the folder.
+  Closes #8.
 
 ## [2.6.0] — 2026-09-11
 

@@ -56,7 +56,10 @@ enum AgentEventDecoder {
             tty: object["tty"] as? String,
             cmuxWorkspace: object["cmux_workspace"] as? String,
             cmuxSurface: object["cmux_surface"] as? String,
-            cmuxSocket: object["cmux_socket"] as? String
+            cmuxSocket: object["cmux_socket"] as? String,
+            tmuxSocket: object["tmux_socket"] as? String,
+            tmuxPane: object["tmux_pane"] as? String,
+            tmuxBinary: object["tmux_bin"] as? String
         )
     }
 

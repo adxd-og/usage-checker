@@ -25,11 +25,14 @@ final class CodexSessionRangeTests: XCTestCase {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         tree = try CodexTree(under: root)
         let real = Date()
-        // At least an hour into the UTC day, so `now − 1 day` is a different UTC day.
+        // At least six hours into the UTC day: `now − 1 day` has to be a different UTC
+        // day, and the History tab's 5h range (`now − 5h`, below) has to stay inside
+        // today — an hour's clamp let that range cross midnight whenever the suite ran
+        // before 05:00 and the "today only" assertion failed.
         // Truncated to a whole second so a fixture timestamp, which is written with
         // millisecond precision, survives the format/parse round trip unchanged.
         now = Date(timeIntervalSince1970:
-            max(real, calendar.startOfDay(for: real).addingTimeInterval(3600))
+            max(real, calendar.startOfDay(for: real).addingTimeInterval(6 * 3600))
                 .timeIntervalSince1970.rounded(.down))
         ModelPricing.updateDynamic([
             "gpt-5.6": ModelPrice(

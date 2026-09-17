@@ -30,6 +30,15 @@ struct AgentHostInfo: Codable, Equatable, Sendable {
     var cmuxWorkspace: String? = nil
     var cmuxSurface: String? = nil
     var cmuxSocket: String? = nil
+    /// tmux only. Under tmux the parent walk ends at the server — a daemon under
+    /// launchd — so `pid` and `bundleID` are nil and `tty` is the *pane's* tty, which
+    /// belongs to the shell inside tmux and matches no tab in any terminal. These
+    /// three are the way back: the server's socket, the pane, and the tmux binary that
+    /// runs the server (Homebrew's path is not on a GUI app's `PATH`). Defaulted, so
+    /// every existing call site of the memberwise initialiser keeps working.
+    var tmuxSocket: String? = nil
+    var tmuxPane: String? = nil
+    var tmuxBinary: String? = nil
 
     static let none = AgentHostInfo(pid: nil, bundleID: nil, tty: nil)
 
@@ -41,6 +50,9 @@ struct AgentHostInfo: Codable, Equatable, Sendable {
         case cmuxWorkspace = "cmux_workspace"
         case cmuxSurface = "cmux_surface"
         case cmuxSocket = "cmux_socket"
+        case tmuxSocket = "tmux_socket"
+        case tmuxPane = "tmux_pane"
+        case tmuxBinary = "tmux_bin"
     }
 }
 

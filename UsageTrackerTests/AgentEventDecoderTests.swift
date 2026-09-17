@@ -276,6 +276,44 @@ final class AgentEventDecoderTests: XCTestCase {
         XCTAssertNil(event.host.cmuxSurface)
         XCTAssertNil(event.host.cmuxSocket)
     }
+
+    func testTheDecoderFillsTheTmuxAddressFromTheHostObject() throws {
+        let host = #"{"pid":null,"bundle_id":null,"tty":"/dev/ttys012","tmux_socket":"/private/tmp/tmux-501/default","tmux_pane":"%3","tmux_bin":"/opt/homebrew/bin/tmux"}"#
+        let line = Data((#"{"v":2,"source":"claude","helper_version":2,"received_at":1788000000,"host":"# + host + #","payload":{"hook_event_name":"Stop","session_id":"sess-1"}}"#).utf8)
+
+        let event = try AgentEventDecoder.decode(line)
+
+        XCTAssertNil(event.host.pid, "under tmux the walk ends at the server")
+        XCTAssertEqual(event.host.tty, "/dev/ttys012")
+        XCTAssertEqual(event.host.tmuxSocket, "/private/tmp/tmux-501/default")
+        XCTAssertEqual(event.host.tmuxPane, "%3")
+        XCTAssertEqual(event.host.tmuxBinary, "/opt/homebrew/bin/tmux")
+    }
+
+    func testAHostObjectWithoutTmuxKeysLeavesThemNil() throws {
+        let host = #"{"pid":4242,"bundle_id":"com.googlecode.iterm2","tty":"/dev/ttys004"}"#
+        let line = Data((#"{"v":2,"source":"claude","helper_version":2,"received_at":1788000000,"host":"# + host + #","payload":{"hook_event_name":"Stop","session_id":"sess-1"}}"#).utf8)
+
+        let event = try AgentEventDecoder.decode(line)
+
+        XCTAssertNil(event.host.tmuxSocket)
+        XCTAssertNil(event.host.tmuxPane)
+        XCTAssertNil(event.host.tmuxBinary)
+    }
+
+    /// A helper that reported the socket and the pane but could not read the server's
+    /// own path (the server had gone) is still a usable address — the app falls back
+    /// to tmux's usual install paths.
+    func testATmuxAddressWithoutABinaryStillDecodes() throws {
+        let host = #"{"pid":null,"bundle_id":null,"tty":"/dev/ttys012","tmux_socket":"/private/tmp/tmux-501/default","tmux_pane":"%0"}"#
+        let line = Data((#"{"v":2,"source":"claude","helper_version":2,"received_at":1788000000,"host":"# + host + #","payload":{"hook_event_name":"Stop","session_id":"sess-1"}}"#).utf8)
+
+        let event = try AgentEventDecoder.decode(line)
+
+        XCTAssertEqual(event.host.tmuxSocket, "/private/tmp/tmux-501/default")
+        XCTAssertEqual(event.host.tmuxPane, "%0")
+        XCTAssertNil(event.host.tmuxBinary)
+    }
 }
 
 extension AgentEventDecoderTests {
