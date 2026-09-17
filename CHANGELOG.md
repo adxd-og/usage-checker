@@ -5,6 +5,17 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.1] — 2026-09-17
+
+### Fixed
+- **Activity reaches back a year.** The 30-day, 90-day and one-year cards and
+  the heat map count every day the CLIs' logs still hold, for Claude Code,
+  Codex and Grok — "Last year" could never exceed "Last 90 days" before, and
+  three quarters of the grid was always empty. Each card now counts whole
+  calendar days, so the boundary day is no longer dropped. Closes #7.
+- The first launch after this update re-reads Claude Code's transcripts once,
+  to fill in the days the old 90-day window skipped.
+
 ## [2.6.0] — 2026-09-11
 
 ### Added
