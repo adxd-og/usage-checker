@@ -35,6 +35,9 @@ struct PopoverView: View {
         }
         .padding(OMSpacing.l)
         .frame(width: 360)
+        // Same as the dashboard: a percentage or a reset time can be selected and
+        // copied straight out of the popover.
+        .textSelection(.enabled)
         .task { await refreshHookStatus() }
     }
 
