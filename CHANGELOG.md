@@ -5,7 +5,7 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.6.3] — 2026-09-21
 
 ### Fixed
 - **Dashboard text after a screen lock, second attempt.** 2.6.2 rebuilt the
