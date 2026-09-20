@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.6.2</title>
+      <pubDate>Sun, 20 Sep 2026 12:03:29 +0300</pubDate>
+      <sparkle:version>44</sparkle:version>
+      <sparkle:shortVersionString>2.6.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Dashboard text no longer comes back upside down after sleep.</b> On macOS 27.0 the selectable text in the detail column was flipped when the Mac woke until a provider switch redrew it; the dashboard now redraws the column itself once the screens are awake.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.6.2">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.6.2/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="SWFBmY76XA2T5cNTdRH+fSj/NLjNG0W3XJ7X/+plEdqiFrHbBreIUm+5xJcyFTeflW9l/EA4FUJHFl+YDrOVAA=="
+        length="24325704"/>
+    </item>
+    <item>
       <title>Omelette v2.6.1</title>
       <pubDate>Thu, 17 Sep 2026 09:55:40 +0300</pubDate>
       <sparkle:version>43</sparkle:version>
