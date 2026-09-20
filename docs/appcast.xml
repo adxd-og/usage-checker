@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.6.3</title>
+      <pubDate>Mon, 21 Sep 2026 01:33:24 +0300</pubDate>
+      <sparkle:version>45</sparkle:version>
+      <sparkle:shortVersionString>2.6.3</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Dashboard text after a screen lock, second attempt.</b> 2.6.2 rebuilt the detail column while the lock screen was still up, which is too early on macOS 27.0; the column is now rebuilt on the first refresh after the Mac is awake and unlocked, the point at which switching tabs was known to cure it.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.6.3">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.6.3/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="VcT9gdKfm2OBxNEgGyoo+ukBFyNeBHa3U5WWFcHGE5XQ42Lwy3222H8EVOlgDcd8gnlsKDfYjmSe1rHORE3TBA=="
+        length="24324400"/>
+    </item>
+    <item>
       <title>Omelette v2.6.2</title>
       <pubDate>Sun, 20 Sep 2026 12:03:29 +0300</pubDate>
       <sparkle:version>44</sparkle:version>
