@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct DashboardWindow: View {
     @ObservedObject var appState: AppState
@@ -6,6 +7,13 @@ struct DashboardWindow: View {
     /// Survives a relaunch. `Tab` is `String`-backed, so a raw value that no longer
     /// exists (a tab removed in a later release) falls back to `.overview` on its own.
     @AppStorage("dashboardTab") private var selection: Tab = .overview
+    /// macOS 27.0 brings the detail column back from sleep with every selectable
+    /// text upside down: the AppKit host behind `.textSelection(.enabled)` loses
+    /// its flip while the window's layers are restored and keeps it until the
+    /// column is laid out again (the sidebar, which has no text selection, never
+    /// flips). Switching provider by hand cured it; bumping this once the screens
+    /// are awake rebuilds the column and does the same without the click.
+    @State private var wakeGeneration = 0
 
     enum Tab: String, CaseIterable, Identifiable {
         case overview = "Overview"
@@ -43,6 +51,7 @@ struct DashboardWindow: View {
                 // Figures and chat titles are worth copying out of the app. One
                 // modifier on the detail root and every tab inherits it.
                 .textSelection(.enabled)
+                .id(wakeGeneration)
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 820, idealWidth: 920, minHeight: 560, idealHeight: 640)
@@ -55,6 +64,11 @@ struct DashboardWindow: View {
         // subscription dies with the window, so a closed dashboard costs nothing.
         .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
             dashboard.refreshAll()
+        }
+        // Screens, not system: `didWakeNotification` fires while the display is
+        // still dark, and a rebuild then is the very one that comes back flipped.
+        .onReceive(NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.screensDidWakeNotification)) { _ in
+            wakeGeneration += 1
         }
     }
 
