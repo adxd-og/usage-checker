@@ -5,6 +5,15 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Dashboard text upside down, third round.** The trigger was never sleep: a
+  closed dashboard window is only hidden, kept updating in the background, and
+  on macOS 27.0 any text created while it was hidden came back flipped. The
+  dashboard now ignores updates while it is off screen and rebuilds itself
+  when it shows again, which also covers sleep and the lock screen.
+
 ## [2.6.3] — 2026-09-21
 
 ### Fixed
