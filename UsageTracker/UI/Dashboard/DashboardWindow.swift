@@ -56,7 +56,10 @@ struct DashboardWindow: View {
             Updater.shared.checkInBackgroundIfDue()
         }
         // A closed `Window` is hidden, not gone: this view and its subscriptions
-        // outlive the close. So the window's own visibility gates the refresh.
+        // outlive the close. The window's own visibility decides when the column
+        // is rebuilt; it also skips the refresh below while hidden, though other
+        // publishers (`appState`, `dashboard`) still reach the hidden views — the
+        // rebuild on showing is what actually cures them.
         .background(WindowVisibilityReader { visible in
             if rebuildRule.windowVisibilityChanged(visible) {
                 detailGeneration += 1
@@ -66,7 +69,7 @@ struct DashboardWindow: View {
         // The poll path no longer pushes the full history into DashboardState —
         // while the window is on screen, each snapshot triggers the reload here.
         .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
-            guard rebuildRule.appliesSnapshots else { return }
+            guard rebuildRule.snapshotArrived() else { return }
             dashboard.refreshAll()
         }
     }

@@ -3,8 +3,10 @@ import AppKit
 
 /// Reports whether the window this view sits in is on screen, through
 /// `NSWindow.didChangeOcclusionStateNotification`: false once the window is
-/// closed (hidden), covered, on another Space, behind the lock screen or a dark
-/// display; true again when it shows. Placed as a background, it takes no space.
+/// closed (hidden), fully covered, on another Space, minimized or behind the lock
+/// screen; true again when it shows. The current state is reported on attach as
+/// well, so a reader joining an already visible window starts right. Placed as a
+/// background, it takes no space.
 struct WindowVisibilityReader: NSViewRepresentable {
     let onChange: (Bool) -> Void
 
@@ -18,23 +20,38 @@ struct WindowVisibilityReader: NSViewRepresentable {
         nsView.onChange = onChange
     }
 
+    static func dismantleNSView(_ nsView: ObserverView, coordinator: ()) {
+        nsView.stopObserving()
+    }
+
     final class ObserverView: NSView {
         var onChange: ((Bool) -> Void)?
         private var observer: NSObjectProtocol?
 
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
-            // Leaving a window (including the view's own teardown) drops the
-            // observer here; a nonisolated deinit cannot touch it.
-            if let observer { NotificationCenter.default.removeObserver(observer) }
-            observer = nil
-            guard let window else { return }
+            stopObserving()
+            guard let window else {
+                onChange?(false)
+                return
+            }
             observer = NotificationCenter.default.addObserver(
                 forName: NSWindow.didChangeOcclusionStateNotification, object: window, queue: .main
-            ) { [weak self] note in
-                guard let self, let window = note.object as? NSWindow else { return }
-                self.onChange?(window.occlusionState.contains(.visible))
+            ) { [weak self, weak window] _ in
+                // Delivered on the main queue by contract; say so to the compiler.
+                // The window is read through the weak capture, not the notification:
+                // `Notification` is not Sendable and cannot cross into the actor.
+                MainActor.assumeIsolated {
+                    guard let self, let window else { return }
+                    self.onChange?(window.occlusionState.contains(.visible))
+                }
             }
+            onChange?(window.occlusionState.contains(.visible))
+        }
+
+        func stopObserving() {
+            if let observer { NotificationCenter.default.removeObserver(observer) }
+            observer = nil
         }
     }
 }
