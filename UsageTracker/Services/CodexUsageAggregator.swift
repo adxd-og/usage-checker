@@ -835,8 +835,10 @@ actor CodexUsageAggregator: CostLogAggregating {
 
             var state = fileStates[key] ?? FileState()
             if size < state.consumed {
-                // Truncated or rewritten in place — the carried baseline is invalid.
-                state = FileState()
+                // Truncated or rewritten in place — the carried offset and counter
+                // baseline are invalid, and the file is read again from the top. What it
+                // has already billed stays billed (`restarted(after:)`).
+                state = Self.restarted(after: state)
             }
             if size > state.consumed {
                 // One file at a time inside an autorelease pool: a first scan over a
@@ -845,6 +847,21 @@ actor CodexUsageAggregator: CostLogAggregating {
             }
             fileStates[key] = state
         }
+    }
+
+    /// A fresh parse state for a file that shrank, carrying forward the two things that
+    /// say what it has already billed: the responses it named (`seenResponses`), so a
+    /// re-read record is not billed twice, and whether it bills from records at all
+    /// (`sawRecord`), so the counters that restate those records bill nothing either.
+    /// The offset, the counter baseline, the pending tokens, the contexts and the
+    /// identity are read again from the file. A rollout that writes no records has no
+    /// ids to remember: re-reading one still bills its counter deltas again — rare, and
+    /// the one double count left.
+    private static func restarted(after old: FileState) -> FileState {
+        var state = FileState()
+        state.seenResponses = old.seenResponses
+        state.sawRecord = old.sawRecord
+        return state
     }
 
     /// A rollout's identity: the thread uuid its file name ends with
