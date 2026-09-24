@@ -766,4 +766,59 @@ final class GrokUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")
         XCTAssertEqual(breakdown.daily.first?.totalCost ?? 0, 0.02, accuracy: 1e-9)
     }
+
+    // MARK: - Re-pricing (spec 2026-09-24-2.7.0-hardening § Design, Accounting → Pricing)
+
+    /// A CLI build that logs no `costUsdTicks` is priced from the table; one read before
+    /// the table knew its model counted $0 until a relaunch.
+    func testATurnPricedFromTheTableFollowsATableThatArrivesLate() async throws {
+        try write([turnLine(
+            eventID: "e-late-table",
+            secondsAgo: 600,
+            ticks: nil,
+            models: [ModelFixture("grok-4.6-build", input: 1_000_000, output: 0, ticks: nil)]
+        )], project: alphaDir)
+        let aggregator = GrokUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+        let before = await lastHour(aggregator)
+        XCTAssertEqual(before.cost, 0, accuracy: 1e-9, "no ticks and no rate yet")
+
+        ModelPricing.updateDynamic([
+            "grok-4.6": ModelPrice(
+                inputPerM: 2, outputPerM: 6, cacheReadPerM: 0.5,
+                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+            )
+        ])
+        await aggregator.refresh()
+
+        let after = await lastHour(aggregator)
+        XCTAssertEqual(after.cost, 2.0, accuracy: 1e-9, "a million input tokens at $2/M")
+        XCTAssertEqual(after.models.first?.cost ?? 0, 2.0, accuracy: 1e-9)
+        let week = await aggregator.weekCost(now: now)
+        XCTAssertEqual(week, 2.0, accuracy: 1e-9)
+    }
+
+    /// `costUsdTicks` is the figure `grok` itself shows the user; a table change never
+    /// moves it.
+    func testTheCLIsOwnDollarsDoNotMoveWithTheTable() async throws {
+        try write([turnLine(
+            eventID: "e-ticked",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 1_000_000, output: 0, ticks: 100_000_000)]
+        )], project: alphaDir)
+        let aggregator = GrokUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+
+        ModelPricing.updateDynamic([
+            "grok-4.6": ModelPrice(
+                inputPerM: 2, outputPerM: 6, cacheReadPerM: 0.5,
+                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+            )
+        ])
+        await aggregator.refresh()
+
+        let usage = await lastHour(aggregator)
+        XCTAssertEqual(usage.cost, 0.01, accuracy: 1e-9, "the CLI's $0.01, not the table's $2")
+    }
 }

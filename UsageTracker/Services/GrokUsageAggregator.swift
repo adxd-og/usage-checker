@@ -28,10 +28,13 @@ actor GrokUsageAggregator: CostLogAggregating {
     /// One model's slice of one turn.
     private struct ModelSpend: Sendable {
         let model: String
-        let cost: Double
+        var cost: Double
         let tokens: Int
         /// Never carries per-category dollars — see `RawModelUsage.breakdown`.
         let breakdown: TokenBreakdown
+        /// True when `cost` is the price table's figure (`tableCost`) rather than the
+        /// CLI's own: the only dollars here a later table can correct.
+        let pricedByTable: Bool
     }
 
     /// One `turn_completed` event: a single user prompt, however many model calls
@@ -39,10 +42,10 @@ actor GrokUsageAggregator: CostLogAggregating {
     private struct Turn: Sendable {
         let timestamp: Date
         let projectSlug: String
-        let cost: Double
+        var cost: Double
         let tokens: Int
         let breakdown: TokenBreakdown
-        let models: [ModelSpend]
+        var models: [ModelSpend]
     }
 
     private struct DayAgg {
@@ -76,6 +79,9 @@ actor GrokUsageAggregator: CostLogAggregating {
     /// its earlier lines, and a re-read tail would otherwise double-bill them.
     private var seenEventIDs: Set<UInt64> = []
     private var dayCache: (start: Date, next: Date)?
+    /// The `ModelPricing.generation` the table-priced slices in `recentTurns` were last
+    /// priced at. nil before the first refresh.
+    private var pricedGeneration: Int?
 
     /// Injectable log root — the tests point it at a fixture tree instead of the real
     /// `~/.grok/sessions`.
@@ -90,9 +96,28 @@ actor GrokUsageAggregator: CostLogAggregating {
         if seenEventIDs.count > 500_000 {
             seenEventIDs.removeAll()
         }
+        repriceIfTableChanged()
         scanAndIngest()
         initialized = true
         pruneAndFold()
+    }
+
+    /// A CLI build that logs no `costUsdTicks` is priced from models.dev, and a model the
+    /// table did not know yet was read at $0. When the table moves, those slices of the
+    /// 31-day window are priced again from the tokens they kept; the CLI's own dollars
+    /// never move. Folded days keep what they were read with.
+    private func repriceIfTableChanged() {
+        let current = ModelPricing.generation
+        guard pricedGeneration != current else { return }
+        pricedGeneration = current
+        for i in recentTurns.indices where recentTurns[i].models.contains(where: \.pricedByTable) {
+            var models = recentTurns[i].models
+            for j in models.indices where models[j].pricedByTable {
+                models[j].cost = Self.tableCost(model: models[j].model, breakdown: models[j].breakdown)
+            }
+            recentTurns[i].models = models
+            recentTurns[i].cost = models.reduce(0) { $0 + $1.cost }
+        }
     }
 
     /// Just the 7-day total, for the popover's "Last 7 days" row. `breakdown()` builds
@@ -456,17 +481,23 @@ actor GrokUsageAggregator: CostLogAggregating {
             )
         }
 
-        /// models.dev's answer, for CLI builds that predate `costUsdTicks`. Zero when
-        /// no price is known — a turn we can't price still has to contribute its
-        /// tokens and its place in the day rather than vanishing.
+        /// models.dev's answer, for CLI builds that predate `costUsdTicks`.
         var pricedCost: Double {
-            guard let p = ModelPricing.dynamicLookup(for: model) else { return 0 }
-            let fresh = max(0, input - cacheRead)
-            return (Double(fresh) * p.inputPerM
-                + Double(output) * p.outputPerM
-                + Double(cacheRead) * p.cacheReadPerM
-                + Double(cacheCreate) * p.cacheCreate5mPerM) / 1_000_000.0
+            GrokUsageAggregator.tableCost(model: model, breakdown: breakdown)
         }
+    }
+
+    /// models.dev's dollars for one model's slice of a turn, from the tokens the slice
+    /// keeps: fresh input, output, cache reads and cache writes — the same arithmetic
+    /// `pricedCost` ran on the raw counters, since `breakdown.input` is already the fresh
+    /// part. Zero when no price is known: a turn we can't price still has to contribute
+    /// its tokens and its place in the day rather than vanishing.
+    static func tableCost(model: String, breakdown b: TokenBreakdown) -> Double {
+        guard let p = ModelPricing.dynamicLookup(for: model) else { return 0 }
+        return (Double(b.input) * p.inputPerM
+            + Double(b.output) * p.outputPerM
+            + Double(b.cacheRead) * p.cacheReadPerM
+            + Double(b.cacheWrite5m) * p.cacheCreate5mPerM) / 1_000_000.0
     }
 
     private static func parseLine(_ data: Data, projectSlug: String) -> (turn: Turn, eventID: String)? {
@@ -571,7 +602,10 @@ actor GrokUsageAggregator: CostLogAggregating {
 
         guard !unpriced.isEmpty else {
             var spends = rows.map {
-                ModelSpend(model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens, breakdown: $0.breakdown)
+                ModelSpend(
+                    model: $0.model, cost: $0.cost ?? 0, tokens: $0.tokens,
+                    breakdown: $0.breakdown, pricedByTable: false
+                )
             }
             guard let turnCost, turnCost - alreadyPriced > remainderEpsilon,
                   let biggest = spends.indices.max(by: { spends[$0].cost < spends[$1].cost })
@@ -580,7 +614,8 @@ actor GrokUsageAggregator: CostLogAggregating {
                 model: spends[biggest].model,
                 cost: spends[biggest].cost + (turnCost - alreadyPriced),
                 tokens: spends[biggest].tokens,
-                breakdown: spends[biggest].breakdown
+                breakdown: spends[biggest].breakdown,
+                pricedByTable: false
             )
             return spends
         }
@@ -592,7 +627,7 @@ actor GrokUsageAggregator: CostLogAggregating {
                 guard row.cost == nil else {
                     return ModelSpend(
                         model: row.model, cost: row.cost ?? 0, tokens: row.tokens,
-                        breakdown: row.breakdown
+                        breakdown: row.breakdown, pricedByTable: false
                     )
                 }
                 let share = unpricedTokens > 0
@@ -600,14 +635,14 @@ actor GrokUsageAggregator: CostLogAggregating {
                     : 1.0 / Double(unpriced.count)
                 return ModelSpend(
                     model: row.model, cost: remainder * share, tokens: row.tokens,
-                    breakdown: row.breakdown
+                    breakdown: row.breakdown, pricedByTable: false
                 )
             }
         }
         return rows.map {
             ModelSpend(
                 model: $0.model, cost: $0.cost ?? $0.pricedCost, tokens: $0.tokens,
-                breakdown: $0.breakdown
+                breakdown: $0.breakdown, pricedByTable: $0.cost == nil
             )
         }
     }
