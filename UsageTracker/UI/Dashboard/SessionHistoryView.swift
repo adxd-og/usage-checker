@@ -93,23 +93,24 @@ struct SessionHistoryView: View {
             }
     }
 
-    /// The gutters `sessionList` pads itself with, taken off the tab's width before the
-    /// list decides how to draw.
+    /// The gutters `sessionList` and `tokensTable` pad themselves with, taken off the
+    /// tab's width before either decides how to draw.
     private static let listGutters: CGFloat = 48
 
     var body: some View {
         // Measured here, once, off the width the tab is given rather than off the width
         // a row's content grew to: the Sessions list, its header and every one of its
-        // rows then draw to the same decision.
+        // rows then draw to the same decision, and so does the Tokens table.
         GeometryReader { proxy in
-            let isWide = SessionListRule.isWide(
-                availableWidth: proxy.size.width - Self.listGutters
+            let available = proxy.size.width - Self.listGutters
+            scrollBody(
+                isWide: SessionListRule.isWide(availableWidth: available),
+                tokenColumns: Self.tokenColumns(availableWidth: available)
             )
-            scrollBody(isWide: isWide)
         }
     }
 
-    private func scrollBody(isWide: Bool) -> some View {
+    private func scrollBody(isWide: Bool, tokenColumns: [TokenColumn]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 // The caption belongs to the header, so it sits under the header's own
@@ -145,7 +146,7 @@ struct SessionHistoryView: View {
                 } else if mode == .tokens {
                     tokensChart
                     Divider().padding(.horizontal, 24)
-                    tokensTable
+                    tokensTable(columns: tokenColumns)
                 } else {
                     chart
                     Divider().padding(.horizontal, 24)
@@ -262,6 +263,20 @@ struct SessionHistoryView: View {
     /// The segments the picker offers for this provider.
     nonisolated static func modes(hasSessionLog: Bool) -> [HistoryChartMode] {
         HistoryChartMode.allCases.filter { $0 != .sessions || hasSessionLog }
+    }
+
+    /// Below this width the Tokens table draws one "Cache" column instead of two.
+    /// Measured: the six fixed columns and their gaps need 580 pt inside the 24 pt
+    /// gutters; the 820 pt window with a 220 pt sidebar leaves 551, and Cost was clipped.
+    nonisolated static let minimumSplitCacheWidth: CGFloat = 580
+
+    /// The Tokens table's figure columns for the width the tab measured, which is the
+    /// same measurement `SessionListRule.isWide` is taken from. Merging the cache pair
+    /// saves 90 pt and keeps Cost, the column the table ends on, whole.
+    nonisolated static func tokenColumns(availableWidth: CGFloat) -> [TokenColumn] {
+        availableWidth >= minimumSplitCacheWidth
+            ? [.input, .output, .cacheRead, .cacheWrite, .cost]
+            : [.input, .output, .cache, .cost]
     }
 
     // MARK: - Quota
@@ -450,21 +465,18 @@ struct SessionHistoryView: View {
         .padding(.horizontal, 24)
     }
 
-    /// The chart's numbers, per day. Cache columns are secondary: they are usually
-    /// the biggest figures on the row and the least actionable.
-    private var tokensTable: some View {
+    /// The chart's numbers, per day. Which figure columns there are is
+    /// `tokenColumns(availableWidth:)`'s decision; what each says is `TokenColumn`'s.
+    private func tokensTable(columns: [TokenColumn]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                // The column is the uncached input; "In" is all the width there is.
-                Text("In").font(OMFont.body).foregroundStyle(.secondary)
-                    .frame(width: 80, alignment: .trailing)
-                    .help(TokenCategory.input.help ?? TokenCategory.input.label)
-                Text("Out").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
-                Text("Cache read").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
-                Text("Cache write").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
-                Text("Cost").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                ForEach(columns) { column in
+                    Text(column.title).font(OMFont.body).foregroundStyle(.secondary)
+                        .frame(width: column.width, alignment: .trailing)
+                        .help(column.help)
+                }
             }
             .padding(.bottom, 6)
             ForEach(data.reversed()) { p in
@@ -472,18 +484,12 @@ struct SessionHistoryView: View {
                     Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(OMFont.body)
                         .frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text(TokenFormat.formatTokens(p.breakdown.input))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.output))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.cacheRead))
-                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 90, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.cacheWrite))
-                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 90, alignment: .trailing)
-                    Text(String(format: "$%.2f", p.cost))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
+                    ForEach(columns) { column in
+                        Text(column.value(breakdown: p.breakdown, cost: p.cost))
+                            .font(OMFont.numeral).monospacedDigit()
+                            .foregroundStyle(column.isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                            .frame(width: column.width, alignment: .trailing)
+                    }
                 }
                 .padding(.vertical, 3)
                 if p.id != data.first?.id { Divider().opacity(0.3) }
@@ -1069,6 +1075,69 @@ private struct DailyPoint: Identifiable {
     /// the sum of the parts.
     let breakdown: TokenBreakdown
     var id: Date { day }
+}
+
+/// One figure column of History's Tokens table, after the day, in drawing order.
+/// `SessionHistoryView.tokenColumns(availableWidth:)` decides which of them a table
+/// draws; everything a cell or a header says comes from here.
+enum TokenColumn: String, CaseIterable, Identifiable, Sendable {
+    case input, output, cacheRead, cacheWrite
+    /// Cache read and cache write in one column, for a table too narrow for both.
+    case cache
+    case cost
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .input: return "In"
+        case .output: return "Out"
+        case .cacheRead: return "Cache read"
+        case .cacheWrite: return "Cache write"
+        case .cache: return "Cache"
+        case .cost: return "Cost"
+        }
+    }
+
+    /// The header's tooltip. The column is the uncached input and "In" is all the
+    /// width there is; a merged "Cache" has to say it holds two figures.
+    var help: String {
+        switch self {
+        case .input: return TokenCategory.input.help ?? TokenCategory.input.label
+        case .cache: return "Cache read + cache write"
+        case .output, .cacheRead, .cacheWrite, .cost: return title
+        }
+    }
+
+    var width: CGFloat {
+        switch self {
+        case .input, .output, .cost: return 80
+        case .cacheRead, .cacheWrite, .cache: return 90
+        }
+    }
+
+    /// Cache figures are usually the biggest on a row and the least actionable.
+    var isSecondary: Bool {
+        switch self {
+        case .cacheRead, .cacheWrite, .cache: return true
+        case .input, .output, .cost: return false
+        }
+    }
+
+    /// The cell for one day.
+    func value(breakdown: TokenBreakdown, cost: Double) -> String {
+        switch self {
+        case .input: return TokenFormat.formatTokens(breakdown.input)
+        case .output: return TokenFormat.formatTokens(breakdown.output)
+        case .cacheRead: return TokenFormat.formatTokens(breakdown.cacheRead)
+        case .cacheWrite: return TokenFormat.formatTokens(breakdown.cacheWrite)
+        case .cache:
+            return TokenFormat.formatTokens(
+                TokenBreakdown.saturating(breakdown.cacheRead, breakdown.cacheWrite)
+            )
+        case .cost: return String(format: "$%.2f", cost)
+        }
+    }
 }
 
 // MARK: - Quota cache (computed off the main thread, then cached in @State)
