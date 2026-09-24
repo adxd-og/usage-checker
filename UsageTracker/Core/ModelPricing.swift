@@ -1,6 +1,6 @@
 import Foundation
 
-struct ModelPrice: Sendable, Codable {
+struct ModelPrice: Sendable, Codable, Equatable {
     let inputPerM: Double
     let outputPerM: Double
     let cacheReadPerM: Double
@@ -40,12 +40,28 @@ enum ModelPricing {
     /// hardcoded table so a freshly launched model prices correctly with no code
     /// change; the static table remains the offline fallback. Keys are normalized.
     nonisolated(unsafe) private static var dynamicTable: [String: ModelPrice] = [:]
+    /// Moves by one every time `updateDynamic` actually changes the live table.
+    nonisolated(unsafe) private static var dynamicGeneration = 0
     private static let dynamicLock = NSLock()
 
     static func updateDynamic(_ prices: [String: ModelPrice]) {
         dynamicLock.lock()
         defer { dynamicLock.unlock() }
+        // The same rates again — the launch reads the disk copy, the daily fetch
+        // usually brings what it already said — are not a new table.
+        guard prices != dynamicTable else { return }
         dynamicTable = prices
+        dynamicGeneration &+= 1
+    }
+
+    /// Which live table prices are being read from. A cost aggregator remembers the
+    /// generation it last priced its recent turns at and prices them again when this
+    /// moves: a model models.dev did not know at the first scan was read at $0 (Codex,
+    /// Grok) or at its family's rate (Claude) and would otherwise stay that way.
+    static var generation: Int {
+        dynamicLock.lock()
+        defer { dynamicLock.unlock() }
+        return dynamicGeneration
     }
 
     private static func dynamicPrice(for normalized: String) -> ModelPrice? {
