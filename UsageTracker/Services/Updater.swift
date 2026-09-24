@@ -16,6 +16,14 @@ final class Updater: NSObject, ObservableObject {
 
     private let controller: SPUStandardUpdaterController
 
+    /// The two Sparkle facts Settings shows, kept here as `@Published` copies. When they
+    /// were read straight through, nothing told a view they had changed: after "Check
+    /// for updates now" the "Last check" line kept the old time until a poll happened
+    /// to redraw the window. Both are KVO-compliant on `SPUUpdater`.
+    @Published private(set) var canCheckForUpdates = false
+    @Published private(set) var lastUpdateCheckDate: Date?
+    private var stateObservations: [NSKeyValueObservation] = []
+
     override init() {
         // startingUpdater: true → Sparkle starts automatic background checks immediately.
         self.controller = SPUStandardUpdaterController(
@@ -24,10 +32,13 @@ final class Updater: NSObject, ObservableObject {
             userDriverDelegate: nil
         )
         super.init()
-    }
-
-    var canCheckForUpdates: Bool {
-        controller.updater.canCheckForUpdates
+        stateObservations = Self.mirrorState(
+            of: controller.updater,
+            canCheck: \.canCheckForUpdates,
+            lastCheck: \.lastUpdateCheckDate,
+            onCanCheck: { [weak self] in self?.canCheckForUpdates = $0 },
+            onLastCheck: { [weak self] in self?.lastUpdateCheckDate = $0 }
+        )
     }
 
     func checkForUpdates() {
@@ -39,8 +50,53 @@ final class Updater: NSObject, ObservableObject {
         set { controller.updater.automaticallyChecksForUpdates = newValue }
     }
 
-    var lastUpdateCheckDate: Date? {
-        controller.updater.lastUpdateCheckDate
+    /// Feeds two KVO-compliant properties of `source` into the callbacks: the current
+    /// values at once, then every change. Generic over the source, so a test can hand
+    /// it an `NSObject` with the same two properties instead of starting Sparkle. A
+    /// change that arrives off the main thread is hopped onto it.
+    nonisolated static func mirrorState<Source: NSObject>(
+        of source: Source,
+        canCheck: KeyPath<Source, Bool>,
+        lastCheck: KeyPath<Source, Date?>,
+        onCanCheck: @escaping @MainActor @Sendable (Bool) -> Void,
+        onLastCheck: @escaping @MainActor @Sendable (Date?) -> Void
+    ) -> [NSKeyValueObservation] {
+        [
+            source.observe(canCheck, options: [.initial, .new]) { _, change in
+                guard let value = change.newValue else { return }
+                onMain { onCanCheck(value) }
+            },
+            source.observe(lastCheck, options: [.initial, .new]) { _, change in
+                // `Date??`: the outer optional is "the change carried no value", the
+                // inner one "no check has finished yet". Both mean nil on screen.
+                let value = change.newValue ?? nil
+                onMain { onLastCheck(value) }
+            },
+        ]
+    }
+
+    private nonisolated static func onMain(_ update: @escaping @MainActor @Sendable () -> Void) {
+        if Thread.isMainThread {
+            MainActor.assumeIsolated { update() }
+        } else {
+            DispatchQueue.main.async { update() }
+        }
+    }
+
+    /// "Last check: 24 Sep 2026, 14:15" in the user's own date order and clock; nil
+    /// before Sparkle has finished a first check.
+    nonisolated static func lastCheckText(
+        _ date: Date?, locale: Locale = .current, timeZone: TimeZone = .current
+    ) -> String? {
+        guard let date else { return nil }
+        var calendar = locale.calendar
+        calendar.timeZone = timeZone
+        let style = Date.FormatStyle(locale: locale, calendar: calendar, timeZone: timeZone)
+        let day = date.formatted(style.day().month(.abbreviated).year())
+        let time = date.formatted(Date.FormatStyle(
+            date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: timeZone
+        ))
+        return "Last check: \(day), \(time)"
     }
 
     /// Sparkle's own scheduled check runs on its own cadence and can miss a machine
@@ -68,9 +124,12 @@ final class Updater: NSObject, ObservableObject {
     /// Honors the user's "check automatically" setting — an update check they
     /// turned off must not come back through a side door.
     func checkInBackgroundIfDue(now: Date = Date()) {
-        guard automaticallyChecksForUpdates, canCheckForUpdates else { return }
-        guard Self.shouldCheck(sparkleLast: lastUpdateCheckDate, ownLast: lastOpenCheck, now: now) else { return }
+        // Sparkle's own values, not the copies above: a KVO notification that never
+        // arrived must not be able to switch background checks off.
+        let updater = controller.updater
+        guard automaticallyChecksForUpdates, updater.canCheckForUpdates else { return }
+        guard Self.shouldCheck(sparkleLast: updater.lastUpdateCheckDate, ownLast: lastOpenCheck, now: now) else { return }
         lastOpenCheck = now
-        controller.updater.checkForUpdatesInBackground()
+        updater.checkForUpdatesInBackground()
     }
 }
