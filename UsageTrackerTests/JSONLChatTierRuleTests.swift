@@ -209,22 +209,35 @@ final class JSONLChatTierRuleTests: XCTestCase {
 
     // MARK: - Converting a v7 chat
 
+    /// 2026-09-21 00:00 UTC, and 09:00 the same day.
+    private let sep21UTC = Date(timeIntervalSince1970: 1_789_948_800)
+    private let sep21Morning = Date(timeIntervalSince1970: 1_789_981_200)
+
+    private var vilnius: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Europe/Vilnius")!
+        c.locale = Locale(identifier: "en_US_POSIX")
+        return c
+    }
+
     /// A chat as a v7 snapshot decodes: every day, the recent turns' included, in the
-    /// folded tier — the v7 `days` key is the v8 `foldedDays` — each turn on its UTC day.
-    private func v7Chat(_ turns: [CLITurn]) -> JSONLAggregator.SessionAgg {
+    /// folded tier — the v7 `days` key is the v8 `foldedDays` — each turn on its day in
+    /// `calendar` (UTC unless a test says otherwise).
+    private func v7Chat(_ turns: [CLITurn], filedIn calendar: Calendar? = nil) -> JSONLAggregator.SessionAgg {
+        let zone = calendar ?? utc
         var agg = JSONLAggregator.SessionAgg(projectSlug: alphaSlug, at: turns[0].timestamp)
-        for t in turns { agg.add(t, on: utc.startOfDay(for: t.timestamp), recent: false) }
+        for t in turns { agg.add(t, on: zone.startOfDay(for: t.timestamp), recent: false) }
         return agg
     }
 
-    /// Spec § Design, "Claude" (the v7 conversion): a recent turn leaves the saved day it
-    /// was binned in, which keeps the folded turn beside it and nothing of the recent one.
-    func testARecentTurnIsTakenOutOfTheSavedDayThatCoversIt() throws {
+    /// Spec § Design, "Claude" (the v7 conversion): a recent turn leaves the saved day
+    /// with the latest key at or before it, which keeps the folded turn beside it.
+    func testARecentTurnIsTakenOutOfTheLatestSavedDayAtOrBeforeIt() throws {
         let folded = turn("msg_01ConvKeep00000000000", at: sep20Morning, input: 1_000)
         let recent = turn("msg_01ConvTake00000000000", at: sep20Late, input: 2_000)
         let chat = v7Chat([folded, recent])
 
-        let converted = try XCTUnwrap(chat.subtractingRecentTurns([recent]))
+        let converted = chat.subtractingRecentTurns([recent])
 
         XCTAssertEqual(converted.foldedDays.map(\.day), [sep20UTC])
         XCTAssertEqual(converted.foldedDays.map(\.turns), [1])
@@ -238,31 +251,28 @@ final class JSONLChatTierRuleTests: XCTestCase {
         XCTAssertEqual(converted.agents, chat.agents)
     }
 
-    /// A saved day runs `[k, k + 24 h)`: a turn at the next midnight is the next saved
-    /// day's, never the one before it.
-    func testATurnAtTheNextMidnightIsTakenOutOfTheNextSavedDay() throws {
+    /// A turn at the next midnight is the next saved day's, never the one before it.
+    func testATurnAtTheNextMidnightIsTakenOutOfTheNextSavedDay() {
         let earlier = turn("msg_01ConvEarlier000000000", at: sep20Morning, input: 1_000)
-        let atMidnight = turn(
-            "msg_01ConvMidnight00000000", at: sep20UTC.addingTimeInterval(86_400), input: 2_000
-        )   // 2026-09-21 00:00 UTC
+        let atMidnight = turn("msg_01ConvMidnight00000000", at: sep21UTC, input: 2_000)
         let chat = v7Chat([earlier, atMidnight])
         XCTAssertEqual(chat.foldedDays.count, 2, "precondition: the 20th and the 21st")
 
-        let converted = try XCTUnwrap(chat.subtractingRecentTurns([atMidnight]))
+        let converted = chat.subtractingRecentTurns([atMidnight])
 
         XCTAssertEqual(converted.foldedDays, [chat.foldedDays[0]], "the 20th untouched, the 21st gone")
     }
 
     /// A sub-agent's turn gives back its turn and its tokens; the main thread's share
     /// never held it and stays as it was.
-    func testASubAgentTurnLeavesTheMainThreadShareAlone() throws {
+    func testASubAgentTurnLeavesTheMainThreadShareAlone() {
         let main = turn("msg_01ConvMain00000000000", at: sep20Morning, input: 1_000)
         let agent = turn(
             "msg_01ConvAgent0000000000", at: sep20Morning.addingTimeInterval(300), input: 2_000, agentID: agentID
         )
         let chat = v7Chat([main, agent])
 
-        let converted = try XCTUnwrap(chat.subtractingRecentTurns([agent]))
+        let converted = chat.subtractingRecentTurns([agent])
 
         XCTAssertEqual(converted.foldedDays.map(\.turns), [1])
         XCTAssertEqual(converted.foldedDays.first?.tokens.total, main.tokens.total)
@@ -270,29 +280,119 @@ final class JSONLChatTierRuleTests: XCTestCase {
     }
 
     /// A saved day whose only turn is recent has nothing left to fold: it goes.
-    func testASavedDayWhoseLastTurnIsTakenOutIsRemoved() throws {
+    func testASavedDayWhoseLastTurnIsTakenOutIsRemoved() {
         let recent = turn("msg_01ConvOnly00000000000", at: sep20Late, input: 2_000)
         let chat = v7Chat([recent])
 
-        let converted = try XCTUnwrap(chat.subtractingRecentTurns([recent]))
+        let converted = chat.subtractingRecentTurns([recent])
 
         XCTAssertTrue(converted.foldedDays.isEmpty)
         XCTAssertTrue(converted.days.isEmpty)
     }
 
-    /// A recent turn no saved day covers means the snapshot does not add up.
-    func testARecentTurnNoSavedDayCoversMeansTheChatDoesNotAddUp() {
-        let saved = turn("msg_01ConvSaved0000000000", at: sep20Morning, input: 1_000)
-        let stray = turn(
-            "msg_01ConvStray0000000000", at: Date(timeIntervalSince1970: 1_790_078_400), input: 2_000
-        )   // 2026-09-22 12:00 UTC
-        XCTAssertNil(v7Chat([saved]).subtractingRecentTurns([stray]))
+    /// A chat that changed zone while 2.7.0 ran: turns binned in UTC on the 20th (key
+    /// 00:00 UTC) until the change, then in UTC+3 (key 21:00 UTC, the UTC+3 midnight of
+    /// the 21st) — two keys 21 hours apart, their days overlapping. A turn at 21:30 UTC
+    /// saved under the UTC key leaves the UTC+3 day, the latest key at or before it.
+    /// That is the documented cost: one turn's share on the neighbouring day, and
+    /// nothing below zero.
+    func testAmongOverlappingKeysTheLatestAtOrBeforeTheTurnWins() {
+        let morning = turn("msg_01ConvZoneA0000000000", at: sep20Morning, input: 1_000)
+        let beforeChange = turn(
+            "msg_01ConvZoneB0000000000", at: sep20UTC.addingTimeInterval(21.5 * 3600), input: 1_000
+        )   // 2026-09-20 21:30 UTC, binned in UTC
+        let afterChange = turn("msg_01ConvZoneC0000000000", at: sep20Late, input: 1_000)   // 22:30 UTC, binned at UTC+3
+        var chat = JSONLAggregator.SessionAgg(projectSlug: alphaSlug, at: morning.timestamp)
+        chat.add(morning, on: sep20UTC, recent: false)
+        chat.add(beforeChange, on: sep20UTC, recent: false)
+        chat.add(afterChange, on: sep21Plus3, recent: false)
+        XCTAssertEqual(chat.foldedDays.map(\.day), [sep20UTC, sep21Plus3], "precondition: keys 21 h apart")
+
+        let converted = chat.subtractingRecentTurns([beforeChange])
+
+        XCTAssertEqual(converted.foldedDays, [chat.foldedDays[0]], "the UTC+3 day gave it back; the UTC day is untouched")
     }
 
-    /// Taking out more turns than a saved day holds means it does not add up either.
-    func testTakingOutMoreTurnsThanASavedDayHoldsMeansTheChatDoesNotAddUp() {
+    /// 2026-10-25 in Vilnius has 25 hours (EEST falls back to EET). A turn at 23:30 is
+    /// 24.5 hours after the day's saved midnight and still that day's: it leaves that
+    /// day, not the next and not nothing.
+    func testATurnInTheTwentyFifthHourOfAFallBackDayStaysOnItsDay() {
+        let savedMidnight = Date(timeIntervalSince1970: 1_792_875_600)   // 2026-10-25 00:00 EEST
+        let morning = turn(
+            "msg_01ConvFallMorning00000", at: Date(timeIntervalSince1970: 1_792_918_800), input: 1_000
+        )   // 11:00 EET
+        let lateNight = turn(
+            "msg_01ConvFallLate0000000", at: Date(timeIntervalSince1970: 1_792_963_800), input: 2_000
+        )   // 23:30 EET
+        XCTAssertEqual(vilnius.startOfDay(for: lateNight.timestamp), savedMidnight, "precondition: the same Vilnius day")
+        XCTAssertGreaterThanOrEqual(
+            lateNight.timestamp.timeIntervalSince(savedMidnight), 24 * 3600, "precondition: its 25th hour"
+        )
+        let chat = v7Chat([morning, lateNight], filedIn: vilnius)
+
+        let converted = chat.subtractingRecentTurns([lateNight])
+
+        XCTAssertEqual(converted.foldedDays.map(\.day), [savedMidnight])
+        XCTAssertEqual(converted.foldedDays.map(\.turns), [1])
+        XCTAssertEqual(converted.foldedDays.first?.tokens.total, morning.tokens.total)
+    }
+
+    /// A turn earlier than every saved key leaves the earliest day.
+    func testATurnEarlierThanEverySavedDayLeavesTheEarliest() {
+        let first = turn("msg_01ConvEarliestA0000000", at: sep20Morning, input: 1_000)
+        let second = turn("msg_01ConvEarliestB0000000", at: sep21Morning, input: 1_000)
+        let early = turn(
+            "msg_01ConvEarliestC0000000", at: Date(timeIntervalSince1970: 1_789_819_200), input: 1_000
+        )   // 2026-09-19 12:00 UTC
+        let chat = v7Chat([first, second])
+
+        let converted = chat.subtractingRecentTurns([early])
+
+        XCTAssertEqual(converted.foldedDays, [chat.foldedDays[1]], "the 20th gave it back; the 21st is untouched")
+    }
+
+    /// A chat with no saved day has nothing to give back: the turn is passed over.
+    func testAChatWithNoSavedDaysIsLeftAsItIs() {
+        let recent = turn("msg_01ConvNoDays000000000", at: sep20Late, input: 1_000)
+        var chat = JSONLAggregator.SessionAgg(projectSlug: alphaSlug, at: recent.timestamp)
+        chat.add(recent, on: sep20UTC, recent: true)
+
+        let converted = chat.subtractingRecentTurns([recent])
+
+        XCTAssertTrue(converted.foldedDays.isEmpty)
+        XCTAssertEqual(converted.recentDays, chat.recentDays)
+        XCTAssertEqual(converted.byModel, chat.byModel)
+    }
+
+    /// Tokens given back beyond what a day holds take each counter to zero, never below:
+    /// input, output, the dollars and the main thread's share alike.
+    func testTokensGivenBackBeyondWhatADayHoldsFloorAtZero() throws {
+        let a = turn("msg_01ConvFloorA000000000", at: sep20Morning, input: 1_000)
+        let b = turn("msg_01ConvFloorB000000000", at: sep20Morning.addingTimeInterval(600), input: 1_000)
+        let big = turn("msg_01ConvFloorBig0000000", at: sep20Late, input: 5_000)
+        let chat = v7Chat([a, b])
+
+        let converted = chat.subtractingRecentTurns([big])
+
+        let day = try XCTUnwrap(converted.foldedDays.first)
+        XCTAssertEqual(day.turns, 1)
+        XCTAssertEqual(day.tokens.input, 0)
+        XCTAssertEqual(day.tokens.output, 0)
+        XCTAssertEqual(day.tokens.total, 0)
+        XCTAssertEqual(day.mainTokens.total, 0)
+        XCTAssertEqual(try XCTUnwrap(day.tokens.cost).total, 0, accuracy: 1e-12)
+    }
+
+    /// Turns given back beyond what a day holds remove it at zero; a turn left with no
+    /// day has nothing to give back and is passed over.
+    func testTurnsGivenBackBeyondWhatADayHoldsRemoveItAndGoNoFurther() {
         let first = turn("msg_01ConvFirst0000000000", at: sep20Morning, input: 1_000)
         let second = turn("msg_01ConvSecond000000000", at: sep20Late, input: 2_000)
-        XCTAssertNil(v7Chat([first]).subtractingRecentTurns([first, second]))
+        let chat = v7Chat([first])
+
+        let converted = chat.subtractingRecentTurns([first, second])
+
+        XCTAssertTrue(converted.foldedDays.isEmpty)
+        XCTAssertEqual(converted.byModel, chat.byModel)
     }
 }

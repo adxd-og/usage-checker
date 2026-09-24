@@ -525,35 +525,79 @@ actor JSONLAggregator: CostLogAggregating {
         /// A v7 chat in the v8 shape (issue #13). A v7 snapshot saved a chat's days with
         /// both tiers in one, and they decode as `foldedDays`; `turns` — this chat's turns
         /// in the snapshot's `recentTurns` — are taken back out, so the folded tier keeps
-        /// exactly the turns `recentTurns` no longer holds.
+        /// the turns `recentTurns` no longer holds.
         ///
-        /// Each turn leaves the saved day it was binned in: the one whose key `k` has
-        /// `k <= timestamp < k + 24 h` (the keys are the saving zone's midnights; the
-        /// latest such key when two zones' keys overlap). It gives back one turn, its
-        /// tokens, and its tokens from `mainTokens` when it is the main thread's; a day
-        /// left with no turn is removed. Model rows and agents are the chat's whole split
-        /// and stay. nil when the chat does not add up: a turn no saved day covers, or
-        /// more turns than a day holds.
-        func subtractingRecentTurns(_ turns: [CLITurn]) -> SessionAgg? {
+        /// Each turn leaves the saved day with the latest key at or before its instant,
+        /// with no upper bound: the keys are midnights of whatever zone a day was binned
+        /// in, a fall-back day has 25 hours, and 2.7.0 re-keyed saved days on a relaunch
+        /// in another zone without re-binning their turns. A turn earlier than every key
+        /// leaves the earliest day; a chat with no saved day has nothing to give back and
+        /// the turn is passed over. The turn gives back one turn, its tokens, and its
+        /// tokens from `mainTokens` when it is the main thread's; every counter floors at
+        /// zero, and a day left with no turn is removed. When a chat changed zone while
+        /// 2.7.0 ran its days overlap, and a turn can leave the neighbouring day: that
+        /// costs at most one turn's share on one day, and nothing goes below zero. The
+        /// conversion never fails. Model rows and agents are the chat's whole split and
+        /// stay.
+        func subtractingRecentTurns(_ turns: [CLITurn]) -> SessionAgg {
             var copy = self
             for turn in turns {
-                var covering: Int?
-                for (index, saved) in copy.foldedDays.enumerated()
-                where saved.day <= turn.timestamp && turn.timestamp < saved.day.addingTimeInterval(86_400) {
-                    if let best = covering, copy.foldedDays[best].day >= saved.day { continue }
-                    covering = index
+                guard let index = Self.savedDay(givingBack: turn.timestamp, in: copy.foldedDays) else {
+                    continue
                 }
-                guard let index = covering, copy.foldedDays[index].turns >= 1 else { return nil }
-                copy.foldedDays[index].turns -= 1
-                copy.foldedDays[index].tokens = JSONLAggregator.minus(copy.foldedDays[index].tokens, turn.tokens)
+                var entry = copy.foldedDays[index]
+                entry.turns = max(0, entry.turns - 1)
+                entry.tokens = Self.flooredDifference(entry.tokens, turn.tokens)
                 if turn.agentID == nil {
-                    copy.foldedDays[index].mainTokens = JSONLAggregator.minus(
-                        copy.foldedDays[index].mainTokens, turn.tokens
-                    )
+                    entry.mainTokens = Self.flooredDifference(entry.mainTokens, turn.tokens)
                 }
-                if copy.foldedDays[index].turns == 0 { copy.foldedDays.remove(at: index) }
+                if entry.turns == 0 {
+                    copy.foldedDays.remove(at: index)
+                } else {
+                    copy.foldedDays[index] = entry
+                }
             }
             return copy
+        }
+
+        /// The saved day a recent turn at `instant` leaves: the latest key at or before
+        /// it, the first of equal keys, or the earliest day when every key is later. nil
+        /// only when there is no day.
+        private static func savedDay(givingBack instant: Date, in days: [DayTotals]) -> Int? {
+            guard !days.isEmpty else { return nil }
+            var latestAtOrBefore: Int?
+            var earliest = 0
+            for (index, saved) in days.enumerated() {
+                if saved.day < days[earliest].day { earliest = index }
+                guard saved.day <= instant else { continue }
+                if let best = latestAtOrBefore, days[best].day >= saved.day { continue }
+                latestAtOrBefore = index
+            }
+            return latestAtOrBefore ?? earliest
+        }
+
+        /// `a − b` with every counter floored at zero: a turn given back from a day that
+        /// never held it takes that day to nothing, never below. Overflow clamps first
+        /// (`JSONLAggregator.subtracting`). The dollars floor bucket by bucket; a side
+        /// without dollars leaves the result without them, as `JSONLAggregator.minus` does.
+        private static func flooredDifference(_ a: TokenBreakdown, _ b: TokenBreakdown) -> TokenBreakdown {
+            var result = TokenBreakdown(
+                input: max(0, JSONLAggregator.subtracting(a.input, b.input)),
+                output: max(0, JSONLAggregator.subtracting(a.output, b.output)),
+                cacheRead: max(0, JSONLAggregator.subtracting(a.cacheRead, b.cacheRead)),
+                cacheWrite5m: max(0, JSONLAggregator.subtracting(a.cacheWrite5m, b.cacheWrite5m)),
+                cacheWrite1h: max(0, JSONLAggregator.subtracting(a.cacheWrite1h, b.cacheWrite1h)),
+                thinking: max(0, JSONLAggregator.subtracting(a.thinking, b.thinking))
+            )
+            if let ac = a.cost, let bc = b.cost {
+                result.cost = TokenCostBreakdown(
+                    input: max(0, ac.input - bc.input),
+                    output: max(0, ac.output - bc.output),
+                    cacheRead: max(0, ac.cacheRead - bc.cacheRead),
+                    cacheWrite: max(0, ac.cacheWrite - bc.cacheWrite)
+                )
+            }
+            return result
         }
 
         /// `entry` added to the entry for its day, found from the end, or appended.
@@ -594,8 +638,9 @@ actor JSONLAggregator: CostLogAggregating {
     /// like a v8 one — marks, recent turns, ids, day totals, chats and names — with each
     /// chat's recent turns taken back out of its saved days
     /// (`SessionAgg.subtractingRecentTurns`). Nothing is read again, and no day or chat
-    /// loses what a transcript Claude Code has deleted since held. A v7 snapshot whose
-    /// chats do not add up is carried over like a v6 one (see 7).
+    /// loses what a transcript Claude Code has deleted since held. The conversion never
+    /// fails: a turn leaves the latest saved day at or before it, and every counter
+    /// floors at zero.
     ///
     /// 7: an old turn is counted with its final counters (see `ingest`), but a v6
     /// snapshot's `oldDays` and chats took each old turn's first, provisional record
@@ -632,9 +677,8 @@ actor JSONLAggregator: CostLogAggregating {
     private static let convertibleVersion = 7
 
     /// The older version whose day totals and chats a bump keeps while its transcripts
-    /// are read again (see 7 above) — also where a v7 snapshot that does not add up
-    /// goes. Anything else that is neither `cacheVersion` nor `convertibleVersion` is
-    /// rejected wholesale.
+    /// are read again (see 7 above). Anything else that is neither `cacheVersion` nor
+    /// `convertibleVersion` is rejected wholesale.
     private static let foldedDaysCarryOverVersions: Set<Int> = [6]
 
     private let rootURL: URL
@@ -1586,8 +1630,8 @@ actor JSONLAggregator: CostLogAggregating {
     /// no file, unreadable, written by another build or for another log root — just
     /// leaves the aggregator cold, which costs time and never correctness. A snapshot
     /// of `convertibleVersion` is converted and restored like a current one (see
-    /// `cacheVersion` 8); one of `foldedDaysCarryOverVersions`, or a v7 one that does not
-    /// add up, keeps its day totals and chats and has the logs read again (`carryOver`).
+    /// `cacheVersion` 8); one of `foldedDaysCarryOverVersions` keeps its day totals and
+    /// chats and has the logs read again (`carryOver`).
     private func loadCache() {
         guard !initialized, let cacheURL else { return }
         guard let data = try? Data(contentsOf: cacheURL) else { return }
@@ -1608,13 +1652,9 @@ actor JSONLAggregator: CostLogAggregating {
             break
         case Self.convertibleVersion:
             // A v7 chat's saved days hold both tiers: its recent turns come back out of
-            // them here, on the saved keys, before `rebinChats` re-keys anything.
-            guard let converted = Self.convertingV7(snapshot.sessions, recentTurns: snapshot.recentTurns) else {
-                NSLog("[UT] cost cache v7 does not add up, re-reading the logs instead")
-                carryOver(snapshot)
-                return
-            }
-            sessions = converted
+            // them here, on the saved keys, before `rebinChats` re-keys anything. This
+            // never fails (`SessionAgg.subtractingRecentTurns`).
+            sessions = Self.convertingV7(snapshot.sessions, recentTurns: snapshot.recentTurns)
             // Saved at the current version even when there is no chat to re-bin.
             dirty = true
         case let version where Self.foldedDaysCarryOverVersions.contains(version):
@@ -1647,11 +1687,11 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// A v7 snapshot's chats in the v8 shape: each chat's saved days minus its turns in
     /// `recentTurns` (`SessionAgg.subtractingRecentTurns`), the turns grouped by chat
-    /// once. nil when any chat does not add up. A recent turn whose chat the snapshot
-    /// no longer holds has nothing to leave and is passed over.
+    /// once. A recent turn whose chat the snapshot no longer holds has nothing to leave
+    /// and is passed over.
     private static func convertingV7(
         _ sessions: [String: SessionAgg], recentTurns: [CLITurn]
-    ) -> [String: SessionAgg]? {
+    ) -> [String: SessionAgg] {
         var turnsByChat: [String: [CLITurn]] = [:]
         for turn in recentTurns where !turn.sessionID.isEmpty {
             turnsByChat[turn.sessionID, default: []].append(turn)
@@ -1659,13 +1699,12 @@ actor JSONLAggregator: CostLogAggregating {
         var converted: [String: SessionAgg] = [:]
         converted.reserveCapacity(sessions.count)
         for (id, agg) in sessions {
-            guard let chat = agg.subtractingRecentTurns(turnsByChat[id] ?? []) else { return nil }
-            converted[id] = chat
+            converted[id] = agg.subtractingRecentTurns(turnsByChat[id] ?? [])
         }
         return converted
     }
 
-    /// The v6 path, and a v7 snapshot's when its chats do not add up. The day totals and
+    /// The v6 path; a v7 snapshot is converted instead. The day totals and
     /// the chats are what this keeps: most of them come from transcripts Claude Code has
     /// deleted since, and nothing else can recount them. Every chat day decodes as a
     /// folded sum — with the recent turns dropped, nothing could rebuild a recent tier.

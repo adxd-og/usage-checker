@@ -6,9 +6,9 @@ import XCTest
 /// paragraph (revised 2026-09-25) and § Packages 2 (vi), (vi-b), (vi-c) — a v7
 /// snapshot's `oldDays`, `fileMarks`, `recentTurns`, `seenMessageIDs`, titles and
 /// prompts are restored exactly as a v8 load does, and each chat's mixed v7 `days`
-/// become its folded tier minus the chat's turns in `recentTurns`, subtracted from the
-/// saved day whose key `k` satisfies `k <= timestamp < k + 24h`; an inconsistent
-/// snapshot falls back to the v6-style carry-over; then `rebinChats()`.
+/// become its folded tier minus the chat's turns in `recentTurns`, each subtracted from
+/// the saved day with the latest key at or before it, every counter floored at zero —
+/// the conversion never fails (rule amended after the re-review); then `rebinChats()`.
 ///
 /// Fixtures are built the way `JSONLChatRebinTests` and
 /// `JSONLCacheV7MigrationVerificationTests` build theirs: a real `JSONLAggregator`
@@ -383,80 +383,6 @@ final class JSONLV7ConversionVerificationTests: XCTestCase {
         XCTAssertEqual(after.mainTokens.total, 150, "the sub-agent's tokens stay out of mainTokens after the merge is undone")
         let foldedDay = try XCTUnwrap(after.days.first { $0.day == utc.startOfDay(for: foldedAt) })
         XCTAssertEqual(foldedDay.tokens.total, 100, "the 40-day folded day, which no recent turn covers, is untouched")
-    }
-
-    // MARK: - An inconsistent chat falls back for the whole load
-
-    /// § Design "Cache": "If any subtraction finds no such day ... the whole load falls
-    /// back to the v6-style carry-over" — not just the chat that does not add up. A
-    /// second, individually-convertible chat's saved folded day is deliberately
-    /// corrupted; if the fallback were scoped to the broken chat alone, the corrupted
-    /// chat would convert via subtraction and its saved marks would stay trusted
-    /// (no re-read). The spec's "whole load" wording means every chat's transcript is
-    /// read again instead.
-    func testAV7SnapshotWhoseChatDoesNotAddUpFallsBackForTheWholeLoadNotJustThatChat() async throws {
-        let good = "c0000000-0000-4000-8000-000000000001"
-        let bad = "c0000000-0000-4000-8000-000000000002"
-        let goodFoldedAt = at(daysAgo: 40, hour: 8)
-        let goodRecentAt = at(daysAgo: 2, hour: 9)
-        let badFoldedAt = at(daysAgo: 40, hour: 10)
-        let badRecentAt = at(daysAgo: 2, hour: 11)
-        try writeMain([
-            record(id: "msg_VerifyGoodFolded000000", at: goodFoldedAt, output: 15, session: good),
-            record(id: "msg_VerifyGoodRecent000000", at: goodRecentAt, output: 25, session: good),
-        ], session: good)
-        try writeMain([
-            record(id: "msg_VerifyBadFolded0000000", at: badFoldedAt, output: 35, session: bad),
-            record(id: "msg_VerifyBadRecent0000000", at: badRecentAt, output: 45, session: bad),
-        ], session: bad)
-
-        let first = aggregator(calendar: utc)
-        await first.refresh()
-        await first.flushCache()
-
-        // `bad`'s recent turn is left uncovered: its saved days do not add up.
-        try mergeRecentTurnsIntoSavedDays(excluding: [bad])
-
-        // `good` converts cleanly on its own — corrupt its folded day so a scoped
-        // fallback (converting `good`, carrying over only `bad`) would leave the
-        // corruption in place, while the spec's whole-load fallback rebuilds it from
-        // the transcript.
-        var json = try readCacheJSON()
-        var sessions = try XCTUnwrap(json["sessions"] as? [String: [String: Any]])
-        var goodDays = try XCTUnwrap(sessions[good]?["days"] as? [[String: Any]])
-        let foldedIndex = try XCTUnwrap(
-            goodDays.firstIndex { ($0["day"] as? String) == Self.cacheISO.string(from: utc.startOfDay(for: goodFoldedAt)) }
-        )
-        goodDays[foldedIndex]["turns"] = 5
-        goodDays[foldedIndex]["tokens"] = tokens(999)
-        goodDays[foldedIndex]["mainTokens"] = tokens(999)
-        sessions[good]?["days"] = goodDays
-        json["sessions"] = sessions
-        try writeCacheJSON(json)
-
-        let fallback = aggregator(calendar: utc)
-        await fallback.refresh()
-
-        let parsed = await fallback.filesParsedInLastScan
-        XCTAssertEqual(
-            parsed, 2, "the whole snapshot falls back: both chats' transcripts are read again, not just the broken one"
-        )
-
-        let chats = await fallback.sessions(from: at(daysAgo: 41, hour: 0), to: now)
-        let goodChat = try XCTUnwrap(chats.first { $0.id == good })
-        let goodFoldedDay = try XCTUnwrap(goodChat.days.first { $0.day == utc.startOfDay(for: goodFoldedAt) })
-        XCTAssertEqual(
-            goodFoldedDay.turns, 1,
-            "rebuilt from the transcript, not left at the corrupted value a chat-scoped conversion would have kept"
-        )
-        XCTAssertEqual(goodFoldedDay.tokens.total, 15)
-        XCTAssertEqual(goodChat.turns, 2, "good's recent turn is rebuilt too, not lost")
-
-        let badChat = try XCTUnwrap(chats.first { $0.id == bad })
-        XCTAssertEqual(badChat.turns, 2, "the chat that did not add up is rebuilt too, not left half-converted")
-
-        let onDisk = try readCacheJSON()
-        XCTAssertEqual(onDisk["version"] as? Int, 8)
     }
 
     // MARK: - Conversion under a different calendar
