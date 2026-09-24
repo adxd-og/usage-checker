@@ -198,3 +198,53 @@ enum SessionListRule {
         }
     }
 }
+
+// MARK: - When an open chat rebuilds
+
+extension SessionListRule {
+    /// What an expanded chat's tables are built from: `SessionRowView`'s `.task(id:)`.
+    ///
+    /// The id and the four switches alone missed every poll. `refreshSessions` replaces
+    /// the row's summary on each ingest, the key stayed the same, and the by-model,
+    /// sub-agent and by-day tables kept the previous summary's numbers under the new
+    /// row totals until the chat was closed and opened again. The fingerprint is the
+    /// summary counted rather than copied: one chat on this Mac has 1,235 sub-agents,
+    /// and the key is compared on every render.
+    struct DetailKey: Equatable, Sendable {
+        let id: String
+        let expanded: Bool
+        let allAgents: Bool
+        let allDays: Bool
+        let allModels: Bool
+        let lastAt: Date
+        let turns: Int
+        let tokens: TokenBreakdown
+        let agentCount: Int
+        let dayCount: Int
+        let modelCount: Int
+    }
+
+    /// A closed chat draws no tables, so its key leaves the content out: a poll must
+    /// not restart one task per collapsed row. Opening it changes `expanded` and brings
+    /// the fingerprint in.
+    static func detailKey(
+        session: SessionSummary, expanded: Bool,
+        allAgents: Bool, allDays: Bool, allModels: Bool
+    ) -> DetailKey {
+        guard expanded else {
+            return DetailKey(
+                id: session.id, expanded: false,
+                allAgents: allAgents, allDays: allDays, allModels: allModels,
+                lastAt: .distantPast, turns: 0, tokens: .zero,
+                agentCount: 0, dayCount: 0, modelCount: 0
+            )
+        }
+        return DetailKey(
+            id: session.id, expanded: true,
+            allAgents: allAgents, allDays: allDays, allModels: allModels,
+            lastAt: session.lastAt, turns: session.turns, tokens: session.tokens,
+            agentCount: session.agents.count, dayCount: session.days.count,
+            modelCount: session.models.count
+        )
+    }
+}

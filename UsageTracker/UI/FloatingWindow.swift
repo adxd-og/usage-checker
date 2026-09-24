@@ -128,10 +128,18 @@ struct FloatingMiniContent: View {
                 ForEach(content.rows) { bucket in
                     windowRow(bucket)
                 }
+            } else if let weekCost = content.weekCost {
+                Text(CostCopy.lastSevenDays(weekCost))
+                    .font(OMFont.bodyStrong)
+                    .monospacedDigit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if let emptyText = content.emptyText {
                 Text(emptyText)
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)
+                    // A provider's message can be a whole response body; the panel is
+                    // 130 pt tall and never scrolls.
+                    .lineLimit(3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             Spacer(minLength: 0)
@@ -323,7 +331,7 @@ private var floatingPreviewBuckets: [UsageBucket] {
     .frame(width: 260, height: 130)
 }
 
-#Preview("Floating — nothing tracked yet") {
+#Preview("Floating — pay-as-you-go, no budget") {
     FloatingMiniContent(service: floatingPreviewService(buckets: []), mode: .used, agents: nil, onClose: {})
         .frame(width: 260, height: 130)
 }

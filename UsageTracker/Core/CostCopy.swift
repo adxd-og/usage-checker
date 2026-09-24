@@ -41,4 +41,16 @@ enum CostCopy {
     static func isPayAsYouGo(_ service: ServiceSnapshot) -> Bool {
         service.buckets.allSatisfy { syntheticBucketIDs.contains($0.id) }
     }
+
+    /// "Last 7 days $12.40": the floating panel's one line for a healthy account with
+    /// no window, in the words the All tab's tile uses for the same snapshot, and with
+    /// its dollars printed the tile's way (currency format in the viewer's locale), so
+    /// "$1,234.57" reads the same on both. No caption: an account with no window of its
+    /// own is pay-as-you-go by the rule above, and there the dollars are the bill.
+    static func lastSevenDays(_ dollars: Double, locale: Locale = .current) -> String {
+        let amount = dollars.formatted(
+            .currency(code: "USD").precision(.fractionLength(2)).locale(locale)
+        )
+        return "Last 7 days \(amount)"
+    }
 }

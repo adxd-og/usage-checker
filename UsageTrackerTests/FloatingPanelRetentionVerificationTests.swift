@@ -75,7 +75,10 @@ final class FloatingPanelRetentionVerificationTests: XCTestCase {
 
         let content = FloatingMiniLayout.content(for: retainedPayAsYouGo)
         XCTAssertNil(content.hero)
-        XCTAssertNil(content.retainedAt, "not yet stamped for the windowless branch — P4's scope, per the spec")
-        XCTAssertEqual(content.emptyText, "You haven't used Claude yet")
+        XCTAssertNil(content.retainedAt, "the windowless branch carries the state message instead of a stamp")
+        // With P4 merged (spec § UI, floating panel): a provider that is not `.ok`
+        // shows its own message, never "haven't used" — here the fixture's "500".
+        XCTAssertEqual(content.emptyText, "500")
+        XCTAssertNil(content.weekCost, "a failed poll shows the failure, not the spend")
     }
 }

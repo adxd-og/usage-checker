@@ -240,4 +240,10 @@ extension SessionCopy {
     static func emptyHint(providerID: String) -> String? {
         providerID == "codex" ? "Codex writes session logs from 0.146 on" : nil
     }
+
+    /// What pressing a chat row's button does: VoiceOver's hint on it and the pointer's
+    /// tooltip. App-only, so it lives here rather than in the CLI's half.
+    static func rowActionName(expanded: Bool) -> String {
+        expanded ? "Hide this chat's breakdown" : "Show this chat's breakdown"
+    }
 }

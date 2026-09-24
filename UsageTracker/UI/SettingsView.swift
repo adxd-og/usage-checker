@@ -5,6 +5,9 @@ struct SettingsView: View {
     @StateObject private var settings = SettingsStore.shared
     @ObservedObject private var state = AppState.shared
     @ObservedObject private var route = SettingsRoute.shared
+    /// Observed for the Updates section: "Last check" and the check button follow
+    /// Sparkle through `Updater`'s published copies, not the next poll's redraw.
+    @ObservedObject private var updater = Updater.shared
     @State private var selectedTab: Tab = .general
     @State private var adminKeyDraft: String = ""
     @State private var savedAdminKeyMasked: String = ""
@@ -203,17 +206,17 @@ struct SettingsView: View {
 
             Section("Updates") {
                 Toggle("Automatically check for updates", isOn: Binding(
-                    get: { Updater.shared.automaticallyChecksForUpdates },
-                    set: { Updater.shared.automaticallyChecksForUpdates = $0 }
+                    get: { updater.automaticallyChecksForUpdates },
+                    set: { updater.automaticallyChecksForUpdates = $0 }
                 ))
                 HStack {
                     Button("Check for updates now") {
-                        Updater.shared.checkForUpdates()
+                        updater.checkForUpdates()
                     }
-                    .disabled(!Updater.shared.canCheckForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
                     Spacer()
-                    if let date = Updater.shared.lastUpdateCheckDate {
-                        Text("Last check: \(date.formatted(date: .abbreviated, time: .shortened))")
+                    if let lastCheck = Updater.lastCheckText(updater.lastUpdateCheckDate) {
+                        Text(lastCheck)
                             .font(OMFont.caption)
                             .foregroundStyle(.secondary)
                     }

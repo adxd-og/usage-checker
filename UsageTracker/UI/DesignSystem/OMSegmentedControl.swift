@@ -24,9 +24,25 @@ struct OMSegmentedControl: View {
     /// sidebar, and two owners for ⌘1 is one too many.
     var keyboardShortcuts: Bool = true
 
+    /// Which segment keyboard focus is on. nil unless the user is moving through the
+    /// control with Tab (Keyboard navigation on); a click does not set it.
+    @FocusState private var focusedItemID: String?
+
     /// Do the provider names fit? Pure, so both surfaces' answers are testable.
     nonisolated static func showsTitles(count: Int, alwaysShowsTitles: Bool) -> Bool {
         alwaysShowsTitles || count <= 4
+    }
+
+    /// What one segment wears. Selection and keyboard focus are separate facts and a
+    /// segment can have both, so there are four answers, not two flags the view could
+    /// combine wrongly.
+    nonisolated static func segmentChrome(isSelected: Bool, isFocused: Bool) -> SegmentChrome {
+        switch (isSelected, isFocused) {
+        case (false, false): return .plain
+        case (false, true): return .focusRing
+        case (true, false): return .glass
+        case (true, true): return .glassAndRing
+        }
     }
 
     private var showsTitles: Bool {
@@ -50,6 +66,7 @@ struct OMSegmentedControl: View {
     @ViewBuilder
     private func segment(_ item: OMSegmentItem, index: Int) -> some View {
         let isSelected = item.id == selection
+        let chrome = Self.segmentChrome(isSelected: isSelected, isFocused: focusedItemID == item.id)
         Button {
             withAnimation(.smooth(duration: 0.2)) { selection = item.id }
         } label: {
@@ -76,13 +93,31 @@ struct OMSegmentedControl: View {
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        // The system's ring is a rectangle around a capsule; the ring below replaces it.
         .focusEffectDisabled()
-        .modifier(SelectedCapsule(isSelected: isSelected))
+        .focused($focusedItemID, equals: item.id)
+        .modifier(SelectedCapsule(isSelected: chrome.showsGlass))
+        .overlay {
+            if chrome.showsFocusRing {
+                Capsule(style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
+        }
         .modifier(SegmentShortcut(index: index, enabled: keyboardShortcuts))
         .help(item.title)
         .accessibilityLabel("\(item.title) tab")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
+}
+
+/// What one segment draws: nothing, the keyboard-focus ring, the selected glass
+/// capsule, or both. Decided by `OMSegmentedControl.segmentChrome(isSelected:isFocused:)`.
+enum SegmentChrome: Equatable, Sendable {
+    case plain, focusRing, glass, glassAndRing
+
+    var showsGlass: Bool { self == .glass || self == .glassAndRing }
+    var showsFocusRing: Bool { self == .focusRing || self == .glassAndRing }
 }
 
 /// Glass capsule behind the selected segment, nothing behind the others.

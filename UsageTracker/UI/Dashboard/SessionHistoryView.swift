@@ -64,12 +64,19 @@ struct SessionHistoryView: View {
             quota = .empty
             return
         }
+        let started = cacheKey
         let records = dashboard.history
         let buckets = dashboard.quotaBuckets
         let span = dashboard.range.seconds
-        quota = await Task.detached(priority: .userInitiated) {
+        let built = await Task.detached(priority: .userInitiated) {
             QuotaHistoryCache.build(records: records, buckets: buckets, span: span)
         }.value
+        // See `DerivedCacheGate`: a pass for the provider or range just left must not
+        // land after the new one's.
+        guard DerivedCacheGate.canPublish(
+            started: started, current: cacheKey, cancelled: Task.isCancelled
+        ) else { return }
+        quota = built
     }
 
     private var data: [DailyPoint] {
@@ -86,37 +93,49 @@ struct SessionHistoryView: View {
             }
     }
 
-    /// The gutters `sessionList` pads itself with, taken off the tab's width before the
-    /// list decides how to draw.
+    /// The gutters `sessionList` and `tokensTable` pad themselves with, taken off the
+    /// tab's width before either decides how to draw.
     private static let listGutters: CGFloat = 48
 
     var body: some View {
         // Measured here, once, off the width the tab is given rather than off the width
         // a row's content grew to: the Sessions list, its header and every one of its
-        // rows then draw to the same decision.
+        // rows then draw to the same decision, and so does the Tokens table.
         GeometryReader { proxy in
-            let isWide = SessionListRule.isWide(
-                availableWidth: proxy.size.width - Self.listGutters
+            let available = proxy.size.width - Self.listGutters
+            scrollBody(
+                isWide: SessionListRule.isWide(availableWidth: available),
+                tokenColumns: Self.tokenColumns(availableWidth: available)
             )
-            scrollBody(isWide: isWide)
         }
     }
 
-    private func scrollBody(isWide: Bool) -> some View {
+    private func scrollBody(isWide: Bool, tokenColumns: [TokenColumn]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                DashboardHeader(
-                    title: showsQuota ? "Quota history" : "Session history",
-                    subtitle: subtitle,
-                    // A provider with no cost log has one unit to chart, so it is
-                    // shown a range control and nothing to toggle.
-                    trailing: AnyView(
-                        HStack(spacing: 12) {
-                            if !showsQuota { modePicker }
-                            RangePicker(range: $dashboard.range)
-                        }
+                // The caption belongs to the header, so it sits under the header's own
+                // bottom padding rather than a whole section gap below it.
+                VStack(alignment: .leading, spacing: 0) {
+                    DashboardHeader(
+                        title: showsQuota ? "Quota history" : "Session history",
+                        subtitle: subtitle.line,
+                        // A provider with no cost log has one unit to chart, so it is
+                        // shown a range control and nothing to toggle.
+                        trailing: AnyView(
+                            HStack(spacing: 12) {
+                                if !showsQuota { modePicker }
+                                RangePicker(range: $dashboard.range)
+                            }
+                        )
                     )
-                )
+                    if let caption = subtitle.caption {
+                        Text(caption)
+                            .font(OMFont.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 24)
+                    }
+                }
 
                 if showsQuota {
                     quotaContent
@@ -127,7 +146,7 @@ struct SessionHistoryView: View {
                 } else if mode == .tokens {
                     tokensChart
                     Divider().padding(.horizontal, 24)
-                    tokensTable
+                    tokensTable(columns: tokenColumns)
                 } else {
                     chart
                     Divider().padding(.horizontal, 24)
@@ -168,7 +187,7 @@ struct SessionHistoryView: View {
         .frame(width: offered.count > 2 ? 210 : 140)
     }
 
-    private var subtitle: String {
+    private var subtitle: (line: String, caption: String?) {
         Self.subtitle(
             showsQuota: showsQuota,
             providerName: dashboard.displayName(for: dashboard.selectedService),
@@ -181,9 +200,14 @@ struct SessionHistoryView: View {
         )
     }
 
-    /// The header line under "Session history". Pure so both rules are testable: the
-    /// line names the unit on the chart (there are no dollars on the Tokens chart to
-    /// call a daily cost), and only the cost chart explains what its dollars are.
+    /// The header line under "Session history", and the caption drawn under the header
+    /// on a line of its own. Pure so both rules are testable: the line names the unit on
+    /// the chart (there are no dollars on the Tokens chart to call a daily cost), and only
+    /// the cost chart explains what its dollars are.
+    ///
+    /// The caption is separate because it is a sentence of its own. Riding on the line,
+    /// it made the Cost header 666 pt wide, wider than the detail column at the
+    /// dashboard's 820 pt minimum, and it was the part that got cut off.
     nonisolated static func subtitle(
         showsQuota: Bool,
         providerName: String,
@@ -191,16 +215,14 @@ struct SessionHistoryView: View {
         mode: HistoryChartMode,
         isPayAsYouGo: Bool,
         range: TimeRange = .sevenDays
-    ) -> String {
-        if showsQuota { return "How full \(providerName)'s usage windows ran" }
+    ) -> (line: String, caption: String?) {
+        if showsQuota { return ("How full \(providerName)'s usage windows ran", nil) }
         if mode == .sessions {
-            return sessionsSubtitle(source: longName, range: range, isPayAsYouGo: isPayAsYouGo)
+            return (sessionsSubtitle(source: longName, range: range, isPayAsYouGo: isPayAsYouGo), nil)
         }
-        let base = costSubtitle(mode: mode, source: longName)
-        guard mode == .cost,
-              let caption = CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo)
-        else { return base }
-        return "\(base) · \(caption)"
+        let line = costSubtitle(mode: mode, source: longName)
+        guard mode == .cost else { return (line, nil) }
+        return (line, CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo))
     }
 
     /// "Daily cost from …" or "Daily tokens by type from …".
@@ -210,9 +232,9 @@ struct SessionHistoryView: View {
     }
 
     /// The Sessions header line. The dollars are qualified inside the sentence rather
-    /// than by the long `CostCopy` caption the Cost mode appends: this subtitle already
-    /// lists three things, and a fourth clause pushes the header into its stacked
-    /// layout at any ordinary window width.
+    /// than by the long `CostCopy` caption the Cost mode draws under the header: this
+    /// subtitle already names what the dollars are, and a second sentence saying it
+    /// again would be noise.
     ///
     /// The five-hour range is the one control that does not mean what it says — the
     /// aggregators widen anything shorter than a day to the local day it falls in — so
@@ -241,6 +263,20 @@ struct SessionHistoryView: View {
     /// The segments the picker offers for this provider.
     nonisolated static func modes(hasSessionLog: Bool) -> [HistoryChartMode] {
         HistoryChartMode.allCases.filter { $0 != .sessions || hasSessionLog }
+    }
+
+    /// Below this width the Tokens table draws one "Cache" column instead of two.
+    /// Measured: the six fixed columns and their gaps need 580 pt inside the 24 pt
+    /// gutters; the 820 pt window with a 220 pt sidebar leaves 551, and Cost was clipped.
+    nonisolated static let minimumSplitCacheWidth: CGFloat = 580
+
+    /// The Tokens table's figure columns for the width the tab measured, which is the
+    /// same measurement `SessionListRule.isWide` is taken from. Merging the cache pair
+    /// saves 90 pt and keeps Cost, the column the table ends on, whole.
+    nonisolated static func tokenColumns(availableWidth: CGFloat) -> [TokenColumn] {
+        availableWidth >= minimumSplitCacheWidth
+            ? [.input, .output, .cacheRead, .cacheWrite, .cost]
+            : [.input, .output, .cache, .cost]
     }
 
     // MARK: - Quota
@@ -429,21 +465,18 @@ struct SessionHistoryView: View {
         .padding(.horizontal, 24)
     }
 
-    /// The chart's numbers, per day. Cache columns are secondary: they are usually
-    /// the biggest figures on the row and the least actionable.
-    private var tokensTable: some View {
+    /// The chart's numbers, per day. Which figure columns there are is
+    /// `tokenColumns(availableWidth:)`'s decision; what each says is `TokenColumn`'s.
+    private func tokensTable(columns: [TokenColumn]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Day").font(OMFont.body).foregroundStyle(.secondary).frame(width: 120, alignment: .leading)
                 Spacer()
-                // The column is the uncached input; "In" is all the width there is.
-                Text("In").font(OMFont.body).foregroundStyle(.secondary)
-                    .frame(width: 80, alignment: .trailing)
-                    .help(TokenCategory.input.help ?? TokenCategory.input.label)
-                Text("Out").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
-                Text("Cache read").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
-                Text("Cache write").font(OMFont.body).foregroundStyle(.secondary).frame(width: 90, alignment: .trailing)
-                Text("Cost").font(OMFont.body).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                ForEach(columns) { column in
+                    Text(column.title).font(OMFont.body).foregroundStyle(.secondary)
+                        .frame(width: column.width, alignment: .trailing)
+                        .help(column.help)
+                }
             }
             .padding(.bottom, 6)
             ForEach(data.reversed()) { p in
@@ -451,18 +484,12 @@ struct SessionHistoryView: View {
                     Text(p.day.formatted(date: .abbreviated, time: .omitted)).font(OMFont.body)
                         .frame(width: 120, alignment: .leading)
                     Spacer()
-                    Text(TokenFormat.formatTokens(p.breakdown.input))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.output))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.cacheRead))
-                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 90, alignment: .trailing)
-                    Text(TokenFormat.formatTokens(p.breakdown.cacheWrite))
-                        .font(OMFont.numeral).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 90, alignment: .trailing)
-                    Text(String(format: "$%.2f", p.cost))
-                        .font(OMFont.numeral).monospacedDigit().frame(width: 80, alignment: .trailing)
+                    ForEach(columns) { column in
+                        Text(column.value(breakdown: p.breakdown, cost: p.cost))
+                            .font(OMFont.numeral).monospacedDigit()
+                            .foregroundStyle(column.isSecondary ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                            .frame(width: column.width, alignment: .trailing)
+                    }
                 }
                 .padding(.vertical, 3)
                 if p.id != data.first?.id { Divider().opacity(0.3) }
@@ -703,20 +730,20 @@ private struct SessionRowView: View {
 
     private var session: SessionSummary { row.session }
 
-    /// The expanded sections, built once per (chat, cap state) rather than per
+    /// The expanded sections, built once per (chat content, cap state) rather than per
     /// re-render: `session.agents` reaches 1,235 entries on this Mac, and sorting and
-    /// formatting that inside `body` would run on every poll and every hover.
+    /// formatting that inside `body` would run on every poll and every hover. What
+    /// "chat content" means is `SessionListRule.detailKey`.
     @State private var detail = SessionDetail.empty
     @State private var showsAllAgents = false
     @State private var showsAllDays = false
     @State private var showsAllModels = false
 
-    private struct DetailKey: Hashable {
-        let id: String
-        let expanded: Bool
-        let allAgents: Bool
-        let allDays: Bool
-        let allModels: Bool
+    private var detailKey: SessionListRule.DetailKey {
+        SessionListRule.detailKey(
+            session: session, expanded: isExpanded,
+            allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels
+        )
     }
 
     var body: some View {
@@ -727,10 +754,11 @@ private struct SessionRowView: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggle)
+        // A group named after the chat. The hint moved to `rowToggle`: on this
+        // container it described an action nothing could perform.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(SessionCopy.rowTitle(session))
-        .accessibilityHint(isExpanded ? "Hides this chat's breakdown" : "Shows this chat's breakdown")
-        .task(id: DetailKey(id: row.id, expanded: isExpanded, allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels)) {
+        .task(id: detailKey) {
             guard isExpanded else {
                 detail = .empty
                 // Collapsing forgets the caps too: reopening a chat should start from
@@ -740,15 +768,25 @@ private struct SessionRowView: View {
                 showsAllModels = false
                 return
             }
+            let started = detailKey
             let session = self.session
             let allAgents = showsAllAgents
             let allDays = showsAllDays
             let allModels = showsAllModels
-            detail = await Task.detached(priority: .userInitiated) {
+            let built = await Task.detached(priority: .userInitiated) {
                 SessionDetail.build(
                     session: session, allAgents: allAgents, allDays: allDays, allModels: allModels
                 )
             }.value
+            // See `DerivedCacheGate`. A collapse, a lifted cap or a newer summary of the
+            // chat restarts this task and cancels this pass, but the await does not stop
+            // for that. `row` and `isExpanded` are `let`s this pass captured, so for those
+            // the cancellation half of the gate is what drops a stale build; the three
+            // caps are `@State` and read as they are now.
+            guard DerivedCacheGate.canPublish(
+                started: started, current: detailKey, cancelled: Task.isCancelled
+            ) else { return }
+            detail = built
         }
     }
 
@@ -758,6 +796,24 @@ private struct SessionRowView: View {
             .foregroundStyle(.tertiary)
             .rotationEffect(.degrees(isExpanded ? 0 : -90))
             .frame(width: 16, height: 16)
+    }
+
+    /// The chevron and the chat's name, as the row's one control. The whole row still
+    /// answers a click, which is how the mouse gets in. A tap gesture is not a control,
+    /// though: Tab never reached it and VoiceOver could not press it. A plain button can
+    /// do both without looking like a button.
+    private func rowToggle<Title: View>(_ title: Title) -> some View {
+        Button(action: toggle) {
+            HStack(spacing: OMSpacing.s) {
+                chevron
+                title
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(SessionCopy.rowTitle(session))
+        .accessibilityHint(SessionCopy.rowActionName(expanded: isExpanded))
+        .help(SessionCopy.rowActionName(expanded: isExpanded))
     }
 
     /// The chat's name and its chips. The name is the one thing on the row that has no
@@ -796,9 +852,9 @@ private struct SessionRowView: View {
     /// must never be the reason a figure moves or gets clipped.
     private var wideSummary: some View {
         HStack(spacing: OMSpacing.s) {
-            chevron
-            titleBlock
-                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            // Same geometry as before: chevron 16, an 8 pt gap, the title's 160 minimum,
+            // so the column header above still lines up (`SessionListRule.minimumWideWidth`).
+            rowToggle(titleBlock.frame(minWidth: 160, maxWidth: .infinity, alignment: .leading))
                 .layoutPriority(0)
             Spacer(minLength: OMSpacing.s)
             Text(lastActiveText)
@@ -827,8 +883,7 @@ private struct SessionRowView: View {
     private var narrowSummary: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: OMSpacing.s) {
-                chevron
-                titleBlock.layoutPriority(0)
+                rowToggle(titleBlock).layoutPriority(0)
                 Spacer(minLength: OMSpacing.s)
                 Text(SessionCopy.cost(session.tokens.cost?.total))
                     .font(OMFont.numeral).monospacedDigit()
@@ -1038,6 +1093,69 @@ private struct DailyPoint: Identifiable {
     /// the sum of the parts.
     let breakdown: TokenBreakdown
     var id: Date { day }
+}
+
+/// One figure column of History's Tokens table, after the day, in drawing order.
+/// `SessionHistoryView.tokenColumns(availableWidth:)` decides which of them a table
+/// draws; everything a cell or a header says comes from here.
+enum TokenColumn: String, CaseIterable, Identifiable, Sendable {
+    case input, output, cacheRead, cacheWrite
+    /// Cache read and cache write in one column, for a table too narrow for both.
+    case cache
+    case cost
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .input: return "In"
+        case .output: return "Out"
+        case .cacheRead: return "Cache read"
+        case .cacheWrite: return "Cache write"
+        case .cache: return "Cache"
+        case .cost: return "Cost"
+        }
+    }
+
+    /// The header's tooltip. The column is the uncached input and "In" is all the
+    /// width there is; a merged "Cache" has to say it holds two figures.
+    var help: String {
+        switch self {
+        case .input: return TokenCategory.input.help ?? TokenCategory.input.label
+        case .cache: return "Cache read + cache write"
+        case .output, .cacheRead, .cacheWrite, .cost: return title
+        }
+    }
+
+    var width: CGFloat {
+        switch self {
+        case .input, .output, .cost: return 80
+        case .cacheRead, .cacheWrite, .cache: return 90
+        }
+    }
+
+    /// Cache figures are usually the biggest on a row and the least actionable.
+    var isSecondary: Bool {
+        switch self {
+        case .cacheRead, .cacheWrite, .cache: return true
+        case .input, .output, .cost: return false
+        }
+    }
+
+    /// The cell for one day.
+    func value(breakdown: TokenBreakdown, cost: Double) -> String {
+        switch self {
+        case .input: return TokenFormat.formatTokens(breakdown.input)
+        case .output: return TokenFormat.formatTokens(breakdown.output)
+        case .cacheRead: return TokenFormat.formatTokens(breakdown.cacheRead)
+        case .cacheWrite: return TokenFormat.formatTokens(breakdown.cacheWrite)
+        case .cache:
+            return TokenFormat.formatTokens(
+                TokenBreakdown.saturating(breakdown.cacheRead, breakdown.cacheWrite)
+            )
+        case .cost: return String(format: "$%.2f", cost)
+        }
+    }
 }
 
 // MARK: - Quota cache (computed off the main thread, then cached in @State)
