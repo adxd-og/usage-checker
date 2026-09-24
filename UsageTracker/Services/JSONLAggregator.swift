@@ -892,13 +892,32 @@ actor JSONLAggregator: CostLogAggregating {
         }
     }
 
-    /// Adopts a later record's counters for a turn we already hold.
+    /// A later record's counters on the stored turn, or nil when the record is not the
+    /// later reading.
     ///
     /// "Later" is decided by the output count, not by line order: a re-scanned tail or a
     /// forked session can replay the provisional record after the final one, and that
     /// must not shrink the turn. Equal counts keep what is stored — measured over this
     /// machine's transcripts, no message id ever changes anything else once its output
-    /// stops growing.
+    /// stops growing. Everything but the counters — time, model, project, chat, agent,
+    /// effort — stays the stored turn's: the first record settled it.
+    static func laterReading(_ record: CLITurn, over stored: CLITurn) -> CLITurn? {
+        guard record.tokens.output > stored.tokens.output else { return nil }
+        return CLITurn(
+            id: stored.id,
+            timestamp: stored.timestamp,
+            model: stored.model,
+            tokens: record.tokens,
+            projectSlug: stored.projectSlug,
+            sessionID: stored.sessionID,
+            agentID: stored.agentID,
+            agentKind: stored.agentKind,
+            effort: stored.effort
+        )
+    }
+
+    /// Adopts a later record's counters for a recent turn we already hold, by
+    /// `laterReading`'s rule.
     ///
     /// Ids already folded into `oldDays` — turns older than `recentWindow` — are not in
     /// the index and are never revised: the fold is a day-level sum with no per-turn slot
@@ -906,19 +925,9 @@ actor JSONLAggregator: CostLogAggregating {
     private func replaceIfLater(_ turn: CLITurn, hash: UInt64) {
         guard let index = recentIndexByID[hash], index < recentTurns.count else { return }
         let stored = recentTurns[index]
-        guard turn.tokens.output > stored.tokens.output else { return }
-        recentTurns[index] = CLITurn(
-            id: stored.id,
-            timestamp: stored.timestamp,
-            model: stored.model,
-            tokens: turn.tokens,
-            projectSlug: stored.projectSlug,
-            sessionID: stored.sessionID,
-            agentID: stored.agentID,
-            agentKind: stored.agentKind,
-            effort: stored.effort
-        )
-        reviseSession(from: stored, to: turn)
+        guard let revised = Self.laterReading(turn, over: stored) else { return }
+        recentTurns[index] = revised
+        reviseSession(from: stored, to: revised)
         dirty = true
     }
 
