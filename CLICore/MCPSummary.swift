@@ -154,15 +154,19 @@ enum MCPSummary {
     static let maxSessionLimit = 15
 
     /// The `limit` argument, from whatever JSON the client actually sent. A model that
-    /// sends `"7"` or `7.0` gets seven; anything unreadable gets the default, because a
-    /// protocol error over an optional argument helps nobody.
+    /// sends `"7"`, `"7.0"` or `7.0` gets seven; anything unreadable gets the default,
+    /// because a protocol error over an optional argument helps nobody. The number is
+    /// clamped while it is still a `Double`: `Int(1e100)` and `Int(.nan)` trap, and a
+    /// trap here takes the whole MCP server down. Infinity and NaN are nobody's
+    /// number, so they get the default as well.
     static func sessionLimit(_ raw: Any?) -> Int {
-        let asked: Int
-        if let number = raw as? Int { asked = number }
-        else if let number = raw as? Double { asked = Int(number) }
-        else if let text = raw as? String, let number = Int(text) { asked = number }
+        let asked: Double
+        if let number = raw as? Int { asked = Double(number) }
+        else if let number = raw as? Double { asked = number }
+        else if let text = raw as? String, let number = Double(text) { asked = number }
         else { return defaultSessionLimit }
-        return min(max(1, asked), maxSessionLimit)
+        guard asked.isFinite else { return defaultSessionLimit }
+        return Int(min(max(1, asked), Double(maxSessionLimit)))
     }
 
     /// One line per chat, newest first, then the stamp. Newline-separated rather than
