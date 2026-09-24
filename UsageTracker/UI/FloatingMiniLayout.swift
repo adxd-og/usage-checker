@@ -7,12 +7,16 @@ import SwiftUI
 /// scrolls, so a hero ring leaves room for exactly two bar rows. Deciding which
 /// two here — rather than inside the view — is what makes the rule testable.
 enum FloatingMiniLayout {
-    /// The ring, the windows drawn as bars under it, and the sentence to show
-    /// when there is no ring to draw. `hero` and `emptyText` are never both set.
+    /// The ring, the windows drawn as bars under it, and what to show when there is
+    /// no ring to draw: a pay-as-you-go week of spend, or a sentence. At most one of
+    /// `hero`, `weekCost` and `emptyText` is set.
     struct Content: Equatable {
         let hero: UsageBucket?
         let rows: [UsageBucket]
         let emptyText: String?
+        /// A healthy account with no window and money spent this week: pay-as-you-go
+        /// with no budget set. Defaulted, because only `noWindowsContent` sets it.
+        var weekCost: Double? = nil
     }
 
     /// `maxRows` is 2 because that is what fits at 130 pt; it is a parameter only
@@ -22,7 +26,7 @@ enum FloatingMiniLayout {
             return Content(hero: nil, rows: [], emptyText: "Loading…")
         }
         guard let hero = WindowRanking.detailHero(for: service) else {
-            return Content(hero: nil, rows: [], emptyText: "You haven't used \(service.displayName) yet")
+            return noWindowsContent(for: service)
         }
         return Content(hero: hero, rows: rows(for: service, hero: hero, maxRows: maxRows), emptyText: nil)
     }
@@ -76,5 +80,25 @@ enum FloatingMiniLayout {
             }
             .map { $0.element }
         return Array((sessions + ordered).prefix(max(0, maxRows)))
+    }
+
+    /// A service with no window to ring. "Haven't used" is true in only one of three
+    /// cases. A healthy pay-as-you-go account with no budget set publishes no window
+    /// (`AppState.applyPayAsYouGo`) but has the week's spend. A provider that failed has
+    /// its own message. Only a healthy provider with nothing at all is unused.
+    private static func noWindowsContent(for service: ServiceSnapshot) -> Content {
+        if service.state == .ok, let weekCost = service.weekCost, weekCost > 0 {
+            return Content(hero: nil, rows: [], emptyText: nil, weekCost: weekCost)
+        }
+        guard service.state == .ok else {
+            return Content(hero: nil, rows: [], emptyText: stateText(for: service))
+        }
+        return Content(hero: nil, rows: [], emptyText: "You haven't used \(service.displayName) yet")
+    }
+
+    /// The provider's own words when it gave any, else the state chip's word.
+    private static func stateText(for service: ServiceSnapshot) -> String {
+        let message = service.stateMessage?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return message.isEmpty ? RetainedCopy.chipText(for: service.state) : message
     }
 }
