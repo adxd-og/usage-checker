@@ -1458,11 +1458,6 @@ actor JSONLAggregator: CostLogAggregating {
         return days
     }
 
-    /// Forwards to `DayRekey.midpoint`, where the rule lives now.
-    static func rekeyedDay(_ saved: Date, calendar: Calendar) -> Date {
-        DayRekey.midpoint(saved, calendar: calendar)
-    }
-
     /// Every chat's day totals re-keyed the same way (`DayRekey.midpoint`).
     private static func rekeyed(_ sessions: [String: SessionAgg], calendar: Calendar) -> [String: SessionAgg] {
         sessions.mapValues { agg in agg.rekeyingDays { DayRekey.midpoint($0, calendar: calendar) } }
