@@ -12,6 +12,11 @@ enum CLIText {
     /// old, unreadable, from another version. They all mean the same thing to the user.
     static let notRunning = "Omelette is not running or has not polled yet"
 
+    /// The short qualifier for dollars that are an API-list-price equivalent of local
+    /// CLI usage rather than a bill. One spelling for `omelette status` and for the
+    /// app's notification body (`CostCopy.apiEquivalentSuffix`).
+    static let apiEquivalentSuffix = "(API-equivalent)"
+
     /// `status` found nothing to print.
     static let noDataExitCode: Int32 = 2
     /// Bad arguments. 64 is `EX_USAGE` from sysexits(3), which is what a shell script

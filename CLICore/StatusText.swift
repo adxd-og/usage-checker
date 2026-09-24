@@ -70,11 +70,18 @@ enum StatusText {
     }
 
     /// Zero is not printed: a provider that has a log and spent nothing today is
-    /// quieter without "$0.00 today" in the middle of the line.
+    /// quieter without "$0.00 today" in the middle of the line. On a subscription
+    /// (`apiEquivalent == true`) the dollars are what the same tokens would cost
+    /// through the API, not the bill, so the last figure carries
+    /// `CLIText.apiEquivalentSuffix` — once per line. A pay-as-you-go account, and a
+    /// file that says nothing either way, get no suffix.
     static func costParts(_ service: StatusSnapshot.Service) -> [String] {
         var out: [String] = []
         if let today = service.todayCost, today > 0 { out.append(String(format: "$%.2f today", today)) }
         if let week = service.weekCost, week > 0 { out.append(String(format: "$%.2f this week", week)) }
+        if service.apiEquivalent == true, let last = out.popLast() {
+            out.append("\(last) \(CLIText.apiEquivalentSuffix)")
+        }
         return out
     }
 

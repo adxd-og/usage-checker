@@ -16,8 +16,9 @@ enum CostCopy {
 
     static let apiEquivalent = "API-equivalent cost of your CLI usage — not what your subscription bills."
 
-    /// The short form, for a notification body that has no room for the sentence.
-    static let apiEquivalentSuffix = "(API-equivalent)"
+    /// The short form, for a notification body that has no room for the sentence —
+    /// `CLIText`'s constant, so the notification and `omelette status` say it alike.
+    static let apiEquivalentSuffix = CLIText.apiEquivalentSuffix
 
     /// nil for a pay-as-you-go account: there the dollars really are what gets billed,
     /// and a disclaimer would be worse than nothing.
