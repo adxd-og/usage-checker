@@ -107,8 +107,11 @@ enum FloatingMiniLayout {
     /// (`AppState.applyPayAsYouGo`) but has the week's spend. A provider that failed has
     /// its own message. Only a healthy provider with nothing at all is unused.
     private static func noWindowsContent(for service: ServiceSnapshot) -> Content {
-        if service.state == .ok, let weekCost = service.weekCost, weekCost > 0 {
-            return Content(hero: nil, rows: [], emptyText: nil, weekCost: weekCost)
+        // `spendHeadline` is the week's dollars for a healthy account, or the last
+        // known ones for a retained one — the tile's rule. The retained case keeps its
+        // stamp, so the view dims the figure like any other last-known number.
+        if let spend = service.spendHeadline {
+            return Content(hero: nil, rows: [], emptyText: nil, retainedAt: service.retainedAt, weekCost: spend)
         }
         guard service.state == .ok else {
             return Content(hero: nil, rows: [], emptyText: stateText(for: service))

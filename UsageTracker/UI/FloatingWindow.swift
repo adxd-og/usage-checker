@@ -132,6 +132,7 @@ struct FloatingMiniContent: View {
                 Text(CostCopy.lastSevenDays(weekCost))
                     .font(OMFont.bodyStrong)
                     .monospacedDigit()
+                    .opacity(FloatingMiniLayout.numbersOpacity(content))
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             } else if let emptyText = content.emptyText {
                 Text(emptyText)

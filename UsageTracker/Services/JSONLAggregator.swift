@@ -264,7 +264,7 @@ extension CostLogAggregating {
 actor JSONLAggregator: CostLogAggregating {
     static let shared = JSONLAggregator()
 
-    private struct DayAgg {
+    struct DayAgg {
         var cost = 0.0
         var tokens = 0
         var breakdown = TokenBreakdown.zero
@@ -290,7 +290,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// A day of spend that has already been folded out of `recentTurns`, in a shape
     /// `oldDays` can be rebuilt from.
-    private struct DayEntry: Codable {
+    struct DayEntry: Codable {
         let day: Date
         let cost: Double
         let tokens: Int
@@ -1440,13 +1440,20 @@ actor JSONLAggregator: CostLogAggregating {
     /// corruption, and counting it twice would be worse than dropping half of it. Each
     /// day is re-keyed to this run's calendar (`rekeyedDay`), so a cache saved in
     /// another time zone keeps its dates.
-    private static func dayTotals(from entries: [DayEntry], calendar: Calendar) -> [Date: DayAgg] {
+    /// Two saved entries can name one civil date: a day folded before and after a
+    /// time-zone change in the same run carries two midnights. They add up; a second
+    /// entry that replaced the first would lose a day's worth of turns on every load.
+    static func dayTotals(from entries: [DayEntry], calendar: Calendar) -> [Date: DayAgg] {
         var days: [Date: DayAgg] = [:]
         for entry in entries {
-            days[rekeyedDay(entry.day, calendar: calendar)] = DayAgg(
-                cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
-                turns: entry.turns, byFamily: entry.byFamily
-            )
+            let key = rekeyedDay(entry.day, calendar: calendar)
+            var agg = days[key] ?? DayAgg()
+            agg.cost += entry.cost
+            agg.tokens += entry.tokens
+            agg.breakdown += entry.breakdown
+            agg.turns += entry.turns
+            for (family, cost) in entry.byFamily { agg.byFamily[family, default: 0] += cost }
+            days[key] = agg
         }
         return days
     }

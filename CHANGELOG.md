@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Costs (API list-price equivalents)
 - **Turns read before the price table knew their model are priced once it does.** Codex and Grok turns counted $0 until the next launch; Claude turns priced at a family guess kept the guess across relaunches. The last 31 days, and the History chats inside them, are priced again whenever the table changes. Older days keep the dollars they were read with.
 - A failed models.dev fetch is tried again after 15 minutes instead of the next day.
-- A Codex rollout that shrinks, or has a shorter copy in the archive, is no longer counted twice.
+- A Codex rollout that shrinks, or has a shorter copy in the archive, no longer
+  counts the responses it names twice. A rollout that carries only running
+  counters and no response ids still is; the code says so.
 
 ### Time zones
 - **"Today" and the day totals follow a time-zone change without a relaunch**, for Claude, Codex and Grok.
