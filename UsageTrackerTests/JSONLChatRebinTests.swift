@@ -15,6 +15,7 @@ final class JSONLChatRebinTests: XCTestCase {
     private let now = Date()
     private let sessionID = "5b0e3c1a-7d42-4f96-a8e1-2c9d6b4f0a37"
     private let orphanID = "cccccccc-3333-4333-8333-333333333333"
+    private let otherID = "dddddddd-4444-4444-8444-444444444444"
     private let alphaSlug = "-Users-tester-Projects-alpha"
 
     private static func calendar(secondsFromGMT: Int) -> Calendar {
@@ -61,7 +62,7 @@ final class JSONLChatRebinTests: XCTestCase {
     }
 
     /// One final `type: assistant` line of the main thread.
-    private func record(id: String, at date: Date) -> String {
+    private func record(id: String, at date: Date, session: String? = nil) -> String {
         """
         {"parentUuid":"4c1d7e2a-9b3f-4e8a-b6d0-1f2e3a4b5c6d","isSidechain":false,\
         "message":{"model":"claude-sonnet-4-5","id":"\(id)","type":"message",\
@@ -75,18 +76,23 @@ final class JSONLChatRebinTests: XCTestCase {
         "type":"assistant","uuid":"8e2f4a6c-1b3d-4f5e-a7c9-0d2e4f6a8b1c",\
         "timestamp":"\(Self.iso.string(from: date))","effort":"xhigh","perTurnEffort":"xhigh",\
         "userType":"external","entrypoint":"cli","cwd":"~/Projects/alpha",\
-        "sessionId":"\(sessionID)","version":"2.1.280","gitBranch":"main",\
+        "sessionId":"\(session ?? sessionID)","version":"2.1.280","gitBranch":"main",\
         "slug":"lovely-questing-crown"}
         """
     }
 
-    /// The chat's transcript, written whole. A longer file that starts with the same
+    /// A chat's transcript, written whole. A longer file that starts with the same
     /// bytes is read from where the last scan stopped.
-    private func writeTranscript(_ lines: [String]) throws {
+    private func writeTranscript(_ lines: [String], session: String? = nil) throws {
         let dir = root.appendingPathComponent(alphaSlug, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try (lines.joined(separator: "\n") + "\n")
-            .write(to: dir.appendingPathComponent("\(sessionID).jsonl"), atomically: true, encoding: .utf8)
+            .write(to: transcriptURL(session: session ?? sessionID), atomically: true, encoding: .utf8)
+    }
+
+    private func transcriptURL(session: String) -> URL {
+        root.appendingPathComponent(alphaSlug, isDirectory: true)
+            .appendingPathComponent("\(session).jsonl")
     }
 
     // MARK: - Loaded in another zone
@@ -114,7 +120,7 @@ final class JSONLChatRebinTests: XCTestCase {
         XCTAssertEqual(chats.first?.turns, 1)
     }
 
-    // MARK: - The v7 carry-over
+    // MARK: - The v7 conversion
 
     /// A snapshot as the 2.7.0 build (cache version 7) left a chat whose transcript is
     /// gone: its days, both tiers in one, and none of its turns.
@@ -161,8 +167,8 @@ final class JSONLChatRebinTests: XCTestCase {
     }
 
     /// § Packages 2 (vi). The chat's days two days back hold turns no transcript and no
-    /// `recentTurns` can give back. Carried over, they become folded sums, and they stay
-    /// through the save at version 8 and the next launch.
+    /// `recentTurns` can give back. Converted with nothing to take out, they stay as
+    /// folded sums, through the save at version 8 and the next launch.
     func testAV7ChatWithRecentDaysButNoTurnsOrTranscriptKeepsThemThroughTheCarryOverASaveAndAReload() async throws {
         let day = at(daysAgo: 2, hour: 0)
         try orphanV7Snapshot(day: day, turns: 5).write(to: cacheURL)
@@ -183,8 +189,8 @@ final class JSONLChatRebinTests: XCTestCase {
     }
 
     /// The v7 build saved a recent turn twice over — in its chat's days and in
-    /// `recentTurns`. Read as version 8 it would count in both tiers; carried over, the
-    /// transcript is read again and the turn counts once.
+    /// `recentTurns`. Read as version 8 it would count in both tiers; converted, the turn
+    /// is taken back out of its saved day, nothing is read again, and it counts once.
     func testAChatSavedByTheV7BuildCountsEachTurnOnceAfterTheUpdate() async throws {
         let turnAt = at(daysAgo: 2, hour: 12)
         try writeTranscript([record(id: "msg_01RebinV7Once0000000000", at: turnAt)])
@@ -211,9 +217,148 @@ final class JSONLChatRebinTests: XCTestCase {
         await updated.refresh()
 
         let parsed = await updated.filesParsedInLastScan
-        XCTAssertEqual(parsed, 1, "a v7 snapshot's marks are not trusted: the transcript is read again")
+        XCTAssertEqual(parsed, 0, "a v7 snapshot is converted: its marks are trusted, nothing is read again")
         let chats = await updated.sessions(from: turnAt, to: turnAt)
         XCTAssertEqual(chats.first?.turns, 1, "the turn counts once, not in both tiers")
+    }
+
+    /// The file the 2.7.0 build (cache version 7) wrote for the same state: every recent
+    /// turn's day put back into its chat's saved `days`, beside the folded ones — except
+    /// the recent turns of `leavingOut`, whose saved days then do not add up. The
+    /// fixtures give each chat at most one recent turn per day, so a turn's day is an
+    /// entry of its own.
+    private func rewriteAsV7(leavingOut: String? = nil) throws {
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL)) as? [String: Any])
+        var sessions = try XCTUnwrap(json["sessions"] as? [String: [String: Any]])
+        for turn in try XCTUnwrap(json["recentTurns"] as? [[String: Any]]) {
+            let chat = try XCTUnwrap(turn["sessionID"] as? String)
+            guard chat != leavingOut else { continue }
+            let stamp = try XCTUnwrap(turn["timestamp"] as? String)
+            let at = try XCTUnwrap(ISO8601DateFormatter().date(from: stamp))
+            let tokens = try XCTUnwrap(turn["tokens"])
+            var days = sessions[chat]?["days"] as? [[String: Any]] ?? []
+            days.append([
+                "day": ISO8601DateFormatter().string(from: utc.startOfDay(for: at)),
+                "turns": 1,
+                "tokens": tokens,
+                "mainTokens": tokens,
+            ])
+            sessions[chat]?["days"] = days
+        }
+        json["sessions"] = sessions
+        json["version"] = 7
+        try JSONSerialization.data(withJSONObject: json).write(to: cacheURL)
+    }
+
+    /// § Packages 2 (vi-b). The file 2.7.0 left: day totals, marks, recent turns — one of
+    /// them 30 days old, its transcript deleted since — and a chat with a folded day 40
+    /// days back and that recent day, beside a second chat whose transcript is still
+    /// there. Converted, nothing is read again, Activity still counts the 30-day turn,
+    /// and both chats are exactly what they were, through a save and a v8 reload.
+    func testAV7CacheIsConvertedWithoutReadingAnythingAgainAndKeepsATurnWhoseTranscriptIsGone() async throws {
+        let foldedAt = at(daysAgo: 40, hour: 12)
+        let recentAt = at(daysAgo: 30, hour: 12)
+        try writeTranscript([
+            record(id: "msg_01ConvFolded0000000000", at: foldedAt),
+            record(id: "msg_01ConvRecent0000000000", at: recentAt),
+        ])
+        try writeTranscript(
+            [record(id: "msg_01ConvOther00000000000", at: at(daysAgo: 2, hour: 12), session: otherID)],
+            session: otherID
+        )
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await first.refresh()
+        let chatsBefore = await first.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        let dailyBefore = await first.breakdown().daily
+        XCTAssertEqual(chatsBefore.count, 2, "precondition: both chats")
+        try rewriteAsV7()
+        try FileManager.default.removeItem(at: transcriptURL(session: sessionID))
+
+        let converted = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await converted.refresh()
+
+        let parsed = await converted.filesParsedInLastScan
+        XCTAssertEqual(parsed, 0, "the v7 marks are trusted: nothing is read again")
+        let dailyAfter = await converted.breakdown().daily
+        XCTAssertEqual(dailyAfter.map(\.day), dailyBefore.map(\.day))
+        XCTAssertEqual(dailyAfter.map(\.turns), dailyBefore.map(\.turns))
+        XCTAssertEqual(
+            dailyAfter.first { $0.day == utc.startOfDay(for: recentAt) }?.turns, 1,
+            "Activity still counts the 30-day turn whose transcript is gone"
+        )
+        let chatsAfter = await converted.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        XCTAssertEqual(chatsAfter, chatsBefore, "the folded day unchanged, the recent day the turn itself")
+        let onDisk = try JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL)) as? [String: Any]
+        XCTAssertEqual(onDisk?["version"] as? Int, 8, "the converted snapshot is saved at version 8")
+
+        let reloaded = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await reloaded.refresh()
+        let chatsReloaded = await reloaded.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        XCTAssertEqual(chatsReloaded, chatsBefore, "and the same after a v8 reload")
+    }
+
+    /// § Packages 2 (vi-c). A v7 chat whose saved days do not cover one of its recent
+    /// turns does not add up: the whole snapshot takes the carry-over — the transcript
+    /// still on disk is read again — and the chat keeps the days it saved.
+    func testAV7CacheWhoseChatDoesNotAddUpIsCarriedOverAndTheChatKeepsItsDays() async throws {
+        let foldedAt = at(daysAgo: 40, hour: 12)
+        try writeTranscript([
+            record(id: "msg_01ConvBadFolded0000000", at: foldedAt),
+            record(id: "msg_01ConvBadRecent0000000", at: at(daysAgo: 30, hour: 12)),
+        ])
+        try writeTranscript(
+            [record(id: "msg_01ConvBadOther00000000", at: at(daysAgo: 2, hour: 12), session: otherID)],
+            session: otherID
+        )
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await first.refresh()
+        try rewriteAsV7(leavingOut: sessionID)
+        try FileManager.default.removeItem(at: transcriptURL(session: sessionID))
+
+        let fallback = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await fallback.refresh()
+
+        let parsed = await fallback.filesParsedInLastScan
+        XCTAssertEqual(parsed, 1, "carried over: the transcript still on disk is read again")
+        let chats = await fallback.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        let chat = try XCTUnwrap(chats.first { $0.id == sessionID })
+        XCTAssertEqual(chat.days.map(\.day), [utc.startOfDay(for: foldedAt)], "the day it saved, as a folded sum")
+        XCTAssertEqual(chat.turns, 1)
+        XCTAssertEqual(chats.first { $0.id == otherID }?.turns, 1, "the chat read again is rebuilt, not doubled")
+        let onDisk = try JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL)) as? [String: Any]
+        XCTAssertEqual(onDisk?["version"] as? Int, 8)
+    }
+
+    /// Review finding: a v7 cache saved in UTC and converted at UTC+3. Each recent turn
+    /// leaves the day it was saved under before anything is re-keyed, so no turn counts
+    /// twice or goes missing; the recent day is the turn's UTC+3 day, the folded day
+    /// keeps its date. The transcript is gone, so nothing could rebuild the chat.
+    func testAV7CacheConvertedInAnotherZoneCountsEveryTurnOnce() async throws {
+        let foldedAt = at(daysAgo: 40, hour: 12)
+        let recentAt = at(daysAgo: 3, hour: 22, minute: 30)
+        try writeTranscript([
+            record(id: "msg_01ConvZoneFolded000000", at: foldedAt),
+            record(id: "msg_01ConvZoneRecent000000", at: recentAt),
+        ])
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await first.refresh()
+        let before = try await totals(first)
+        try rewriteAsV7()
+        try FileManager.default.removeItem(at: transcriptURL(session: sessionID))
+
+        let converted = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: plus3)
+        await converted.refresh()
+
+        let after = try await totals(converted)
+        XCTAssertEqual(after.turns, before.turns)
+        XCTAssertEqual(after.tokens, before.tokens)
+        XCTAssertEqual(after.mainTokens, before.mainTokens)
+        let chats = await converted.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        let chat = try XCTUnwrap(chats.first { $0.id == sessionID })
+        XCTAssertEqual(chat.days.map(\.day), [
+            DayRekey.midpoint(utc.startOfDay(for: foldedAt), calendar: plus3),
+            plus3.startOfDay(for: recentAt),
+        ])
     }
 
     // MARK: - The fold

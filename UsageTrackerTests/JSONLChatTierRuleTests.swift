@@ -206,4 +206,93 @@ final class JSONLChatTierRuleTests: XCTestCase {
         XCTAssertEqual(decoded.foldedDays, agg.foldedDays)
         XCTAssertTrue(decoded.recentDays.isEmpty)
     }
+
+    // MARK: - Converting a v7 chat
+
+    /// A chat as a v7 snapshot decodes: every day, the recent turns' included, in the
+    /// folded tier — the v7 `days` key is the v8 `foldedDays` — each turn on its UTC day.
+    private func v7Chat(_ turns: [CLITurn]) -> JSONLAggregator.SessionAgg {
+        var agg = JSONLAggregator.SessionAgg(projectSlug: alphaSlug, at: turns[0].timestamp)
+        for t in turns { agg.add(t, on: utc.startOfDay(for: t.timestamp), recent: false) }
+        return agg
+    }
+
+    /// Spec § Design, "Claude" (the v7 conversion): a recent turn leaves the saved day it
+    /// was binned in, which keeps the folded turn beside it and nothing of the recent one.
+    func testARecentTurnIsTakenOutOfTheSavedDayThatCoversIt() throws {
+        let folded = turn("msg_01ConvKeep00000000000", at: sep20Morning, input: 1_000)
+        let recent = turn("msg_01ConvTake00000000000", at: sep20Late, input: 2_000)
+        let chat = v7Chat([folded, recent])
+
+        let converted = try XCTUnwrap(chat.subtractingRecentTurns([recent]))
+
+        XCTAssertEqual(converted.foldedDays.map(\.day), [sep20UTC])
+        XCTAssertEqual(converted.foldedDays.map(\.turns), [1])
+        XCTAssertEqual(converted.foldedDays.first?.tokens.total, folded.tokens.total)
+        XCTAssertEqual(converted.foldedDays.first?.mainTokens.total, folded.tokens.total)
+        XCTAssertEqual(
+            try XCTUnwrap(converted.foldedDays.first?.tokens.cost).total,
+            try XCTUnwrap(folded.tokens.cost).total, accuracy: 1e-12
+        )
+        XCTAssertEqual(converted.byModel, chat.byModel, "the model rows are the chat's whole split and stay")
+        XCTAssertEqual(converted.agents, chat.agents)
+    }
+
+    /// A saved day runs `[k, k + 24 h)`: a turn at the next midnight is the next saved
+    /// day's, never the one before it.
+    func testATurnAtTheNextMidnightIsTakenOutOfTheNextSavedDay() throws {
+        let earlier = turn("msg_01ConvEarlier000000000", at: sep20Morning, input: 1_000)
+        let atMidnight = turn(
+            "msg_01ConvMidnight00000000", at: sep20UTC.addingTimeInterval(86_400), input: 2_000
+        )   // 2026-09-21 00:00 UTC
+        let chat = v7Chat([earlier, atMidnight])
+        XCTAssertEqual(chat.foldedDays.count, 2, "precondition: the 20th and the 21st")
+
+        let converted = try XCTUnwrap(chat.subtractingRecentTurns([atMidnight]))
+
+        XCTAssertEqual(converted.foldedDays, [chat.foldedDays[0]], "the 20th untouched, the 21st gone")
+    }
+
+    /// A sub-agent's turn gives back its turn and its tokens; the main thread's share
+    /// never held it and stays as it was.
+    func testASubAgentTurnLeavesTheMainThreadShareAlone() throws {
+        let main = turn("msg_01ConvMain00000000000", at: sep20Morning, input: 1_000)
+        let agent = turn(
+            "msg_01ConvAgent0000000000", at: sep20Morning.addingTimeInterval(300), input: 2_000, agentID: agentID
+        )
+        let chat = v7Chat([main, agent])
+
+        let converted = try XCTUnwrap(chat.subtractingRecentTurns([agent]))
+
+        XCTAssertEqual(converted.foldedDays.map(\.turns), [1])
+        XCTAssertEqual(converted.foldedDays.first?.tokens.total, main.tokens.total)
+        XCTAssertEqual(converted.foldedDays.first?.mainTokens, chat.foldedDays.first?.mainTokens)
+    }
+
+    /// A saved day whose only turn is recent has nothing left to fold: it goes.
+    func testASavedDayWhoseLastTurnIsTakenOutIsRemoved() throws {
+        let recent = turn("msg_01ConvOnly00000000000", at: sep20Late, input: 2_000)
+        let chat = v7Chat([recent])
+
+        let converted = try XCTUnwrap(chat.subtractingRecentTurns([recent]))
+
+        XCTAssertTrue(converted.foldedDays.isEmpty)
+        XCTAssertTrue(converted.days.isEmpty)
+    }
+
+    /// A recent turn no saved day covers means the snapshot does not add up.
+    func testARecentTurnNoSavedDayCoversMeansTheChatDoesNotAddUp() {
+        let saved = turn("msg_01ConvSaved0000000000", at: sep20Morning, input: 1_000)
+        let stray = turn(
+            "msg_01ConvStray0000000000", at: Date(timeIntervalSince1970: 1_790_078_400), input: 2_000
+        )   // 2026-09-22 12:00 UTC
+        XCTAssertNil(v7Chat([saved]).subtractingRecentTurns([stray]))
+    }
+
+    /// Taking out more turns than a saved day holds means it does not add up either.
+    func testTakingOutMoreTurnsThanASavedDayHoldsMeansTheChatDoesNotAddUp() {
+        let first = turn("msg_01ConvFirst0000000000", at: sep20Morning, input: 1_000)
+        let second = turn("msg_01ConvSecond000000000", at: sep20Late, input: 2_000)
+        XCTAssertNil(v7Chat([first]).subtractingRecentTurns([first, second]))
+    }
 }

@@ -907,10 +907,10 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(staleParsed, 3, "a version-5 snapshot means a full rescan of all three transcripts")
         XCTAssertEqual(staleSessions.map(\.id), [sessionID], "nothing from the old snapshot reaches the list")
 
-        // The control: the same bytes at version 7 ARE kept — carried over since version
-        // 8, the chat as a folded sum — so the assertions above are about the version
-        // number and not about an unreadable file. (A version-6 file is carried over the
-        // same way; see JSONLDeferredFoldTests.)
+        // The control: the same bytes at version 7 ARE kept — converted to version 8, the
+        // chat as a folded sum with no recent turn to take out — so the assertions above
+        // are about the version number and not about an unreadable file. (A version-6
+        // file is carried over and re-read instead; see JSONLDeferredFoldTests.)
         let currentURL = cacheFile(named: "control")
         try snapshot(version: 7).write(to: currentURL)
         let current = aggregator(cache: currentURL)

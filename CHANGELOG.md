@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Time zones
 - **History: a chat's days follow a system time-zone change while the app
   runs,** and agree with Activity after a relaunch in another zone (#13).
-- The first launch after this update re-reads the Claude Code transcripts
-  still on disk once.
+- The Claude cost cache from 2.6.5 or 2.7.0 is converted in place on the
+  first launch: nothing is read again, and days and chats whose transcripts
+  Claude Code has deleted keep their totals.
 
 ### Updates
 - A Debug build, or one run out of a DerivedData tree, no longer checks for
