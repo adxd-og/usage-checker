@@ -151,6 +151,23 @@ final class MCPSessionsTests: XCTestCase {
         XCTAssertEqual(MCPSummary.maxSessionLimit, 15)
     }
 
+    func testALimitOfAnySizeIsClampedBeforeItBecomesAnInt() {
+        XCTAssertEqual(MCPSummary.sessionLimit(1e100), 15, "past Int.max: clamped first, so it is the ceiling, not a trap")
+        XCTAssertEqual(MCPSummary.sessionLimit(-1e100), 1)
+        XCTAssertEqual(MCPSummary.sessionLimit(Double.infinity), 10, "not a number anyone meant: the default")
+        XCTAssertEqual(MCPSummary.sessionLimit(-Double.infinity), 10)
+        XCTAssertEqual(MCPSummary.sessionLimit(Double.nan), 10)
+        XCTAssertEqual(MCPSummary.sessionLimit(-5), 1)
+        XCTAssertEqual(MCPSummary.sessionLimit(Int.max), 15)
+        XCTAssertEqual(MCPSummary.sessionLimit("1e100"), 15, "text goes through Double like a number does")
+        XCTAssertEqual(MCPSummary.sessionLimit("7.0"), 7)
+        XCTAssertEqual(MCPSummary.sessionLimit("7"), 7)
+        XCTAssertEqual(MCPSummary.sessionLimit(7), 7)
+        XCTAssertEqual(MCPSummary.sessionLimit(7.0), 7)
+        XCTAssertEqual(MCPSummary.sessionLimit("inf"), 10)
+        XCTAssertEqual(MCPSummary.sessionLimit("nan"), 10)
+    }
+
     // MARK: - The tool call
 
     private func callResult(_ arguments: String, snapshot: StatusSnapshot?) throws -> [String: Any] {
@@ -196,6 +213,29 @@ final class MCPSessionsTests: XCTestCase {
         XCTAssertEqual(services.first?["id"] as? String, "codex")
         let sessions = try XCTUnwrap(services.first?["sessions"] as? [[String: Any]])
         XCTAssertEqual(sessions.map { $0["id"] as? String }, ["t1"])
+    }
+
+    func testAHugeLimitOnTheWireIsAnsweredNotFatal() throws {
+        let chats = snapshot([service(sessions: [
+            entry(id: "s1", title: "Newer", hoursAgo: 1),
+            entry(id: "s2", title: "Older", hoursAgo: 9),
+        ])])
+        // What a client can actually put on the wire. JSONSerialization hands the
+        // server an NSNumber that `as? Int` refuses, so it reaches the Double path.
+        let cases: [(limit: String, ids: [String])] = [
+            (#"1e100"#, ["s1", "s2"]),
+            (#""1e100""#, ["s1", "s2"]),
+            (#"-1e100"#, ["s1"]),
+        ]
+
+        for (limit, ids) in cases {
+            let result = try callResult(#"{"limit":\#(limit)}"#, snapshot: chats)
+            XCTAssertEqual(result["isError"] as? Bool, false, limit)
+            let structured = try XCTUnwrap(result["structuredContent"] as? [String: Any], limit)
+            let services = try XCTUnwrap(structured["services"] as? [[String: Any]], limit)
+            let sessions = try XCTUnwrap(services.first?["sessions"] as? [[String: Any]], limit)
+            XCTAssertEqual(sessions.map { $0["id"] as? String }, ids, limit)
+        }
     }
 
     func testWithOmeletteClosedTheToolSaysSoAsAResultNotAnError() throws {
