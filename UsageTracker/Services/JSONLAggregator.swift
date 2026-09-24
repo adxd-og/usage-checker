@@ -21,6 +21,10 @@ struct CLITurn: Sendable, Codable {
     var agentKind: String? = nil
     /// `effort` as the record carries it (`high`, `xhigh`, …).
     var effort: String? = nil
+    /// True when `tokens.cost` was priced by a guess — a model neither models.dev nor the
+    /// offline table named when the turn was read (`ModelPricing.lookup`). Such a turn is
+    /// priced again once the table learns the model; every other turn keeps its dollars.
+    var pricedByFallback: Bool = false
 
     // The five counters the rest of the app still reads by name.
     var inputTokens: Int { tokens.input }
@@ -53,24 +57,57 @@ extension CLITurn {
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, model, tokens, projectSlug
         case sessionID, agentID, agentKind, effort
+        case pricedByFallback
     }
 
-    /// Hand-written so the four fields default rather than throw when they are absent.
-    /// The cache version bump discards every snapshot written before them anyway; this
-    /// is so a snapshot that reaches the decoder some other way reports "an older
-    /// shape" by producing a turn without a chat, not "unreadable".
+    /// Hand-written so the optional fields default rather than throw when they are
+    /// absent. The cache version bump discards every snapshot written before the chat
+    /// fields anyway; this is so a snapshot that reaches the decoder some other way
+    /// reports "an older shape" by producing a turn without a chat, not "unreadable".
+    /// `pricedByFallback` arrived without a bump (see `isGuessWithoutMark`).
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let model = try c.decode(String.self, forKey: .model)
         self.init(
             id: try c.decode(String.self, forKey: .id),
             timestamp: try c.decode(Date.self, forKey: .timestamp),
-            model: try c.decode(String.self, forKey: .model),
+            model: model,
             tokens: try c.decode(TokenBreakdown.self, forKey: .tokens),
             projectSlug: try c.decode(String.self, forKey: .projectSlug),
             sessionID: try c.decodeIfPresent(String.self, forKey: .sessionID) ?? "",
             agentID: try c.decodeIfPresent(String.self, forKey: .agentID),
             agentKind: try c.decodeIfPresent(String.self, forKey: .agentKind),
-            effort: try c.decodeIfPresent(String.self, forKey: .effort)
+            effort: try c.decodeIfPresent(String.self, forKey: .effort),
+            pricedByFallback: try c.decodeIfPresent(Bool.self, forKey: .pricedByFallback)
+                ?? Self.isGuessWithoutMark(model: model)
+        )
+    }
+
+    /// What a turn saved before the mark existed most likely was: a guess when the
+    /// offline table has no row for its model. Such a turn was priced either live or by
+    /// its family; treating it as a guess only means the table live now prices it once.
+    /// Cache v7 is kept as it is — a version bump would reject the v6 days it carries.
+    static func isGuessWithoutMark(model: String) -> Bool {
+        ModelPricing.table[ModelPricing.normalize(model)] == nil
+    }
+
+    /// The same turn, its tokens priced by the table that is live now and marked by
+    /// whether that price was a guess again.
+    func repricedNow() -> CLITurn {
+        let lookup = ModelPricing.lookup(for: model)
+        var bare = tokens
+        bare.cost = nil
+        return CLITurn(
+            id: id,
+            timestamp: timestamp,
+            model: model,
+            tokens: bare.priced(with: lookup.price),
+            projectSlug: projectSlug,
+            sessionID: sessionID,
+            agentID: agentID,
+            agentKind: agentKind,
+            effort: effort,
+            pricedByFallback: lookup.isFallback
         )
     }
 }
@@ -538,6 +575,9 @@ actor JSONLAggregator: CostLogAggregating {
     /// How many transcripts the last scan actually opened. Zero is the normal answer
     /// for a poll with nothing new, and for a relaunch off a warm cache.
     private(set) var filesParsedInLastScan = 0
+    /// The `ModelPricing.generation` the guessed turns in `recentTurns` were last priced
+    /// at. nil until the first refresh, so that one also re-prices a restored cache.
+    private var pricedGeneration: Int?
     /// Set whenever this refresh changed something worth persisting. A quiet poll
     /// leaves it false and the cache file untouched.
     private var dirty = false
@@ -590,6 +630,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     func refresh() async {
         loadCache()
+        repriceGuessesIfTableChanged()
         // Runaway backstop: ~250 days of continuous uptime before this trips;
         // after a clear, only forked-session replays could double-count.
         if seenMessageIDs.count > 500_000 {
@@ -605,6 +646,28 @@ actor JSONLAggregator: CostLogAggregating {
         initialized = true
         pruneAndFold()
         saveIfDue()
+    }
+
+    /// A turn priced by a guess (`CLITurn.pricedByFallback`) is priced again whenever the
+    /// live table moves — the restored cache on the first refresh included, which is how
+    /// a guess saved by an earlier run gets its real rate. The chat takes the difference
+    /// in the same day, agent and model rows (`reviseSession`). A turn the table named
+    /// when it was read keeps its dollars (see `CLITurn.cost`), and folded days keep
+    /// theirs: a day's sum has no per-model tokens left to price again.
+    private func repriceGuessesIfTableChanged() {
+        let current = ModelPricing.generation
+        guard pricedGeneration != current else { return }
+        pricedGeneration = current
+        for i in recentTurns.indices where recentTurns[i].pricedByFallback {
+            let stored = recentTurns[i]
+            let repriced = stored.repricedNow()
+            guard repriced.tokens != stored.tokens
+                    || repriced.pricedByFallback != stored.pricedByFallback
+            else { continue }
+            recentTurns[i] = repriced
+            reviseSession(from: stored, to: repriced)
+            dirty = true
+        }
     }
 
     /// Writes the cache now, throttle and all, if anything is waiting to be written.
@@ -966,7 +1029,9 @@ actor JSONLAggregator: CostLogAggregating {
             sessionID: stored.sessionID,
             agentID: stored.agentID,
             agentKind: stored.agentKind,
-            effort: stored.effort
+            effort: stored.effort,
+            // The counters — dollars included — are the record's, so is how they were priced.
+            pricedByFallback: record.pricedByFallback
         )
     }
 
@@ -1513,6 +1578,7 @@ actor JSONLAggregator: CostLogAggregating {
             ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)|\(thinking)"
             : msgID
 
+        let pricing = ModelPricing.lookup(for: model)
         return CLITurn(
             id: id,
             timestamp: ts,
@@ -1524,7 +1590,7 @@ actor JSONLAggregator: CostLogAggregating {
                 cacheWrite5m: c5,
                 cacheWrite1h: c1h,
                 thinking: thinking
-            ).priced(model: model),
+            ).priced(with: pricing.price),
             projectSlug: projectSlug,
             // The record's own fields, never the file name: a sub-agent transcript is
             // named after the agent, and nothing but the record says which chat it
@@ -1532,7 +1598,8 @@ actor JSONLAggregator: CostLogAggregating {
             sessionID: pool.intern((any["sessionId"] as? String) ?? ""),
             agentID: (any["agentId"] as? String).map { pool.intern($0) },
             agentKind: (any["attributionAgent"] as? String).map { pool.intern($0) },
-            effort: (any["effort"] as? String).map { pool.intern($0) }
+            effort: (any["effort"] as? String).map { pool.intern($0) },
+            pricedByFallback: pricing.isFallback
         )
     }
 }

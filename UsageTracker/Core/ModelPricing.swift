@@ -88,18 +88,26 @@ enum ModelPricing {
         return nil
     }
 
-    static func price(for model: String) -> ModelPrice {
+    /// `price(for:)`, and whether the answer is a guess: true when neither models.dev nor
+    /// the offline table names the model and the rate is its family's newest member's, or
+    /// the generic fallback. `JSONLAggregator` prices a guessed turn again once the live
+    /// table learns its model.
+    static func lookup(for model: String) -> (price: ModelPrice, isFallback: Bool) {
         let normalized = normalize(model)
-        if let live = dynamicPrice(for: normalized) { return live }
-        if let exact = table[normalized] { return exact }
+        if let live = dynamicPrice(for: normalized) { return (live, false) }
+        if let exact = table[normalized] { return (exact, false) }
         // Newest family member as the price fallback: deprecated models that priced
         // differently (Opus 4 / 4.1) are pinned in the table by their exact ids above.
-        if normalized.contains("fable") { return table["claude-fable-5"]! }
-        if normalized.contains("mythos") { return table["claude-mythos-5"]! }
-        if normalized.contains("opus") { return table["claude-opus-4-8"]! }
-        if normalized.contains("haiku") { return table["claude-haiku-4-5"]! }
-        if normalized.contains("sonnet") { return table["claude-sonnet-4-6"]! }
-        return fallback
+        if normalized.contains("fable") { return (table["claude-fable-5"]!, true) }
+        if normalized.contains("mythos") { return (table["claude-mythos-5"]!, true) }
+        if normalized.contains("opus") { return (table["claude-opus-4-8"]!, true) }
+        if normalized.contains("haiku") { return (table["claude-haiku-4-5"]!, true) }
+        if normalized.contains("sonnet") { return (table["claude-sonnet-4-6"]!, true) }
+        return (fallback, true)
+    }
+
+    static func price(for model: String) -> ModelPrice {
+        lookup(for: model).price
     }
 
     // Both functions run a regex and sit on per-turn hot paths (cost aggregation

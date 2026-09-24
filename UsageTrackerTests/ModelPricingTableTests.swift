@@ -14,6 +14,10 @@ final class ModelPricingTableTests: XCTestCase {
         ModelPricing.updateDynamic([:])
     }
 
+    override func tearDownWithError() throws {
+        ModelPricing.updateDynamic([:])
+    }
+
     /// Fable 5.1 reads cache at $0.25/M, a quarter of Fable 5's $1.00. Cache reads are
     /// the largest bucket of a Claude Code session by an order of magnitude, so falling
     /// through to the Fable 5 row overstated an offline day's spend fourfold on the one
@@ -84,5 +88,33 @@ final class ModelPricingTableTests: XCTestCase {
         ])
         XCTAssertEqual(ModelPricing.price(for: "claude-fable-5-1").cacheReadPerM, 99)
         ModelPricing.updateDynamic([:])
+    }
+
+    // MARK: - Which rates are a guess (spec 2026-09-24-2.7.0-hardening § Design, Pricing)
+
+    func testAModelTheOfflineTableNamesIsNotAGuess() {
+        let lookup = ModelPricing.lookup(for: "claude-sonnet-5-20260901")
+        XCTAssertFalse(lookup.isFallback)
+        XCTAssertEqual(lookup.price.inputPerM, 2)
+    }
+
+    func testAModelNoTableNamesIsPricedByItsFamilyAndMarkedAGuess() {
+        let opus = ModelPricing.lookup(for: "claude-opus-9")
+        XCTAssertTrue(opus.isFallback)
+        XCTAssertEqual(opus.price.inputPerM, 5, "the Opus family's newest row, claude-opus-4-8")
+        XCTAssertTrue(ModelPricing.lookup(for: "some-other-model").isFallback, "the generic fallback is a guess too")
+        XCTAssertEqual(ModelPricing.price(for: "claude-opus-9").inputPerM, 5, "price(for:) answers the same")
+    }
+
+    func testALiveRateIsNotAGuess() {
+        ModelPricing.updateDynamic([
+            "claude-opus-9": ModelPrice(
+                inputPerM: 6, outputPerM: 30, cacheReadPerM: 0.6,
+                cacheCreate5mPerM: 7.5, cacheCreate1hPerM: 12
+            )
+        ])
+        let lookup = ModelPricing.lookup(for: "claude-opus-9")
+        XCTAssertFalse(lookup.isFallback)
+        XCTAssertEqual(lookup.price.inputPerM, 6)
     }
 }
