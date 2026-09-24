@@ -754,9 +754,10 @@ private struct SessionRowView: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .onTapGesture(perform: toggle)
+        // A group named after the chat. The hint moved to `rowToggle`: on this
+        // container it described an action nothing could perform.
         .accessibilityElement(children: .contain)
         .accessibilityLabel(SessionCopy.rowTitle(session))
-        .accessibilityHint(isExpanded ? "Hides this chat's breakdown" : "Shows this chat's breakdown")
         .task(id: detailKey) {
             guard isExpanded else {
                 detail = .empty
@@ -797,6 +798,24 @@ private struct SessionRowView: View {
             .frame(width: 16, height: 16)
     }
 
+    /// The chevron and the chat's name, as the row's one control. The whole row still
+    /// answers a click, which is how the mouse gets in. A tap gesture is not a control,
+    /// though: Tab never reached it and VoiceOver could not press it. A plain button can
+    /// do both without looking like a button.
+    private func rowToggle<Title: View>(_ title: Title) -> some View {
+        Button(action: toggle) {
+            HStack(spacing: OMSpacing.s) {
+                chevron
+                title
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(SessionCopy.rowTitle(session))
+        .accessibilityHint(SessionCopy.rowActionName(expanded: isExpanded))
+        .help(SessionCopy.rowActionName(expanded: isExpanded))
+    }
+
     /// The chat's name and its chips. The name is the one thing on the row that has no
     /// length: it is a prompt's first line, and it yields — `fixedSize` keeps the chips
     /// whole and the name gives up the space instead. It truncates at the tail, not the
@@ -833,9 +852,9 @@ private struct SessionRowView: View {
     /// must never be the reason a figure moves or gets clipped.
     private var wideSummary: some View {
         HStack(spacing: OMSpacing.s) {
-            chevron
-            titleBlock
-                .frame(minWidth: 160, maxWidth: .infinity, alignment: .leading)
+            // Same geometry as before: chevron 16, an 8 pt gap, the title's 160 minimum,
+            // so the column header above still lines up (`SessionListRule.minimumWideWidth`).
+            rowToggle(titleBlock.frame(minWidth: 160, maxWidth: .infinity, alignment: .leading))
                 .layoutPriority(0)
             Spacer(minLength: OMSpacing.s)
             Text(lastActiveText)
@@ -864,8 +883,7 @@ private struct SessionRowView: View {
     private var narrowSummary: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: OMSpacing.s) {
-                chevron
-                titleBlock.layoutPriority(0)
+                rowToggle(titleBlock).layoutPriority(0)
                 Spacer(minLength: OMSpacing.s)
                 Text(SessionCopy.cost(session.tokens.cost?.total))
                     .font(OMFont.numeral).monospacedDigit()
