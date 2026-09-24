@@ -44,8 +44,9 @@ actor CodexUsageAggregator: CostLogAggregating {
         /// not to write one.
         let effort: String?
         let projectSlug: String
-        let cost: Double
-        let tokens: TokenBreakdown
+        /// Priced when read and again whenever the live table changes (`repriceIfTableChanged`).
+        var cost: Double
+        var tokens: TokenBreakdown
         /// The chat this turn belongs to — a sub-agent's turns carry the PARENT's
         /// `session_id`, which is what makes them part of the same chat.
         let sessionID: String
@@ -220,6 +221,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// quarter and holds one small aggregate per chat, not one record per turn.
     private let sessionRetention: TimeInterval = 92 * 24 * 3600
     private var dayCache: (start: Date, next: Date)?
+    /// The `ModelPricing.generation` the turns in `recentTurns` were last priced at. nil
+    /// before the first scan.
+    private var pricedGeneration: Int?
 
     private struct DayAgg {
         var cost = 0.0
@@ -534,9 +538,46 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - Ingest
 
     private func ingestAll() {
+        repriceIfTableChanged()
         reloadNamesIfChanged()
         scanAndIngest()
         pruneAndFold()
+    }
+
+    /// models.dev can answer after the first scan — the launch poll reads the logs while
+    /// the fetch is still out — and a model the live table did not know yet was read at
+    /// $0 (`turn`). When the table moves, every turn of the 31-day window is priced again
+    /// from the tokens and the model it kept, which is what a relaunch would do. So is
+    /// every chat lying wholly inside the window: all its turns are still here, and it is
+    /// recorded again from them. Folded days and the older part of a longer chat keep the
+    /// dollars they were read with — nothing finer than a day's or a chat's sum is left
+    /// of them to price.
+    private func repriceIfTableChanged() {
+        let current = ModelPricing.generation
+        guard pricedGeneration != current else { return }
+        pricedGeneration = current
+        for i in recentTurns.indices {
+            let tokens = Self.priced(recentTurns[i].tokens, model: recentTurns[i].model)
+            recentTurns[i].tokens = tokens
+            recentTurns[i].cost = tokens.cost?.total ?? 0
+        }
+        // A chat that started inside the window has every turn in `recentTurns`, in the
+        // order they were first recorded; recording them again rebuilds it exactly.
+        let windowStart = Date().addingTimeInterval(-recentWindow)
+        let rebuilt = Set(sessionAggs.filter { $0.value.firstAt >= windowStart }.keys)
+        guard !rebuilt.isEmpty else { return }
+        for id in rebuilt { sessionAggs[id] = nil }
+        for turn in recentTurns where rebuilt.contains(turn.sessionID) { record(turn) }
+    }
+
+    /// `tokens` with the dollars the live table gives `model` now: a per-bucket split
+    /// when the table knows the model, none when it does not — $0 in the dollar column,
+    /// the tokens kept. The one pricing rule for a turn read today and a turn re-priced.
+    nonisolated static func priced(_ tokens: TokenBreakdown, model: String) -> TokenBreakdown {
+        var bare = tokens
+        bare.cost = nil
+        guard let price = ModelPricing.dynamicLookup(for: model) else { return bare }
+        return bare.priced(with: price)
     }
 
     /// Re-reads `session_index.jsonl` only when it has actually changed. Codex rewrites
@@ -1073,10 +1114,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         fallbackSlug: String,
         fileKey: String
     ) -> Turn {
-        var tokens = tokens
-        if let price = ModelPricing.dynamicLookup(for: model) {
-            tokens = tokens.priced(with: price)
-        }
+        let tokens = Self.priced(tokens, model: model)
         // A rollout whose first line we never read still has an identity: the thread
         // uuid its file name ends with, which is exactly what the meta would have said.
         let threadID = state.threadID ?? fileKey
