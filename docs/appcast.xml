@@ -6,6 +6,28 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.6.5</title>
+      <pubDate>Thu, 24 Sep 2026 14:34:40 +0300</pubDate>
+      <sparkle:version>47</sparkle:version>
+      <sparkle:shortVersionString>2.6.5</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Claude days older than a month count each reply in full.</b> Claude Code logs a reply two to four times, and a reply more than 31 days old was counted from its first, provisional line: a few output tokens instead of the real count, in the Activity days and in the chat's History totals (API list-price equivalents). Closes #10.</li>
+<li>The first launch after this update re-reads the Claude Code transcripts still on disk once and rebuilds the days and chats they cover. Days and History chats older than those transcripts (30 days by default) stay, with their previous, lower totals.</li>
+<li><b>Enterprise spend shows again.</b> With an Admin API key, the Anthropic Enterprise row expected the cost report's amounts in a shape the API does not send, so it showed "Decoding failed" instead of the week's spend. The amounts are now read as sent, in cents, and shown in dollars. Closes #11.</li>
+<li><b>A huge <code>limit</code> no longer stops the MCP server.</b> <code>get_sessions</code> with a limit too large for a whole number, or infinity or NaN, crashed <code>omelette mcp</code>. Such a limit is now clamped to 1–15, or falls back to 10. Closes #12.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.6.5">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.6.5/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="y+aEWI/kvUkc8lNceDALQt6DhIkBO/oN/6QnbIiPJ9b4H1txbF2lX2G2tBLXpxswbYA3sA1BTM7/Jhp/nBj3Ag=="
+        length="23943779"/>
+    </item>
+    <item>
       <title>Omelette v2.6.4</title>
       <pubDate>Thu, 24 Sep 2026 13:22:38 +0300</pubDate>
       <sparkle:version>46</sparkle:version>
