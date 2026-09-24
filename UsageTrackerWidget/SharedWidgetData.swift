@@ -160,15 +160,20 @@ enum SharedWidgetStore {
         return container.appendingPathComponent(fileName)
     }
 
-    static func write(_ snapshot: WidgetSnapshot) {
-        guard let url = fileURL else { return }
+    /// True once the file holds the snapshot; false when the container has no URL or
+    /// the write failed, in which case the caller must not count it as delivered.
+    @discardableResult
+    static func write(_ snapshot: WidgetSnapshot) -> Bool {
+        guard let url = fileURL else { return false }
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(snapshot)
             try data.write(to: url, options: [.atomic])
+            return true
         } catch {
-            // Silent — widget will keep showing the last good snapshot
+            // Silent — the widget keeps showing the last good snapshot.
+            return false
         }
     }
 

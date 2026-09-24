@@ -15,9 +15,18 @@ enum WidgetBridge {
     static func publish(_ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode) {
         let snapshot = snapshot(from: services, at: date, mode: mode)
         guard shouldPublish(snapshot.services, lastPublished: lastPublished) else { return }
-        SharedWidgetStore.write(snapshot)
-        lastPublished = snapshot.services
-        WidgetCenter.shared.reloadAllTimelines()
+        let wrote = SharedWidgetStore.write(snapshot)
+        lastPublished = recordedPublication(snapshot.services, wrote: wrote, previous: lastPublished)
+        if wrote { WidgetCenter.shared.reloadAllTimelines() }
+    }
+
+    /// What `lastPublished` becomes after a write. A write that failed (the container
+    /// briefly unwritable) records nothing, so the one empty list the rule above
+    /// allows is tried again next time instead of being counted as delivered.
+    nonisolated static func recordedPublication(
+        _ services: [WidgetService], wrote: Bool, previous: [WidgetService]?
+    ) -> [WidgetService]? {
+        wrote ? services : previous
     }
 
     /// Whether a list reaches the file. Anything to draw goes every time, so the widget's
