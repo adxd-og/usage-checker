@@ -128,8 +128,12 @@ struct OMProviderTile: View {
         }
     }
 
-    private var stateTint: Color {
-        switch service.state {
+    private var stateTint: Color { Self.chipTint(for: service.state) }
+
+    /// The state chip's colour. Shared with the floating panel, which puts the same chip
+    /// over the same retained numbers.
+    static func chipTint(for state: ServiceState) -> Color {
+        switch state {
         case .notSignedIn: .orange
         case .notRunning: .secondary
         case .error: .red

@@ -13,6 +13,10 @@ enum FloatingMiniLayout {
         let hero: UsageBucket?
         let rows: [UsageBucket]
         let emptyText: String?
+        /// When the ring and the bars were last true, for a provider that stopped
+        /// reporting; nil while it is live. The view dims them to the tile's 0.55, drops
+        /// their pace markers and puts the tile's state chip in the header.
+        var retainedAt: Date? = nil
     }
 
     /// `maxRows` is 2 because that is what fits at 130 pt; it is a parameter only
@@ -24,7 +28,12 @@ enum FloatingMiniLayout {
         guard let hero = WindowRanking.detailHero(for: service) else {
             return Content(hero: nil, rows: [], emptyText: "You haven't used \(service.displayName) yet")
         }
-        return Content(hero: hero, rows: rows(for: service, hero: hero, maxRows: maxRows), emptyText: nil)
+        return Content(
+            hero: hero,
+            rows: rows(for: service, hero: hero, maxRows: maxRows),
+            emptyText: nil,
+            retainedAt: service.retainedAt
+        )
     }
 
     /// The trailing agents count. `OMAgentsPill.Appearance` already owns the
@@ -54,6 +63,17 @@ enum FloatingMiniLayout {
     /// column's shortened one: a screen reader has no column to fit.
     static func rowAccessibilityLabel(_ bucket: UsageBucket, mode: PercentDisplay.Mode) -> String {
         "\(bucket.label), \(PercentDisplay.spoken(bucket.clampedPercent, mode: mode))"
+    }
+
+    /// The opacity of the ring and the bars: the tile's 0.55 for last-known numbers.
+    static func numbersOpacity(_ content: Content) -> Double {
+        content.retainedAt == nil ? 1 : 0.55
+    }
+
+    /// Where one window's pace marker goes, or nil for none. A retained window has no
+    /// pace: the marker would compare a live clock with a number that stopped moving.
+    static func pace(for bucket: UsageBucket, in content: Content, now: Date = Date()) -> Double? {
+        content.retainedAt == nil ? bucket.elapsedFraction(now: now) : nil
     }
 
     // MARK: - Private
