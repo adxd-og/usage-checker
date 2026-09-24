@@ -54,4 +54,49 @@ final class HistoryStoreWriteFailureTests: XCTestCase {
         let onDisk = await HistoryStore(directory: directory).recordedServices()
         XCTAssertEqual(onDisk, ["claude"])
     }
+
+    // MARK: - Legacy migration (report B #7)
+
+    /// A JSONL log a migration once wrote, a day old, and a legacy array a pre-JSONL
+    /// build wrote after a rollback — newer than the log, so the migration runs again.
+    private func writeOlderLogAndNewerLegacy() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        var line = try encoder.encode(HistoryRecord(
+            from: snapshot("claude", percent: 20), at: Date().addingTimeInterval(-2 * 86_400)
+        ))
+        line.append(0x0A)
+        try line.write(to: log)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-86_400)], ofItemAtPath: log.path
+        )
+        let rolledBack = [
+            HistoryRecord(from: snapshot("claude", percent: 30), at: Date().addingTimeInterval(-3_600)),
+            HistoryRecord(from: snapshot("codex", percent: 5), at: Date().addingTimeInterval(-1_800)),
+        ]
+        try encoder.encode(rolledBack).write(to: legacy)
+    }
+
+    func testALegacyHistoryIsKeptWhenTheLogCannotTakeItsRecords() async throws {
+        try writeOlderLogAndNewerLegacy()
+        // The log cannot be replaced, so the rewrite that should carry the legacy
+        // records over fails — while the old log still exists.
+        try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: log.path)
+
+        _ = await HistoryStore(directory: directory).recordedServices()
+
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: legacy.path),
+            "the only copy of the rolled-back records must survive a failed migration"
+        )
+    }
+
+    func testALegacyHistoryIsRemovedOnceTheLogHoldsItsRecords() async throws {
+        try writeOlderLogAndNewerLegacy()
+
+        let services = await HistoryStore(directory: directory).recordedServices()
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: legacy.path))
+        XCTAssertEqual(services, ["claude", "codex"], "the legacy array superseded the older log")
+    }
 }

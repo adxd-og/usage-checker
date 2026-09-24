@@ -226,8 +226,10 @@ actor HistoryStore {
             return
         }
         records = legacy
-        rewriteFile()
-        if FileManager.default.fileExists(atPath: fileURL.path) {
+        // Removed only once its records are safely in the log. The log existing proves
+        // nothing: it is the older one this migration is replacing, and it is still
+        // there when the rewrite that should have carried the records over failed.
+        if rewriteFile() {
             try? FileManager.default.removeItem(at: legacyURL)
         }
         records = []
@@ -265,8 +267,9 @@ actor HistoryStore {
 
     /// Full rewrite — only at load-time cleanup and when rotation has left
     /// enough dead records in the log (about once every few days), never on
-    /// the per-poll path.
-    private func rewriteFile() {
+    /// the per-poll path. Whether the log on disk now holds `records`.
+    @discardableResult
+    private func rewriteFile() -> Bool {
         var data = Data()
         for record in records {
             guard let line = try? encoder.encode(record) else { continue }
@@ -276,8 +279,10 @@ actor HistoryStore {
         do {
             try data.write(to: fileURL, options: [.atomic])
             staleOnDisk = 0
+            return true
         } catch {
             NSLog("[UT] HistoryStore compaction failed: %@", String(describing: error))
+            return false
         }
     }
 }
