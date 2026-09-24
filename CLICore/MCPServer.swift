@@ -239,8 +239,9 @@ enum MCPServer {
 
     /// The same chats the paragraph names, and nothing else: windows, dollars and plan
     /// are `get_usage`'s answer, and repeating them here would have a model quote the
-    /// wrong tool's numbers. A provider left with no chats after the cut is dropped
-    /// rather than shown empty.
+    /// wrong tool's numbers. The one exception is `apiEquivalent`, copied when the file
+    /// has it: a chat's cost cannot be read correctly without it. A provider left with
+    /// no chats after the cut is dropped rather than shown empty.
     static func sessionsData(
         _ snapshot: StatusSnapshot, provider: String?, limit: Int
     ) -> [String: Any] {
@@ -253,7 +254,9 @@ enum MCPServer {
                 kept.contains("\(serviceID)\u{0}\(($0["id"] as? String) ?? "")")
             }
             guard !sessions.isEmpty else { return nil }
-            return ["id": serviceID, "name": service["name"] ?? serviceID, "sessions": sessions]
+            var entry: [String: Any] = ["id": serviceID, "name": service["name"] ?? serviceID, "sessions": sessions]
+            if let apiEquivalent = service["apiEquivalent"] { entry["apiEquivalent"] = apiEquivalent }
+            return entry
         }
         return [
             "updatedAt": object["updatedAt"] ?? NSNull(),

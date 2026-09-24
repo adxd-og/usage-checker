@@ -31,11 +31,12 @@ final class MCPSessionsTests: XCTestCase {
     }
 
     private func service(
-        id: String = "claude", name: String = "Claude", sessions: [StatusSnapshot.SessionEntry]
+        id: String = "claude", name: String = "Claude", apiEquivalent: Bool? = nil,
+        sessions: [StatusSnapshot.SessionEntry]
     ) -> StatusSnapshot.Service {
         StatusSnapshot.Service(
             id: id, name: name, state: "ok", retained: false, retainedAt: nil, plan: "Max 5x",
-            windows: [], todayCost: nil, weekCost: nil, todayTokens: nil, apiEquivalent: nil,
+            windows: [], todayCost: nil, weekCost: nil, todayTokens: nil, apiEquivalent: apiEquivalent,
             sessions: sessions
         )
     }
@@ -136,6 +137,46 @@ final class MCPSessionsTests: XCTestCase {
         )
     }
 
+    /// A subscription's chat costs are what the same tokens would cost at list price.
+    /// One line at the very end says so for the whole list, rather than a suffix on
+    /// every row an agent might quote.
+    func testSubscriptionChatCostsEndTheListWithOneQualifier() {
+        let out = text(snapshot([
+            service(apiEquivalent: true, sessions: [
+                entry(id: "s1", title: "One"),
+                entry(id: "s2", title: "Two", hoursAgo: 4),
+            ]),
+        ]))
+        let lines = out.split(separator: "\n").map(String.init)
+
+        XCTAssertEqual(lines.count, 4, "two chats, the stamp, the qualifier")
+        XCTAssertEqual(lines[2], "Numbers as of 11:20.")
+        XCTAssertEqual(lines[3], MCPSummary.sessionsCostQualifier)
+        XCTAssertEqual(out.components(separatedBy: "API-equivalent").count - 1, 1, "said once, not per row")
+    }
+
+    func testPayAsYouGoAndUnpricedChatsGetNoQualifier() {
+        XCTAssertFalse(
+            text(snapshot([service(apiEquivalent: false, sessions: [entry(id: "s1", title: "One")])])).contains("API-equivalent"),
+            "a pay-as-you-go account's dollars are close to the bill"
+        )
+        XCTAssertFalse(
+            text(snapshot([service(apiEquivalent: true, sessions: [entry(id: "s1", title: "One", cost: nil)])])).contains("API-equivalent"),
+            "no dollar on the list, nothing to qualify"
+        )
+        XCTAssertEqual(
+            text(snapshot([service(apiEquivalent: true, sessions: [])])),
+            "No chats in the last 7 days. Numbers as of 11:20."
+        )
+    }
+
+    func testTheQualifierSaysWhatTheDollarsAre() {
+        XCTAssertEqual(
+            MCPSummary.sessionsCostQualifier,
+            "Chat costs are API-equivalent: what the same tokens would cost at API list prices, not a subscription bill."
+        )
+    }
+
     // MARK: - The argument
 
     func testTheLimitIsClampedRatherThanTrusted() {
@@ -193,6 +234,25 @@ final class MCPSessionsTests: XCTestCase {
         XCTAssertEqual(sessions.first?["turns"] as? Int, 356)
         XCTAssertNotNil(structured["updatedAt"], "a list with no timestamp is a guess")
         XCTAssertNil(services.first?["windows"], "windows and dollars belong to get_usage")
+    }
+
+    /// get_usage carries the flag; a cost in get_sessions' structured half is
+    /// unreadable without it. Copied from the file when present, absent when absent.
+    func testTheStructuredHalfSaysWhetherTheDollarsAreAPIEquivalent() throws {
+        let result = try callResult("{}", snapshot: snapshot([
+            service(apiEquivalent: true, sessions: [entry(id: "s1", title: "Subscription")]),
+            service(id: "codex", name: "Codex", apiEquivalent: false, sessions: [entry(id: "t1", title: "Pay as you go", hoursAgo: 1)]),
+            service(id: "grok", name: "Grok", sessions: [entry(id: "g1", title: "No flag", hoursAgo: 2)]),
+        ]))
+
+        let structured = try XCTUnwrap(result["structuredContent"] as? [String: Any])
+        let services = try XCTUnwrap(structured["services"] as? [[String: Any]])
+        let byID = Dictionary(uniqueKeysWithValues: services.map { (($0["id"] as? String) ?? "", $0) })
+
+        XCTAssertEqual(byID["claude"]?["apiEquivalent"] as? Bool, true)
+        XCTAssertEqual(byID["codex"]?["apiEquivalent"] as? Bool, false)
+        XCTAssertNotNil(byID["grok"], "the provider is listed")
+        XCTAssertNil(byID["grok"]?["apiEquivalent"], "absent in status.json, absent here")
     }
 
     func testTheStructuredHalfIsCutByTheSameProviderAndLimit() throws {
