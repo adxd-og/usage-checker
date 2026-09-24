@@ -260,24 +260,14 @@ final class AppState: ObservableObject {
             grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
         next = await Self.applyPayAsYouGo(to: next)
-        next = Self.retainingLastGoodServices(previous: snapshot, next: next, stored: lastKnown)
+        // Per service, never the whole array: a failed provider keeps its last good
+        // reading beside its state chip, and a provider this poll no longer returned
+        // (switched off) is gone. From here on `next` is what the app shows.
+        next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
+        snapshot = next
 
-        // A failed or empty poll (network blip, transient API error) must not wipe the
-        // last-known usage from the menu bar. Keep the previous data and flag it stale;
-        // only replace when we have fresh data or never had any.
-        if next.hasAnyData || !snapshot.hasAnyData {
-            snapshot = next
-        } else {
-            snapshot = UsageSnapshot(
-                services: snapshot.services,
-                fetchedAt: snapshot.fetchedAt,
-                isStale: true,
-                lastError: next.lastError
-            )
-        }
-
-        // The disk copy, for the next launch and for the fallback above. Only ok,
-        // non-empty readings are written; the store skips unchanged numbers.
+        // The disk copy, for the next launch and for retention on a later poll. Only
+        // ok, non-empty readings are written; the store skips unchanged numbers.
         await LastKnownStore.shared.remember(snapshot.services)
         lastKnown = await LastKnownStore.shared.load()
 
@@ -512,6 +502,37 @@ final class AppState: ObservableObject {
             fetchedAt: next.fetchedAt,
             isStale: next.isStale,
             lastError: next.lastError
+        )
+    }
+
+    /// What the app shows after a poll: this poll's services, each failed one carrying
+    /// only what `retainingLastGoodServices` kept for it.
+    ///
+    /// Replaces the whole-snapshot fallback, which kept the *previous* array whenever the
+    /// new one had no windows at all. It predated per-service retention, and with several
+    /// providers it resurrected one the user had just switched off: Codex the only
+    /// provider with windows, Claude signed out, Codex disabled — the coordinator drops
+    /// it, the poll has no windows, and the old array came back with Codex `.ok` on every
+    /// poll until relaunch. So a service absent from `next` is gone, and a previous `.ok`
+    /// never stands in for a new failure: the failure keeps its state and its last reading.
+    ///
+    /// `isStale` says every service failed. `fetchedAt` is then the newest retained
+    /// reading, so "Updated …" and "showing data from …" date the numbers rather than the
+    /// attempt that failed to replace them.
+    nonisolated static func mergingPoll(
+        previous: UsageSnapshot,
+        next: UsageSnapshot,
+        stored: [String: LastKnownService] = [:]
+    ) -> UsageSnapshot {
+        let merged = retainingLastGoodServices(previous: previous, next: next, stored: stored)
+        let allFailed = !merged.services.isEmpty && merged.services.allSatisfy { $0.state != .ok }
+        return UsageSnapshot(
+            services: merged.services,
+            fetchedAt: allFailed
+                ? (merged.services.compactMap(\.retainedAt).max() ?? merged.fetchedAt)
+                : merged.fetchedAt,
+            isStale: allFailed,
+            lastError: merged.lastError
         )
     }
 
