@@ -89,7 +89,20 @@ text = open(path).read()
 marker = "<language>en</language>\n"
 assert marker in text, "appcast structure changed — update this script"
 assert f"<sparkle:shortVersionString>{v}<" not in text, f"v{v} is already in the appcast"
-open(path, "w").write(text.replace(marker, marker + item, 1))
+# Written beside the feed and moved over it in one step. open(path, "w") emptied the
+# file before writing it, so a kill or a full disk mid-write left docs/appcast.xml
+# empty or cut short, one commit away from the feed installed apps poll.
+updated = text.replace(marker, marker + item, 1)
+tmp = path + ".tmp"
+try:
+    with open(tmp, "w") as out:
+        out.write(updated)
+        out.flush()
+        os.fsync(out.fileno())
+    os.replace(tmp, path)
+finally:
+    if os.path.isfile(tmp):
+        os.remove(tmp)
 print(f"prepended v{v} (build {b}) to {path}")
 PY
 
