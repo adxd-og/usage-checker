@@ -383,9 +383,10 @@ final class JSONLChatTierRuleTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(day.tokens.cost).total, 0, accuracy: 1e-12)
     }
 
-    /// Turns given back beyond what a day holds remove it at zero; a turn left with no
-    /// day has nothing to give back and is passed over.
-    func testTurnsGivenBackBeyondWhatADayHoldsRemoveItAndGoNoFurther() {
+    /// A day given back every turn, every token and every dollar is empty in every
+    /// counter and is removed; a turn left with no day has nothing to give back and is
+    /// passed over.
+    func testADayEmptiedOfTurnsAndTokensIsRemovedAndATurnLeftWithNoDayGoesNoFurther() {
         let first = turn("msg_01ConvFirst0000000000", at: sep20Morning, input: 1_000)
         let second = turn("msg_01ConvSecond000000000", at: sep20Late, input: 2_000)
         let chat = v7Chat([first])
@@ -394,5 +395,40 @@ final class JSONLChatTierRuleTests: XCTestCase {
 
         XCTAssertTrue(converted.foldedDays.isEmpty)
         XCTAssertEqual(converted.byModel, chat.byModel)
+    }
+
+    /// A day that still holds tokens after its turns reach zero stays, with 0 turns and
+    /// those tokens: a 2.7.0 cache re-keyed forward can hand a small recent turn to the
+    /// neighbouring day, and dropping that day would erase a far larger folded remainder.
+    /// Dollars are floating-point sums: a day whose turns and tokens are all zero but
+    /// whose cost buckets keep a residue like 1e-19 is empty, so it is removed rather
+    /// than shown as a $0.00 day with nothing in it.
+    func testADayWithOnlyAFloatingPointDollarResidueIsEmpty() {
+        var tokens = TokenBreakdown.zero
+        tokens.cost = TokenCostBreakdown(input: 1e-19, output: 0, cacheRead: -1e-19, cacheWrite: 0)
+        let day = JSONLAggregator.SessionAgg.DayTotals(day: sep20UTC, turns: 0, tokens: tokens, mainTokens: .zero)
+        XCTAssertTrue(JSONLAggregator.SessionAgg.isEmpty(day))
+
+        var real = TokenBreakdown.zero
+        real.cost = TokenCostBreakdown(input: 0.01, output: 0, cacheRead: 0, cacheWrite: 0)
+        let cent = JSONLAggregator.SessionAgg.DayTotals(day: sep20UTC, turns: 0, tokens: real, mainTokens: .zero)
+        XCTAssertFalse(JSONLAggregator.SessionAgg.isEmpty(cent))
+    }
+
+    func testADayWhoseTurnsReachZeroWhileTokensRemainStaysWithZeroTurnsAndThoseTokens() throws {
+        let folded = turn("msg_01ConvLarge0000000000", at: sep20Morning, input: 1_000)
+        let recent = turn("msg_01ConvSmall0000000000", at: sep20Late, input: 10)
+        let chat = v7Chat([folded])
+
+        let converted = chat.subtractingRecentTurns([recent])
+
+        let day = try XCTUnwrap(converted.foldedDays.first)
+        XCTAssertEqual(converted.foldedDays.count, 1)
+        XCTAssertEqual(day.day, sep20UTC)
+        XCTAssertEqual(day.turns, 0)
+        XCTAssertEqual(day.tokens.input, 990)
+        XCTAssertEqual(day.tokens.output, 99)
+        XCTAssertEqual(day.mainTokens.input, 990)
+        XCTAssertGreaterThan(try XCTUnwrap(day.tokens.cost).total, 0)
     }
 }

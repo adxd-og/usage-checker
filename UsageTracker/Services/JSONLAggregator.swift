@@ -534,11 +534,14 @@ actor JSONLAggregator: CostLogAggregating {
         /// leaves the earliest day; a chat with no saved day has nothing to give back and
         /// the turn is passed over. The turn gives back one turn, its tokens, and its
         /// tokens from `mainTokens` when it is the main thread's; every counter floors at
-        /// zero, and a day left with no turn is removed. When a chat changed zone while
-        /// 2.7.0 ran its days overlap, and a turn can leave the neighbouring day: that
-        /// costs at most one turn's share on one day, and nothing goes below zero. The
-        /// conversion never fails. Model rows and agents are the chat's whole split and
-        /// stay.
+        /// zero, and a day is removed only when it is empty in every counter (`isEmpty`).
+        /// A day that still holds tokens after its turns reach zero stays: a cache re-keyed
+        /// forward can hand a recent turn to the neighbouring day, and dropping that day
+        /// would erase a folded remainder far larger than the turn. When a chat changed
+        /// zone while 2.7.0 ran its days overlap, and a turn can leave the neighbouring
+        /// day: that costs at most one turn's share on one day, and nothing goes below
+        /// zero. The conversion never fails. Model rows and agents are the chat's whole
+        /// split and stay.
         func subtractingRecentTurns(_ turns: [CLITurn]) -> SessionAgg {
             var copy = self
             for turn in turns {
@@ -551,13 +554,31 @@ actor JSONLAggregator: CostLogAggregating {
                 if turn.agentID == nil {
                     entry.mainTokens = Self.flooredDifference(entry.mainTokens, turn.tokens)
                 }
-                if entry.turns == 0 {
+                if Self.isEmpty(entry) {
                     copy.foldedDays.remove(at: index)
                 } else {
                     copy.foldedDays[index] = entry
                 }
             }
             return copy
+        }
+
+        /// A saved day empty in every counter: no turn, every token field zero in `tokens`
+        /// and `mainTokens`, and every dollar bucket zero when it is priced.
+        static func isEmpty(_ day: DayTotals) -> Bool {
+            guard day.turns == 0 else { return false }
+            // Dollars are floating-point sums: two turns given back can leave 1e-19 in
+            // a bucket that is zero in every sense the app shows. Below a microcent is
+            // empty.
+            let dust = 0.000_001
+            return [day.tokens, day.mainTokens].allSatisfy { tokens in
+                tokens.input == 0 && tokens.output == 0 && tokens.cacheRead == 0
+                    && tokens.cacheWrite5m == 0 && tokens.cacheWrite1h == 0 && tokens.thinking == 0
+                    && (tokens.cost.map {
+                        abs($0.input) < dust && abs($0.output) < dust
+                            && abs($0.cacheRead) < dust && abs($0.cacheWrite) < dust
+                    } ?? true)
+            }
         }
 
         /// The saved day a recent turn at `instant` leaves: the latest key at or before
@@ -1060,7 +1081,7 @@ actor JSONLAggregator: CostLogAggregating {
 
         for (id, agg) in sessionAggs {
             let days = agg.days
-                .filter { $0.day >= firstDay && $0.day <= lastDay && $0.turns > 0 }
+                .filter { $0.day >= firstDay && $0.day <= lastDay && !SessionAgg.isEmpty($0) }
                 .sorted { $0.day < $1.day }
             guard !days.isEmpty else { continue }
 
