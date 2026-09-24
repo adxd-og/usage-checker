@@ -230,30 +230,37 @@ final class PassiveSessionScannerTests: XCTestCase {
 
     // MARK: - Codex date-partition pruning
 
-    func testCodexPartitionIsRecentReadsYearMonthAndDay() throws {
+    func testCodexPartitionIsRecentJudgesYearsAndMonthsAndWalksEveryDay() throws {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let sessionsRoot = URL(fileURLWithPath: "/Users/tester/.codex/sessions", isDirectory: true)
         let cutoff = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 2, hour: 12)))
-        func isRecent(_ relativePath: String) -> Bool {
+        let firstOfTheMonth = try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 9, day: 1, hour: 12)))
+        func isRecent(_ relativePath: String, at moment: Date? = nil) -> Bool {
             PassiveSessionScanner.codexPartitionIsRecent(
                 URL(fileURLWithPath: sessionsRoot.path + "/" + relativePath, isDirectory: true),
-                root: sessionsRoot, cutoff: cutoff, calendar: calendar
+                root: sessionsRoot, cutoff: moment ?? cutoff, calendar: calendar
             )
         }
 
         XCTAssertFalse(isRecent("2025"), "the year ended on 2026-01-01, long before the window")
         XCTAssertTrue(isRecent("2026"), "the year has not ended yet")
         XCTAssertFalse(isRecent("2026/07"))
+        XCTAssertFalse(isRecent("2026/08"), "ended 2026-09-01; even +1 day of slack is before noon on the 2nd")
+        XCTAssertTrue(isRecent("2026/08", at: firstOfTheMonth), "ended 2026-09-01, inside the day of slack")
         XCTAssertTrue(isRecent("2026/09"))
-        XCTAssertFalse(isRecent("2026/08/31"), "ended 2026-09-01; even +1 day of slack is before noon on the 2nd")
-        XCTAssertTrue(isRecent("2026/09/01"), "ended 2026-09-02, inside the day of slack")
-        XCTAssertTrue(isRecent("2026/09/02"))
+
+        // A day is always walked: its month has already been judged, and its files
+        // are filtered by modification time. A week-old day can hold a file written a
+        // minute ago.
+        for day in ["2026/09/01", "2026/09/02", "2026/08/31", "2026/01/03"] {
+            XCTAssertTrue(isRecent(day), day)
+        }
 
         // Anything we cannot read as a date is walked rather than skipped.
         XCTAssertTrue(isRecent("archive"))
         XCTAssertTrue(isRecent("2026/notamonth"))
-        XCTAssertTrue(isRecent("2026/09/02/extra"), "deeper than a day: judged by the day above it")
+        XCTAssertTrue(isRecent("2026/09/02/extra"), "deeper than a day: walked like the day")
         XCTAssertTrue(PassiveSessionScanner.codexPartitionIsRecent(
             sessionsRoot, root: sessionsRoot, cutoff: cutoff, calendar: calendar
         ), "the root itself has no date components")
@@ -266,6 +273,34 @@ final class PassiveSessionScannerTests: XCTestCase {
             secondsAgo: 10
         )
         XCTAssertTrue(scan().isEmpty, "the partition ended more than a year before the window")
+    }
+
+    /// Codex may keep a resumed thread in the rollout it started, under the day the
+    /// thread began. Judged by its name, that day directory was skipped a day after it
+    /// ended, and a thread resumed a week later never showed up in the scan. `now` is
+    /// 2027-01-15, so a week earlier is the same month in every time zone.
+    func testARolloutUnderAWeekOldDayIsScannedWhenItWasJustWritten() throws {
+        try write(
+            codexRollout(cwd: "/Users/tester/Projects/beta", sessionID: codexSessionID),
+            to: "codex-sessions/\(codexPartition(now.addingTimeInterval(-7 * 86_400)))/rollout-2027-01-08T10-00-00-\(codexSessionID).jsonl",
+            secondsAgo: 10
+        )
+
+        let session = try XCTUnwrap(scan().first)
+        XCTAssertEqual(session.id, "codex:\(codexSessionID)")
+        XCTAssertEqual(session.state, .working)
+    }
+
+    /// Months are still pruned: a thread resumed from an earlier month stays out of the
+    /// passive scan (hooks still see it). Forty-five days before 2027-01-15 is December
+    /// or late November in every time zone.
+    func testARolloutFromAnEarlierMonthIsStillPruned() throws {
+        try write(
+            codexRollout(cwd: "/Users/tester/Projects/beta", sessionID: codexSessionID),
+            to: "codex-sessions/\(codexPartition(now.addingTimeInterval(-45 * 86_400)))/rollout-2026-12-01T10-00-00-\(codexSessionID).jsonl",
+            secondsAgo: 10
+        )
+        XCTAssertTrue(scan().isEmpty)
     }
 
     // MARK: - Both roots at once
