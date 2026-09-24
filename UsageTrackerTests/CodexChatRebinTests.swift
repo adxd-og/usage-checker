@@ -202,4 +202,39 @@ final class CodexChatRebinTests: XCTestCase {
             "a re-bin that moves nothing moves no dollars either"
         )
     }
+
+    // MARK: - Posted by the system
+
+    /// § Packages 3 (iii), § Design "Injection": the notice posted on the injected center
+    /// reaches the actor once. Under a fixed calendar no day moves and Codex keeps no
+    /// cache, so `rebinCount` is what shows it.
+    func testASystemZoneChangePostedWhileTheAppRunsReBinsTheChats() async throws {
+        try writeRollout(responsesAt: [at(daysAgo: 2, hour: 12)])
+        let center = NotificationCenter()
+        let aggregator = CodexUsageAggregator(rootURL: tree.sessions, calendar: utc, center: center)
+        await aggregator.refresh()
+        let beforeNotice = await aggregator.rebinCount
+        XCTAssertEqual(beforeNotice, 0, "precondition: nothing re-binned yet")
+
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+
+        // The hop is a task on the actor; it gets up to two seconds.
+        var count = 0
+        for _ in 0..<200 where count == 0 {
+            count = await aggregator.rebinCount
+            if count == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        XCTAssertEqual(count, 1, "the notice reached the actor once")
+    }
+
+    func testTheZoneObserverDoesNotKeepAReplacedAggregatorAlive() {
+        let center = NotificationCenter()
+        var aggregator: CodexUsageAggregator? = CodexUsageAggregator(
+            rootURL: tree.sessions, calendar: utc, center: center
+        )
+        weak let released = aggregator
+        aggregator = nil
+        XCTAssertNil(released)
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+    }
 }

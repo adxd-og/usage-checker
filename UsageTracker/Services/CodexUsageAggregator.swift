@@ -232,11 +232,16 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Chats are kept three times longer than turns: the History list reaches back a
     /// quarter and holds one small aggregate per chat, not one record per turn.
     private let sessionRetention: TimeInterval = 92 * 24 * 3600
-    /// The day the last lookup fell in, dropped on a system time-zone change.
-    private let dayBins = DayBinCache()
+    /// The day the last lookup fell in, dropped on a system time-zone change — and the
+    /// one listener for that change: it passes the notice on to this actor (`init`).
+    private let dayBins: DayBinCache
     /// The `ModelPricing.generation` the turns in `recentTurns` were last priced at. nil
     /// before the first scan.
     private var pricedGeneration: Int?
+    /// How many times the chats have been re-binned (`rebinChats`): once per time-zone
+    /// change. Under a fixed calendar a re-bin moves no day and nothing here is saved,
+    /// so this is how a test sees the system's notice arrive.
+    private(set) var rebinCount = 0
 
     private struct DayAgg {
         var cost = 0.0
@@ -255,17 +260,27 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Injectable log root — the tests point it at a fixture tree instead of the real
     /// `~/.codex/sessions`. The archive and the name index are derived from it rather
     /// than passed separately, so the app injects one path and a test injects one path.
+    /// `center` is where the system's time-zone change is heard: the app's default one;
+    /// a test passes its own and posts on it.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions", isDirectory: true),
         archivedURL: URL? = nil,
         indexURL: URL? = nil,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        center: NotificationCenter = .default
     ) {
         self.rootURL = rootURL
         self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
         self.indexURL = indexURL ?? Self.sibling(of: rootURL, named: "session_index.jsonl")
         self.calendar = calendar
+        self.dayBins = DayBinCache(center: center)
+        // Last, once every property is set: the handler holds this actor weakly and
+        // hops onto it after `dayBins` has already dropped its day.
+        dayBins.onZoneChange { [weak self] in
+            guard let self else { return }
+            Task { await self.followSystemTimeZone() }
+        }
     }
 
     /// `archived_sessions` and `session_index.jsonl` are siblings of the sessions root
@@ -561,11 +576,19 @@ actor CodexUsageAggregator: CostLogAggregating {
         rebinChats()
     }
 
+    /// The system's zone moved while the app runs, and `DayBinCache` has dropped its
+    /// day and passed the notice on. The calendar is this actor's own:
+    /// `.autoupdatingCurrent` already reads the new zone; a fixed one stays put.
+    private func followSystemTimeZone() {
+        timeZoneDidChange(calendar: calendar)
+    }
+
     /// Every chat's days re-binned into this actor's calendar: the folded tier (`byDay`)
     /// re-keyed by `DayRekey.midpoint`, days landing on one key added together, and the
     /// recent tier rebuilt from `recentTurns`. A turn is in one tier, so nothing is
     /// counted twice or lost. Nothing here is persisted, so there is no cache to mark.
     func rebinChats() {
+        rebinCount += 1
         guard !sessionAggs.isEmpty else { return }
         let calendar = self.calendar
         for (id, agg) in sessionAggs {
