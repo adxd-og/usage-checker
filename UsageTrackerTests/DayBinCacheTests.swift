@@ -57,4 +57,39 @@ final class DayBinCacheTests: XCTestCase {
         XCTAssertNil(released)
         center.post(name: .NSSystemTimeZoneDidChange, object: nil)
     }
+
+    /// Issue #13: the aggregators that keep chats are told, and only once the kept day
+    /// is gone — the handler already bins the moment on the new zone's day.
+    func testAZoneChangeIsPassedOnOnceTheKeptDayIsGone() {
+        let center = NotificationCenter()
+        let bins = DayBinCache(center: center)
+        let moment = lateEvening
+        let plus3 = calendar(secondsFromGMT: 3 * 3600)
+        _ = bins.start(of: moment, in: calendar(secondsFromGMT: 0))
+        let seen = SeenDays()
+        bins.onZoneChange { [weak bins] in seen.record(bins?.start(of: moment, in: plus3)) }
+
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+
+        XCTAssertEqual(seen.days, [sixthAtPlus3])
+    }
+
+    /// The aggregator's own `timeZoneDidChange` resets the cache; if that reset passed
+    /// the notice on, the handler would call the aggregator back without end.
+    func testAResetAskedForDirectlyIsNotPassedOn() {
+        let bins = DayBinCache(center: NotificationCenter())
+        let seen = SeenDays()
+        bins.onZoneChange { seen.record(nil) }
+
+        bins.reset()
+
+        XCTAssertTrue(seen.days.isEmpty)
+    }
+}
+
+/// What a zone-change handler saw. The notification is posted synchronously on the
+/// test's own thread, so nothing reads this while the handler writes it.
+private final class SeenDays: @unchecked Sendable {
+    private(set) var days: [Date?] = []
+    func record(_ day: Date?) { days.append(day) }
 }

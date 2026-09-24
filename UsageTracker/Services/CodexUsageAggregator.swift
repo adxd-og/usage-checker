@@ -160,6 +160,13 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// One chat: the main thread, its sub-agents, and its days. Kept for 92 days
     /// (`sessionRetention`), independently of `recentTurns`, so a chat that started
     /// last month still shows its whole span.
+    ///
+    /// The days are two tiers, told apart by where a response is and never by its date
+    /// (issue #13): `recentByDay` sums the chat's turns in `recentTurns`, `byDay` every
+    /// turn folded out of it or older than the window when read. A turn is in one
+    /// tier, so a re-bin into another zone — the recent tier rebuilt from the turns,
+    /// the folded one re-keyed by `DayRekey.midpoint` — neither counts it twice nor
+    /// loses it. `summary` reads the two added up.
     struct SessionAgg: Equatable, Sendable {
         var projectSlug: String
         var origin: String?
@@ -168,7 +175,10 @@ actor CodexUsageAggregator: CostLogAggregating {
         var turns = 0
         var tokens = TokenBreakdown.zero
         var mainTokens = TokenBreakdown.zero
+        /// The folded tier.
         var byDay: [Date: DaySlice] = [:]
+        /// The recent tier: rebuilt from `recentTurns` on a re-bin and after a fold.
+        var recentByDay: [Date: DaySlice] = [:]
         var agents: [String: AgentAgg] = [:]
         /// Keyed by `SessionModelSummary.key(model:effort:)`. The main thread's turns
         /// and its sub-agents' both land here: the row answers what the chat spent on a
@@ -188,8 +198,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     private let indexURL: URL?
     /// The calendar every day boundary is taken in: the system's own by default, which
     /// follows a time-zone change while the app runs. Injected so a session test can
-    /// pin UTC instead of drifting with the machine's time zone.
-    private let calendar: Calendar
+    /// pin UTC instead of drifting with the machine's time zone; replaced, and the
+    /// chats re-binned, by `timeZoneDidChange(calendar:)`.
+    private var calendar: Calendar
     /// Per rollout, keyed by `fileKey(for:)` — the thread uuid, not the path.
     private var fileStates: [String: FileState] = [:]
     /// Turns young enough to feed the rolling today/week/month figures; older ones fold
@@ -221,11 +232,16 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Chats are kept three times longer than turns: the History list reaches back a
     /// quarter and holds one small aggregate per chat, not one record per turn.
     private let sessionRetention: TimeInterval = 92 * 24 * 3600
-    /// The day the last lookup fell in, dropped on a system time-zone change.
-    private let dayBins = DayBinCache()
+    /// The day the last lookup fell in, dropped on a system time-zone change — and the
+    /// one listener for that change: it passes the notice on to this actor (`init`).
+    private let dayBins: DayBinCache
     /// The `ModelPricing.generation` the turns in `recentTurns` were last priced at. nil
     /// before the first scan.
     private var pricedGeneration: Int?
+    /// How many times the chats have been re-binned (`rebinChats`): once per time-zone
+    /// change. Under a fixed calendar a re-bin moves no day and nothing here is saved,
+    /// so this is how a test sees the system's notice arrive.
+    private(set) var rebinCount = 0
 
     private struct DayAgg {
         var cost = 0.0
@@ -244,17 +260,27 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Injectable log root — the tests point it at a fixture tree instead of the real
     /// `~/.codex/sessions`. The archive and the name index are derived from it rather
     /// than passed separately, so the app injects one path and a test injects one path.
+    /// `center` is where the system's time-zone change is heard: the app's default one;
+    /// a test passes its own and posts on it.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions", isDirectory: true),
         archivedURL: URL? = nil,
         indexURL: URL? = nil,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        center: NotificationCenter = .default
     ) {
         self.rootURL = rootURL
         self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
         self.indexURL = indexURL ?? Self.sibling(of: rootURL, named: "session_index.jsonl")
         self.calendar = calendar
+        self.dayBins = DayBinCache(center: center)
+        // Last, once every property is set: the handler holds this actor weakly and
+        // hops onto it after `dayBins` has already dropped its day.
+        dayBins.onZoneChange { [weak self] in
+            guard let self else { return }
+            Task { await self.followSystemTimeZone() }
+        }
     }
 
     /// `archived_sessions` and `session_index.jsonl` are siblings of the sessions root
@@ -443,7 +469,16 @@ actor CodexUsageAggregator: CostLogAggregating {
     ) -> SessionSummary? {
         let lower = calendar.startOfDay(for: start)
         let upper = calendar.startOfDay(for: end)
-        let days = agg.byDay.filter { $0.key >= lower && $0.key <= upper }
+        // Both tiers: a day can have a share in each (a zone change, a fold part-way
+        // through it), and the two add up.
+        var days = agg.byDay.filter { $0.key >= lower && $0.key <= upper }
+        for (day, slice) in agg.recentByDay where day >= lower && day <= upper {
+            var merged = days[day] ?? DaySlice()
+            merged.turns += slice.turns
+            merged.tokens += slice.tokens
+            merged.mainTokens += slice.mainTokens
+            days[day] = merged
+        }
         guard !days.isEmpty else { return nil }
 
         var turns = 0
@@ -529,6 +564,79 @@ actor CodexUsageAggregator: CostLogAggregating {
             .sorted { $0.lastAt > $1.lastAt }
     }
 
+    // MARK: - Day tiers
+
+    /// The zone moved: `calendar` bins every day from now on. The bin cache forgets its
+    /// day and every chat is re-binned (`rebinChats`), so `summary` finds a chat on the
+    /// date a range asked in the new zone names (issue #13). The system's notice passes
+    /// this actor's own calendar; a test passes a fixed one.
+    func timeZoneDidChange(calendar: Calendar) {
+        self.calendar = calendar
+        dayBins.reset()
+        rebinChats()
+    }
+
+    /// The system's zone moved while the app runs, and `DayBinCache` has dropped its
+    /// day and passed the notice on. The calendar is this actor's own:
+    /// `.autoupdatingCurrent` already reads the new zone; a fixed one stays put.
+    private func followSystemTimeZone() {
+        timeZoneDidChange(calendar: calendar)
+    }
+
+    /// Every chat's days re-binned into this actor's calendar: the folded tier (`byDay`)
+    /// re-keyed by `DayRekey.midpoint`, days landing on one key added together, and the
+    /// recent tier rebuilt from `recentTurns`. A turn is in one tier, so nothing is
+    /// counted twice or lost. Nothing here is persisted, so there is no cache to mark.
+    func rebinChats() {
+        rebinCount += 1
+        guard !sessionAggs.isEmpty else { return }
+        let calendar = self.calendar
+        for (id, agg) in sessionAggs {
+            var rekeyed: [Date: DaySlice] = [:]
+            for (saved, slice) in agg.byDay {
+                let key = DayRekey.midpoint(saved, calendar: calendar)
+                var merged = rekeyed[key] ?? DaySlice()
+                merged.turns += slice.turns
+                merged.tokens += slice.tokens
+                merged.mainTokens += slice.mainTokens
+                rekeyed[key] = merged
+            }
+            sessionAggs[id]?.byDay = rekeyed
+        }
+        rebuildRecentByDay()
+    }
+
+    /// Every chat's recent tier rebuilt from `recentTurns` in this actor's calendar: the
+    /// tier is a function of those turns and nothing else. Once over the turns, not
+    /// once per chat.
+    private func rebuildRecentByDay() {
+        var byChat: [String: [Date: DaySlice]] = [:]
+        for turn in recentTurns {
+            let day = dayStart(for: turn.timestamp)
+            var slice = byChat[turn.sessionID]?[day] ?? DaySlice()
+            slice.turns += 1
+            slice.tokens += turn.tokens
+            if turn.agentID == nil { slice.mainTokens += turn.tokens }
+            byChat[turn.sessionID, default: [:]][day] = slice
+        }
+        for id in Array(sessionAggs.keys) {
+            sessionAggs[id]?.recentByDay = byChat[id] ?? [:]
+        }
+    }
+
+    /// A turn leaving `recentTurns` moves its share of its day to its chat's folded tier.
+    /// The session totals, model rows and agent took it when it was recorded.
+    private func foldIntoChat(_ t: Turn) {
+        guard var agg = sessionAggs[t.sessionID] else { return }
+        let day = dayStart(for: t.timestamp)
+        var slice = agg.byDay[day] ?? DaySlice()
+        slice.turns += 1
+        slice.tokens += t.tokens
+        if t.agentID == nil { slice.mainTokens += t.tokens }
+        agg.byDay[day] = slice
+        sessionAggs[t.sessionID] = agg
+    }
+
     private static func summaries(
         _ acc: [String: (cost: Double, tokens: Int, turns: Int, lastActivity: Date)]
     ) -> [ProjectSummary] {
@@ -559,9 +667,11 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// $0 (`turn`). When the table moves, every turn of the 31-day window is priced again
     /// from the tokens and the model it kept, which is what a relaunch would do. So is
     /// every chat lying wholly inside the window: all its turns are still here, and it is
-    /// recorded again from them. Folded days and the older part of a longer chat keep the
-    /// dollars they were read with — nothing finer than a day's or a chat's sum is left
-    /// of them to price.
+    /// recorded again from them. Every other chat's recent days are rebuilt from the
+    /// repriced turns, since the recent tier is a function of `recentTurns` (issue #13).
+    /// A longer chat's folded days, its model and agent rows and its session totals, and
+    /// Activity's folded days, keep the dollars they were read with — nothing finer than
+    /// a day's or a chat's sum is left of them to price.
     private func repriceIfTableChanged() {
         let current = ModelPricing.generation
         guard pricedGeneration != current else { return }
@@ -572,12 +682,16 @@ actor CodexUsageAggregator: CostLogAggregating {
             recentTurns[i].cost = tokens.cost?.total ?? 0
         }
         // A chat that started inside the window has every turn in `recentTurns`, in the
-        // order they were first recorded; recording them again rebuilds it exactly.
+        // order they were first recorded; recording them again rebuilds it exactly —
+        // model rows, agents and session totals included.
         let windowStart = Date().addingTimeInterval(-recentWindow)
         let rebuilt = Set(sessionAggs.filter { $0.value.firstAt >= windowStart }.keys)
-        guard !rebuilt.isEmpty else { return }
         for id in rebuilt { sessionAggs[id] = nil }
-        for turn in recentTurns where rebuilt.contains(turn.sessionID) { record(turn) }
+        for turn in recentTurns where rebuilt.contains(turn.sessionID) { record(turn, recent: true) }
+        // Every chat's recent tier from the repriced turns, the longer chats' included:
+        // otherwise their recent days would keep the old dollars until the next re-bin
+        // or fold, and jump then.
+        rebuildRecentByDay()
     }
 
     /// `tokens` with the dollars the live table gives `model` now: a per-bucket split
@@ -687,19 +801,22 @@ actor CodexUsageAggregator: CostLogAggregating {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
         for turn in turns {
             // Before the fold decision: the session aggregate reaches back 92 days,
-            // three times further than `recentTurns`.
-            record(turn)
-            if turn.timestamp < recentCutoff {
-                fold(turn)
-            } else {
+            // three times further than `recentTurns`. Its day goes to the tier the turn
+            // goes to.
+            let recent = turn.timestamp >= recentCutoff
+            record(turn, recent: recent)
+            if recent {
                 recentTurns.append(turn)
+            } else {
+                fold(turn)
             }
         }
     }
 
-    /// Adds one turn to its chat's aggregate: the session totals, the local day, and —
-    /// when it came from a sub-agent rollout — that agent's own row.
-    private func record(_ t: Turn) {
+    /// Adds one turn to its chat's aggregate: the session totals, the local day in the
+    /// tier the turn goes to (`recent`: into `recentTurns`), and — when it came from a
+    /// sub-agent rollout — that agent's own row.
+    private func record(_ t: Turn, recent: Bool) {
         var agg = sessionAggs[t.sessionID] ?? SessionAgg(
             projectSlug: t.projectSlug, origin: t.origin,
             firstAt: t.timestamp, lastAt: t.timestamp
@@ -723,7 +840,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         agg.byModel[modelKey] = model
 
         let day = dayStart(for: t.timestamp)
-        var slice = agg.byDay[day] ?? DaySlice()
+        var slice = (recent ? agg.recentByDay[day] : agg.byDay[day]) ?? DaySlice()
         slice.turns += 1
         slice.tokens += t.tokens
 
@@ -757,7 +874,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             agg.hasMainIdentity = true
         }
 
-        agg.byDay[day] = slice
+        if recent { agg.recentByDay[day] = slice } else { agg.byDay[day] = slice }
         sessionAggs[t.sessionID] = agg
     }
 
@@ -772,16 +889,30 @@ actor CodexUsageAggregator: CostLogAggregating {
         oldDays[day] = agg
     }
 
-    private func pruneAndFold() {
-        let recentCutoff = Date().addingTimeInterval(-recentWindow)
-        if recentTurns.contains(where: { $0.timestamp < recentCutoff }) {
-            var kept: [Turn] = []
-            kept.reserveCapacity(recentTurns.count)
-            for t in recentTurns {
-                if t.timestamp < recentCutoff { fold(t) } else { kept.append(t) }
+    /// Moves every turn older than `cutoff` out of `recentTurns`: into its day in
+    /// `oldDays` and into its chat's folded tier (`byDay`). If anything moved, every
+    /// chat's recent tier is rebuilt from the turns that are left, so each turn is in
+    /// exactly one tier (issue #13). `pruneAndFold` calls this with
+    /// `Date() − recentWindow`; a test calls it with a cutoff of its own, so a fold
+    /// needs no wait.
+    func foldTurns(olderThan cutoff: Date) {
+        guard recentTurns.contains(where: { $0.timestamp < cutoff }) else { return }
+        var kept: [Turn] = []
+        kept.reserveCapacity(recentTurns.count)
+        for t in recentTurns {
+            if t.timestamp < cutoff {
+                fold(t)
+                foldIntoChat(t)
+            } else {
+                kept.append(t)
             }
-            recentTurns = kept
         }
+        recentTurns = kept
+        rebuildRecentByDay()
+    }
+
+    private func pruneAndFold() {
+        foldTurns(olderThan: Date().addingTimeInterval(-recentWindow))
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }

@@ -120,12 +120,12 @@ final class JSONLRekeyOnLoadTests: XCTestCase {
         let plus3Midnight = Date(timeIntervalSince1970: 1_787_778_000)  // 2026-08-27 00:00 +03:00
         let minus5Midnight = Date(timeIntervalSince1970: 1_787_806_800) // 2026-08-27 00:00 -05:00
 
-        XCTAssertEqual(JSONLAggregator.rekeyedDay(utcMidnight, calendar: plus3), plus3Midnight)
+        XCTAssertEqual(DayRekey.midpoint(utcMidnight, calendar: plus3), plus3Midnight)
         XCTAssertEqual(
-            JSONLAggregator.rekeyedDay(utcMidnight, calendar: Self.calendar(secondsFromGMT: -5 * 3600)),
+            DayRekey.midpoint(utcMidnight, calendar: Self.calendar(secondsFromGMT: -5 * 3600)),
             minus5Midnight
         )
-        XCTAssertEqual(JSONLAggregator.rekeyedDay(plus3Midnight, calendar: utc), utcMidnight)
-        XCTAssertEqual(JSONLAggregator.rekeyedDay(utcMidnight, calendar: utc), utcMidnight, "a day saved in this zone stays put")
+        XCTAssertEqual(DayRekey.midpoint(plus3Midnight, calendar: utc), utcMidnight)
+        XCTAssertEqual(DayRekey.midpoint(utcMidnight, calendar: utc), utcMidnight, "a day saved in this zone stays put")
     }
 }

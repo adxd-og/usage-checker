@@ -587,8 +587,9 @@ final class JSONLAggregatorTests: XCTestCase {
         )
         XCTAssertEqual(staleBreakdown.weekCost, 12.5, accuracy: 0.0001)
 
-        // The control: the same bytes at the current version, 7, ARE restored, so the
-        // assertions above are about the version number and not about an unreadable file.
+        // The control: the same bytes at version 7 ARE kept — carried over since version
+        // 8 — so the assertions above are about the version number and not about an
+        // unreadable file.
         let currentURL = cacheFile(named: "control")
         try snapshot(version: 7).write(to: currentURL)
         let current = JSONLAggregator(rootURL: root, cacheURL: currentURL)

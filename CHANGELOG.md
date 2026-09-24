@@ -5,6 +5,14 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Time zones
+- **History: a chat's days follow a system time-zone change while the app
+  runs,** and agree with Activity after a relaunch in another zone (#13).
+- The first launch after this update re-reads the Claude Code transcripts
+  still on disk once.
+
 ## [2.7.0] — 2026-09-24
 
 ### Last-known numbers

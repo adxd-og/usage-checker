@@ -179,7 +179,7 @@ final class JSONLCacheV7MigrationVerificationTests: XCTestCase {
 
         // The persisted file must carry the new version number.
         let onDisk = try JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL)) as? [String: Any]
-        XCTAssertEqual(onDisk?["version"] as? Int, 7, "the migrated snapshot is saved back as v7")
+        XCTAssertEqual(onDisk?["version"] as? Int, 8, "the migrated snapshot is saved back at the current version, 8")
 
         // A relaunch: a fresh aggregator instance over the same cache and log root.
         let second = aggregator(cache: cacheURL)
