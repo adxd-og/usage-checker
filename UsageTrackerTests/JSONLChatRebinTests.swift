@@ -406,6 +406,50 @@ final class JSONLChatRebinTests: XCTestCase {
         }
     }
 
+    /// § Packages 2 (vi-e). 2.7.0 relaunched at UTC−3 re-keyed the chat's days to UTC−3
+    /// midnights (03:00Z): a 40-day folded day of one 1,000-token turn and the recent day
+    /// of one 10-token turn at 00:30Z, which is before its own day's key. The latest key
+    /// at or before the turn is the old day's, so the turn is given back from there: the
+    /// old day's turns reach zero but its 990-token remainder stays, the chat is within
+    /// one turn of 1,010 tokens, and nothing is read again.
+    func testAV7RecentTurnGivenBackFromARekeyedOldDayLeavesThatDaysRemainder() async throws {
+        let turnAt = at(daysAgo: 2, hour: 0, minute: 30)
+        try writeTranscript([record(id: "msg_01ConvEmptyDay00000000", at: turnAt)])
+        let first = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await first.refresh()
+        func tokens(input: Int) -> [String: Any] {
+            ["input": input, "output": 0, "cacheRead": 0, "cacheWrite5m": 0, "cacheWrite1h": 0, "thinking": 0]
+        }
+        func savedDay(_ key: Date, input: Int) -> [String: Any] {
+            ["day": ISO8601DateFormatter().string(from: key), "turns": 1,
+             "tokens": tokens(input: input), "mainTokens": tokens(input: input)]
+        }
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: cacheURL)) as? [String: Any])
+        var recentTurns = try XCTUnwrap(json["recentTurns"] as? [[String: Any]])
+        XCTAssertEqual(recentTurns.count, 1, "precondition: one recent turn")
+        recentTurns[0]["tokens"] = tokens(input: 10)
+        json["recentTurns"] = recentTurns
+        var sessions = try XCTUnwrap(json["sessions"] as? [String: [String: Any]])
+        sessions[sessionID]?["days"] = [
+            savedDay(at(daysAgo: 40, hour: 3), input: 1_000),
+            savedDay(at(daysAgo: 2, hour: 3), input: 10),
+        ]
+        json["sessions"] = sessions
+        json["version"] = 7
+        try JSONSerialization.data(withJSONObject: json).write(to: cacheURL)
+
+        let converted = JSONLAggregator(rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc)
+        await converted.refresh()
+
+        let parsed = await converted.filesParsedInLastScan
+        XCTAssertEqual(parsed, 0, "converted, not carried over: nothing is read again")
+        let chats = await converted.sessions(from: at(daysAgo: 41, hour: 0), to: Date())
+        let chat = try XCTUnwrap(chats.first { $0.id == sessionID })
+        let foldedTokens = chat.days.filter { $0.day < at(daysAgo: 31, hour: 0) }.map(\.tokens.total).reduce(0, +)
+        XCTAssertGreaterThanOrEqual(foldedTokens, 990, "the old day's remainder is still there")
+        XCTAssertLessThanOrEqual(abs(chat.tokens.total - 1_010), 10, "within one turn of 1,010 tokens")
+    }
+
     /// Review finding: a v7 cache saved in UTC and converted at UTC+3. Each recent turn
     /// leaves the day it was saved under before anything is re-keyed, so no turn counts
     /// twice or goes missing; the recent day is the turn's UTC+3 day, the folded day
