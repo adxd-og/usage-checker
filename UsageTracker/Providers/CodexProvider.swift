@@ -108,6 +108,60 @@ actor CodexProvider: UsageProvider {
         )
     }
 
+    /// The state message of an identified Codex account that answered with no
+    /// rate-limit window at all.
+    static let noLimitsMessage = "Codex reported no limits"
+
+    /// CodexBarCore hands back an identified account with no windows when the RPC
+    /// answers without them (`emptyCodexUsageSnapshotIfIdentified`). For an account that
+    /// never had windows — a credits-only plan — that is the truth and stays `.ok`. For
+    /// one that had windows a poll ago it is a gap in the answer, not a change of plan:
+    /// `.error`, so retention keeps the old numbers dimmed under a chip instead of
+    /// dropping them unflagged.
+    static func state(bucketCount: Int, hadWindowsBefore: Bool) -> ServiceState {
+        bucketCount == 0 && hadWindowsBefore ? .error : .ok
+    }
+
+    /// `state(bucketCount:hadWindowsBefore:)` applied to this poll's Codex entry, before
+    /// retention runs. "Before" is what the app is showing (`previous`, which right after
+    /// a launch is the seeded file) and the stored reading — not this actor's own memory:
+    /// "Forget last known numbers" clears both, and that is the user's way out when a
+    /// plan really did lose its windows. Every other service passes through untouched.
+    static func flaggingMissingWindows(
+        in next: UsageSnapshot,
+        previous: UsageSnapshot,
+        stored: [String: LastKnownService]
+    ) -> UsageSnapshot {
+        let id = CodexProvider.serviceID
+        let hadWindows = previous.services.contains { $0.id == id && !$0.buckets.isEmpty }
+            || !(stored[id]?.buckets.isEmpty ?? true)
+        let services = next.services.map { service -> ServiceSnapshot in
+            guard service.id == id, service.state == .ok,
+                  Self.state(bucketCount: service.buckets.count, hadWindowsBefore: hadWindows) != .ok
+            else { return service }
+            return ServiceSnapshot(
+                id: service.id,
+                displayName: service.displayName,
+                icon: service.icon,
+                plan: service.plan,
+                accountLabel: service.accountLabel,
+                buckets: service.buckets,
+                extraUsage: service.extraUsage,
+                weekCost: service.weekCost,
+                state: .error,
+                stateMessage: Self.noLimitsMessage,
+                fetchedAt: service.fetchedAt,
+                retryAfter: service.retryAfter
+            )
+        }
+        return UsageSnapshot(
+            services: services,
+            fetchedAt: next.fetchedAt,
+            isStale: next.isStale,
+            lastError: next.lastError
+        )
+    }
+
     private static func bucket(from window: CodexBarCore.RateWindow?, id: String) -> UsageBucket? {
         // Synthesized placeholders stand in for lanes the provider didn't actually
         // report — rendering them would show a phantom 0% window.

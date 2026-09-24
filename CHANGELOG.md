@@ -5,6 +5,34 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] — unreleased
+
+### Last-known numbers
+- **The status line says when a number is last known.** A provider that
+  stopped reporting reads `◐ 95% (as of 14:05)`, and its "resets …" goes once
+  that time has passed instead of saying "resets now" for hours.
+- **`get_usage` paces against live windows.** A last-known window no longer
+  tells an agent to wait for a reset; with nothing live, the advice gives the
+  last reading and its time and no verdict.
+- **No alerts from last-known numbers.** Threshold, pace and reset alerts
+  fire only for providers that are reporting now.
+- **A switched-off provider stays off.** Turning off the only provider with
+  windows no longer brings its old numbers back on every refresh. When every
+  provider fails, the popover says it can't refresh and dates the numbers.
+- **Pay-as-you-go spend survives a failed refresh and a relaunch.** The
+  week's local spend stays in the menu bar, the tile and the popover, dimmed
+  like other last-known numbers.
+- **Codex keeps its last numbers when it reports no limits.** An account
+  that had windows and suddenly answers without them shows the old numbers
+  dimmed under "Codex reported no limits"; Forget last known numbers clears
+  them if the plan really changed.
+- **The floating panel dims last-known numbers,** hides their pace marker
+  and shows the provider's state chip.
+- **The widget no longer shows sample numbers.** Before Omelette has written
+  anything it says "Open Omelette"; it now learns when a provider is
+  forgotten or nothing is reporting, and shows a pay-as-you-go account's
+  spend.
+
 ## [2.6.5] — 2026-09-24
 
 ### Fixed

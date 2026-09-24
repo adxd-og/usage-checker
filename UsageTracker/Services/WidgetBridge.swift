@@ -5,11 +5,28 @@ import WidgetKit
 /// and tells WidgetKit to refresh its timelines.
 @MainActor
 enum WidgetBridge {
+    /// The services this launch last wrote. nil until the first write, so a launch that
+    /// has nothing to draw still replaces whatever an earlier run left in the file.
+    private static var lastPublished: [WidgetService]?
+
+    /// Called after every poll, on a display-mode change and from "Forget last known
+    /// numbers". An empty list is written too: a widget never told "nothing to show"
+    /// keeps the last numbers it was given for good.
     static func publish(_ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode) {
         let snapshot = snapshot(from: services, at: date, mode: mode)
-        guard !snapshot.services.isEmpty else { return }
+        guard shouldPublish(snapshot.services, lastPublished: lastPublished) else { return }
         SharedWidgetStore.write(snapshot)
+        lastPublished = snapshot.services
         WidgetCenter.shared.reloadAllTimelines()
+    }
+
+    /// Whether a list reaches the file. Anything to draw goes every time, so the widget's
+    /// "Updated …" moves with the polls. An empty list goes once, when it becomes empty —
+    /// every minute would reload the widget's timelines to say nothing again.
+    nonisolated static func shouldPublish(
+        _ services: [WidgetService], lastPublished: [WidgetService]?
+    ) -> Bool {
+        !services.isEmpty || services != lastPublished
     }
 
     /// The whole file as a value. `publish` writes into the App Group container,

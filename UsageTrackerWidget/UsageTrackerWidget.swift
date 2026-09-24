@@ -54,7 +54,8 @@ struct SelectProviderIntent: WidgetConfigurationIntent {
 struct ProviderEntry: TimelineEntry {
     let date: Date
     let provider: ProviderChoice
-    let service: WidgetService?
+    /// The provider's numbers, or the line to show instead (`WidgetEntryRules`).
+    let content: WidgetEntryRules.ProviderContent
     let updatedAt: Date
     /// Which way this entry's numbers count. The extension cannot read the app's
     /// preferences, so the mode arrives with the snapshot it read off disk.
@@ -70,34 +71,37 @@ private func timelineEntries<E>(now: Date, make: (Date) -> E) -> Timeline<E> {
 }
 
 struct ProviderTimelineProvider: AppIntentTimelineProvider {
+    /// The one place sample numbers belong: WidgetKit draws this redacted while the
+    /// real entry loads.
     func placeholder(in context: Context) -> ProviderEntry {
-        let snap = WidgetSnapshot.placeholder
-        return ProviderEntry(date: Date(), provider: .claude, service: snap.service(id: "claude"), updatedAt: snap.updatedAt, mode: snap.mode)
+        entry(for: .claude, at: Date(), from: .placeholder)
     }
 
     func snapshot(for configuration: SelectProviderIntent, in context: Context) async -> ProviderEntry {
-        entry(for: configuration.provider, at: Date())
+        let snap = WidgetEntryRules.snapshot(read: SharedWidgetStore.read(), isPreview: context.isPreview)
+        return entry(for: configuration.provider, at: Date(), from: snap)
     }
 
     func timeline(for configuration: SelectProviderIntent, in context: Context) async -> Timeline<ProviderEntry> {
-        timelineEntries(now: Date()) { entry(for: configuration.provider, at: $0) }
+        let snap = WidgetEntryRules.snapshot(read: SharedWidgetStore.read(), isPreview: false)
+        return timelineEntries(now: Date()) { entry(for: configuration.provider, at: $0, from: snap) }
     }
 
-    private func entry(for provider: ProviderChoice, at date: Date) -> ProviderEntry {
-        let snap = SharedWidgetStore.read() ?? .placeholder
-        return ProviderEntry(
+    private func entry(for provider: ProviderChoice, at date: Date, from snap: WidgetSnapshot?) -> ProviderEntry {
+        ProviderEntry(
             date: date,
             provider: provider,
-            service: snap.service(id: provider.rawValue),
-            updatedAt: snap.updatedAt,
-            mode: snap.mode
+            content: WidgetEntryRules.providerContent(snap, providerID: provider.rawValue),
+            updatedAt: snap?.updatedAt ?? date,
+            mode: snap?.mode ?? .used
         )
     }
 }
 
 struct AllProvidersEntry: TimelineEntry {
     let date: Date
-    let snapshot: WidgetSnapshot
+    /// nil when there is no file to read; the view says "Open Omelette".
+    let snapshot: WidgetSnapshot?
 }
 
 struct AllProvidersTimelineProvider: TimelineProvider {
@@ -106,11 +110,12 @@ struct AllProvidersTimelineProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: Context, completion: @escaping (AllProvidersEntry) -> Void) {
-        completion(AllProvidersEntry(date: Date(), snapshot: SharedWidgetStore.read() ?? .placeholder))
+        let snap = WidgetEntryRules.snapshot(read: SharedWidgetStore.read(), isPreview: context.isPreview)
+        completion(AllProvidersEntry(date: Date(), snapshot: snap))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<AllProvidersEntry>) -> Void) {
-        let snap = SharedWidgetStore.read() ?? .placeholder
+        let snap = WidgetEntryRules.snapshot(read: SharedWidgetStore.read(), isPreview: false)
         completion(timelineEntries(now: Date()) { AllProvidersEntry(date: $0, snapshot: snap) })
     }
 }
@@ -166,7 +171,8 @@ struct ProviderWidgetEntryView: View {
     let entry: ProviderEntry
 
     var body: some View {
-        if let service = entry.service {
+        switch entry.content {
+        case .service(let service):
             Group {
                 switch family {
                 case .systemSmall: SmallProviderView(service: service, mode: entry.mode)
@@ -177,15 +183,17 @@ struct ProviderWidgetEntryView: View {
             }
             // Last known, not current — same 55% the app uses.
             .opacity(service.isRetained ? 0.55 : 1)
-        } else {
-            NoDataView(provider: entry.provider)
+        case .message(let message):
+            NoDataView(provider: entry.provider, message: message)
         }
     }
 }
 
-/// Shown when the selected provider has published no usage (signed out / not running).
+/// Shown instead of numbers: the provider is not in the file (signed out, switched
+/// off, forgotten), or there is no file yet. The line comes from `WidgetEntryRules`.
 struct NoDataView: View {
     let provider: ProviderChoice
+    let message: String
 
     var body: some View {
         VStack(spacing: 6) {
@@ -193,7 +201,7 @@ struct NoDataView: View {
                 .foregroundStyle(.secondary)
             Text(provider.fallbackName)
                 .font(.system(size: 12, weight: .semibold))
-            Text("No data")
+            Text(message)
                 .font(.system(size: 10))
                 .foregroundStyle(.secondary)
         }
@@ -302,9 +310,26 @@ struct LargeProviderView: View {
 // MARK: - All providers (large)
 
 struct AllProvidersWidgetView: View {
-    let snapshot: WidgetSnapshot
+    let snapshot: WidgetSnapshot?
 
     var body: some View {
+        switch WidgetEntryRules.allProvidersContent(snapshot) {
+        case .snapshot(let snapshot):
+            rows(snapshot)
+        case .message(let message):
+            VStack(spacing: 6) {
+                Image(systemName: "chart.bar")
+                    .font(.system(size: 22))
+                    .foregroundStyle(.secondary)
+                Text(message)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    private func rows(_ snapshot: WidgetSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(snapshot.services.prefix(4)) { service in
                 VStack(alignment: .leading, spacing: 6) {

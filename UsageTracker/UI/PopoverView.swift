@@ -488,8 +488,9 @@ private struct ProviderDetail: View {
                         ? nil
                         : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
                 )
-            } else if service.state == .ok, let cost = service.weekCost, cost > 0 {
-                // Pay-as-you-go without windows: the 7-day spend is the headline.
+            } else if let cost = service.spendHeadline {
+                // Pay-as-you-go without windows: the 7-day spend is the headline — live,
+                // or last known and dimmed with the rest of this block.
                 OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
             }
             ForEach(sessionRows) { bucket in

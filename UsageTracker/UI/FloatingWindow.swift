@@ -156,11 +156,27 @@ struct FloatingMiniContent: View {
                 ProviderIconView(serviceID: service.id, sfFallback: service.icon, size: 12)
                     .foregroundStyle(.tint)
                     .frame(width: 14)
-                Text(service.plan ?? service.displayName)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                if content.retainedAt != nil {
+                    // The tile's chip, word for word. Which plan this is can wait; "these
+                    // numbers stopped at 14:05" cannot, and the panel has no spare row.
+                    OMChip(
+                        text: RetainedCopy.chipText(for: service.state),
+                        tint: OMProviderTile.chipTint(for: service.state)
+                    )
+                    if let suffix = RetainedCopy.chipSuffix(for: service) {
+                        Text(suffix)
+                            .font(OMFont.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                } else {
+                    Text(service.plan ?? service.displayName)
+                        .font(OMFont.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
             } else {
                 Text("Omelette")
                     .font(OMFont.caption)
@@ -193,7 +209,8 @@ struct FloatingMiniContent: View {
 
     private func heroRow(_ hero: UsageBucket) -> some View {
         HStack(spacing: OMSpacing.m) {
-            OMRing(used: hero.clampedPercent, mode: mode, size: .medium, pace: hero.elapsedFraction())
+            OMRing(used: hero.clampedPercent, mode: mode, size: .medium,
+                   pace: FloatingMiniLayout.pace(for: hero, in: content))
             VStack(alignment: .leading, spacing: 2) {
                 Text(hero.label)
                     .font(OMFont.bodyStrong)
@@ -207,6 +224,7 @@ struct FloatingMiniContent: View {
             }
             Spacer(minLength: 0)
         }
+        .opacity(FloatingMiniLayout.numbersOpacity(content))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(FloatingMiniLayout.heroAccessibilityLabel(hero, mode: mode))
     }
@@ -223,13 +241,14 @@ struct FloatingMiniContent: View {
                 mode: mode,
                 height: 4,
                 showsLabel: false,
-                pace: bucket.elapsedFraction()
+                pace: FloatingMiniLayout.pace(for: bucket, in: content)
             )
             Text(FloatingMiniLayout.rowPercentText(bucket, mode: mode))
                 .font(OMFont.caption.weight(.semibold))
                 .monospacedDigit()
                 .frame(width: 32, alignment: .trailing)
         }
+        .opacity(FloatingMiniLayout.numbersOpacity(content))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(FloatingMiniLayout.rowAccessibilityLabel(bucket, mode: mode))
     }

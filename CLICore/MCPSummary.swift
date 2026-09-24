@@ -61,16 +61,26 @@ enum MCPSummary {
     }
 
     /// The one sentence that answers "should I start this now?". Driven by the fullest
-    /// window across every provider, because that is the one that will stop the work.
+    /// window of the providers reporting now, because that is the one that will stop the
+    /// work. A last-known window gets no verdict: "wait for the reset" on a number that
+    /// stopped moving an hour ago is advice about nothing.
     static func advice(
         for snapshot: StatusSnapshot, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
     ) -> String {
-        guard let worst = worstWindow(snapshot) else {
+        guard let worst = worstWindow(snapshot, now: now) else {
             return "No rate-limit window is reporting, so there is nothing to pace against."
         }
         let percent = Int(worst.window.percent.rounded())
-        var clause = "\(worst.service.name)'s \(worst.window.label.lowercased()) window is \(percent)% used"
+        let reading = "\(worst.service.name)'s \(worst.window.label.lowercased()) window"
+        if worst.service.retained {
+            let seen = worst.service.retainedAt
+                .flatMap { ResetCopy.absolute(resetsAt: $0, now: now, calendar: calendar, locale: locale) }
+                .map { " at \($0)" } ?? ""
+            return "Nothing is reporting live: \(reading) was \(percent)% used when last seen\(seen), "
+                + "so there is no current number to pace against."
+        }
+        var clause = "\(reading) is \(percent)% used"
         if let at = worst.window.resetsAt,
            let reset = ResetCopy.both(resetsAt: at, now: now, calendar: calendar, locale: locale) {
             clause += " and \(reset)"
@@ -80,18 +90,38 @@ enum MCPSummary {
         return clause + ", so there is room to work."
     }
 
-    /// The fullest window that is neither a promo pool nor model-scoped — running a
-    /// bonus pool dry costs nothing, and an "Opus only" cap is not what stops the work.
-    /// Promo and model-scoped windows lead only when they are all there is.
+    /// The window that will stop the work: the fullest one that is neither a promo pool
+    /// nor model-scoped — running a bonus pool dry costs nothing, and an "Opus only" cap
+    /// is not what stops the work; those lead only when they are all there is.
+    ///
+    /// Live providers first. A retained provider's windows count only when no live
+    /// provider has one — its number is a last reading, not a limit being approached —
+    /// and a retained window whose reset has passed never counts: it has started over.
+    /// `now` defaults to the clock only for callers that rank live windows alone.
     static func worstWindow(
-        _ snapshot: StatusSnapshot
+        _ snapshot: StatusSnapshot, now: Date = Date()
     ) -> (service: StatusSnapshot.Service, window: StatusSnapshot.Window)? {
-        let all = snapshot.services.flatMap { service in service.windows.map { (service, $0) } }
-        let core = all.filter { !$0.1.isPromotional && $0.1.kind != "modelSpecific" }
-        let pool = core.isEmpty ? all.filter { !$0.1.isPromotional } : core
-        let final = pool.isEmpty ? all : pool
-        guard let best = final.max(by: { $0.1.percent < $1.1.percent }) else { return nil }
-        return (best.0, best.1)
+        fullestWindow(of: snapshot.services.filter { !$0.retained }, now: now)
+            ?? fullestWindow(of: snapshot.services.filter(\.retained), now: now)
+    }
+
+    /// One tier of `worstWindow`. Written out with loops, like `sessionRows`: a chained
+    /// pipeline over a labelled tuple is more than the type checker solves quickly.
+    private static func fullestWindow(
+        of services: [StatusSnapshot.Service], now: Date
+    ) -> (service: StatusSnapshot.Service, window: StatusSnapshot.Window)? {
+        typealias Pair = (service: StatusSnapshot.Service, window: StatusSnapshot.Window)
+        var all: [Pair] = []
+        for service in services {
+            for window in service.windows {
+                if service.retained, let at = window.resetsAt, at <= now { continue }
+                all.append(Pair(service: service, window: window))
+            }
+        }
+        let core = all.filter { !$0.window.isPromotional && $0.window.kind != "modelSpecific" }
+        let pool = core.isEmpty ? all.filter { !$0.window.isPromotional } : core
+        let candidates = pool.isEmpty ? all : pool
+        return candidates.max { $0.window.percent < $1.window.percent }
     }
 
     /// When these numbers were true, and — past the freshness window — that they may be

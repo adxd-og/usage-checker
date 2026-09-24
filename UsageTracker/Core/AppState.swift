@@ -135,7 +135,10 @@ final class AppState: ObservableObject {
                     weekCost: pair.value.weekCost,
                     state: .notRunning,
                     stateMessage: nil,
-                    fetchedAt: pair.value.fetchedAt
+                    fetchedAt: pair.value.fetchedAt,
+                    // Stored numbers are an earlier reading by definition; the flag is
+                    // what lets a spend-only entry dim like one with windows.
+                    isCarriedOver: true
                 )
             }
         return UsageSnapshot(
@@ -259,25 +262,18 @@ final class AppState: ObservableObject {
             antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
             grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
+        // Before retention: a Codex account that answered without the windows it had a
+        // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
+        next = CodexProvider.flaggingMissingWindows(in: next, previous: snapshot, stored: lastKnown)
         next = await Self.applyPayAsYouGo(to: next)
-        next = Self.retainingLastGoodServices(previous: snapshot, next: next, stored: lastKnown)
+        // Per service, never the whole array: a failed provider keeps its last good
+        // reading beside its state chip, and a provider this poll no longer returned
+        // (switched off) is gone. From here on `next` is what the app shows.
+        next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
+        snapshot = next
 
-        // A failed or empty poll (network blip, transient API error) must not wipe the
-        // last-known usage from the menu bar. Keep the previous data and flag it stale;
-        // only replace when we have fresh data or never had any.
-        if next.hasAnyData || !snapshot.hasAnyData {
-            snapshot = next
-        } else {
-            snapshot = UsageSnapshot(
-                services: snapshot.services,
-                fetchedAt: snapshot.fetchedAt,
-                isStale: true,
-                lastError: next.lastError
-            )
-        }
-
-        // The disk copy, for the next launch and for the fallback above. Only ok,
-        // non-empty readings are written; the store skips unchanged numbers.
+        // The disk copy, for the next launch and for retention on a later poll. Only
+        // ok readings with windows or spend are written; the store skips unchanged numbers.
         await LastKnownStore.shared.remember(snapshot.services)
         lastKnown = await LastKnownStore.shared.load()
 
@@ -289,9 +285,9 @@ final class AppState: ObservableObject {
             nextAllowedRefresh = .distantPast
         }
 
-        if next.hasAnyData {
-            WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
-        }
+        // Every poll, an empty one too: `WidgetBridge.publish` decides whether the file
+        // changes, and a widget never told "nothing to show" keeps the last numbers.
+        WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.
         var recordedAny = false
@@ -351,11 +347,9 @@ final class AppState: ObservableObject {
     /// preference did not change what was spent today, and re-walking two log trees
     /// on a toggle would be a second of file I/O for no new information.
     func republishDisplayMode() {
-        if snapshot.hasAnyData {
-            WidgetBridge.publish(
-                snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
-            )
-        }
+        WidgetBridge.publish(
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
+        )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
         publishStatusFile(costs: lastCosts, sessions: lastSessions)
@@ -485,10 +479,15 @@ final class AppState: ObservableObject {
         let services = next.services.map { service -> ServiceSnapshot in
             guard service.state != .ok, service.buckets.isEmpty else { return service }
             let source: LastKnownService? = {
-                if let prev = previous.services.first(where: { $0.id == service.id }), !prev.buckets.isEmpty {
+                // A previous reading counts when it has content — windows, or a
+                // pay-as-you-go account's dollars — and was a reading: healthy, or itself
+                // carried over. A signed-out Grok's live spend is neither, and taking it
+                // as a source would freeze that spend at its first value.
+                if let prev = previous.services.first(where: { $0.id == service.id }),
+                   prev.hasContent, prev.state == .ok || prev.isRetained {
                     return LastKnownService(from: prev, order: 0)
                 }
-                guard let entry = stored[service.id], !entry.buckets.isEmpty else { return nil }
+                guard let entry = stored[service.id], entry.hasContent else { return nil }
                 return entry
             }()
             guard let source else { return service }
@@ -504,7 +503,8 @@ final class AppState: ObservableObject {
                 state: service.state,
                 stateMessage: service.stateMessage,
                 fetchedAt: source.fetchedAt,
-                retryAfter: service.retryAfter
+                retryAfter: service.retryAfter,
+                isCarriedOver: true
             )
         }
         return UsageSnapshot(
@@ -512,6 +512,37 @@ final class AppState: ObservableObject {
             fetchedAt: next.fetchedAt,
             isStale: next.isStale,
             lastError: next.lastError
+        )
+    }
+
+    /// What the app shows after a poll: this poll's services, each failed one carrying
+    /// only what `retainingLastGoodServices` kept for it.
+    ///
+    /// Replaces the whole-snapshot fallback, which kept the *previous* array whenever the
+    /// new one had no windows at all. It predated per-service retention, and with several
+    /// providers it resurrected one the user had just switched off: Codex the only
+    /// provider with windows, Claude signed out, Codex disabled — the coordinator drops
+    /// it, the poll has no windows, and the old array came back with Codex `.ok` on every
+    /// poll until relaunch. So a service absent from `next` is gone, and a previous `.ok`
+    /// never stands in for a new failure: the failure keeps its state and its last reading.
+    ///
+    /// `isStale` says every service failed. `fetchedAt` is then the newest retained
+    /// reading, so "Updated …" and "showing data from …" date the numbers rather than the
+    /// attempt that failed to replace them.
+    nonisolated static func mergingPoll(
+        previous: UsageSnapshot,
+        next: UsageSnapshot,
+        stored: [String: LastKnownService] = [:]
+    ) -> UsageSnapshot {
+        let merged = retainingLastGoodServices(previous: previous, next: next, stored: stored)
+        let allFailed = !merged.services.isEmpty && merged.services.allSatisfy { $0.state != .ok }
+        return UsageSnapshot(
+            services: merged.services,
+            fetchedAt: allFailed
+                ? (merged.services.compactMap(\.retainedAt).max() ?? merged.fetchedAt)
+                : merged.fetchedAt,
+            isStale: allFailed,
+            lastError: merged.lastError
         )
     }
 
@@ -548,6 +579,10 @@ final class AppState: ObservableObject {
     func forgetLastKnown(serviceID: String) {
         lastKnown.removeValue(forKey: serviceID)
         snapshot = Self.droppingRetained(serviceID: serviceID, from: snapshot)
+        // The widget shows the same numbers on the desktop. Without this it kept the
+        // forgotten ones until a poll brought windows, and with no other provider
+        // reporting, that poll never came.
+        WidgetBridge.publish(snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode)
         Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
     }
 

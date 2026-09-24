@@ -76,12 +76,15 @@ struct OMProviderTile: View {
                     }
                 }
                 .opacity(numbersOpacity)
-            } else if service.state == .ok, let cost = service.weekCost {
+            } else if let cost = service.spendHeadline {
+                // Pay-as-you-go without windows: live, or last known and dimmed like any
+                // retained number, with the chip in the footer saying why.
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Last 7 days").font(.system(size: 10)).foregroundStyle(.secondary)
                     Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
                         .font(OMFont.numeral).monospacedDigit()
                 }
+                .opacity(numbersOpacity)
             } else if !hasData {
                 stateRow
             }
@@ -125,8 +128,12 @@ struct OMProviderTile: View {
         }
     }
 
-    private var stateTint: Color {
-        switch service.state {
+    private var stateTint: Color { Self.chipTint(for: service.state) }
+
+    /// The state chip's colour. Shared with the floating panel, which puts the same chip
+    /// over the same retained numbers.
+    static func chipTint(for state: ServiceState) -> Color {
+        switch state {
         case .notSignedIn: .orange
         case .notRunning: .secondary
         case .error: .red
