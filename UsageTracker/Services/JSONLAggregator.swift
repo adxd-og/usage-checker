@@ -567,10 +567,17 @@ actor JSONLAggregator: CostLogAggregating {
         /// and `mainTokens`, and every dollar bucket zero when it is priced.
         static func isEmpty(_ day: DayTotals) -> Bool {
             guard day.turns == 0 else { return false }
+            // Dollars are floating-point sums: two turns given back can leave 1e-19 in
+            // a bucket that is zero in every sense the app shows. Below a microcent is
+            // empty.
+            let dust = 0.000_001
             return [day.tokens, day.mainTokens].allSatisfy { tokens in
                 tokens.input == 0 && tokens.output == 0 && tokens.cacheRead == 0
                     && tokens.cacheWrite5m == 0 && tokens.cacheWrite1h == 0 && tokens.thinking == 0
-                    && (tokens.cost.map { $0.input == 0 && $0.output == 0 && $0.cacheRead == 0 && $0.cacheWrite == 0 } ?? true)
+                    && (tokens.cost.map {
+                        abs($0.input) < dust && abs($0.output) < dust
+                            && abs($0.cacheRead) < dust && abs($0.cacheWrite) < dust
+                    } ?? true)
             }
         }
 
