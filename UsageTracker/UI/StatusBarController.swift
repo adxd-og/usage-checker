@@ -183,10 +183,6 @@ final class StatusBarController {
 
 extension Notification.Name {
     static let snapshotUpdated = Notification.Name("com.usagetracker.snapshotUpdated")
-    /// Posted once the Mac is awake *and* the screen unlocked again, right before the
-    /// refresh that follows; `DashboardWindow` rebuilds its detail column on the
-    /// snapshot that refresh produces.
-    static let systemResumed = Notification.Name("com.usagetracker.systemResumed")
     /// Posted when something outside the status item wants the popover on screen.
     /// Today that is one caller: an agent notification whose session is gone.
     static let showPopover = Notification.Name("com.usagetracker.showPopover")

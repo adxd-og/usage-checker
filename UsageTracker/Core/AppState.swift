@@ -177,7 +177,6 @@ final class AppState: ObservableObject {
         // Coming back from sleep/lock: the data on screen is stale — refresh
         // right away instead of waiting out the remainder of the poll interval.
         if wasSuspended && !isSuspended {
-            NotificationCenter.default.post(name: .systemResumed, object: nil)
             refreshNow(userInitiated: false)
         }
     }

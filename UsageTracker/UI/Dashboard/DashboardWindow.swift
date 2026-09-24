@@ -6,8 +6,8 @@ struct DashboardWindow: View {
     /// Survives a relaunch. `Tab` is `String`-backed, so a raw value that no longer
     /// exists (a tab removed in a later release) falls back to `.overview` on its own.
     @AppStorage("dashboardTab") private var selection: Tab = .overview
-    /// See `DetailRebuildRule`: after a sleep or a screen lock the column has to be
-    /// built again, or macOS 27.0 draws every text inserted into it upside down.
+    /// See `DetailRebuildRule`: a text created while this window is hidden comes
+    /// back upside down on macOS 27.0, so the column is rebuilt when the window shows.
     @State private var rebuildRule = DetailRebuildRule()
     @State private var detailGeneration = 0
 
@@ -55,15 +55,21 @@ struct DashboardWindow: View {
             dashboard.refreshAll()
             Updater.shared.checkInBackgroundIfDue()
         }
-        .onReceive(NotificationCenter.default.publisher(for: .systemResumed)) { _ in
-            rebuildRule.resumed()
-        }
+        // A closed `Window` is hidden, not gone: this view and its subscriptions
+        // outlive the close. The window's own visibility decides when the column
+        // is rebuilt; it also skips the refresh below while hidden, though other
+        // publishers (`appState`, `dashboard`) still reach the hidden views — the
+        // rebuild on showing is what actually cures them.
+        .background(WindowVisibilityReader { visible in
+            if rebuildRule.windowVisibilityChanged(visible) {
+                detailGeneration += 1
+                dashboard.refreshAll()
+            }
+        })
         // The poll path no longer pushes the full history into DashboardState —
-        // while the window is open, each snapshot triggers the reload here; the
-        // subscription dies with the window, so a closed dashboard costs nothing.
+        // while the window is on screen, each snapshot triggers the reload here.
         .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
-            // Before the refresh, so the rows it inserts land in the new column.
-            if rebuildRule.snapshotArrived() { detailGeneration += 1 }
+            guard rebuildRule.snapshotArrived() else { return }
             dashboard.refreshAll()
         }
     }

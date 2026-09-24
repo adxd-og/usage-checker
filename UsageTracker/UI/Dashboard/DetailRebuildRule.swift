@@ -1,27 +1,42 @@
 import Foundation
 
-/// When the dashboard's detail column has to be built again from scratch.
+/// When the dashboard's detail column has to be built again from scratch, and
+/// when a snapshot may be applied to it at all.
 ///
-/// macOS 27.0 leaves the column's scroll container in a bad state after a screen
-/// lock or sleep: every text *inserted* into it afterwards is drawn upside down
-/// (the Tokens today rows and the model rows that the first turn of a new day
-/// brings back, the burn line), while texts that were already there stay right.
-/// A resize does not help; a fresh column does, which is what switching tabs
-/// proved. So the column is rebuilt once per resume — not at the resume itself,
-/// when the lock screen may still be up (2.6.2 tried `screensDidWake` and the
-/// rebuilt column came out just as bad), but on the first snapshot after it, so
-/// the refresh that would insert the rows lands in the new column.
+/// A SwiftUI `Window` that the user closes is hidden, not destroyed: its view
+/// hierarchy lives on, and so do its subscriptions. On macOS 27.0 a text created
+/// inside that hidden window (the Tokens today rows and the model rows that the
+/// first turn of a new day brings back, a burn verdict that appears) is drawn
+/// upside down once the window is shown again, and stays so until its string
+/// changes or the view is rebuilt on a visible window. Sleep, screen lock and a
+/// closed window are just three ways of hiding the window; 2.6.2 and 2.6.3
+/// rebuilt on resume and missed the closed-window case.
+///
+/// Two decisions. Snapshots arriving while the window is hidden are not applied
+/// by this window (other publishers still reach it; the rebuild is the cure, the
+/// gate only saves work). And the column is rebuilt when the window comes back on
+/// screen — but only if a poll happened while it was hidden: a rebuild resets
+/// scroll positions and expanded rows, and a window that was merely covered for
+/// a moment had nothing inserted into it.
 struct DetailRebuildRule {
-    private var armed = false
+    private var visible = false
+    private var pollsWhileHidden = 0
 
-    /// The system came back from sleep or the screen was unlocked.
-    mutating func resumed() {
-        armed = true
+    /// The window's occlusion state, as sampled on attach and on every change.
+    /// True exactly when the window has just come back on screen after a poll
+    /// arrived while it was hidden: rebuild the column now.
+    mutating func windowVisibilityChanged(_ nowVisible: Bool) -> Bool {
+        let cameBack = nowVisible && !visible
+        visible = nowVisible
+        if !nowVisible { return false }
+        defer { pollsWhileHidden = 0 }
+        return cameBack && pollsWhileHidden > 0
     }
 
-    /// A snapshot arrived. True exactly once after a resume: rebuild the column.
+    /// A snapshot arrived. True when this window should apply it; while hidden it
+    /// is only counted, so the next return to the screen knows to rebuild.
     mutating func snapshotArrived() -> Bool {
-        defer { armed = false }
-        return armed
+        if !visible { pollsWhileHidden += 1 }
+        return visible
     }
 }
