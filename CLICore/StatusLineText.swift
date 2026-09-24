@@ -43,7 +43,9 @@ enum StatusLineText {
         provider: String = defaultProvider,
         now: Date,
         input: StatusLineInput = .none,
-        colour: Bool = true
+        colour: Bool = true,
+        calendar: Calendar = .current,
+        locale: Locale = .current
     ) -> String {
         let prefix = sessionPrefix(
             model: input.model, contextUsedPercent: input.contextUsedPercent, colour: colour
@@ -55,13 +57,10 @@ enum StatusLineText {
         var parts: [String] = prefix.isEmpty ? [] : [prefix]
 
         let service = snapshot.service(id: provider)
-        if let window = service.flatMap(headlineWindow) {
-            parts.append("\(gauge) \(PercentDisplay.percentPhrase(window.percent, mode: snapshot.percentMode))")
-            if let at = window.resetsAt, let reset = ResetCopy.relative(resetsAt: at, now: now) {
-                // The status bar is the one surface where width is scarce; the absolute
-                // time `ResetCopy.both` adds belongs in the popover, not here.
-                parts.append("resets \(reset)")
-            }
+        if let service {
+            parts.append(contentsOf: windowParts(
+                service, mode: snapshot.percentMode, now: now, calendar: calendar, locale: locale
+            ))
         }
         if let today = service?.todayCost, today > 0 {
             parts.append(String(format: "$%.2f today", today))
@@ -114,5 +113,41 @@ enum StatusLineText {
         let core = service.windows.filter { !$0.isPromotional && $0.kind != "modelSpecific" }
         let pool = core.isEmpty ? service.windows.filter { !$0.isPromotional } : core
         return (pool.isEmpty ? service.windows : pool).max(by: { $0.percent < $1.percent })
+    }
+
+    /// What a retained number says when the file carries no stamp for it. The writer
+    /// always sets one; the type allows nil, and a bare number would read as live.
+    static let retainedWithoutStamp = "last known"
+
+    /// The gauge and its reset for one provider: `◐ 61%`, `resets in 1h 28m`.
+    ///
+    /// A retained provider keeps its window — the number is the last one it reported —
+    /// but says how old it is in `RetainedCopy`'s words, `◐ 95% (as of 14:05)`, and its
+    /// reset goes once that moment has passed: "resets now" on a window that started
+    /// over hours ago is the one part of the line that is plainly false. A live window
+    /// keeps "resets now"; it is seconds past, and the next poll replaces it.
+    static func windowParts(
+        _ service: StatusSnapshot.Service,
+        mode: PercentDisplay.Mode,
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> [String] {
+        guard let window = headlineWindow(service) else { return [] }
+        var head = "\(gauge) \(PercentDisplay.percentPhrase(window.percent, mode: mode))"
+        if service.retained {
+            let age = service.retainedAt.map {
+                RetainedCopy.asOf($0, now: now, calendar: calendar, locale: locale)
+            } ?? retainedWithoutStamp
+            head += " (\(age))"
+        }
+        var parts = [head]
+        if let at = window.resetsAt, !(service.retained && at <= now),
+           let reset = ResetCopy.relative(resetsAt: at, now: now) {
+            // The status bar is the one surface where width is scarce; the absolute
+            // time `ResetCopy.both` adds belongs in the popover, not here.
+            parts.append("resets \(reset)")
+        }
+        return parts
     }
 }
