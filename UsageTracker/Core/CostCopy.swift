@@ -26,6 +26,14 @@ enum CostCopy {
         isPayAsYouGo ? nil : apiEquivalent
     }
 
+    /// The caption for one provider's dollars on a dashboard page, where the provider
+    /// may be missing from the snapshot (disabled, or not polled yet). An account that
+    /// is not known to be pay-as-you-go gets the caption: saying "API-equivalent" of a
+    /// bill is a smaller error than presenting an estimate as one.
+    static func apiEquivalentCaption(for service: ServiceSnapshot?) -> String? {
+        apiEquivalentCaption(isPayAsYouGo: service.map(isPayAsYouGo) ?? false)
+    }
+
     /// Pay-as-you-go: the provider reports no rate-limit window of its own. That is
     /// exactly the shape `AppState.applyPayAsYouGo` keys off (Enterprise API billing
     /// returns no windows), and the only windows such an account can have are the
