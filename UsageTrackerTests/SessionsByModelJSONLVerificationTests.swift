@@ -287,9 +287,9 @@ final class SessionsByModelJSONLVerificationTests: XCTestCase {
         XCTAssertEqual(after.models, before.models, "keys, efforts, turns and every dollar, unchanged")
     }
 
-    // MARK: - A version-5 cache is rejected; a version-6 file with the same bytes is not
+    // MARK: - A version-5 cache is rejected; a version-7 file with the same bytes is not
 
-    func testAVersionFiveCostCacheIsRejectedButAVersionSixFileWithIdenticalBytesIsAccepted() async throws {
+    func testAVersionFiveCostCacheIsRejectedButAVersionSevenFileWithIdenticalBytesIsAccepted() async throws {
         // A small real fixture so a rejected snapshot forces a real rescan.
         try writeMain([
             rawTurn(id: "msg_real", at: at(daysAgo: 1, hour: 9), model: "claude-sonnet-4-5",
@@ -350,14 +350,14 @@ final class SessionsByModelJSONLVerificationTests: XCTestCase {
         )
 
         let controlURL = cacheFile(named: "control")
-        try snapshot(version: 6).write(to: controlURL)
+        try snapshot(version: 7).write(to: controlURL)
         let current = aggregator(cache: controlURL)
         await current.refresh()
         let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)
 
         let old = try XCTUnwrap(
             restored.first { $0.title == "A chat only the cache remembers" },
-            "the identical bytes at version 6 prove the version guard, not a decode failure, rejected version 5"
+            "the identical bytes at version 7 prove the version guard, not a decode failure, rejected version 5"
         )
         XCTAssertEqual(old.models.map(\.id), ["claude-haiku-4-5|low"])
         XCTAssertEqual(old.models.first?.turns, 42)

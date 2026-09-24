@@ -426,6 +426,16 @@ actor JSONLAggregator: CostLogAggregating {
         let firstPrompts: [String: String]
     }
 
+    /// 7: an old turn is counted with its final counters (see `ingest`), but a v6
+    /// snapshot's `oldDays` and chats took each old turn's first, provisional record
+    /// (issue #10), and most of them come from transcripts Claude Code has deleted since.
+    /// So a v6 snapshot is not rejected wholesale: its `oldDays`, its chats and their
+    /// names are kept, its marks, recent turns and ids are dropped, and the first scan
+    /// rebuilds each day and each chat it reaches from the transcripts that survive
+    /// (`rebuiltDays`, `rebuiltChats`). A day or chat no surviving transcript covers
+    /// keeps its old, low totals — nothing is left to recount it from. Every other older
+    /// version is still rejected wholesale, as its own bump decided.
+    ///
     /// 6: a v5 snapshot carries "consumed" marks for every transcript the old 90-day
     /// mtime window skipped without reading, and a mark is never revisited — the year
     /// of day totals would arrive only as each of those files happened to be
@@ -445,7 +455,11 @@ actor JSONLAggregator: CostLogAggregating {
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 6
+    private static let cacheVersion = 7
+
+    /// The one older version whose day totals and chats a bump keeps (see 7 above).
+    /// Anything else that is not `cacheVersion` is rejected wholesale.
+    private static let foldedDaysCarryOverVersion = 6
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
@@ -507,6 +521,16 @@ actor JSONLAggregator: CostLogAggregating {
     /// `seenMessageIDs` uses, so a later record for a known id can revise it in place.
     /// Rebuilt wherever `recentTurns` is rewritten wholesale — a cache load, a fold.
     private var recentIndexByID: [UInt64: Int] = [:]
+    /// The days the first scan after a version bump has folded into so far; nil at every
+    /// other time. `loadCache` sets it when it keeps an older snapshot's `oldDays` (see
+    /// `cacheVersion` 7) and `refresh` clears it once that scan is over. The first fold
+    /// into a kept day empties the day, so a day a surviving transcript covers is rebuilt
+    /// from the transcripts, and a day none of them covers keeps what it had.
+    private var rebuiltDays: Set<Date>?
+    /// The same for chats, keyed by `sessionId`: the first turn that scan applies to a
+    /// kept chat empties the chat's sums, so a chat whose transcript survives is rebuilt
+    /// from it, and a chat whose transcript is gone keeps what it had.
+    private var rebuiltChats: Set<String>?
     /// One cached day interval covers the common case: log lines arrive in
     /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
     /// to call per turn.
@@ -573,6 +597,11 @@ actor JSONLAggregator: CostLogAggregating {
             dirty = true
         }
         scanAndIngest()
+        // Only the scan right after a bump rebuilds days and chats. Every later fold adds
+        // to its day, the ones `pruneAndFold` makes on this very refresh included: a day
+        // it reaches first has nothing but deleted transcripts behind its kept total.
+        rebuiltDays = nil
+        rebuiltChats = nil
         initialized = true
         pruneAndFold()
         saveIfDue()
@@ -989,6 +1018,10 @@ actor JSONLAggregator: CostLogAggregating {
 
     private func fold(_ t: CLITurn) {
         let day = dayStart(for: t.timestamp)
+        // The first fold into a day in the scan after a version bump: what the old
+        // snapshot said about this day is replaced by what the transcripts say, never
+        // added to.
+        if rebuiltDays?.insert(day).inserted == true { oldDays[day] = nil }
         var agg = oldDays[day] ?? DayAgg()
         agg.cost += t.cost
         agg.tokens += t.totalTokens
@@ -1004,6 +1037,12 @@ actor JSONLAggregator: CostLogAggregating {
     /// was already counted when it was read.
     private func applyToSession(_ turn: CLITurn) {
         guard !turn.sessionID.isEmpty else { return }
+        // The first turn a chat gets in the scan after a version bump: the old
+        // snapshot's sums for this chat are replaced by what the transcripts say, never
+        // added to. Its name is left alone; a surviving `ai-title` overwrites it anyway.
+        if rebuiltChats?.insert(turn.sessionID).inserted == true {
+            sessionAggs[turn.sessionID] = nil
+        }
         var agg = sessionAggs[turn.sessionID]
             ?? SessionAgg(projectSlug: turn.projectSlug, at: turn.timestamp)
         if turn.timestamp < agg.firstAt { agg.firstAt = turn.timestamp }
@@ -1259,7 +1298,9 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// Restores the last run's state, once, before the first scan. Any problem at all —
     /// no file, unreadable, written by another build or for another log root — just
-    /// leaves the aggregator cold, which costs time and never correctness.
+    /// leaves the aggregator cold, which costs time and never correctness. The one
+    /// exception is a snapshot from `foldedDaysCarryOverVersion`, whose day totals and
+    /// chats are kept (see `cacheVersion` 7).
     private func loadCache() {
         guard !initialized, let cacheURL else { return }
         guard let data = try? Data(contentsOf: cacheURL) else { return }
@@ -1270,8 +1311,31 @@ actor JSONLAggregator: CostLogAggregating {
             NSLog("[UT] cost cache unreadable, rebuilding from the logs")
             return
         }
-        guard snapshot.version == Self.cacheVersion, snapshot.root == rootURL.path else {
-            NSLog("[UT] cost cache is for another version or log root, ignoring")
+        guard snapshot.root == rootURL.path else {
+            NSLog("[UT] cost cache is for another log root, ignoring")
+            return
+        }
+        guard snapshot.version == Self.cacheVersion else {
+            guard snapshot.version == Self.foldedDaysCarryOverVersion else {
+                NSLog("[UT] cost cache is for another version, ignoring")
+                return
+            }
+            // The day totals and the chats are what this keeps: most of them come from
+            // transcripts Claude Code has deleted since, and nothing else can recount
+            // them. Marks, recent turns and ids go, so the first scan reads every
+            // transcript again, and `rebuiltDays` / `rebuiltChats` have it replace — not
+            // add to — each day and each chat it reaches.
+            oldDays = Self.dayTotals(from: snapshot.oldDays)
+            sessionAggs = snapshot.sessions
+            titles = snapshot.titles
+            firstPrompts = snapshot.firstPrompts
+            rebuiltDays = []
+            rebuiltChats = []
+            dirty = true
+            NSLog(
+                "[UT] cost cache v%ld: keeping %ld days and %ld chats, re-reading the logs",
+                snapshot.version, oldDays.count, sessionAggs.count
+            )
             return
         }
         fileMarks = snapshot.fileMarks
@@ -1280,16 +1344,7 @@ actor JSONLAggregator: CostLogAggregating {
         // unreachable, and a final record arriving after a relaunch would be dropped
         // instead of replacing its provisional turn.
         rebuildRecentIndex()
-        // Last one wins rather than merged: a day repeated in a hand-edited file is
-        // corruption, and counting it twice would be worse than dropping half of it.
-        var days: [Date: DayAgg] = [:]
-        for entry in snapshot.oldDays {
-            days[entry.day] = DayAgg(
-                cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
-                turns: entry.turns, byFamily: entry.byFamily
-            )
-        }
-        oldDays = days
+        oldDays = Self.dayTotals(from: snapshot.oldDays)
         seenMessageIDs = Set(snapshot.seenMessageIDs)
         sessionAggs = snapshot.sessions
         titles = snapshot.titles
@@ -1298,6 +1353,19 @@ actor JSONLAggregator: CostLogAggregating {
             "[UT] cost cache restored: %ld files, %ld recent turns, %ld chats",
             fileMarks.count, recentTurns.count, sessionAggs.count
         )
+    }
+
+    /// Last one wins rather than merged: a day repeated in a hand-edited file is
+    /// corruption, and counting it twice would be worse than dropping half of it.
+    private static func dayTotals(from entries: [DayEntry]) -> [Date: DayAgg] {
+        var days: [Date: DayAgg] = [:]
+        for entry in entries {
+            days[entry.day] = DayAgg(
+                cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
+                turns: entry.turns, byFamily: entry.byFamily
+            )
+        }
+        return days
     }
 
     /// Nothing to write, or written too recently to be worth the tens of MB again.
