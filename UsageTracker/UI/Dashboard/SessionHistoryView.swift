@@ -710,25 +710,18 @@ private struct SessionRowView: View {
 
     private var session: SessionSummary { row.session }
 
-    /// The expanded sections, built once per (chat, cap state) rather than per
+    /// The expanded sections, built once per (chat content, cap state) rather than per
     /// re-render: `session.agents` reaches 1,235 entries on this Mac, and sorting and
-    /// formatting that inside `body` would run on every poll and every hover.
+    /// formatting that inside `body` would run on every poll and every hover. What
+    /// "chat content" means is `SessionListRule.detailKey`.
     @State private var detail = SessionDetail.empty
     @State private var showsAllAgents = false
     @State private var showsAllDays = false
     @State private var showsAllModels = false
 
-    private struct DetailKey: Hashable {
-        let id: String
-        let expanded: Bool
-        let allAgents: Bool
-        let allDays: Bool
-        let allModels: Bool
-    }
-
-    private var detailKey: DetailKey {
-        DetailKey(
-            id: row.id, expanded: isExpanded,
+    private var detailKey: SessionListRule.DetailKey {
+        SessionListRule.detailKey(
+            session: session, expanded: isExpanded,
             allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels
         )
     }
@@ -764,11 +757,11 @@ private struct SessionRowView: View {
                     session: session, allAgents: allAgents, allDays: allDays, allModels: allModels
                 )
             }.value
-            // See `DerivedCacheGate`. A collapse or a lifted cap restarts this task and
-            // cancels this pass, but the await does not stop for that. `row` and
-            // `isExpanded` are `let`s this pass captured, so for those the cancellation
-            // half of the gate is what drops a stale build; the three caps are `@State`
-            // and read as they are now.
+            // See `DerivedCacheGate`. A collapse, a lifted cap or a newer summary of the
+            // chat restarts this task and cancels this pass, but the await does not stop
+            // for that. `row` and `isExpanded` are `let`s this pass captured, so for those
+            // the cancellation half of the gate is what drops a stale build; the three
+            // caps are `@State` and read as they are now.
             guard DerivedCacheGate.canPublish(
                 started: started, current: detailKey, cancelled: Task.isCancelled
             ) else { return }
