@@ -1438,7 +1438,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// Last one wins rather than merged: a day repeated in a hand-edited file is
     /// corruption, and counting it twice would be worse than dropping half of it. Each
-    /// day is re-keyed to this run's calendar (`rekeyedDay`), so a cache saved in
+    /// day is re-keyed to this run's calendar (`DayRekey.midpoint`), so a cache saved in
     /// another time zone keeps its dates.
     /// Two saved entries can name one civil date: a day folded before and after a
     /// time-zone change in the same run carries two midnights. They add up; a second
@@ -1446,7 +1446,7 @@ actor JSONLAggregator: CostLogAggregating {
     static func dayTotals(from entries: [DayEntry], calendar: Calendar) -> [Date: DayAgg] {
         var days: [Date: DayAgg] = [:]
         for entry in entries {
-            let key = rekeyedDay(entry.day, calendar: calendar)
+            let key = DayRekey.midpoint(entry.day, calendar: calendar)
             var agg = days[key] ?? DayAgg()
             agg.cost += entry.cost
             agg.tokens += entry.tokens
@@ -1458,18 +1458,14 @@ actor JSONLAggregator: CostLogAggregating {
         return days
     }
 
-    /// A saved day, re-keyed to `calendar`: the start, in `calendar`, of the date the
-    /// saved midnight named. A day is saved as the midnight of the zone it was binned in,
-    /// and the midday after it is still that date in any zone less than twelve hours
-    /// away — so its start here is the key the Activity grid, the daily rows and the
-    /// History ranges ask for. A day saved in this zone maps onto itself.
+    /// Forwards to `DayRekey.midpoint`, where the rule lives now.
     static func rekeyedDay(_ saved: Date, calendar: Calendar) -> Date {
-        calendar.startOfDay(for: saved.addingTimeInterval(12 * 3600))
+        DayRekey.midpoint(saved, calendar: calendar)
     }
 
-    /// Every chat's day totals re-keyed the same way (`rekeyedDay`).
+    /// Every chat's day totals re-keyed the same way (`DayRekey.midpoint`).
     private static func rekeyed(_ sessions: [String: SessionAgg], calendar: Calendar) -> [String: SessionAgg] {
-        sessions.mapValues { agg in agg.rekeyingDays { rekeyedDay($0, calendar: calendar) } }
+        sessions.mapValues { agg in agg.rekeyingDays { DayRekey.midpoint($0, calendar: calendar) } }
     }
 
     /// Nothing to write, or written too recently to be worth the tens of MB again.
