@@ -256,4 +256,121 @@ final class JSONLChatRebinTests: XCTestCase {
         let lateDay = await aggregator.breakdown().daily.first { $0.day == utc.startOfDay(for: lateAt) }
         XCTAssertEqual(lateDay?.turns, 1, "Activity counts the folded turn once")
     }
+
+    // MARK: - Told the zone moved
+
+    /// § Packages 2 (i). Noon UTC is the same date at UTC+3 but not the same midnight:
+    /// the single-day range History's 24h asks for missed the chat until a relaunch.
+    func testAChatReadInUTCIsFoundOnItsDateAfterTheZoneMovesToUTCPlus3() async throws {
+        let turnAt = at(daysAgo: 2, hour: 12)
+        try writeTranscript([record(id: "msg_01RebinNoon00000000000", at: turnAt)])
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+
+        await aggregator.timeZoneDidChange(calendar: plus3)
+
+        let day = plus3.startOfDay(for: turnAt)
+        let chats = await aggregator.sessions(from: day, to: day)
+        XCTAssertEqual(chats.map(\.id), [sessionID])
+        XCTAssertEqual(chats.first?.days.map(\.day), [day])
+        XCTAssertEqual(chats.first?.turns, 1)
+    }
+
+    /// 22:30 UTC is the next date at UTC+3. After the change the chat's day is the one
+    /// Activity bins the same turn into.
+    func testALateEveningTurnMovesToActivitysDateWhenTheZoneMovesEast() async throws {
+        let turnAt = at(daysAgo: 3, hour: 22, minute: 30)
+        try writeTranscript([record(id: "msg_01RebinLate00000000000", at: turnAt)])
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+
+        await aggregator.timeZoneDidChange(calendar: plus3)
+
+        let activityDays = await aggregator.breakdown().daily.map(\.day)
+        XCTAssertEqual(activityDays, [plus3.startOfDay(for: turnAt)], "precondition: Activity bins the turn at UTC+3")
+        let chats = await aggregator.sessions(from: turnAt, to: turnAt)
+        XCTAssertEqual(chats.first?.days.map(\.day), activityDays)
+    }
+
+    /// The new calendar stays: a turn read after the change joins the day the re-bin
+    /// filed instead of opening a second one under the old zone's midnight.
+    func testATurnReadAfterTheChangeJoinsItsRebinnedDay() async throws {
+        let first = at(daysAgo: 2, hour: 12)
+        let second = at(daysAgo: 2, hour: 13)
+        try writeTranscript([record(id: "msg_01RebinJoinA0000000000", at: first)])
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+        await aggregator.timeZoneDidChange(calendar: plus3)
+
+        try writeTranscript([
+            record(id: "msg_01RebinJoinA0000000000", at: first),
+            record(id: "msg_01RebinJoinB0000000000", at: second),
+        ])
+        await aggregator.refresh()
+
+        let day = plus3.startOfDay(for: first)
+        let chats = await aggregator.sessions(from: day, to: day)
+        XCTAssertEqual(chats.first?.days.map(\.day), [day])
+        XCTAssertEqual(chats.first?.days.map(\.turns), [2])
+    }
+
+    /// A change that moves nothing leaves every chat exactly as it was, folded day
+    /// included — which is also what every launch in the zone the cache was saved in does.
+    func testAChangeThatMovesNothingLeavesEveryChatAsItWas() async throws {
+        try writeTranscript([
+            record(id: "msg_01RebinKeepOld000000000", at: at(daysAgo: 40, hour: 12)),
+            record(id: "msg_01RebinKeepMid000000000", at: at(daysAgo: 2, hour: 12)),
+            record(id: "msg_01RebinKeepNew000000000", at: at(daysAgo: 1, hour: 22, minute: 30)),
+        ])
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+        let from = at(daysAgo: 41, hour: 0)
+        let before = await aggregator.sessions(from: from, to: now)
+        XCTAssertEqual(before.first?.days.count, 3, "precondition: a folded day and two recent ones")
+
+        await aggregator.timeZoneDidChange(calendar: utc)
+
+        let after = await aggregator.sessions(from: from, to: now)
+        XCTAssertEqual(after, before)
+    }
+
+    /// § Packages 2 (iv). Turns on both sides of the fold — 01:00 UTC 32 days back is
+    /// folded and 22:30 UTC 30 days back is recent whatever the hour, and both are within
+    /// three hours of a midnight UTC±3 disagree on. The chat's turns and tokens stay what
+    /// they were across UTC+3, UTC−3, and a fold of the 30-day turn after them (through
+    /// `foldTurns(olderThan:)`, a cutoff one second past it): each turn is in one tier.
+    func testAChatKeepsItsTotalsAcrossZoneChangesAndAFold() async throws {
+        let lateAt = at(daysAgo: 30, hour: 22, minute: 30)
+        try writeTranscript([
+            record(id: "msg_01KeepFolded00000000000", at: at(daysAgo: 32, hour: 1)),
+            record(id: "msg_01KeepLate000000000000", at: lateAt),
+            record(id: "msg_01KeepRecent0000000000", at: at(daysAgo: 2, hour: 12)),
+        ])
+        let aggregator = JSONLAggregator(rootURL: root, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+        let lateWhileRecent = await aggregator.usage(
+            from: lateAt.addingTimeInterval(-1), to: lateAt.addingTimeInterval(1)
+        )
+        XCTAssertEqual(lateWhileRecent.turns, 1, "precondition: the 30-day turn is among the recent turns")
+        let before = try await totals(aggregator)
+        XCTAssertEqual(before.turns, 3)
+
+        await aggregator.timeZoneDidChange(calendar: plus3)
+        let afterEast = try await totals(aggregator)
+        await aggregator.timeZoneDidChange(calendar: minus3)
+        let afterWest = try await totals(aggregator)
+
+        await aggregator.foldTurns(olderThan: lateAt.addingTimeInterval(1))
+        let lateAfterFold = await aggregator.usage(
+            from: lateAt.addingTimeInterval(-1), to: lateAt.addingTimeInterval(1)
+        )
+        XCTAssertEqual(lateAfterFold.turns, 0, "the 30-day turn has left the recent turns")
+        let afterFold = try await totals(aggregator)
+
+        for (label, t) in [("UTC+3", afterEast), ("UTC−3", afterWest), ("the fold", afterFold)] {
+            XCTAssertEqual(t.turns, before.turns, label)
+            XCTAssertEqual(t.tokens, before.tokens, label)
+            XCTAssertEqual(t.mainTokens, before.mainTokens, label)
+        }
+    }
 }

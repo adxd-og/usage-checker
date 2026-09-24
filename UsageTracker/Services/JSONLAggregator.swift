@@ -599,10 +599,11 @@ actor JSONLAggregator: CostLogAggregating {
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
-    /// daily rows', and the range `sessions(from:to:)` is asked about. One calendar so
-    /// the bins and the query can never disagree. The system's own by default,
-    /// following a time-zone change while the app runs.
-    private let calendar: Calendar
+    /// daily rows', the chats', and the range `sessions(from:to:)` is asked about. One
+    /// calendar so the bins and the query can never disagree. The system's own by
+    /// default, following a time-zone change while the app runs; replaced, and the
+    /// chats re-binned, by `timeZoneDidChange(calendar:)`.
+    private var calendar: Calendar
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
     private let cacheURL: URL?
     /// Per file, what we already consumed and what the file looked like when we did.
@@ -1035,6 +1036,16 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     // MARK: - Day tiers
+
+    /// The zone moved: `calendar` bins every day from now on. The bin cache forgets its
+    /// day and every chat is re-binned (`rebinChats`), so a range asked in the new zone
+    /// finds the chats it holds (issue #13). The system's notice passes this actor's
+    /// own calendar; a test passes a fixed one.
+    func timeZoneDidChange(calendar: Calendar) {
+        self.calendar = calendar
+        dayBins.reset()
+        rebinChats()
+    }
 
     /// Every chat's days re-binned into this actor's calendar (issue #13): the folded
     /// tier re-keyed by `DayRekey.midpoint`, the recent tier rebuilt from `recentTurns`.
