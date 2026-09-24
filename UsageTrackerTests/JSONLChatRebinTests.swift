@@ -373,4 +373,49 @@ final class JSONLChatRebinTests: XCTestCase {
             XCTAssertEqual(t.mainTokens, before.mainTokens, label)
         }
     }
+
+    // MARK: - Posted by the system
+
+    /// § Packages 2 (vii), § Design "Injection". The notice posted on the injected
+    /// center reaches the actor once — `rebinCount` shows it under a fixed calendar,
+    /// where no day moves — and the re-bin marks the chats for saving: a flush writes
+    /// the cache file the test deleted.
+    func testASystemZoneChangePostedWhileTheAppRunsReBinsTheChatsAndMarksThemForSaving() async throws {
+        try writeTranscript([record(id: "msg_01RebinPost00000000000", at: at(daysAgo: 2, hour: 12))])
+        let center = NotificationCenter()
+        let aggregator = JSONLAggregator(
+            rootURL: root, cacheURL: cacheURL, saveInterval: 0, calendar: utc, center: center
+        )
+        await aggregator.refresh()
+        let beforeNotice = await aggregator.rebinCount
+        XCTAssertEqual(beforeNotice, 0, "precondition: no cache was loaded, nothing re-binned yet")
+        try FileManager.default.removeItem(at: cacheURL)
+        await aggregator.flushCache()
+        XCTAssertFalse(
+            FileManager.default.fileExists(atPath: cacheURL.path), "precondition: nothing waits to be saved"
+        )
+
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+
+        // The hop is a task on the actor; it gets up to two seconds.
+        var count = 0
+        for _ in 0..<200 where count == 0 {
+            count = await aggregator.rebinCount
+            if count == 0 { try await Task.sleep(for: .milliseconds(10)) }
+        }
+        XCTAssertEqual(count, 1, "the notice reached the actor once")
+        await aggregator.flushCache()
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cacheURL.path), "the re-bin marked the chats for saving")
+    }
+
+    func testTheZoneObserverDoesNotKeepAReplacedAggregatorAlive() {
+        let center = NotificationCenter()
+        var aggregator: JSONLAggregator? = JSONLAggregator(
+            rootURL: root, cacheURL: nil, calendar: utc, center: center
+        )
+        weak let released = aggregator
+        aggregator = nil
+        XCTAssertNil(released)
+        center.post(name: .NSSystemTimeZoneDidChange, object: nil)
+    }
 }

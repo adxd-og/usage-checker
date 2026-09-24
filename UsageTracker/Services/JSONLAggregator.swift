@@ -669,11 +669,16 @@ actor JSONLAggregator: CostLogAggregating {
     /// kept chat empties the chat's sums, so a chat whose transcript survives is rebuilt
     /// from it, and a chat whose transcript is gone keeps what it had.
     private var rebuiltChats: Set<String>?
-    /// The day the last lookup fell in, dropped on a system time-zone change.
-    private let dayBins = DayBinCache()
+    /// The day the last lookup fell in, dropped on a system time-zone change — and the
+    /// one listener for that change: it passes the notice on to this actor (`init`).
+    private let dayBins: DayBinCache
     /// How many transcripts the last scan actually opened. Zero is the normal answer
     /// for a poll with nothing new, and for a relaunch off a warm cache.
     private(set) var filesParsedInLastScan = 0
+    /// How many times the chats have been re-binned (`rebinChats`): once per cache load
+    /// and once per time-zone change. Under a fixed calendar a re-bin moves no day, so
+    /// this is how a test sees the system's notice arrive.
+    private(set) var rebinCount = 0
     /// The `ModelPricing.generation` the guessed turns in `recentTurns` were last priced
     /// at. nil until the first refresh, so that one also re-prices a restored cache.
     private var pricedGeneration: Int?
@@ -707,24 +712,34 @@ actor JSONLAggregator: CostLogAggregating {
     /// directory instead of the real `~/.claude/projects` and Application Support.
     /// A nil `cacheURL` turns persistence off. The calendar is injectable too: it is
     /// the one that bins turns into days and the one `sessions(from:to:)` reads a
-    /// range with, so a test can pin both to the same time zone.
+    /// range with, so a test can pin both to the same time zone. `center` is where the
+    /// system's time-zone change is heard: the app's default one; a test passes its own
+    /// and posts on it.
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/projects", isDirectory: true),
         cacheURL: URL? = JSONLAggregator.defaultCacheURL,
         saveInterval: TimeInterval = 300,
-        calendar: Calendar = .autoupdatingCurrent
+        calendar: Calendar = .autoupdatingCurrent,
+        center: NotificationCenter = .default
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
         self.saveInterval = saveInterval
         self.calendar = calendar
+        self.dayBins = DayBinCache(center: center)
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         self.isoFormatter = f
         let plain = ISO8601DateFormatter()
         plain.formatOptions = [.withInternetDateTime]
         self.isoFormatterNoFraction = plain
+        // Last, once every property is set: the handler holds this actor weakly and
+        // hops onto it after `dayBins` has already dropped its day.
+        dayBins.onZoneChange { [weak self] in
+            guard let self else { return }
+            Task { await self.followSystemTimeZone() }
+        }
     }
 
     func refresh() async {
@@ -1047,6 +1062,13 @@ actor JSONLAggregator: CostLogAggregating {
         rebinChats()
     }
 
+    /// The system's zone moved while the app runs, and `DayBinCache` has dropped its
+    /// day and passed the notice on. The calendar is this actor's own:
+    /// `.autoupdatingCurrent` already reads the new zone; a fixed one stays put.
+    private func followSystemTimeZone() {
+        timeZoneDidChange(calendar: calendar)
+    }
+
     /// Every chat's days re-binned into this actor's calendar (issue #13): the folded
     /// tier re-keyed by `DayRekey.midpoint`, the recent tier rebuilt from `recentTurns`.
     /// A turn is in one tier, so a re-bin neither counts a turn twice nor loses one, and
@@ -1054,6 +1076,7 @@ actor JSONLAggregator: CostLogAggregating {
     /// a cache load and on a time-zone change. Marks the cache for saving: the keys it
     /// holds may have moved.
     func rebinChats() {
+        rebinCount += 1
         guard !sessionAggs.isEmpty else { return }
         let calendar = self.calendar
         sessionAggs = sessionAggs.mapValues { agg in
