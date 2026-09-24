@@ -852,8 +852,21 @@ actor JSONLAggregator: CostLogAggregating {
     /// usage (`output_tokens: 2`, no thinking, `stop_reason: null`) and later ones the
     /// final counts. Keeping the first and dropping the rest is what the dedupe used to
     /// do, and it threw away most of the output on this machine's own logs.
+    ///
+    /// A turn older than `recentWindow` goes into a day sum, and a day sum has no slot a
+    /// later record could revise — so it is not folded on arrival (issue #10). It waits
+    /// in `pendingOld`, takes a later record's counters by `laterReading`'s rule, and
+    /// once the last record of this call is read it is counted, in its chat and in its
+    /// day, once, with the best counters it reached. One call is one transcript's new
+    /// bytes, and the lines of one message id are written to the same transcript
+    /// seconds apart. A forked chat replaying an old id in another file is still
+    /// dropped, as it always was.
     private func ingest(_ records: [ParsedRecord]) {
         let recentCutoff = Date().addingTimeInterval(-recentWindow)
+        var pendingOld: [UInt64: CLITurn] = [:]
+        // Arrival order, so a chat takes its old turns in the order the transcript wrote
+        // them; dictionary order changes from one launch to the next.
+        var pendingOrder: [UInt64] = []
         for record in records {
             switch record {
             case .title(let sessionID, let title):
@@ -876,19 +889,31 @@ actor JSONLAggregator: CostLogAggregating {
                 // better numbers; anything else about it (time, model, project) is settled
                 // by the first record.
                 guard seenMessageIDs.insert(hash).inserted else {
-                    replaceIfLater(turn, hash: hash)
+                    if let pending = pendingOld[hash] {
+                        if let later = Self.laterReading(turn, over: pending) {
+                            pendingOld[hash] = later
+                        }
+                    } else {
+                        replaceIfLater(turn, hash: hash)
+                    }
                     continue
                 }
                 // Synthetic / internal Claude Code events aren't user-facing models.
                 if ModelPricing.isSynthetic(turn.model) { continue }
-                applyToSession(turn)
                 if turn.timestamp < recentCutoff {
-                    fold(turn)
+                    pendingOld[hash] = turn
+                    pendingOrder.append(hash)
                 } else {
+                    applyToSession(turn)
                     recentIndexByID[hash] = recentTurns.count
                     recentTurns.append(turn)
                 }
             }
+        }
+        for hash in pendingOrder {
+            guard let turn = pendingOld[hash] else { continue }
+            applyToSession(turn)
+            fold(turn)
         }
     }
 
@@ -919,9 +944,11 @@ actor JSONLAggregator: CostLogAggregating {
     /// Adopts a later record's counters for a recent turn we already hold, by
     /// `laterReading`'s rule.
     ///
-    /// Ids already folded into `oldDays` — turns older than `recentWindow` — are not in
-    /// the index and are never revised: the fold is a day-level sum with no per-turn slot
-    /// left to replace. Those records are weeks old and have long since stopped growing.
+    /// Ids already folded into `oldDays` are not in the index and are never revised: the
+    /// fold is a day-level sum with no per-turn slot left to replace. `ingest` holds an
+    /// old turn back until its transcript's last record for exactly that reason, so a
+    /// record that still reaches here for a folded id comes from another file — a forked
+    /// chat replaying it — and is dropped, as it always was.
     private func replaceIfLater(_ turn: CLITurn, hash: UInt64) {
         guard let index = recentIndexByID[hash], index < recentTurns.count else { return }
         let stored = recentTurns[index]
@@ -971,10 +998,10 @@ actor JSONLAggregator: CostLogAggregating {
         oldDays[day] = agg
     }
 
-    /// A chat's sums take the turn once, when it first arrives — before the branch that
-    /// decides whether it joins `recentTurns` or goes straight into `oldDays`. That is
-    /// why the fold has nothing to do here: a turn ageing out of `recentTurns` was
-    /// already counted when it was read.
+    /// A chat's sums take the turn once: a recent turn when it arrives, an old one when
+    /// its transcript's records are all read and its counters are final (see `ingest`).
+    /// That is why the fold has nothing to do here: a turn ageing out of `recentTurns`
+    /// was already counted when it was read.
     private func applyToSession(_ turn: CLITurn) {
         guard !turn.sessionID.isEmpty else { return }
         var agg = sessionAggs[turn.sessionID]
