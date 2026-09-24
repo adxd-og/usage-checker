@@ -522,6 +522,40 @@ actor JSONLAggregator: CostLogAggregating {
             return copy
         }
 
+        /// A v7 chat in the v8 shape (issue #13). A v7 snapshot saved a chat's days with
+        /// both tiers in one, and they decode as `foldedDays`; `turns` — this chat's turns
+        /// in the snapshot's `recentTurns` — are taken back out, so the folded tier keeps
+        /// exactly the turns `recentTurns` no longer holds.
+        ///
+        /// Each turn leaves the saved day it was binned in: the one whose key `k` has
+        /// `k <= timestamp < k + 24 h` (the keys are the saving zone's midnights; the
+        /// latest such key when two zones' keys overlap). It gives back one turn, its
+        /// tokens, and its tokens from `mainTokens` when it is the main thread's; a day
+        /// left with no turn is removed. Model rows and agents are the chat's whole split
+        /// and stay. nil when the chat does not add up: a turn no saved day covers, or
+        /// more turns than a day holds.
+        func subtractingRecentTurns(_ turns: [CLITurn]) -> SessionAgg? {
+            var copy = self
+            for turn in turns {
+                var covering: Int?
+                for (index, saved) in copy.foldedDays.enumerated()
+                where saved.day <= turn.timestamp && turn.timestamp < saved.day.addingTimeInterval(86_400) {
+                    if let best = covering, copy.foldedDays[best].day >= saved.day { continue }
+                    covering = index
+                }
+                guard let index = covering, copy.foldedDays[index].turns >= 1 else { return nil }
+                copy.foldedDays[index].turns -= 1
+                copy.foldedDays[index].tokens = JSONLAggregator.minus(copy.foldedDays[index].tokens, turn.tokens)
+                if turn.agentID == nil {
+                    copy.foldedDays[index].mainTokens = JSONLAggregator.minus(
+                        copy.foldedDays[index].mainTokens, turn.tokens
+                    )
+                }
+                if copy.foldedDays[index].turns == 0 { copy.foldedDays.remove(at: index) }
+            }
+            return copy
+        }
+
         /// `entry` added to the entry for its day, found from the end, or appended.
         private static func merge(_ entry: DayTotals, into days: inout [DayTotals]) {
             if let index = days.lastIndex(where: { $0.day == entry.day }) {
