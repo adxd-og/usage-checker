@@ -6,6 +6,79 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.7.0</title>
+      <pubDate>Thu, 24 Sep 2026 17:59:50 +0300</pubDate>
+      <sparkle:version>48</sparkle:version>
+      <sparkle:shortVersionString>2.7.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Last-known numbers</h3>
+<ul>
+<li><b>The status line says when a number is last known.</b> A provider that stopped reporting reads <code>◐ 95% (as of 14:05)</code>, and its "resets …" goes once that time has passed instead of saying "resets now" for hours.</li>
+<li><b><code>get_usage</code> paces against live windows.</b> A last-known window no longer tells an agent to wait for a reset; with nothing live, the advice gives the last reading and its time and no verdict.</li>
+<li><b>No alerts from last-known numbers.</b> Threshold, pace and reset alerts fire only for providers that are reporting now.</li>
+<li><b>A switched-off provider stays off.</b> Turning off the only provider with windows no longer brings its old numbers back on every refresh. When every provider fails, the popover says it can't refresh and dates the numbers.</li>
+<li><b>Pay-as-you-go spend survives a failed refresh and a relaunch.</b> The week's local spend stays in the menu bar, the tile and the popover, dimmed like other last-known numbers.</li>
+<li><b>Codex keeps its last numbers when it reports no limits.</b> An account that had windows and suddenly answers without them shows the old numbers dimmed under "Codex reported no limits"; Forget last known numbers clears them if the plan really changed.</li>
+<li><b>The floating panel dims last-known numbers,</b> hides their pace marker and shows the provider's state chip.</li>
+<li><b>The widget no longer shows sample numbers.</b> Before Omelette has written anything it says "Open Omelette"; it now learns when a provider is forgotten or nothing is reporting, and shows a pay-as-you-go account's spend.</li>
+</ul>
+<h3>Costs (API list-price equivalents)</h3>
+<ul>
+<li><b>Turns read before the price table knew their model are priced once it does.</b> Codex and Grok turns counted $0 until the next launch; Claude turns priced at a family guess kept the guess across relaunches. The last 31 days, and the History chats inside them, are priced again whenever the table changes. Older days keep the dollars they were read with.</li>
+<li>A failed models.dev fetch is tried again after 15 minutes instead of the next day.</li>
+<li>A Codex rollout that shrinks, or has a shorter copy in the archive, no longer counts the responses it names twice. A rollout that carries only running counters and no response ids still is; the code says so.</li>
+</ul>
+<h3>Time zones</h3>
+<ul>
+<li><b>"Today" and the day totals follow a time-zone change without a relaunch</b>, for Claude, Codex and Grok.</li>
+<li>Activity squares older than a month no longer go blank after a time-zone change and a relaunch, and History chats stay on their own dates.</li>
+</ul>
+<h3>Quota history</h3>
+<ul>
+<li>A history log that cannot be written to is left as it is, instead of being replaced by the newest record alone.</li>
+<li>The old <code>history.json</code> is deleted only after its records are safely in the new log.</li>
+</ul>
+<h3>Status file</h3>
+<ul>
+<li>A session that ends leaves <code>status.json</code> (status line, <code>omelette status</code>, <code>get_agents</code>) at once instead of at the next poll.</li>
+</ul>
+<h3>Agents</h3>
+<ul>
+<li><b>Codex MCP setup finds its own table however it is spelled.</b> A header with a comment, a quoted name or spaces in the brackets, or a comment after the command (as in the README's example), read as "not installed", and Enable added a second table that stopped Codex from starting.</li>
+<li><b>A finished Codex session stays finished.</b> A poll in the half minute after a turn ends no longer marks it working again, and a "working" guessed from the Codex log is undone once the log is quiet.</li>
+<li><b>A resumed Codex thread shows up without hooks.</b> The log scan reads every day folder of the current month, not only the most recent ones.</li>
+</ul>
+<h3>Costs</h3>
+<ul>
+<li><b>Local dollar figures say they are API-equivalent where they were bare:</b> the All tab's cost tile and its VoiceOver label, <code>omelette status</code> ("(API-equivalent)"), the status line (<code>≈$</code>), <code>get_sessions</code>, Insights, and the Activity cost cards and tooltips. Pay-as-you-go accounts, billed per token, stay unlabelled.</li>
+</ul>
+<h3>Fixed — Dashboard</h3>
+<ul>
+<li><b>A slow provider no longer paints over the one you switched to.</b> Activity, Insights, the quota History and an open chat's breakdown drop a calculation that finishes after you changed provider, range or chat.</li>
+<li><b>An open chat's breakdown keeps up with the chat.</b> Its by-model, sub-agent and by-day tables refresh with the row's totals instead of after a close and reopen.</li>
+<li><b>The History header fits the smallest window.</b> A long subtitle wraps instead of pushing the tab past the edge, and the API-equivalent note under the Cost chart is a line of its own rather than the part that was cut off.</li>
+<li><b>The Tokens table fits beside a wide sidebar.</b> Below 580 pt the two cache columns merge into one "Cache" column, so Cost is never clipped.</li>
+<li><b>Chats expand from the keyboard.</b> A chat's name is a button: Tab to it and press Space. VoiceOver can press it too.</li>
+<li><b>Provider tabs show keyboard focus</b> with an accent ring.</li>
+</ul>
+<h3>Fixed — Floating panel</h3>
+<ul>
+<li><b>Pay-as-you-go spend instead of "haven't used".</b> An account with no limit window shows "Last 7 days $X"; a signed-out or stopped provider shows its own message.</li>
+</ul>
+<h3>Fixed — Settings</h3>
+<ul>
+<li><b>Updates is current.</b> "Last check" and the "Check for updates now" button follow Sparkle at once instead of waiting for the next poll.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.7.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.7.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="EBrfUD8Fy5QF6Kdey/8ZX1ryf0YSac0QETNtNAMAZqfX1f0u1FDWDpxReH0/dPm7bmIyYqGbRYJo2mEDPpbVCQ=="
+        length="24428564"/>
+    </item>
+    <item>
       <title>Omelette v2.6.5</title>
       <pubDate>Thu, 24 Sep 2026 14:34:40 +0300</pubDate>
       <sparkle:version>47</sparkle:version>
