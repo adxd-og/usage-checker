@@ -135,7 +135,10 @@ final class AppState: ObservableObject {
                     weekCost: pair.value.weekCost,
                     state: .notRunning,
                     stateMessage: nil,
-                    fetchedAt: pair.value.fetchedAt
+                    fetchedAt: pair.value.fetchedAt,
+                    // Stored numbers are an earlier reading by definition; the flag is
+                    // what lets a spend-only entry dim like one with windows.
+                    isCarriedOver: true
                 )
             }
         return UsageSnapshot(
@@ -270,7 +273,7 @@ final class AppState: ObservableObject {
         snapshot = next
 
         // The disk copy, for the next launch and for retention on a later poll. Only
-        // ok, non-empty readings are written; the store skips unchanged numbers.
+        // ok readings with windows or spend are written; the store skips unchanged numbers.
         await LastKnownStore.shared.remember(snapshot.services)
         lastKnown = await LastKnownStore.shared.load()
 
@@ -478,10 +481,15 @@ final class AppState: ObservableObject {
         let services = next.services.map { service -> ServiceSnapshot in
             guard service.state != .ok, service.buckets.isEmpty else { return service }
             let source: LastKnownService? = {
-                if let prev = previous.services.first(where: { $0.id == service.id }), !prev.buckets.isEmpty {
+                // A previous reading counts when it has content — windows, or a
+                // pay-as-you-go account's dollars — and was a reading: healthy, or itself
+                // carried over. A signed-out Grok's live spend is neither, and taking it
+                // as a source would freeze that spend at its first value.
+                if let prev = previous.services.first(where: { $0.id == service.id }),
+                   prev.hasContent, prev.state == .ok || prev.isRetained {
                     return LastKnownService(from: prev, order: 0)
                 }
-                guard let entry = stored[service.id], !entry.buckets.isEmpty else { return nil }
+                guard let entry = stored[service.id], entry.hasContent else { return nil }
                 return entry
             }()
             guard let source else { return service }
@@ -497,7 +505,8 @@ final class AppState: ObservableObject {
                 state: service.state,
                 stateMessage: service.stateMessage,
                 fetchedAt: source.fetchedAt,
-                retryAfter: service.retryAfter
+                retryAfter: service.retryAfter,
+                isCarriedOver: true
             )
         }
         return UsageSnapshot(

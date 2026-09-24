@@ -28,6 +28,10 @@ struct LastKnownService: Codable, Equatable, Sendable {
         self.order = order
     }
 
+    /// A reading worth keeping: windows, or a windowless account's dollars — the same
+    /// test as `ServiceSnapshot.hasContent`.
+    var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
+
     /// The throttle's comparison: everything the file holds except `fetchedAt`,
     /// which moves on every poll and is not by itself a reason to rewrite. The
     /// labels are in here too — a renamed provider, a new icon or a signed-in
@@ -100,7 +104,7 @@ actor LastKnownStore {
         var current = load()
         var changed = false
         for (index, service) in services.enumerated() {
-            guard service.state == .ok, !service.buckets.isEmpty else { continue }
+            guard service.state == .ok, service.hasContent else { continue }
             let entry = LastKnownService(from: service, order: index)
             if let existing = current[service.id], existing.hasSameValues(as: entry) { continue }
             current[service.id] = entry

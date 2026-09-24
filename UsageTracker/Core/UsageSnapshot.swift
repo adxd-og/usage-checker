@@ -81,6 +81,17 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     let fetchedAt: Date
     /// After a 429, how many seconds to wait before polling again. nil = no backoff.
     var retryAfter: TimeInterval? = nil
+    /// Set by `AppState.retainingLastGoodServices` and `AppState.seededSnapshot` on a
+    /// service whose numbers were carried over from an earlier reading rather than
+    /// reported by this poll. Windows need no such flag — a failing provider never
+    /// reports one — but dollars do: Grok keeps its live local spend on a failed poll
+    /// (`GrokProvider`), so a failed service with dollars and no windows is retained only
+    /// when this says so.
+    var isCarriedOver: Bool = false
+
+    /// Something to draw: a window, or — for a windowless pay-as-you-go account — the
+    /// week's dollars. What retention and `LastKnownStore` count as a reading.
+    var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
 
     /// The number the menu bar shows: the worst *core* constraint. Promotional
     /// pools don't count (free bonuses shouldn't scream "almost at the limit"),
@@ -108,7 +119,9 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// poll — or, after a relaunch, `LastKnownStore` — kept the last good reading.
     /// One predicate for every surface that draws a service, so the tile, the
     /// popover rows, the dashboard and the menu bar can't disagree about it.
-    var isRetained: Bool { state != .ok && !buckets.isEmpty }
+    /// A pay-as-you-go account's carried-over spend counts as well, so it dims like
+    /// any other last-known number.
+    var isRetained: Bool { state != .ok && (!buckets.isEmpty || isCarriedOver) }
 
     /// When the retained numbers were last true. nil for a live service — it has
     /// nothing to stamp.
