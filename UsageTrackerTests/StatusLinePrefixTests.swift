@@ -122,7 +122,7 @@ final class StatusLinePrefixTests: XCTestCase {
                 input: StatusLineInput(model: "Fable", contextUsedPercent: 42.4),
                 colour: false
             ),
-            "Fable [####------] 42% · ◐ 61% · resets in 1h 28m · $386.64 today · ⚑ 1"
+            "Fable [####------] 42% · ◐ 61% · resets in 1h 28m · ≈$386.64 today · ⚑ 1"
         )
     }
 

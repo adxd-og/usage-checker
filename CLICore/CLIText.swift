@@ -38,6 +38,10 @@ enum CLIText {
     model and a bar of how full its context window is, coloured for a status bar;
     `--no-color` prints the same line without the escape codes.
 
+    Dollars are what the same tokens would cost at API list prices. On a
+    subscription that is not the bill, so `status` marks them "(API-equivalent)"
+    and `statusline` puts `≈` in front of them.
+
     Reads ~/Library/Application Support/UsageTracker/status.json, which Omelette
     writes after every poll. It never starts the app: with Omelette closed, `status`
     exits 2 and `statusline` prints the session's half of the line, or an empty one.

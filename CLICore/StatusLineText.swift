@@ -2,7 +2,7 @@ import Foundation
 
 /// `omelette statusline` — one line for Claude Code's status bar, and never more.
 ///
-/// `Fable [####------] 42% · ◐ 61% · resets in 1h 28m · $386.64 today · ⚑ 1` — or
+/// `Fable [####------] 42% · ◐ 61% · resets in 1h 28m · ≈$386.64 today · ⚑ 1` — or
 /// `… · ◐ 39% left · …` when the app is showing what is left. The prefix is the
 /// session Claude Code piped in (`StatusLineInput`), everything after it is the
 /// account. Parts with nothing to say are dropped rather than shown empty, and a
@@ -63,8 +63,8 @@ enum StatusLineText {
                 parts.append("resets \(reset)")
             }
         }
-        if let today = service?.todayCost, today > 0 {
-            parts.append(String(format: "$%.2f today", today))
+        if let cost = service.flatMap(todayCostText) {
+            parts.append(cost)
         }
         if snapshot.agents.needsYou > 0 {
             parts.append("\(flag) \(snapshot.agents.needsYou)")
@@ -114,5 +114,22 @@ enum StatusLineText {
         let core = service.windows.filter { !$0.isPromotional && $0.kind != "modelSpecific" }
         let pool = core.isEmpty ? service.windows.filter { !$0.isPromotional } : core
         return (pool.isEmpty ? service.windows : pool).max(by: { $0.percent < $1.percent })
+    }
+
+    // MARK: - Dollars
+
+    /// In front of today's dollars when they are an API-list-price equivalent of local
+    /// CLI usage rather than a bill. One character: this bar has no room for
+    /// `CLIText.apiEquivalentSuffix`, and `omelette --help` says what it means.
+    static let apiEquivalentMarker = "≈"
+
+    /// `$386.64 today`, or `≈$386.64 today` for a subscription, whose dollars are what
+    /// the same tokens would cost through the API, not what it bills. nil when nothing
+    /// was spent. Its own function so the window half of the line can change without
+    /// touching it.
+    static func todayCostText(_ service: StatusSnapshot.Service) -> String? {
+        guard let today = service.todayCost, today > 0 else { return nil }
+        let amount = String(format: "$%.2f today", today)
+        return service.apiEquivalent == true ? apiEquivalentMarker + amount : amount
     }
 }
