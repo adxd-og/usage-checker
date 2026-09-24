@@ -273,8 +273,8 @@ final class JSONLChatRebinVerificationTests: XCTestCase {
     // MARK: - The v6 carry-over
 
     /// A snapshot as the pre-2.7.0 build (cache version 6) left a chat whose transcript
-    /// is gone: `foldedDaysCarryOverVersions` names 6 and 7 both, so a v6 chat's days
-    /// must survive the v8 carry-over, a save, and a reload exactly as a v7 chat's do.
+    /// is gone: `foldedDaysCarryOverVersions` names 6, so a v6 chat's days must survive
+    /// the v8 carry-over, a save, and a reload exactly as a converted v7 chat's do.
     private func orphanV6Snapshot(day: Date, turns: Int) -> Data {
         let tokens: [String: Any] = [
             "input": 5_555, "output": 0, "cacheRead": 0,
