@@ -4,7 +4,9 @@ import XCTest
 /// History's third mode: which providers are offered it, what happens to a remembered
 /// choice under a provider that has no chats, and what the subtitle says — including
 /// the one range that does not mean what it says.
-/// Spec: docs/superpowers/specs/2026-09-10-sessions-history-design.md § 4.
+/// Spec: docs/superpowers/specs/2026-09-10-sessions-history-design.md § 4; the
+/// subtitle's `(line, caption)` shape: docs/superpowers/specs/2026-09-24-2.7.0-hardening.md
+/// § Design (session rulings), UI — History header.
 final class SessionHistoryModeTests: XCTestCase {
     // MARK: - Which providers have chats at all
 
@@ -36,25 +38,23 @@ final class SessionHistoryModeTests: XCTestCase {
     // MARK: - The subtitle
 
     func testTheSessionsSubtitleNamesTheLogAndTheKindOfDollars() {
-        XCTAssertEqual(
-            SessionHistoryView.subtitle(
-                showsQuota: false, providerName: "Claude",
-                longName: "Claude Code's session logs",
-                mode: .sessions, isPayAsYouGo: false, range: .sevenDays
-            ),
-            "Chats from Claude Code's session logs, tokens and API-equivalent cost"
+        let header = SessionHistoryView.subtitle(
+            showsQuota: false, providerName: "Claude",
+            longName: "Claude Code's session logs",
+            mode: .sessions, isPayAsYouGo: false, range: .sevenDays
         )
+        XCTAssertEqual(header.line, "Chats from Claude Code's session logs, tokens and API-equivalent cost")
+        XCTAssertNil(header.caption, "the line already says which dollars these are")
     }
 
     func testPayAsYouGoDollarsAreNotCalledApiEquivalentHereEither() {
-        XCTAssertEqual(
-            SessionHistoryView.subtitle(
-                showsQuota: false, providerName: "Claude",
-                longName: "Claude Code's session logs",
-                mode: .sessions, isPayAsYouGo: true, range: .sevenDays
-            ),
-            "Chats from Claude Code's session logs, tokens and cost"
+        let header = SessionHistoryView.subtitle(
+            showsQuota: false, providerName: "Claude",
+            longName: "Claude Code's session logs",
+            mode: .sessions, isPayAsYouGo: true, range: .sevenDays
         )
+        XCTAssertEqual(header.line, "Chats from Claude Code's session logs, tokens and cost")
+        XCTAssertNil(header.caption)
     }
 
     func testAFiveHourRangeSaysItIsReallyShowingToday() {
@@ -65,7 +65,7 @@ final class SessionHistoryModeTests: XCTestCase {
                 showsQuota: false, providerName: "Codex",
                 longName: "the Codex CLI's session logs",
                 mode: .sessions, isPayAsYouGo: false, range: .fiveHours
-            ),
+            ).line,
             "Chats from the Codex CLI's session logs, tokens and API-equivalent cost · today, not the last 5 hours"
         )
     }
@@ -78,19 +78,19 @@ final class SessionHistoryModeTests: XCTestCase {
     }
 
     func testTheOtherTwoModesAreUnchanged() {
-        // The new `range:` parameter is defaulted and must change nothing for them.
+        // The `range:` parameter is defaulted and must change nothing for them.
         XCTAssertEqual(
             SessionHistoryView.subtitle(
                 showsQuota: false, providerName: "Claude", longName: "Claude Code logs",
                 mode: .tokens, isPayAsYouGo: false
-            ),
+            ).line,
             "Daily tokens by type from Claude Code logs"
         )
         XCTAssertEqual(
             SessionHistoryView.subtitle(
                 showsQuota: true, providerName: "Antigravity", longName: nil,
                 mode: .sessions, isPayAsYouGo: false, range: .fiveHours
-            ),
+            ).line,
             "How full Antigravity's usage windows ran",
             "a provider with no cost log never reaches the sessions branch"
         )

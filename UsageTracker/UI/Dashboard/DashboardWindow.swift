@@ -130,7 +130,7 @@ struct DashboardHeader: View {
         // round: a provider row plus a chart-mode switch plus a range picker is wider
         // than the default window, and a fixed-width HStack used to push the window
         // past the screen edge and squeeze the title to nothing. Widest layout that
-        // fits wins; the title and subtitle always keep their line.
+        // fits wins; the title always keeps its line, the subtitle wraps at the narrowest.
         ViewThatFits(in: .horizontal) {
             oneRow
             twoRows
@@ -141,19 +141,24 @@ struct DashboardHeader: View {
         .padding(.bottom, 12)
     }
 
+    /// Only the title is rigid: it is two words and must never truncate. The subtitle is
+    /// a sentence and wraps. When the whole block was rigid, the History subtitle was
+    /// wider than the detail column at the 820 pt minimum, and the vertical-only scroll
+    /// view clipped the rest of the tab instead.
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(OMFont.screenTitle)
                 .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
             if let subtitle {
                 Text(subtitle)
                     .font(OMFont.body)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder
