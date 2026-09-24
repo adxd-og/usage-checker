@@ -285,9 +285,9 @@ final class AppState: ObservableObject {
             nextAllowedRefresh = .distantPast
         }
 
-        if next.hasAnyData {
-            WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
-        }
+        // Every poll, an empty one too: `WidgetBridge.publish` decides whether the file
+        // changes, and a widget never told "nothing to show" keeps the last numbers.
+        WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.
         var recordedAny = false
@@ -347,11 +347,9 @@ final class AppState: ObservableObject {
     /// preference did not change what was spent today, and re-walking two log trees
     /// on a toggle would be a second of file I/O for no new information.
     func republishDisplayMode() {
-        if snapshot.hasAnyData {
-            WidgetBridge.publish(
-                snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
-            )
-        }
+        WidgetBridge.publish(
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
+        )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
         publishStatusFile(costs: lastCosts, sessions: lastSessions)
@@ -581,6 +579,10 @@ final class AppState: ObservableObject {
     func forgetLastKnown(serviceID: String) {
         lastKnown.removeValue(forKey: serviceID)
         snapshot = Self.droppingRetained(serviceID: serviceID, from: snapshot)
+        // The widget shows the same numbers on the desktop. Without this it kept the
+        // forgotten ones until a poll brought windows, and with no other provider
+        // reporting, that poll never came.
+        WidgetBridge.publish(snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode)
         Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
     }
 
