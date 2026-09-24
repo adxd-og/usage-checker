@@ -57,6 +57,9 @@ actor GrokUsageAggregator: CostLogAggregating {
     }
 
     private let rootURL: URL
+    /// The calendar "today" and the daily rows are taken in. Injected so a test can pin
+    /// a time zone.
+    private let calendar: Calendar
     /// Byte offset just past the last complete line already parsed, per file. A
     /// partial tail line is deliberately left unconsumed so the next poll re-reads it
     /// whole rather than dropping the turn it belongs to.
@@ -83,11 +86,15 @@ actor GrokUsageAggregator: CostLogAggregating {
     /// priced at. nil before the first refresh.
     private var pricedGeneration: Int?
 
-    /// Injectable log root — the tests point it at a fixture tree instead of the real
-    /// `~/.grok/sessions`.
-    init(rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".grok/sessions", isDirectory: true)) {
+    /// Injectable log root and calendar — the tests point the root at a fixture tree
+    /// instead of the real `~/.grok/sessions`, and pin the calendar's time zone.
+    init(
+        rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".grok/sessions", isDirectory: true),
+        calendar: Calendar = .current
+    ) {
         self.rootURL = rootURL
+        self.calendar = calendar
     }
 
     func refresh() async {
@@ -130,8 +137,13 @@ actor GrokUsageAggregator: CostLogAggregating {
     }
 
     func breakdown() -> CLIBreakdown {
-        let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        breakdown(now: Date())
+    }
+
+    /// `breakdown()` as of `now`: "today" is `now`'s day in this aggregator's calendar,
+    /// the same one the daily rows are binned in.
+    func breakdown(now: Date) -> CLIBreakdown {
+        let startOfDay = calendar.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
@@ -320,7 +332,7 @@ actor GrokUsageAggregator: CostLogAggregating {
 
     private func dayStart(for date: Date) -> Date {
         if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = Calendar.current
+        let cal = calendar
         let start = cal.startOfDay(for: date)
         let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
         dayCache = (start, next)

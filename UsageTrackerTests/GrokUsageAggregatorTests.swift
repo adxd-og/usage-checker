@@ -821,4 +821,40 @@ final class GrokUsageAggregatorTests: XCTestCase {
         let usage = await lastHour(aggregator)
         XCTAssertEqual(usage.cost, 0.01, accuracy: 1e-9, "the CLI's $0.01, not the table's $2")
     }
+
+    // MARK: - Calendar (spec 2026-09-24-2.7.0-hardening § Design, Accounting → Time zone)
+
+    /// A zone twelve hours from this Mac's, so its day and `Calendar.current`'s never
+    /// start at the same hour.
+    private var farCalendar: Calendar {
+        let machine = TimeZone.current.secondsFromGMT()
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(secondsFromGMT: machine >= 0 ? machine - 12 * 3600 : machine + 12 * 3600)!
+        c.locale = Locale(identifier: "en_US_POSIX")
+        return c
+    }
+
+    func testTodayAndTheDailyRowsAreTheInjectedCalendarsDays() async throws {
+        let cal = farCalendar
+        // Two hours into the far zone's latest day to have begun, and a turn an hour
+        // before that day started.
+        var dayNow = cal.startOfDay(for: now).addingTimeInterval(2 * 3600)
+        if dayNow > now { dayNow = dayNow.addingTimeInterval(-86_400) }
+        let turnAt = dayNow.addingTimeInterval(-3 * 3600)
+        try write([turnLine(
+            eventID: "e-before-midnight",
+            secondsAgo: now.timeIntervalSince(turnAt),
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 100, output: 10, ticks: 100_000_000)]
+        )], project: alphaDir)
+
+        let aggregator = GrokUsageAggregator(rootURL: root, calendar: cal)
+        await aggregator.refresh()
+        let breakdown = await aggregator.breakdown(now: dayNow)
+
+        XCTAssertEqual(breakdown.todayTurns, 0, "an hour before this calendar's midnight is yesterday")
+        XCTAssertEqual(breakdown.todayCost, 0, accuracy: 1e-9)
+        XCTAssertEqual(breakdown.weekCost, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(breakdown.daily.map(\.day), [cal.startOfDay(for: turnAt)])
+    }
 }

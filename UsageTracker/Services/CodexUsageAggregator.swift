@@ -273,7 +273,10 @@ actor CodexUsageAggregator: CostLogAggregating {
     func costs(now: Date = Date()) -> (week: Double, today: Double) {
         ingestAll()
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        // This aggregator's calendar, the one `dayStart` bins the daily rows with: a
+        // fresh `Calendar.current` here put "today" and today's row on two different
+        // midnights whenever the two disagreed.
+        let startOfDay = calendar.startOfDay(for: now)
         var week = 0.0
         var today = 0.0
         // The week reaches back 7 days and `recentWindow` is 31, so the folded days can
@@ -286,8 +289,13 @@ actor CodexUsageAggregator: CostLogAggregating {
     }
 
     func breakdown() -> CLIBreakdown {
-        let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        breakdown(now: Date())
+    }
+
+    /// `breakdown()` as of `now`: "today" is `now`'s day in this aggregator's calendar,
+    /// the same one the daily rows are binned in.
+    func breakdown(now: Date) -> CLIBreakdown {
+        let startOfDay = calendar.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
