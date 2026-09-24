@@ -108,7 +108,7 @@ final class UsageNotifier: NSObject {
             let thresholdHigh = SettingsStore.shared.threshold95
             let thresholdMid = SettingsStore.shared.threshold80
 
-            for service in snapshot.services {
+            for service in Self.alertableServices(snapshot.services) {
                 for bucket in Self.watchableBuckets(for: service) {
                     let key = "\(service.id):\(bucket.id)"
                     let p = Int(bucket.clampedPercent.rounded())
@@ -179,6 +179,17 @@ final class UsageNotifier: NSObject {
         return watchable
     }
 
+    /// The services an alert may speak for: the ones reporting now.
+    ///
+    /// A retained provider's windows are its last reading, not a limit being approached:
+    /// a session window frozen at 85% reaches its old reset time and would fire "resets
+    /// in 10m, currently 85%" for a window that started over hours ago. Leaving it out of
+    /// both loops also leaves its stored alert levels exactly as they were — nothing
+    /// fires, nothing is re-armed, nothing is cleared — until it reports again.
+    nonisolated static func alertableServices(_ services: [ServiceSnapshot]) -> [ServiceSnapshot] {
+        services.filter { $0.state == .ok }
+    }
+
     // MARK: - Pace and reset
 
     /// Two nudges a percentage can't express: "at this pace the window runs out before it
@@ -198,7 +209,7 @@ final class UsageNotifier: NSObject {
         // window worth predicting, and history is per service now.
         var recent: [String: [HistoryRecord]] = [:]
 
-        for service in snapshot.services {
+        for service in Self.alertableServices(snapshot.services) {
             for bucket in service.buckets where bucket.kind == .session && !bucket.isPromotional {
                 guard bucket.resetsAt < .distantFuture else { continue }
                 let untilReset = bucket.resetsAt.timeIntervalSince(now)
