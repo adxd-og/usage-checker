@@ -443,6 +443,28 @@ actor JSONLAggregator: CostLogAggregating {
             days.removeAll { $0.day < cutoff }
             agents = agents.filter { $0.value.lastAt >= cutoff }
         }
+
+        /// The same chat with each day re-keyed by `key`, days that land on one key added
+        /// together. Agents keep their instants; they carry no day.
+        func rekeyingDays(_ key: (Date) -> Date) -> SessionAgg {
+            var copy = self
+            var merged: [DayTotals] = []
+            merged.reserveCapacity(days.count)
+            for day in days {
+                let rekeyed = key(day.day)
+                if let index = merged.lastIndex(where: { $0.day == rekeyed }) {
+                    merged[index].turns += day.turns
+                    merged[index].tokens += day.tokens
+                    merged[index].mainTokens += day.mainTokens
+                } else {
+                    merged.append(DayTotals(
+                        day: rekeyed, turns: day.turns, tokens: day.tokens, mainTokens: day.mainTokens
+                    ))
+                }
+            }
+            copy.days = merged
+            return copy
+        }
     }
 
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
@@ -1384,8 +1406,8 @@ actor JSONLAggregator: CostLogAggregating {
             // them. Marks, recent turns and ids go, so the first scan reads every
             // transcript again, and `rebuiltDays` / `rebuiltChats` have it replace — not
             // add to — each day and each chat it reaches.
-            oldDays = Self.dayTotals(from: snapshot.oldDays)
-            sessionAggs = snapshot.sessions
+            oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
+            sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
             titles = snapshot.titles
             firstPrompts = snapshot.firstPrompts
             rebuiltDays = []
@@ -1403,9 +1425,9 @@ actor JSONLAggregator: CostLogAggregating {
         // unreachable, and a final record arriving after a relaunch would be dropped
         // instead of replacing its provisional turn.
         rebuildRecentIndex()
-        oldDays = Self.dayTotals(from: snapshot.oldDays)
+        oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
         seenMessageIDs = Set(snapshot.seenMessageIDs)
-        sessionAggs = snapshot.sessions
+        sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
         titles = snapshot.titles
         firstPrompts = snapshot.firstPrompts
         NSLog(
@@ -1415,16 +1437,32 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     /// Last one wins rather than merged: a day repeated in a hand-edited file is
-    /// corruption, and counting it twice would be worse than dropping half of it.
-    private static func dayTotals(from entries: [DayEntry]) -> [Date: DayAgg] {
+    /// corruption, and counting it twice would be worse than dropping half of it. Each
+    /// day is re-keyed to this run's calendar (`rekeyedDay`), so a cache saved in
+    /// another time zone keeps its dates.
+    private static func dayTotals(from entries: [DayEntry], calendar: Calendar) -> [Date: DayAgg] {
         var days: [Date: DayAgg] = [:]
         for entry in entries {
-            days[entry.day] = DayAgg(
+            days[rekeyedDay(entry.day, calendar: calendar)] = DayAgg(
                 cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
                 turns: entry.turns, byFamily: entry.byFamily
             )
         }
         return days
+    }
+
+    /// A saved day, re-keyed to `calendar`: the start, in `calendar`, of the date the
+    /// saved midnight named. A day is saved as the midnight of the zone it was binned in,
+    /// and the midday after it is still that date in any zone less than twelve hours
+    /// away — so its start here is the key the Activity grid, the daily rows and the
+    /// History ranges ask for. A day saved in this zone maps onto itself.
+    static func rekeyedDay(_ saved: Date, calendar: Calendar) -> Date {
+        calendar.startOfDay(for: saved.addingTimeInterval(12 * 3600))
+    }
+
+    /// Every chat's day totals re-keyed the same way (`rekeyedDay`).
+    private static func rekeyed(_ sessions: [String: SessionAgg], calendar: Calendar) -> [String: SessionAgg] {
+        sessions.mapValues { agg in agg.rekeyingDays { rekeyedDay($0, calendar: calendar) } }
     }
 
     /// Nothing to write, or written too recently to be worth the tens of MB again.
