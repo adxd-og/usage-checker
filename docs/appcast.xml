@@ -6,6 +6,30 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.7.1</title>
+      <pubDate>Fri, 25 Sep 2026 02:17:48 +0300</pubDate>
+      <sparkle:version>49</sparkle:version>
+      <sparkle:shortVersionString>2.7.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Time zones</h3>
+<ul>
+<li>**History: a chat's days follow a system time-zone change while the app runs,** and agree with Activity after a relaunch in another zone (#13).</li>
+<li>The Claude cost cache from 2.6.5 or 2.7.0 is converted in place on the first launch: nothing is read again, and days and chats whose transcripts Claude Code has deleted keep their totals.</li>
+</ul>
+<h3>Updates</h3>
+<ul>
+<li>A Debug build, or one run out of a DerivedData tree, no longer checks for updates on its own; only the shipped app updates itself.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.7.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.7.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="jBulE0A4JeB0yZGJ4Zs5Slm2aGXP5+qY9lu+OrXJoG4ywWJ0yXlTueYj1RxDAFON0o8m1LD/LqBL05Rtg40bDg=="
+        length="24475353"/>
+    </item>
+    <item>
       <title>Omelette v2.7.0</title>
       <pubDate>Thu, 24 Sep 2026 17:59:50 +0300</pubDate>
       <sparkle:version>48</sparkle:version>
