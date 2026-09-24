@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The first launch after this update re-reads the Claude Code transcripts
   still on disk once.
 
+### Updates
+- A Debug build, or one run out of a DerivedData tree, no longer checks for
+  updates on its own; only the shipped app updates itself.
+
 ## [2.7.0] — 2026-09-24
 
 ### Last-known numbers

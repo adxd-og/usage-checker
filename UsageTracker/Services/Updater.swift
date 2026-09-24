@@ -25,9 +25,12 @@ final class Updater: NSObject, ObservableObject {
     private var stateObservations: [NSKeyValueObservation] = []
 
     override init() {
-        // startingUpdater: true → Sparkle starts automatic background checks immediately.
+        // startingUpdater: Sparkle starts its scheduled checks at once — for a build
+        // that may update itself at all (`updatesItself`); a Debug one never starts.
         self.controller = SPUStandardUpdaterController(
-            startingUpdater: true,
+            startingUpdater: Self.updatesItself(
+                isDebugBuild: Self.isDebugBuild, bundlePath: Bundle.main.bundlePath
+            ),
             updaterDelegate: nil,
             userDriverDelegate: nil
         )
@@ -43,6 +46,25 @@ final class Updater: NSObject, ObservableObject {
 
     func checkForUpdates() {
         controller.checkForUpdates(nil)
+    }
+
+    /// Whether this build may check for and install updates on its own. A Debug build,
+    /// or any bundle running out of a DerivedData tree, never does: on 2026-09-24 a
+    /// Debug instance launched from `build/DerivedData` took the public 2.7.0 update,
+    /// Sparkle replaced its bundle with the release app and relaunched it, and the
+    /// Release `omelette-hook` left in the test bundle failed 50 hook tests in the next
+    /// gate run. Sparkle's own setting is left alone: it lives in the shared defaults
+    /// domain, and switching it off here would switch it off for the release app too.
+    nonisolated static func updatesItself(isDebugBuild: Bool, bundlePath: String) -> Bool {
+        !isDebugBuild && !bundlePath.contains("/DerivedData/")
+    }
+
+    private nonisolated static var isDebugBuild: Bool {
+        #if DEBUG
+        true
+        #else
+        false
+        #endif
     }
 
     var automaticallyChecksForUpdates: Bool {
