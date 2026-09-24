@@ -39,7 +39,12 @@ enum CostCopy {
     /// returns no windows), and the only windows such an account can have are the
     /// synthetic ones above.
     static func isPayAsYouGo(_ service: ServiceSnapshot) -> Bool {
-        service.buckets.allSatisfy { syntheticBucketIDs.contains($0.id) }
+        // No window at all says "pay-as-you-go" only from a provider that is answering:
+        // a signed-out or failing subscription has no windows either, and calling its
+        // local dollars a bill would drop the API-equivalent caption exactly when the
+        // numbers are least certain.
+        if service.buckets.isEmpty { return service.state == .ok }
+        return service.buckets.allSatisfy { syntheticBucketIDs.contains($0.id) }
     }
 
     /// "Last 7 days $12.40": the floating panel's one line for a healthy account with
