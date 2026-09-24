@@ -5,6 +5,33 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] — unreleased
+
+### Fixed — Dashboard
+- **A slow provider no longer paints over the one you switched to.** Activity,
+  Insights, the quota History and an open chat's breakdown drop a calculation
+  that finishes after you changed provider, range or chat.
+- **An open chat's breakdown keeps up with the chat.** Its by-model, sub-agent
+  and by-day tables refresh with the row's totals instead of after a close and
+  reopen.
+- **The History header fits the smallest window.** A long subtitle wraps
+  instead of pushing the tab past the edge, and the API-equivalent note under
+  the Cost chart is a line of its own rather than the part that was cut off.
+- **The Tokens table fits beside a wide sidebar.** Below 580 pt the two cache
+  columns merge into one "Cache" column, so Cost is never clipped.
+- **Chats expand from the keyboard.** A chat's name is a button: Tab to it and
+  press Space. VoiceOver can press it too.
+- **Provider tabs show keyboard focus** with an accent ring.
+
+### Fixed — Floating panel
+- **Pay-as-you-go spend instead of "haven't used".** An account with no limit
+  window shows "Last 7 days $X"; a signed-out or stopped provider shows its own
+  message.
+
+### Fixed — Settings
+- **Updates is current.** "Last check" and the "Check for updates now" button
+  follow Sparkle at once instead of waiting for the next poll.
+
 ## [2.6.5] — 2026-09-24
 
 ### Fixed
