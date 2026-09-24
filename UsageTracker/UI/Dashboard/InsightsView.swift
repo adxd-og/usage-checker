@@ -33,6 +33,7 @@ struct InsightsView: View {
 
     @MainActor
     private func rebuildInsights() async {
+        let started = cacheKey
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
         let peakBucketID = dashboard.burnBucket?.id
@@ -48,6 +49,11 @@ struct InsightsView: View {
                 QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
             )
         }.value
+        // See `DerivedCacheGate`: a pass for the provider just left must not replace
+        // the new provider's cards when it finishes second.
+        guard DerivedCacheGate.canPublish(
+            started: started, current: cacheKey, cancelled: Task.isCancelled
+        ) else { return }
         insights = built.0
         quota = built.1
     }

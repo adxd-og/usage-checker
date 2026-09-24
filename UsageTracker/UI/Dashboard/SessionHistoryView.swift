@@ -64,12 +64,19 @@ struct SessionHistoryView: View {
             quota = .empty
             return
         }
+        let started = cacheKey
         let records = dashboard.history
         let buckets = dashboard.quotaBuckets
         let span = dashboard.range.seconds
-        quota = await Task.detached(priority: .userInitiated) {
+        let built = await Task.detached(priority: .userInitiated) {
             QuotaHistoryCache.build(records: records, buckets: buckets, span: span)
         }.value
+        // See `DerivedCacheGate`: a pass for the provider or range just left must not
+        // land after the new one's.
+        guard DerivedCacheGate.canPublish(
+            started: started, current: cacheKey, cancelled: Task.isCancelled
+        ) else { return }
+        quota = built
     }
 
     private var data: [DailyPoint] {
@@ -719,6 +726,13 @@ private struct SessionRowView: View {
         let allModels: Bool
     }
 
+    private var detailKey: DetailKey {
+        DetailKey(
+            id: row.id, expanded: isExpanded,
+            allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs) {
             if isWide { wideSummary } else { narrowSummary }
@@ -730,7 +744,7 @@ private struct SessionRowView: View {
         .accessibilityElement(children: .contain)
         .accessibilityLabel(SessionCopy.rowTitle(session))
         .accessibilityHint(isExpanded ? "Hides this chat's breakdown" : "Shows this chat's breakdown")
-        .task(id: DetailKey(id: row.id, expanded: isExpanded, allAgents: showsAllAgents, allDays: showsAllDays, allModels: showsAllModels)) {
+        .task(id: detailKey) {
             guard isExpanded else {
                 detail = .empty
                 // Collapsing forgets the caps too: reopening a chat should start from
@@ -740,15 +754,25 @@ private struct SessionRowView: View {
                 showsAllModels = false
                 return
             }
+            let started = detailKey
             let session = self.session
             let allAgents = showsAllAgents
             let allDays = showsAllDays
             let allModels = showsAllModels
-            detail = await Task.detached(priority: .userInitiated) {
+            let built = await Task.detached(priority: .userInitiated) {
                 SessionDetail.build(
                     session: session, allAgents: allAgents, allDays: allDays, allModels: allModels
                 )
             }.value
+            // See `DerivedCacheGate`. A collapse or a lifted cap restarts this task and
+            // cancels this pass, but the await does not stop for that. `row` and
+            // `isExpanded` are `let`s this pass captured, so for those the cancellation
+            // half of the gate is what drops a stale build; the three caps are `@State`
+            // and read as they are now.
+            guard DerivedCacheGate.canPublish(
+                started: started, current: detailKey, cancelled: Task.isCancelled
+            ) else { return }
+            detail = built
         }
     }
 

@@ -70,20 +70,28 @@ struct ActivityGridView: View {
 
     @MainActor
     private func rebuildCache() async {
+        let started = taskKey
         let weeksCopy = weeks
         // Heavy work off the main actor, whichever metric the grid is showing.
+        let built: GridCache
         if showsQuota {
             let records = dashboard.history
             let buckets = dashboard.quotaBuckets
-            cache = await Task.detached(priority: .userInitiated) {
+            built = await Task.detached(priority: .userInitiated) {
                 GridCache.build(records: records, buckets: buckets, weeks: weeksCopy)
             }.value
         } else {
             let dailies = dashboard.cliBreakdown?.daily ?? []
-            cache = await Task.detached(priority: .userInitiated) {
+            built = await Task.detached(priority: .userInitiated) {
                 GridCache.build(from: dailies, weeks: weeksCopy)
             }.value
         }
+        // See `DerivedCacheGate`: the await does not stop when `.task(id:)` cancels this
+        // pass, and a slow pass for the provider or range just left would land last.
+        guard DerivedCacheGate.canPublish(
+            started: started, current: taskKey, cancelled: Task.isCancelled
+        ) else { return }
+        cache = built
     }
 
     private var rangePicker: some View {
