@@ -309,15 +309,28 @@ actor JSONLAggregator: CostLogAggregating {
     /// reports is summed from `days`, so a revised turn has one place to be fixed and a
     /// clipped range can never disagree with an unclipped one.
     ///
+    /// The days are two tiers, told apart by where a turn is and never by its date
+    /// (issue #13). `recentDays` sums the chat's turns that are in `recentTurns`;
+    /// `foldedDays` sums every turn that has left it or was already older than the
+    /// window when read. A turn is in exactly one tier, so re-binning into another zone
+    /// — the recent tier rebuilt from the turns, the folded tier re-keyed by
+    /// `DayRekey.midpoint` — can neither count a turn twice nor lose one.
+    ///
     /// Internal, not private, and its parts `Equatable`, so its day rules are tested on
     /// a value built the way a transcript builds it — as Codex's `summary` is on its own.
     struct SessionAgg: Codable {
         var projectSlug: String
         var firstAt: Date
         var lastAt: Date
+        /// The folded tier, and the only days the cache keeps: stored sums, saved under
+        /// `days`, the key every version before 8 wrote all of a chat's days under.
         /// Ascending in practice — a transcript's turns arrive in near-chronological
         /// runs — but only `sessions(from:to:)` promises the order it hands out.
-        var days: [DayTotals]
+        var foldedDays: [DayTotals]
+        /// The recent tier: this chat's turns in `recentTurns`, per local day. Never
+        /// saved; `rebuildingRecentDays(from:dayStart:)` makes it again from the turns
+        /// on a cache load, on a re-bin and after a fold.
+        var recentDays: [DayTotals] = []
         /// Keyed by `agentId`.
         var agents: [String: AgentTotals]
         /// Keyed by `SessionModelSummary.key(model:effort:)`. Both the main thread's
@@ -325,6 +338,13 @@ actor JSONLAggregator: CostLogAggregating {
         /// a model, not which thread spent it. A default so the property needs no line
         /// in `init(projectSlug:at:)`; the cache always writes it (version 5).
         var byModel: [String: ModelTotals] = [:]
+
+        /// `recentDays` is left out: it is rebuilt from `recentTurns`, never read back.
+        private enum CodingKeys: String, CodingKey {
+            case projectSlug, firstAt, lastAt
+            case foldedDays = "days"
+            case agents, byModel
+        }
 
         struct DayTotals: Codable, Equatable {
             let day: Date
@@ -359,24 +379,35 @@ actor JSONLAggregator: CostLogAggregating {
             self.projectSlug = projectSlug
             self.firstAt = date
             self.lastAt = date
-            self.days = []
+            self.foldedDays = []
             self.agents = [:]
         }
 
-        /// The turn's counters, added where they belong. A day is found by its last
-        /// entry first: turns arrive in near-chronological runs, so that is almost
-        /// always the answer, and the linear fallback is over at most 92 entries.
-        mutating func add(_ turn: CLITurn, on day: Date) {
-            let isMain = turn.agentID == nil
-            if let index = days.lastIndex(where: { $0.day == day }) {
-                days[index].turns += 1
-                days[index].tokens += turn.tokens
-                if isMain { days[index].mainTokens += turn.tokens }
+        /// Both tiers, one entry per day, ascending: what a range is summed from. A day
+        /// can have a share in each — after a zone change, or a fold part-way through
+        /// the day — and the two add up.
+        var days: [DayTotals] {
+            var merged: [DayTotals] = []
+            merged.reserveCapacity(foldedDays.count + recentDays.count)
+            for entry in foldedDays { Self.merge(entry, into: &merged) }
+            for entry in recentDays { Self.merge(entry, into: &merged) }
+            return merged.sorted { $0.day < $1.day }
+        }
+
+        /// The turn's counters, added where they belong: its day in the recent tier when
+        /// the turn goes into `recentTurns`, in the folded tier when it was older than
+        /// the window when read. A day is found by its last entry first: turns arrive in
+        /// near-chronological runs, so that is almost always the answer, and the linear
+        /// fallback is over at most 92 entries.
+        mutating func add(_ turn: CLITurn, on day: Date, recent: Bool) {
+            let entry = DayTotals(
+                day: day, turns: 1, tokens: turn.tokens,
+                mainTokens: turn.agentID == nil ? turn.tokens : .zero
+            )
+            if recent {
+                Self.merge(entry, into: &recentDays)
             } else {
-                days.append(DayTotals(
-                    day: day, turns: 1, tokens: turn.tokens,
-                    mainTokens: isMain ? turn.tokens : .zero
-                ))
+                Self.merge(entry, into: &foldedDays)
             }
 
             // Before the agent branch, so a sub-agent's turn counts towards the chat's
@@ -410,9 +441,19 @@ actor JSONLAggregator: CostLogAggregating {
             agents[agentID] = agent
         }
 
+        /// A turn that has just left `recentTurns`: its share of its day joins the folded
+        /// tier. The recent tier drops it when it is rebuilt from the turns that are
+        /// left; the model rows and the agent took the turn when it was read.
+        mutating func addFolded(_ turn: CLITurn, on day: Date) {
+            Self.merge(DayTotals(
+                day: day, turns: 1, tokens: turn.tokens,
+                mainTokens: turn.agentID == nil ? turn.tokens : .zero
+            ), into: &foldedDays)
+        }
+
         /// A later record for a message id already counted: the difference goes to the
         /// same day, the same agent and the same model row, and the turn count does not
-        /// move.
+        /// move. The turn is in `recentTurns`, so its day is in the recent tier.
         ///
         /// `modelKey` is the *stored* turn's, never the replacement's. A record's model
         /// and effort are settled by the first line that carried its id (`replaceIfLater`
@@ -422,9 +463,9 @@ actor JSONLAggregator: CostLogAggregating {
         mutating func revise(
             day: Date, delta: TokenBreakdown, isMain: Bool, agentID: String?, modelKey: String
         ) {
-            if let index = days.lastIndex(where: { $0.day == day }) {
-                days[index].tokens += delta
-                if isMain { days[index].mainTokens += delta }
+            if let index = recentDays.lastIndex(where: { $0.day == day }) {
+                recentDays[index].tokens += delta
+                if isMain { recentDays[index].mainTokens += delta }
             }
             if let agentID, var agent = agents[agentID] {
                 agent.tokens += delta
@@ -436,37 +477,60 @@ actor JSONLAggregator: CostLogAggregating {
             }
         }
 
-        /// Nothing older than the cutoff is kept: the ranges never ask for it, and a
-        /// chat resumed for months would otherwise grow a row per day forever.
+        /// Nothing older than the cutoff is kept, in either tier: the ranges never ask
+        /// for it, and a chat resumed for months would otherwise grow a row per day forever.
         ///
         /// `byModel` is deliberately untouched. A model row carries no span to prune by,
         /// there are a handful of them per chat, and the row is the chat's whole split
         /// by design — the same reason a range never clips one.
         mutating func drop(before cutoff: Date) {
-            days.removeAll { $0.day < cutoff }
+            foldedDays.removeAll { $0.day < cutoff }
+            recentDays.removeAll { $0.day < cutoff }
             agents = agents.filter { $0.value.lastAt >= cutoff }
         }
 
-        /// The same chat with each day re-keyed by `key`, days that land on one key added
-        /// together. Agents keep their instants; they carry no day.
-        func rekeyingDays(_ key: (Date) -> Date) -> SessionAgg {
+        /// The same chat with each folded day re-keyed by `key`, days that land on one
+        /// key added together. The recent tier is rebuilt from the turns instead; agents
+        /// keep their instants, they carry no day.
+        func rekeyingFolded(_ key: (Date) -> Date) -> SessionAgg {
             var copy = self
             var merged: [DayTotals] = []
-            merged.reserveCapacity(days.count)
-            for day in days {
-                let rekeyed = key(day.day)
-                if let index = merged.lastIndex(where: { $0.day == rekeyed }) {
-                    merged[index].turns += day.turns
-                    merged[index].tokens += day.tokens
-                    merged[index].mainTokens += day.mainTokens
-                } else {
-                    merged.append(DayTotals(
-                        day: rekeyed, turns: day.turns, tokens: day.tokens, mainTokens: day.mainTokens
-                    ))
-                }
+            merged.reserveCapacity(foldedDays.count)
+            for saved in foldedDays {
+                Self.merge(DayTotals(
+                    day: key(saved.day), turns: saved.turns, tokens: saved.tokens,
+                    mainTokens: saved.mainTokens
+                ), into: &merged)
             }
-            copy.days = merged
+            copy.foldedDays = merged
             return copy
+        }
+
+        /// The same chat with its recent tier made again from `turns` — this chat's turns
+        /// out of `recentTurns`, in their order there — each on the day `dayStart` gives
+        /// it. The folded tier, the agents and the model rows are left as they are.
+        func rebuildingRecentDays(from turns: [CLITurn], dayStart: (Date) -> Date) -> SessionAgg {
+            var copy = self
+            copy.recentDays = []
+            copy.recentDays.reserveCapacity(recentDays.count)
+            for turn in turns {
+                Self.merge(DayTotals(
+                    day: dayStart(turn.timestamp), turns: 1, tokens: turn.tokens,
+                    mainTokens: turn.agentID == nil ? turn.tokens : .zero
+                ), into: &copy.recentDays)
+            }
+            return copy
+        }
+
+        /// `entry` added to the entry for its day, found from the end, or appended.
+        private static func merge(_ entry: DayTotals, into days: inout [DayTotals]) {
+            if let index = days.lastIndex(where: { $0.day == entry.day }) {
+                days[index].turns += entry.turns
+                days[index].tokens += entry.tokens
+                days[index].mainTokens += entry.mainTokens
+            } else {
+                days.append(entry)
+            }
         }
     }
 
@@ -481,13 +545,22 @@ actor JSONLAggregator: CostLogAggregating {
         let recentTurns: [CLITurn]
         let oldDays: [DayEntry]
         let seenMessageIDs: [UInt64]
-        /// One entry per chat: sums per agent and per day, never a turn. A busy month is
-        /// a few hundred kilobytes beside the tens of megabytes `recentTurns` costs.
+        /// One entry per chat: sums per agent and the chat's folded days, never a turn —
+        /// its recent days are rebuilt from `recentTurns`. A busy month is a few hundred
+        /// kilobytes beside the tens of megabytes `recentTurns` costs.
         let sessions: [String: SessionAgg]
         let titles: [String: String]
         let firstPrompts: [String: String]
     }
 
+    /// 8: a chat's days are two tiers (issue #13, `SessionAgg`). Only the folded tier is
+    /// saved, under the `days` key; the recent tier is rebuilt from `recentTurns`. A v7
+    /// chat's `days` hold both tiers, so reading a v7 snapshot as a v8 one would count
+    /// every recent turn twice. It is carried over like a v6 one instead (see 7): its
+    /// day totals and chats are kept, every chat day as a folded sum, its marks, recent
+    /// turns and ids are dropped, and the first scan rebuilds each day and chat a
+    /// surviving transcript covers. A chat whose transcript is gone keeps its days.
+    ///
     /// 7: an old turn is counted with its final counters (see `ingest`), but a v6
     /// snapshot's `oldDays` and chats took each old turn's first, provisional record
     /// (issue #10), and most of them come from transcripts Claude Code has deleted since.
@@ -517,11 +590,12 @@ actor JSONLAggregator: CostLogAggregating {
     /// 3: a turn's counters are the *last* record for its message id, not the first
     /// (see `ingest`). Every snapshot written before that holds provisional output
     /// counts, so it is rejected wholesale — one cold rebuild, then business as usual.
-    private static let cacheVersion = 7
+    private static let cacheVersion = 8
 
-    /// The one older version whose day totals and chats a bump keeps (see 7 above).
-    /// Anything else that is not `cacheVersion` is rejected wholesale.
-    private static let foldedDaysCarryOverVersion = 6
+    /// The older versions whose day totals and chats a bump keeps (see 7 and 8 above):
+    /// the two before this one. Anything else that is not `cacheVersion` is rejected
+    /// wholesale.
+    private static let foldedDaysCarryOverVersions: Set<Int> = [6, 7]
 
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
@@ -960,6 +1034,46 @@ actor JSONLAggregator: CostLogAggregating {
         return summaries.sorted { $0.lastAt == $1.lastAt ? $0.id < $1.id : $0.lastAt > $1.lastAt }
     }
 
+    // MARK: - Day tiers
+
+    /// Every chat's days re-binned into this actor's calendar (issue #13): the folded
+    /// tier re-keyed by `DayRekey.midpoint`, the recent tier rebuilt from `recentTurns`.
+    /// A turn is in one tier, so a re-bin neither counts a turn twice nor loses one, and
+    /// a chat's recent days are the days Activity recomputes from the same turns. Run on
+    /// a cache load and on a time-zone change. Marks the cache for saving: the keys it
+    /// holds may have moved.
+    func rebinChats() {
+        guard !sessionAggs.isEmpty else { return }
+        let calendar = self.calendar
+        sessionAggs = sessionAggs.mapValues { agg in
+            agg.rekeyingFolded { DayRekey.midpoint($0, calendar: calendar) }
+        }
+        rebuildRecentDays()
+        dirty = true
+    }
+
+    /// Every chat's recent tier rebuilt from `recentTurns` in this actor's calendar: the
+    /// tier is a function of those turns and nothing else. Once over the turns, not
+    /// once per chat.
+    private func rebuildRecentDays() {
+        var turnsByChat: [String: [CLITurn]] = [:]
+        for turn in recentTurns where !turn.sessionID.isEmpty {
+            turnsByChat[turn.sessionID, default: []].append(turn)
+        }
+        for (id, agg) in sessionAggs {
+            sessionAggs[id] = agg.rebuildingRecentDays(
+                from: turnsByChat[id] ?? [], dayStart: { dayStart(for: $0) }
+            )
+        }
+    }
+
+    /// A turn leaving `recentTurns` moves its share of its day to its chat's folded tier.
+    private func foldIntoChat(_ t: CLITurn) {
+        guard !t.sessionID.isEmpty, var agg = sessionAggs[t.sessionID] else { return }
+        agg.addFolded(t, on: dayStart(for: t.timestamp))
+        sessionAggs[t.sessionID] = agg
+    }
+
     // MARK: - Ingest
 
     /// One response is one turn, however many lines log it — but the *last* line is the
@@ -1020,7 +1134,7 @@ actor JSONLAggregator: CostLogAggregating {
                     pendingOld[hash] = turn
                     pendingOrder.append(hash)
                 } else {
-                    applyToSession(turn)
+                    applyToSession(turn, recent: true)
                     recentIndexByID[hash] = recentTurns.count
                     recentTurns.append(turn)
                 }
@@ -1028,7 +1142,7 @@ actor JSONLAggregator: CostLogAggregating {
         }
         for hash in pendingOrder {
             guard let turn = pendingOld[hash] else { continue }
-            applyToSession(turn)
+            applyToSession(turn, recent: false)
             fold(turn)
         }
     }
@@ -1120,11 +1234,12 @@ actor JSONLAggregator: CostLogAggregating {
         oldDays[day] = agg
     }
 
-    /// A chat's sums take the turn once: a recent turn when it arrives, an old one when
-    /// its transcript's records are all read and its counters are final (see `ingest`).
-    /// That is why the fold has nothing to do here: a turn ageing out of `recentTurns`
-    /// was already counted when it was read.
-    private func applyToSession(_ turn: CLITurn) {
+    /// A chat's sums take a turn once, when it is read: a recent turn into the recent
+    /// tier as it arrives, an old one into the folded tier once its transcript's records
+    /// are all read and its counters are final (see `ingest`). A recent turn that later
+    /// ages out of `recentTurns` moves to the folded tier in `foldTurns(olderThan:)`
+    /// (`foldIntoChat`); nothing else moves a turn between tiers.
+    private func applyToSession(_ turn: CLITurn, recent: Bool) {
         guard !turn.sessionID.isEmpty else { return }
         // The first turn a chat gets in the scan after a version bump: the old
         // snapshot's sums for this chat are replaced by what the transcripts say, never
@@ -1142,23 +1257,36 @@ actor JSONLAggregator: CostLogAggregating {
             // belongs where it is now.
             agg.projectSlug = turn.projectSlug
         }
-        agg.add(turn, on: dayStart(for: turn.timestamp))
+        agg.add(turn, on: dayStart(for: turn.timestamp), recent: recent)
         sessionAggs[turn.sessionID] = agg
         dirty = true
     }
 
-    private func pruneAndFold() {
-        let recentCutoff = Date().addingTimeInterval(-recentWindow)
-        if recentTurns.contains(where: { $0.timestamp < recentCutoff }) {
-            var kept: [CLITurn] = []
-            kept.reserveCapacity(recentTurns.count)
-            for t in recentTurns {
-                if t.timestamp < recentCutoff { fold(t) } else { kept.append(t) }
+    /// Moves every turn older than `cutoff` out of `recentTurns`: into its day in
+    /// `oldDays` and into its chat's folded tier. If anything moved, every chat's recent
+    /// tier is rebuilt from the turns that are left, so each turn is in exactly one tier
+    /// (issue #13). `pruneAndFold` calls this with `Date() − recentWindow`; a test calls
+    /// it with a cutoff of its own, so a fold needs no wait.
+    func foldTurns(olderThan cutoff: Date) {
+        guard recentTurns.contains(where: { $0.timestamp < cutoff }) else { return }
+        var kept: [CLITurn] = []
+        kept.reserveCapacity(recentTurns.count)
+        for t in recentTurns {
+            if t.timestamp < cutoff {
+                fold(t)
+                foldIntoChat(t)
+            } else {
+                kept.append(t)
             }
-            recentTurns = kept
-            rebuildRecentIndex()
-            dirty = true
         }
+        recentTurns = kept
+        rebuildRecentIndex()
+        rebuildRecentDays()
+        dirty = true
+    }
+
+    private func pruneAndFold() {
+        foldTurns(olderThan: Date().addingTimeInterval(-recentWindow))
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
@@ -1176,9 +1304,9 @@ actor JSONLAggregator: CostLogAggregating {
                 sessionsChanged = true
                 continue
             }
-            let before = (agg.days.count, agg.agents.count)
+            let before = (agg.foldedDays.count, agg.recentDays.count, agg.agents.count)
             agg.drop(before: sessionCutoff)
-            if (agg.days.count, agg.agents.count) != before {
+            if (agg.foldedDays.count, agg.recentDays.count, agg.agents.count) != before {
                 sessionAggs[id] = agg
                 sessionsChanged = true
             }
@@ -1382,9 +1510,9 @@ actor JSONLAggregator: CostLogAggregating {
 
     /// Restores the last run's state, once, before the first scan. Any problem at all —
     /// no file, unreadable, written by another build or for another log root — just
-    /// leaves the aggregator cold, which costs time and never correctness. The one
-    /// exception is a snapshot from `foldedDaysCarryOverVersion`, whose day totals and
-    /// chats are kept (see `cacheVersion` 7).
+    /// leaves the aggregator cold, which costs time and never correctness. The
+    /// exceptions are the snapshots of `foldedDaysCarryOverVersions`, whose day totals
+    /// and chats are kept (see `cacheVersion` 7 and 8).
     private func loadCache() {
         guard !initialized, let cacheURL else { return }
         guard let data = try? Data(contentsOf: cacheURL) else { return }
@@ -1400,21 +1528,24 @@ actor JSONLAggregator: CostLogAggregating {
             return
         }
         guard snapshot.version == Self.cacheVersion else {
-            guard snapshot.version == Self.foldedDaysCarryOverVersion else {
+            guard Self.foldedDaysCarryOverVersions.contains(snapshot.version) else {
                 NSLog("[UT] cost cache is for another version, ignoring")
                 return
             }
             // The day totals and the chats are what this keeps: most of them come from
             // transcripts Claude Code has deleted since, and nothing else can recount
-            // them. Marks, recent turns and ids go, so the first scan reads every
-            // transcript again, and `rebuiltDays` / `rebuiltChats` have it replace — not
-            // add to — each day and each chat it reaches.
+            // them. Every chat day decodes as a folded sum — with the recent turns
+            // dropped, nothing could rebuild a recent tier. Marks, recent turns and ids
+            // go, so the first scan reads every transcript again, and `rebuiltDays` /
+            // `rebuiltChats` have it replace — not add to — each day and each chat it
+            // reaches.
             oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
-            sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
+            sessionAggs = snapshot.sessions
             titles = snapshot.titles
             firstPrompts = snapshot.firstPrompts
             rebuiltDays = []
             rebuiltChats = []
+            rebinChats()
             dirty = true
             NSLog(
                 "[UT] cost cache v%ld: keeping %ld days and %ld chats, re-reading the logs",
@@ -1430,9 +1561,13 @@ actor JSONLAggregator: CostLogAggregating {
         rebuildRecentIndex()
         oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
         seenMessageIDs = Set(snapshot.seenMessageIDs)
-        sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
+        sessionAggs = snapshot.sessions
         titles = snapshot.titles
         firstPrompts = snapshot.firstPrompts
+        // After `recentTurns`: every chat's recent tier is rebuilt from the turns just
+        // restored, in this run's calendar — the days Activity recomputes from the same
+        // turns — and its folded tier re-keyed by the midpoint rule (issue #13).
+        rebinChats()
         NSLog(
             "[UT] cost cache restored: %ld files, %ld recent turns, %ld chats",
             fileMarks.count, recentTurns.count, sessionAggs.count
@@ -1459,11 +1594,6 @@ actor JSONLAggregator: CostLogAggregating {
             days[key] = agg
         }
         return days
-    }
-
-    /// Every chat's day totals re-keyed the same way (`DayRekey.midpoint`).
-    private static func rekeyed(_ sessions: [String: SessionAgg], calendar: Calendar) -> [String: SessionAgg] {
-        sessions.mapValues { agg in agg.rekeyingDays { DayRekey.midpoint($0, calendar: calendar) } }
     }
 
     /// Nothing to write, or written too recently to be worth the tens of MB again.
