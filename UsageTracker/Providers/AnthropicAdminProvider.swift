@@ -14,13 +14,23 @@ private struct CostReportResponse: Decodable, Sendable {
 }
 
 final class AnthropicAdminProvider: UsageProvider, Sendable {
-    let serviceID = "anthropic-admin"
-    private let http: HTTPClient
-    private let adminKey: String
+    /// The cost report request, as a closure: tests hand the provider a payload, so a
+    /// test run never opens a connection or needs a key. The default is the HTTP
+    /// client with the two retries this provider has always allowed.
+    typealias CostReportFetch = @Sendable (_ url: URL, _ headers: [String: String]) async throws -> Data
 
-    init(adminKey: String, http: HTTPClient = HTTPClient()) {
-        self.http = http
+    let serviceID = "anthropic-admin"
+    private let adminKey: String
+    private let fetchCostReport: CostReportFetch
+
+    init(
+        adminKey: String,
+        fetchCostReport: @escaping CostReportFetch = { url, headers in
+            try await HTTPClient().getRaw(url, headers: headers, maxRetries: 2)
+        }
+    ) {
         self.adminKey = adminKey
+        self.fetchCostReport = fetchCostReport
     }
 
     func fetch() async -> ServiceSnapshot {
@@ -36,7 +46,8 @@ final class AnthropicAdminProvider: UsageProvider, Sendable {
         ]
 
         do {
-            let cost = try await http.get(costURL, headers: headers, as: CostReportResponse.self, maxRetries: 2)
+            let data = try await fetchCostReport(costURL, headers)
+            let cost = try Self.decodeReport(data)
             var weekCost = 0.0
             for bucket in cost.data {
                 for r in bucket.results {
@@ -73,6 +84,16 @@ final class AnthropicAdminProvider: UsageProvider, Sendable {
                 stateMessage: error.localizedDescription,
                 fetchedAt: now
             )
+        }
+    }
+
+    /// The decoder and the error `HTTPClient.get` used before the request became
+    /// injectable, so a report that does not decode still reads "Decoding failed: …".
+    private static func decodeReport(_ data: Data) throws -> CostReportResponse {
+        do {
+            return try JSONDecoder.usageTracker.decode(CostReportResponse.self, from: data)
+        } catch {
+            throw HTTPClientError.decoding(String(describing: error))
         }
     }
 }
