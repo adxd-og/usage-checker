@@ -71,4 +71,121 @@ final class AnthropicAdminProviderTests: XCTestCase {
         XCTAssertNil(snapshot.weekCost)
         XCTAssertEqual(snapshot.stateMessage, "HTTP 401 (unauthorized)")
     }
+
+    // MARK: - Amounts are cents
+
+    /// The Admin API's own shape (API reference; the same payload CodexBar's
+    /// ClaudeAdminAPIUsageTests carries, first day bucket): `amount` is a decimal
+    /// string in cents, so "12345.00" is $123.45.
+    private let costReport = """
+    {
+      "data": [
+        {
+          "starting_at": "2023-11-14T00:00:00Z",
+          "ending_at": "2023-11-15T00:00:00Z",
+          "results": [
+            {
+              "currency": "USD",
+              "amount": "12345.00",
+              "description": "Claude Sonnet 4 Usage - Input Tokens",
+              "cost_type": "tokens"
+            },
+            {
+              "currency": "USD",
+              "amount": "2500.00",
+              "description": "Web Search Usage",
+              "cost_type": "web_search"
+            }
+          ]
+        }
+      ],
+      "has_more": false,
+      "next_page": null
+    }
+    """
+
+    func testTheWeekIsTheReportsCentsInDollars() async throws {
+        let snapshot = await provider(answering: costReport).fetch()
+
+        XCTAssertEqual(snapshot.state, .ok, snapshot.stateMessage ?? "no message")
+        XCTAssertEqual(snapshot.plan, "Enterprise")
+        XCTAssertNil(snapshot.stateMessage)
+        let week = try XCTUnwrap(snapshot.weekCost, snapshot.stateMessage ?? "no message")
+        XCTAssertEqual(week, 148.45, accuracy: 0.000_001, "$123.45 + $25.00")
+    }
+
+    func testANumericAmountIsCentsToo() async throws {
+        let payload = """
+        {
+          "data": [
+            { "results": [ { "currency": "USD", "amount": 12345.00 } ] },
+            { "results": [ { "currency": "USD", "amount": 2500 } ] }
+          ],
+          "has_more": false
+        }
+        """
+
+        let snapshot = await provider(answering: payload).fetch()
+
+        XCTAssertEqual(snapshot.state, .ok, snapshot.stateMessage ?? "no message")
+        let week = try XCTUnwrap(snapshot.weekCost, snapshot.stateMessage ?? "no message")
+        XCTAssertEqual(week, 148.45, accuracy: 0.000_001, "summed across day buckets, then divided once")
+    }
+
+    func testTheOlderValueObjectStillDecodesAsCents() async throws {
+        let payload = """
+        {
+          "data": [
+            {
+              "results": [
+                { "currency": "USD", "amount": { "value": "12345.00" } },
+                { "currency": "USD", "amount": { "value": "2500.00" } }
+              ]
+            }
+          ]
+        }
+        """
+
+        let snapshot = await provider(answering: payload).fetch()
+
+        XCTAssertEqual(snapshot.state, .ok, snapshot.stateMessage ?? "no message")
+        let week = try XCTUnwrap(snapshot.weekCost, snapshot.stateMessage ?? "no message")
+        XCTAssertEqual(week, 148.45, accuracy: 0.000_001, "the same cents, not dollars")
+    }
+
+    func testAResultWithNoAmountAddsNothing() async throws {
+        let payload = """
+        {
+          "data": [
+            {
+              "results": [
+                { "currency": "USD", "amount": "12345.00" },
+                { "currency": "USD", "amount": null },
+                { "currency": "USD" },
+                { "currency": "USD", "amount": { "value": null } }
+              ]
+            }
+          ]
+        }
+        """
+
+        let snapshot = await provider(answering: payload).fetch()
+
+        XCTAssertEqual(snapshot.state, .ok, snapshot.stateMessage ?? "no message")
+        let week = try XCTUnwrap(snapshot.weekCost, snapshot.stateMessage ?? "no message")
+        XCTAssertEqual(week, 123.45, accuracy: 0.000_001)
+    }
+
+    func testAnAmountOfNoKnownShapeFailsTheReportVisibly() async {
+        let payload = #"{"data": [{"results": [{"amount": "12345.00"}, {"amount": true}]}]}"#
+
+        let snapshot = await provider(answering: payload).fetch()
+
+        XCTAssertEqual(snapshot.state, .error)
+        XCTAssertNil(snapshot.weekCost, "a changed API reads as an error, not as a quiet $0.00")
+        XCTAssertTrue(
+            snapshot.stateMessage?.hasPrefix("Decoding failed: ") == true,
+            snapshot.stateMessage ?? "nil"
+        )
+    }
 }

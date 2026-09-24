@@ -5,9 +5,25 @@ private struct CostReportResponse: Decodable, Sendable {
     struct Bucket: Decodable, Sendable {
         let results: [Result]
         struct Result: Decodable, Sendable {
-            let amount: Amount?
-            struct Amount: Decodable, Sendable {
-                let value: String?
+            /// Cents, as a decimal string: "12345.00" is $123.45. The API sends a
+            /// string; a JSON number and the older `{"value": "…"}` object are read
+            /// the same way. Missing or null is no amount. Any other shape fails the
+            /// whole report, so a changed API reads "Decoding failed" on the row
+            /// rather than a quiet $0.00.
+            let amount: String?
+
+            private enum CodingKeys: String, CodingKey { case amount }
+            private struct Wrapped: Decodable { let value: String? }
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.container(keyedBy: CodingKeys.self)
+                if let text = try? c.decodeIfPresent(String.self, forKey: .amount) {
+                    amount = text
+                } else if let number = try? c.decodeIfPresent(Decimal.self, forKey: .amount) {
+                    amount = number.description
+                } else {
+                    amount = try c.decodeIfPresent(Wrapped.self, forKey: .amount)?.value
+                }
             }
         }
     }
@@ -22,6 +38,9 @@ final class AnthropicAdminProvider: UsageProvider, Sendable {
     let serviceID = "anthropic-admin"
     private let adminKey: String
     private let fetchCostReport: CostReportFetch
+
+    /// Amounts are API text, not the user's: the decimal point is always ".".
+    private static let posix = Locale(identifier: "en_US_POSIX")
 
     init(
         adminKey: String,
@@ -48,14 +67,17 @@ final class AnthropicAdminProvider: UsageProvider, Sendable {
         do {
             let data = try await fetchCostReport(costURL, headers)
             let cost = try Self.decodeReport(data)
-            var weekCost = 0.0
+            // The report is in cents. Add them up exactly and turn the sum into
+            // dollars once, so a week of rows carries no binary rounding.
+            var cents = Decimal.zero
             for bucket in cost.data {
-                for r in bucket.results {
-                    if let s = r.amount?.value, let d = Double(s) {
-                        weekCost += d
+                for result in bucket.results {
+                    if let text = result.amount, let amount = Decimal(string: text, locale: Self.posix) {
+                        cents += amount
                     }
                 }
             }
+            let weekCost = NSDecimalNumber(decimal: cents / 100).doubleValue
 
             return ServiceSnapshot(
                 id: serviceID,
