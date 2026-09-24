@@ -259,6 +259,9 @@ final class AppState: ObservableObject {
             antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
             grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
+        // Before retention: a Codex account that answered without the windows it had a
+        // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
+        next = CodexProvider.flaggingMissingWindows(in: next, previous: snapshot, stored: lastKnown)
         next = await Self.applyPayAsYouGo(to: next)
         // Per service, never the whole array: a failed provider keeps its last good
         // reading beside its state chip, and a provider this poll no longer returned
