@@ -14,7 +14,9 @@ DMG="${3:-$ROOT/build/Omelette.dmg}"
 APPCAST="$ROOT/docs/appcast.xml"
 REPO_URL="https://github.com/adxd-og/usage-checker"
 
-SIGN_UPDATE="$(find "$ROOT/build/DerivedData/SourcePackages/artifacts" -type f -name sign_update -not -path "*old_dsa*" | head -1)"
+# Sparkle's tool comes with the package checkout; the release build has its own
+# DerivedData (see build_dmg.sh), the test suite's is the fallback.
+SIGN_UPDATE="$(find "$ROOT/build/DerivedData-release/SourcePackages/artifacts" "$ROOT/build/DerivedData/SourcePackages/artifacts" -type f -name sign_update -not -path "*old_dsa*" 2>/dev/null | head -1)"
 [ -n "$SIGN_UPDATE" ] || { echo "ERROR: sign_update not found — build the project once first."; exit 1; }
 [ -f "$DMG" ] || { echo "ERROR: DMG not found: $DMG"; exit 1; }
 [ -f "$APPCAST" ] || { echo "ERROR: appcast not found: $APPCAST"; exit 1; }

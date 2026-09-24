@@ -37,11 +37,15 @@ echo "==> Regenerating project"
 xcodegen generate
 
 echo "==> Archiving Release build"
+# Its own DerivedData, never the one the test suite uses: an archive into the
+# shared one left the Release omelette-hook inside the Debug test bundle, and a
+# Release helper ignores OMELETTE_AGENT_SOCKET, so the hook end-to-end tests
+# then talked to the live app and their fixtures showed up in its Agents panel.
 xcodebuild \
   -project "$PROJECT_NAME.xcodeproj" \
   -scheme "$SCHEME" \
   -configuration "$CONFIG" \
-  -derivedDataPath "$BUILD_DIR/DerivedData" \
+  -derivedDataPath "$BUILD_DIR/DerivedData-release" \
   -archivePath "$ARCHIVE_PATH" \
   -allowProvisioningUpdates \
   ${AUTH_ARGS[@]+"${AUTH_ARGS[@]}"} \
