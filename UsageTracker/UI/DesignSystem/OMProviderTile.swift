@@ -76,12 +76,15 @@ struct OMProviderTile: View {
                     }
                 }
                 .opacity(numbersOpacity)
-            } else if service.state == .ok, let cost = service.weekCost {
+            } else if let cost = service.spendHeadline {
+                // Pay-as-you-go without windows: live, or last known and dimmed like any
+                // retained number, with the chip in the footer saying why.
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Last 7 days").font(.system(size: 10)).foregroundStyle(.secondary)
                     Text(cost, format: .currency(code: "USD").precision(.fractionLength(2)))
                         .font(OMFont.numeral).monospacedDigit()
                 }
+                .opacity(numbersOpacity)
             } else if !hasData {
                 stateRow
             }

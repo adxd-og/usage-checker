@@ -66,7 +66,28 @@ struct MenuBarLabel: View {
                 : "\(service.displayName) usage \(phrase)"
         }
         let stamp = RelativeStamp.asOf(at, now: now, calendar: calendar, locale: locale)
-        return "\(service.displayName): last known \(phrase) (as of \(stamp)) — \(RetainedCopy.chipText(for: service.state))"
+        // A windowless pay-as-you-go account has no percentage: "last known 0%" would be
+        // a number it never reported. What it last reported is the week's spend.
+        let hasWindow = !service.buckets.isEmpty || service.extraUsage?.isEnabled == true
+        let reading = hasWindow
+            ? "last known \(phrase)"
+            : String(format: "last known spend $%.2f", service.weekCost ?? 0)
+        return "\(service.displayName): \(reading) (as of \(stamp)) — \(RetainedCopy.chipText(for: service.state))"
+    }
+
+    /// What VoiceOver reads for a pay-as-you-go pill. A retained one says it is last
+    /// known and since when; the dimming is invisible to a screen reader.
+    nonisolated static func costPillText(
+        for service: ServiceSnapshot,
+        weekCost: Double,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        guard service.isRetained else {
+            return "\(service.displayName) spend \(Int(weekCost.rounded())) dollars this week"
+        }
+        return text(for: service, now: now, calendar: calendar, locale: locale)
     }
 
     /// The agents pill. A separate view, not an `@ObservedObject` on `MenuBarLabel`
@@ -88,7 +109,9 @@ private struct MiniCostPill: View {
             .font(OMFont.menuNumeral)
             .monospacedDigit()
             .foregroundStyle(isStale ? Color.secondary : Color.primary)
-            .accessibilityLabel("\(service.displayName) spend \(Int(weekCost.rounded())) dollars this week")
+            // Last known, not current: the 55% every retained number gets.
+            .opacity(service.isRetained ? 0.55 : 1)
+            .accessibilityLabel(MenuBarLabel.costPillText(for: service, weekCost: weekCost))
     }
 }
 

@@ -126,6 +126,14 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// When the retained numbers were last true. nil for a live service — it has
     /// nothing to stamp.
     var retainedAt: Date? { isRetained ? fetchedAt : nil }
+
+    /// The week's dollars a windowless account shows where a window would go: live for
+    /// a healthy service, last known — and drawn dimmed — for a retained one. nil for a
+    /// failed service with nothing carried over, and when there is no spend.
+    var spendHeadline: Double? {
+        guard state == .ok || isRetained, let cost = weekCost, cost > 0 else { return nil }
+        return cost
+    }
 }
 
 /// Enterprise/Team accounts know extra usage as their spend limit;
