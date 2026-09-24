@@ -20,8 +20,21 @@ final class FloatingMiniPayAsYouGoTests: XCTestCase {
     }
 
     func testTheSpendLineUsesTheTilesWords() {
-        XCTAssertEqual(CostCopy.lastSevenDays(12.5), "Last 7 days $12.50")
-        XCTAssertEqual(CostCopy.lastSevenDays(1_234.567), "Last 7 days $1234.57")
+        let us = Locale(identifier: "en_US")
+        XCTAssertEqual(CostCopy.lastSevenDays(12.5, locale: us), "Last 7 days $12.50")
+        XCTAssertEqual(CostCopy.lastSevenDays(1_234.567, locale: us), "Last 7 days $1,234.57")
+    }
+
+    func testTheSpendLineFollowsTheUsersLocaleLikeTheTile() {
+        // The tile prints `.currency(code: "USD")` in the viewer's locale, and the panel
+        // must not print the same week differently. German puts the sign last, after a
+        // no-break space.
+        let de = Locale(identifier: "de_DE")
+        XCTAssertEqual(CostCopy.lastSevenDays(1_234.567, locale: de), "Last 7 days 1.234,57\u{00A0}$")
+        XCTAssertEqual(
+            CostCopy.lastSevenDays(1_234.567, locale: de),
+            "Last 7 days \(OMCostTile.money(1_234.567, locale: de))"
+        )
     }
 
     func testAHealthyAccountThatSpentNothingIsStillUnused() {
