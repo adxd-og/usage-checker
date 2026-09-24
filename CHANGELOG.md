@@ -5,6 +5,19 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.5] — 2026-09-24
+
+### Fixed
+- **Claude days older than a month count each reply in full.** Claude Code
+  logs a reply two to four times, and a reply more than 31 days old was
+  counted from its first, provisional line: a few output tokens instead of
+  the real count, in the Activity days and in the chat's History totals (API
+  list-price equivalents). Closes #10.
+- The first launch after this update re-reads the Claude Code transcripts
+  still on disk once and rebuilds the days and chats they cover. Days and
+  History chats older than those transcripts (30 days by default) stay, with
+  their previous, lower totals.
+
 ## [2.6.4] — 2026-09-24
 
 ### Fixed
