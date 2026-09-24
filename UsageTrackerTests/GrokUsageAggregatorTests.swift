@@ -766,4 +766,95 @@ final class GrokUsageAggregatorTests: XCTestCase {
         XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")
         XCTAssertEqual(breakdown.daily.first?.totalCost ?? 0, 0.02, accuracy: 1e-9)
     }
+
+    // MARK: - Re-pricing (spec 2026-09-24-2.7.0-hardening § Design, Accounting → Pricing)
+
+    /// A CLI build that logs no `costUsdTicks` is priced from the table; one read before
+    /// the table knew its model counted $0 until a relaunch.
+    func testATurnPricedFromTheTableFollowsATableThatArrivesLate() async throws {
+        try write([turnLine(
+            eventID: "e-late-table",
+            secondsAgo: 600,
+            ticks: nil,
+            models: [ModelFixture("grok-4.6-build", input: 1_000_000, output: 0, ticks: nil)]
+        )], project: alphaDir)
+        let aggregator = GrokUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+        let before = await lastHour(aggregator)
+        XCTAssertEqual(before.cost, 0, accuracy: 1e-9, "no ticks and no rate yet")
+
+        ModelPricing.updateDynamic([
+            "grok-4.6": ModelPrice(
+                inputPerM: 2, outputPerM: 6, cacheReadPerM: 0.5,
+                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+            )
+        ])
+        await aggregator.refresh()
+
+        let after = await lastHour(aggregator)
+        XCTAssertEqual(after.cost, 2.0, accuracy: 1e-9, "a million input tokens at $2/M")
+        XCTAssertEqual(after.models.first?.cost ?? 0, 2.0, accuracy: 1e-9)
+        let week = await aggregator.weekCost(now: now)
+        XCTAssertEqual(week, 2.0, accuracy: 1e-9)
+    }
+
+    /// `costUsdTicks` is the figure `grok` itself shows the user; a table change never
+    /// moves it.
+    func testTheCLIsOwnDollarsDoNotMoveWithTheTable() async throws {
+        try write([turnLine(
+            eventID: "e-ticked",
+            secondsAgo: 600,
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 1_000_000, output: 0, ticks: 100_000_000)]
+        )], project: alphaDir)
+        let aggregator = GrokUsageAggregator(rootURL: root)
+        await aggregator.refresh()
+
+        ModelPricing.updateDynamic([
+            "grok-4.6": ModelPrice(
+                inputPerM: 2, outputPerM: 6, cacheReadPerM: 0.5,
+                cacheCreate5mPerM: 0, cacheCreate1hPerM: 0
+            )
+        ])
+        await aggregator.refresh()
+
+        let usage = await lastHour(aggregator)
+        XCTAssertEqual(usage.cost, 0.01, accuracy: 1e-9, "the CLI's $0.01, not the table's $2")
+    }
+
+    // MARK: - Calendar (spec 2026-09-24-2.7.0-hardening § Design, Accounting → Time zone)
+
+    /// A zone twelve hours from this Mac's, so its day and `Calendar.current`'s never
+    /// start at the same hour.
+    private var farCalendar: Calendar {
+        let machine = TimeZone.current.secondsFromGMT()
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(secondsFromGMT: machine >= 0 ? machine - 12 * 3600 : machine + 12 * 3600)!
+        c.locale = Locale(identifier: "en_US_POSIX")
+        return c
+    }
+
+    func testTodayAndTheDailyRowsAreTheInjectedCalendarsDays() async throws {
+        let cal = farCalendar
+        // Two hours into the far zone's latest day to have begun, and a turn an hour
+        // before that day started.
+        var dayNow = cal.startOfDay(for: now).addingTimeInterval(2 * 3600)
+        if dayNow > now { dayNow = dayNow.addingTimeInterval(-86_400) }
+        let turnAt = dayNow.addingTimeInterval(-3 * 3600)
+        try write([turnLine(
+            eventID: "e-before-midnight",
+            secondsAgo: now.timeIntervalSince(turnAt),
+            ticks: 100_000_000,
+            models: [ModelFixture("grok-4.6-build", input: 100, output: 10, ticks: 100_000_000)]
+        )], project: alphaDir)
+
+        let aggregator = GrokUsageAggregator(rootURL: root, calendar: cal)
+        await aggregator.refresh()
+        let breakdown = await aggregator.breakdown(now: dayNow)
+
+        XCTAssertEqual(breakdown.todayTurns, 0, "an hour before this calendar's midnight is yesterday")
+        XCTAssertEqual(breakdown.todayCost, 0, accuracy: 1e-9)
+        XCTAssertEqual(breakdown.weekCost, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(breakdown.daily.map(\.day), [cal.startOfDay(for: turnAt)])
+    }
 }

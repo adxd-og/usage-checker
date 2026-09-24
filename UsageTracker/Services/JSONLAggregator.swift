@@ -21,6 +21,10 @@ struct CLITurn: Sendable, Codable {
     var agentKind: String? = nil
     /// `effort` as the record carries it (`high`, `xhigh`, …).
     var effort: String? = nil
+    /// True when `tokens.cost` was priced by a guess — a model neither models.dev nor the
+    /// offline table named when the turn was read (`ModelPricing.lookup`). Such a turn is
+    /// priced again once the table learns the model; every other turn keeps its dollars.
+    var pricedByFallback: Bool = false
 
     // The five counters the rest of the app still reads by name.
     var inputTokens: Int { tokens.input }
@@ -53,24 +57,57 @@ extension CLITurn {
     private enum CodingKeys: String, CodingKey {
         case id, timestamp, model, tokens, projectSlug
         case sessionID, agentID, agentKind, effort
+        case pricedByFallback
     }
 
-    /// Hand-written so the four fields default rather than throw when they are absent.
-    /// The cache version bump discards every snapshot written before them anyway; this
-    /// is so a snapshot that reaches the decoder some other way reports "an older
-    /// shape" by producing a turn without a chat, not "unreadable".
+    /// Hand-written so the optional fields default rather than throw when they are
+    /// absent. The cache version bump discards every snapshot written before the chat
+    /// fields anyway; this is so a snapshot that reaches the decoder some other way
+    /// reports "an older shape" by producing a turn without a chat, not "unreadable".
+    /// `pricedByFallback` arrived without a bump (see `isGuessWithoutMark`).
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        let model = try c.decode(String.self, forKey: .model)
         self.init(
             id: try c.decode(String.self, forKey: .id),
             timestamp: try c.decode(Date.self, forKey: .timestamp),
-            model: try c.decode(String.self, forKey: .model),
+            model: model,
             tokens: try c.decode(TokenBreakdown.self, forKey: .tokens),
             projectSlug: try c.decode(String.self, forKey: .projectSlug),
             sessionID: try c.decodeIfPresent(String.self, forKey: .sessionID) ?? "",
             agentID: try c.decodeIfPresent(String.self, forKey: .agentID),
             agentKind: try c.decodeIfPresent(String.self, forKey: .agentKind),
-            effort: try c.decodeIfPresent(String.self, forKey: .effort)
+            effort: try c.decodeIfPresent(String.self, forKey: .effort),
+            pricedByFallback: try c.decodeIfPresent(Bool.self, forKey: .pricedByFallback)
+                ?? Self.isGuessWithoutMark(model: model)
+        )
+    }
+
+    /// What a turn saved before the mark existed most likely was: a guess when the
+    /// offline table has no row for its model. Such a turn was priced either live or by
+    /// its family; treating it as a guess only means the table live now prices it once.
+    /// Cache v7 is kept as it is — a version bump would reject the v6 days it carries.
+    static func isGuessWithoutMark(model: String) -> Bool {
+        ModelPricing.table[ModelPricing.normalize(model)] == nil
+    }
+
+    /// The same turn, its tokens priced by the table that is live now and marked by
+    /// whether that price was a guess again.
+    func repricedNow() -> CLITurn {
+        let lookup = ModelPricing.lookup(for: model)
+        var bare = tokens
+        bare.cost = nil
+        return CLITurn(
+            id: id,
+            timestamp: timestamp,
+            model: model,
+            tokens: bare.priced(with: lookup.price),
+            projectSlug: projectSlug,
+            sessionID: sessionID,
+            agentID: agentID,
+            agentKind: agentKind,
+            effort: effort,
+            pricedByFallback: lookup.isFallback
         )
     }
 }
@@ -406,6 +443,28 @@ actor JSONLAggregator: CostLogAggregating {
             days.removeAll { $0.day < cutoff }
             agents = agents.filter { $0.value.lastAt >= cutoff }
         }
+
+        /// The same chat with each day re-keyed by `key`, days that land on one key added
+        /// together. Agents keep their instants; they carry no day.
+        func rekeyingDays(_ key: (Date) -> Date) -> SessionAgg {
+            var copy = self
+            var merged: [DayTotals] = []
+            merged.reserveCapacity(days.count)
+            for day in days {
+                let rekeyed = key(day.day)
+                if let index = merged.lastIndex(where: { $0.day == rekeyed }) {
+                    merged[index].turns += day.turns
+                    merged[index].tokens += day.tokens
+                    merged[index].mainTokens += day.mainTokens
+                } else {
+                    merged.append(DayTotals(
+                        day: rekeyed, turns: day.turns, tokens: day.tokens, mainTokens: day.mainTokens
+                    ))
+                }
+            }
+            copy.days = merged
+            return copy
+        }
     }
 
     /// Everything a relaunch needs to answer "what did I spend?" without re-reading
@@ -464,7 +523,8 @@ actor JSONLAggregator: CostLogAggregating {
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
     /// daily rows', and the range `sessions(from:to:)` is asked about. One calendar so
-    /// the bins and the query can never disagree.
+    /// the bins and the query can never disagree. The system's own by default,
+    /// following a time-zone change while the app runs.
     private let calendar: Calendar
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
     private let cacheURL: URL?
@@ -531,13 +591,14 @@ actor JSONLAggregator: CostLogAggregating {
     /// kept chat empties the chat's sums, so a chat whose transcript survives is rebuilt
     /// from it, and a chat whose transcript is gone keeps what it had.
     private var rebuiltChats: Set<String>?
-    /// One cached day interval covers the common case: log lines arrive in
-    /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
-    /// to call per turn.
-    private var dayCache: (start: Date, next: Date)?
+    /// The day the last lookup fell in, dropped on a system time-zone change.
+    private let dayBins = DayBinCache()
     /// How many transcripts the last scan actually opened. Zero is the normal answer
     /// for a poll with nothing new, and for a relaunch off a warm cache.
     private(set) var filesParsedInLastScan = 0
+    /// The `ModelPricing.generation` the guessed turns in `recentTurns` were last priced
+    /// at. nil until the first refresh, so that one also re-prices a restored cache.
+    private var pricedGeneration: Int?
     /// Set whenever this refresh changed something worth persisting. A quiet poll
     /// leaves it false and the cache file untouched.
     private var dirty = false
@@ -574,7 +635,7 @@ actor JSONLAggregator: CostLogAggregating {
             .appendingPathComponent(".claude/projects", isDirectory: true),
         cacheURL: URL? = JSONLAggregator.defaultCacheURL,
         saveInterval: TimeInterval = 300,
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
@@ -590,6 +651,7 @@ actor JSONLAggregator: CostLogAggregating {
 
     func refresh() async {
         loadCache()
+        repriceGuessesIfTableChanged()
         // Runaway backstop: ~250 days of continuous uptime before this trips;
         // after a clear, only forked-session replays could double-count.
         if seenMessageIDs.count > 500_000 {
@@ -605,6 +667,28 @@ actor JSONLAggregator: CostLogAggregating {
         initialized = true
         pruneAndFold()
         saveIfDue()
+    }
+
+    /// A turn priced by a guess (`CLITurn.pricedByFallback`) is priced again whenever the
+    /// live table moves — the restored cache on the first refresh included, which is how
+    /// a guess saved by an earlier run gets its real rate. The chat takes the difference
+    /// in the same day, agent and model rows (`reviseSession`). A turn the table named
+    /// when it was read keeps its dollars (see `CLITurn.cost`), and folded days keep
+    /// theirs: a day's sum has no per-model tokens left to price again.
+    private func repriceGuessesIfTableChanged() {
+        let current = ModelPricing.generation
+        guard pricedGeneration != current else { return }
+        pricedGeneration = current
+        for i in recentTurns.indices where recentTurns[i].pricedByFallback {
+            let stored = recentTurns[i]
+            let repriced = stored.repricedNow()
+            guard repriced.tokens != stored.tokens
+                    || repriced.pricedByFallback != stored.pricedByFallback
+            else { continue }
+            recentTurns[i] = repriced
+            reviseSession(from: stored, to: repriced)
+            dirty = true
+        }
     }
 
     /// Writes the cache now, throttle and all, if anything is waiting to be written.
@@ -966,7 +1050,9 @@ actor JSONLAggregator: CostLogAggregating {
             sessionID: stored.sessionID,
             agentID: stored.agentID,
             agentKind: stored.agentKind,
-            effort: stored.effort
+            effort: stored.effort,
+            // The counters — dollars included — are the record's, so is how they were priced.
+            pricedByFallback: record.pricedByFallback
         )
     }
 
@@ -1108,12 +1194,7 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     private func dayStart(for date: Date) -> Date {
-        if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = calendar
-        let start = cal.startOfDay(for: date)
-        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-        dayCache = (start, next)
-        return start
+        dayBins.start(of: date, in: calendar)
     }
 
     /// FNV-1a over UTF-8: stable across launches (unlike `Hasher`), 8 bytes per
@@ -1325,8 +1406,8 @@ actor JSONLAggregator: CostLogAggregating {
             // them. Marks, recent turns and ids go, so the first scan reads every
             // transcript again, and `rebuiltDays` / `rebuiltChats` have it replace — not
             // add to — each day and each chat it reaches.
-            oldDays = Self.dayTotals(from: snapshot.oldDays)
-            sessionAggs = snapshot.sessions
+            oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
+            sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
             titles = snapshot.titles
             firstPrompts = snapshot.firstPrompts
             rebuiltDays = []
@@ -1344,9 +1425,9 @@ actor JSONLAggregator: CostLogAggregating {
         // unreachable, and a final record arriving after a relaunch would be dropped
         // instead of replacing its provisional turn.
         rebuildRecentIndex()
-        oldDays = Self.dayTotals(from: snapshot.oldDays)
+        oldDays = Self.dayTotals(from: snapshot.oldDays, calendar: calendar)
         seenMessageIDs = Set(snapshot.seenMessageIDs)
-        sessionAggs = snapshot.sessions
+        sessionAggs = Self.rekeyed(snapshot.sessions, calendar: calendar)
         titles = snapshot.titles
         firstPrompts = snapshot.firstPrompts
         NSLog(
@@ -1356,16 +1437,32 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     /// Last one wins rather than merged: a day repeated in a hand-edited file is
-    /// corruption, and counting it twice would be worse than dropping half of it.
-    private static func dayTotals(from entries: [DayEntry]) -> [Date: DayAgg] {
+    /// corruption, and counting it twice would be worse than dropping half of it. Each
+    /// day is re-keyed to this run's calendar (`rekeyedDay`), so a cache saved in
+    /// another time zone keeps its dates.
+    private static func dayTotals(from entries: [DayEntry], calendar: Calendar) -> [Date: DayAgg] {
         var days: [Date: DayAgg] = [:]
         for entry in entries {
-            days[entry.day] = DayAgg(
+            days[rekeyedDay(entry.day, calendar: calendar)] = DayAgg(
                 cost: entry.cost, tokens: entry.tokens, breakdown: entry.breakdown,
                 turns: entry.turns, byFamily: entry.byFamily
             )
         }
         return days
+    }
+
+    /// A saved day, re-keyed to `calendar`: the start, in `calendar`, of the date the
+    /// saved midnight named. A day is saved as the midnight of the zone it was binned in,
+    /// and the midday after it is still that date in any zone less than twelve hours
+    /// away — so its start here is the key the Activity grid, the daily rows and the
+    /// History ranges ask for. A day saved in this zone maps onto itself.
+    static func rekeyedDay(_ saved: Date, calendar: Calendar) -> Date {
+        calendar.startOfDay(for: saved.addingTimeInterval(12 * 3600))
+    }
+
+    /// Every chat's day totals re-keyed the same way (`rekeyedDay`).
+    private static func rekeyed(_ sessions: [String: SessionAgg], calendar: Calendar) -> [String: SessionAgg] {
+        sessions.mapValues { agg in agg.rekeyingDays { rekeyedDay($0, calendar: calendar) } }
     }
 
     /// Nothing to write, or written too recently to be worth the tens of MB again.
@@ -1513,6 +1610,7 @@ actor JSONLAggregator: CostLogAggregating {
             ? "\(tsStr)|\(model)|\(input)|\(output)|\(cacheRead)|\(c5)|\(c1h)|\(thinking)"
             : msgID
 
+        let pricing = ModelPricing.lookup(for: model)
         return CLITurn(
             id: id,
             timestamp: ts,
@@ -1524,7 +1622,7 @@ actor JSONLAggregator: CostLogAggregating {
                 cacheWrite5m: c5,
                 cacheWrite1h: c1h,
                 thinking: thinking
-            ).priced(model: model),
+            ).priced(with: pricing.price),
             projectSlug: projectSlug,
             // The record's own fields, never the file name: a sub-agent transcript is
             // named after the agent, and nothing but the record says which chat it
@@ -1532,7 +1630,8 @@ actor JSONLAggregator: CostLogAggregating {
             sessionID: pool.intern((any["sessionId"] as? String) ?? ""),
             agentID: (any["agentId"] as? String).map { pool.intern($0) },
             agentKind: (any["attributionAgent"] as? String).map { pool.intern($0) },
-            effort: (any["effort"] as? String).map { pool.intern($0) }
+            effort: (any["effort"] as? String).map { pool.intern($0) },
+            pricedByFallback: pricing.isFallback
         )
     }
 }

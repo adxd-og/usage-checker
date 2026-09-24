@@ -323,6 +323,7 @@ struct GridCache: Sendable {
         now: Date = Date(),
         calendar: Calendar = .current
     ) -> GridCache {
+        let dailies = Self.dailiesByDay(dailies, calendar: calendar)
         let formatters = Formatters()
         var values: [Date: DayValue] = [:]
         for daily in dailies where daily.totalCost > 0 {
@@ -364,6 +365,46 @@ struct GridCache: Sendable {
             usesStatusColor: false,
             hasData: !dailies.isEmpty
         )
+    }
+
+    /// The rows re-keyed to the day of `calendar` each falls in, ascending, with rows
+    /// that land on one date added together: `isDate(_:inSameDayAs:)`, spelled as a
+    /// dictionary key. A folded day keeps the midnight of the zone it was binned in, and
+    /// the grid walks this calendar's midnights — matched by `Date` equality, every such
+    /// day went blank while the cards above still summed it.
+    static func dailiesByDay(_ dailies: [CLIDailySummary], calendar: Calendar) -> [CLIDailySummary] {
+        var byDay: [Date: CLIDailySummary] = [:]
+        for daily in dailies {
+            let day = calendar.startOfDay(for: daily.day)
+            guard let kept = byDay[day] else {
+                byDay[day] = CLIDailySummary(
+                    day: day, totalCost: daily.totalCost, totalTokens: daily.totalTokens,
+                    tokens: daily.tokens, turns: daily.turns, byFamily: daily.byFamily
+                )
+                continue
+            }
+            byDay[day] = CLIDailySummary(
+                day: day,
+                totalCost: kept.totalCost + daily.totalCost,
+                totalTokens: kept.totalTokens + daily.totalTokens,
+                tokens: kept.tokens + daily.tokens,
+                turns: kept.turns + daily.turns,
+                byFamily: kept.byFamily.merging(daily.byFamily, uniquingKeysWith: +)
+            )
+        }
+        return byDay.values.sorted { $0.day < $1.day }
+    }
+
+    /// What the square for `day` shows: its value when a row landed on it, nil when no
+    /// row did or the walk has no square for that date. `day` is a start of day in the
+    /// calendar the cache was built with — the dates the view draws.
+    func value(on day: Date) -> Double? {
+        for column in weeksMatrix {
+            for cell in column where cell.date == day {
+                return cell.hasReading ? cell.value : nil
+            }
+        }
+        return nil
     }
 
     // MARK: Quota

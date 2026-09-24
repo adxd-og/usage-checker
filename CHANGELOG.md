@@ -33,6 +33,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forgotten or nothing is reporting, and shows a pay-as-you-go account's
   spend.
 
+### Costs (API list-price equivalents)
+- **Turns read before the price table knew their model are priced once it does.** Codex and Grok turns counted $0 until the next launch; Claude turns priced at a family guess kept the guess across relaunches. The last 31 days, and the History chats inside them, are priced again whenever the table changes. Older days keep the dollars they were read with.
+- A failed models.dev fetch is tried again after 15 minutes instead of the next day.
+- A Codex rollout that shrinks, or has a shorter copy in the archive, is no longer counted twice.
+
+### Time zones
+- **"Today" and the day totals follow a time-zone change without a relaunch**, for Claude, Codex and Grok.
+- Activity squares older than a month no longer go blank after a time-zone change and a relaunch, and History chats stay on their own dates.
+
+### Quota history
+- A history log that cannot be written to is left as it is, instead of being replaced by the newest record alone.
+- The old `history.json` is deleted only after its records are safely in the new log.
+
+### Status file
+- A session that ends leaves `status.json` (status line, `omelette status`, `get_agents`) at once instead of at the next poll.
+
 ## [2.6.5] — 2026-09-24
 
 ### Fixed

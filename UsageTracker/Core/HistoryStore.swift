@@ -226,8 +226,10 @@ actor HistoryStore {
             return
         }
         records = legacy
-        rewriteFile()
-        if FileManager.default.fileExists(atPath: fileURL.path) {
+        // Removed only once its records are safely in the log. The log existing proves
+        // nothing: it is the older one this migration is replacing, and it is still
+        // there when the rewrite that should have carried the records over failed.
+        if rewriteFile() {
             try? FileManager.default.removeItem(at: legacyURL)
         }
         records = []
@@ -248,8 +250,15 @@ actor HistoryStore {
                 defer { try? handle.close() }
                 try handle.seekToEnd()
                 try handle.write(contentsOf: data)
-            } else {
+            } else if !FileManager.default.fileExists(atPath: fileURL.path) {
+                // No log yet: this record is the whole of it.
                 try data.write(to: fileURL, options: [.atomic])
+            } else {
+                // The log is there but will not open for writing — read-only, locked.
+                // Replacing it with this one line would throw away up to 90 days of
+                // history; it is left as it is, and the next full rewrite puts back
+                // everything still held in memory, this record included.
+                NSLog("[UT] HistoryStore append skipped: the log exists but will not open for writing")
             }
         } catch {
             NSLog("[UT] HistoryStore append failed: %@", String(describing: error))
@@ -258,8 +267,9 @@ actor HistoryStore {
 
     /// Full rewrite — only at load-time cleanup and when rotation has left
     /// enough dead records in the log (about once every few days), never on
-    /// the per-poll path.
-    private func rewriteFile() {
+    /// the per-poll path. Whether the log on disk now holds `records`.
+    @discardableResult
+    private func rewriteFile() -> Bool {
         var data = Data()
         for record in records {
             guard let line = try? encoder.encode(record) else { continue }
@@ -269,8 +279,10 @@ actor HistoryStore {
         do {
             try data.write(to: fileURL, options: [.atomic])
             staleOnDisk = 0
+            return true
         } catch {
             NSLog("[UT] HistoryStore compaction failed: %@", String(describing: error))
+            return false
         }
     }
 }

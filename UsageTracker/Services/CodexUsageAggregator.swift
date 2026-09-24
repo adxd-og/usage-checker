@@ -44,8 +44,9 @@ actor CodexUsageAggregator: CostLogAggregating {
         /// not to write one.
         let effort: String?
         let projectSlug: String
-        let cost: Double
-        let tokens: TokenBreakdown
+        /// Priced when read and again whenever the live table changes (`repriceIfTableChanged`).
+        var cost: Double
+        var tokens: TokenBreakdown
         /// The chat this turn belongs to — a sub-agent's turns carry the PARENT's
         /// `session_id`, which is what makes them part of the same chat.
         let sessionID: String
@@ -185,8 +186,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     private let archivedURL: URL?
     /// `~/.codex/session_index.jsonl`, read in Task 5. Derived the same way.
     private let indexURL: URL?
-    /// The calendar every day boundary is taken in. Injected so a session test can pin
-    /// UTC instead of drifting with the machine's time zone.
+    /// The calendar every day boundary is taken in: the system's own by default, which
+    /// follows a time-zone change while the app runs. Injected so a session test can
+    /// pin UTC instead of drifting with the machine's time zone.
     private let calendar: Calendar
     /// Per rollout, keyed by `fileKey(for:)` — the thread uuid, not the path.
     private var fileStates: [String: FileState] = [:]
@@ -219,7 +221,11 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Chats are kept three times longer than turns: the History list reaches back a
     /// quarter and holds one small aggregate per chat, not one record per turn.
     private let sessionRetention: TimeInterval = 92 * 24 * 3600
-    private var dayCache: (start: Date, next: Date)?
+    /// The day the last lookup fell in, dropped on a system time-zone change.
+    private let dayBins = DayBinCache()
+    /// The `ModelPricing.generation` the turns in `recentTurns` were last priced at. nil
+    /// before the first scan.
+    private var pricedGeneration: Int?
 
     private struct DayAgg {
         var cost = 0.0
@@ -243,7 +249,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             .appendingPathComponent(".codex/sessions", isDirectory: true),
         archivedURL: URL? = nil,
         indexURL: URL? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.rootURL = rootURL
         self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
@@ -269,7 +275,10 @@ actor CodexUsageAggregator: CostLogAggregating {
     func costs(now: Date = Date()) -> (week: Double, today: Double) {
         ingestAll()
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        // This aggregator's calendar, the one `dayStart` bins the daily rows with: a
+        // fresh `Calendar.current` here put "today" and today's row on two different
+        // midnights whenever the two disagreed.
+        let startOfDay = calendar.startOfDay(for: now)
         var week = 0.0
         var today = 0.0
         // The week reaches back 7 days and `recentWindow` is 31, so the folded days can
@@ -282,8 +291,13 @@ actor CodexUsageAggregator: CostLogAggregating {
     }
 
     func breakdown() -> CLIBreakdown {
-        let now = Date()
-        let startOfDay = Calendar.current.startOfDay(for: now)
+        breakdown(now: Date())
+    }
+
+    /// `breakdown()` as of `now`: "today" is `now`'s day in this aggregator's calendar,
+    /// the same one the daily rows are binned in.
+    func breakdown(now: Date) -> CLIBreakdown {
+        let startOfDay = calendar.startOfDay(for: now)
         let weekAgo = now.addingTimeInterval(-7 * 24 * 3600)
         let monthAgo = now.addingTimeInterval(-30 * 24 * 3600)
 
@@ -534,9 +548,46 @@ actor CodexUsageAggregator: CostLogAggregating {
     // MARK: - Ingest
 
     private func ingestAll() {
+        repriceIfTableChanged()
         reloadNamesIfChanged()
         scanAndIngest()
         pruneAndFold()
+    }
+
+    /// models.dev can answer after the first scan — the launch poll reads the logs while
+    /// the fetch is still out — and a model the live table did not know yet was read at
+    /// $0 (`turn`). When the table moves, every turn of the 31-day window is priced again
+    /// from the tokens and the model it kept, which is what a relaunch would do. So is
+    /// every chat lying wholly inside the window: all its turns are still here, and it is
+    /// recorded again from them. Folded days and the older part of a longer chat keep the
+    /// dollars they were read with — nothing finer than a day's or a chat's sum is left
+    /// of them to price.
+    private func repriceIfTableChanged() {
+        let current = ModelPricing.generation
+        guard pricedGeneration != current else { return }
+        pricedGeneration = current
+        for i in recentTurns.indices {
+            let tokens = Self.priced(recentTurns[i].tokens, model: recentTurns[i].model)
+            recentTurns[i].tokens = tokens
+            recentTurns[i].cost = tokens.cost?.total ?? 0
+        }
+        // A chat that started inside the window has every turn in `recentTurns`, in the
+        // order they were first recorded; recording them again rebuilds it exactly.
+        let windowStart = Date().addingTimeInterval(-recentWindow)
+        let rebuilt = Set(sessionAggs.filter { $0.value.firstAt >= windowStart }.keys)
+        guard !rebuilt.isEmpty else { return }
+        for id in rebuilt { sessionAggs[id] = nil }
+        for turn in recentTurns where rebuilt.contains(turn.sessionID) { record(turn) }
+    }
+
+    /// `tokens` with the dollars the live table gives `model` now: a per-bucket split
+    /// when the table knows the model, none when it does not — $0 in the dollar column,
+    /// the tokens kept. The one pricing rule for a turn read today and a turn re-priced.
+    nonisolated static func priced(_ tokens: TokenBreakdown, model: String) -> TokenBreakdown {
+        var bare = tokens
+        bare.cost = nil
+        guard let price = ModelPricing.dynamicLookup(for: model) else { return bare }
+        return bare.priced(with: price)
     }
 
     /// Re-reads `session_index.jsonl` only when it has actually changed. Codex rewrites
@@ -743,11 +794,7 @@ actor CodexUsageAggregator: CostLogAggregating {
     }
 
     private func dayStart(for date: Date) -> Date {
-        if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let start = calendar.startOfDay(for: date)
-        let next = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-        dayCache = (start, next)
-        return start
+        dayBins.start(of: date, in: calendar)
     }
 
     // MARK: - File scanning
@@ -788,8 +835,10 @@ actor CodexUsageAggregator: CostLogAggregating {
 
             var state = fileStates[key] ?? FileState()
             if size < state.consumed {
-                // Truncated or rewritten in place — the carried baseline is invalid.
-                state = FileState()
+                // Truncated or rewritten in place — the carried offset and counter
+                // baseline are invalid, and the file is read again from the top. What it
+                // has already billed stays billed (`restarted(after:)`).
+                state = Self.restarted(after: state)
             }
             if size > state.consumed {
                 // One file at a time inside an autorelease pool: a first scan over a
@@ -798,6 +847,21 @@ actor CodexUsageAggregator: CostLogAggregating {
             }
             fileStates[key] = state
         }
+    }
+
+    /// A fresh parse state for a file that shrank, carrying forward the two things that
+    /// say what it has already billed: the responses it named (`seenResponses`), so a
+    /// re-read record is not billed twice, and whether it bills from records at all
+    /// (`sawRecord`), so the counters that restate those records bill nothing either.
+    /// The offset, the counter baseline, the pending tokens, the contexts and the
+    /// identity are read again from the file. A rollout that writes no records has no
+    /// ids to remember: re-reading one still bills its counter deltas again — rare, and
+    /// the one double count left.
+    private static func restarted(after old: FileState) -> FileState {
+        var state = FileState()
+        state.seenResponses = old.seenResponses
+        state.sawRecord = old.sawRecord
+        return state
     }
 
     /// A rollout's identity: the thread uuid its file name ends with
@@ -1073,10 +1137,7 @@ actor CodexUsageAggregator: CostLogAggregating {
         fallbackSlug: String,
         fileKey: String
     ) -> Turn {
-        var tokens = tokens
-        if let price = ModelPricing.dynamicLookup(for: model) {
-            tokens = tokens.priced(with: price)
-        }
+        let tokens = Self.priced(tokens, model: model)
         // A rollout whose first line we never read still has an identity: the thread
         // uuid its file name ends with, which is exactly what the meta would have said.
         let threadID = state.threadID ?? fileKey

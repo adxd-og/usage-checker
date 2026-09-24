@@ -5,25 +5,29 @@ import Foundation
 /// $ rates without anyone editing the hardcoded table.
 ///
 /// The hardcoded `ModelPricing.table` stays as the offline fallback: this loader
-/// only layers a dynamic table on top when the fetch/cache succeeds.
+/// only layers a dynamic table on top when the fetch/cache succeeds. When the next
+/// check may run is `ModelsDevRefresher`'s business.
 enum ModelsDevPricing {
     private static let apiURL = URL(string: "https://models.dev/api.json")!
-    private static let maxCacheAge: TimeInterval = 24 * 3600
+    /// How long a fetched table is good for, and how long a good check waits.
+    static let maxCacheAge: TimeInterval = 24 * 3600
+    /// How long a failed fetch waits before the next try. A day was too long when
+    /// nothing else could price a turn: a first launch offline, with no copy on disk,
+    /// left every Codex turn at $0 until the next day's check.
+    static let retryAfterFailure: TimeInterval = 15 * 60
     /// anthropic prices the Claude CLI accounting, openai the Codex CLI's, xai the Grok
     /// CLI's fallback path (the CLI normally logs its own dollars), google the Gemini /
     /// Antigravity model ids that turn up in shared logs.
     static let providers = ["anthropic", "openai", "xai", "google"]
 
-    /// In-memory guard so the periodic poll only re-checks once per day.
-    nonisolated(unsafe) private static var lastAttemptAt: Date = .distantPast
-    private static let attemptLock = NSLock()
-
-    private struct Cache: Codable {
+    /// The copy on disk: when it was fetched, and what it said.
+    struct Cache: Codable {
         let fetchedAt: Date
         let prices: [String: ModelPrice]
     }
 
-    private static var cacheURL: URL {
+    /// Not private: the default argument of `ModelsDevRefresher.init`.
+    static var defaultCacheURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("UsageTracker", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -32,40 +36,36 @@ enum ModelsDevPricing {
         return dir.appendingPathComponent("models-dev-pricing-v3.json")
     }
 
-    /// Called on every poll; cheap no-op unless a day has passed since the last check.
-    /// On first call it also seeds `ModelPricing` from the disk cache, so prices are
-    /// correct even before (or without) a network round-trip.
-    static func refreshIfStale() async {
-        let now = Date()
-        let shouldAttempt: Bool = {
-            attemptLock.lock()
-            defer { attemptLock.unlock() }
-            guard now.timeIntervalSince(lastAttemptAt) >= maxCacheAge else { return false }
-            lastAttemptAt = now
-            return true
-        }()
-        guard shouldAttempt else { return }
+    /// What one check came to.
+    enum Outcome: Equatable, Sendable {
+        /// The copy on disk was younger than `maxCacheAge`; nothing was fetched.
+        case freshCache
+        /// models.dev answered, and its table is live.
+        case fetched
+        /// The fetch failed; whatever was there before — a stale disk copy, or only the
+        /// offline table — stays.
+        case failed
+    }
 
-        if let cache = readCache() {
-            ModelPricing.updateDynamic(cache.prices)
-            if now.timeIntervalSince(cache.fetchedAt) < maxCacheAge {
-                NSLog("[UT] models.dev pricing: %d models from cache", cache.prices.count)
-                return
-            }
-        }
-
-        do {
-            let prices = try await fetch()
-            ModelPricing.updateDynamic(prices)
-            writeCache(Cache(fetchedAt: now, prices: prices))
-            NSLog("[UT] models.dev pricing: %d models fetched", prices.count)
-        } catch {
-            // Keep whatever we had (disk cache or the hardcoded table); retry tomorrow.
-            NSLog("[UT] models.dev pricing fetch failed: %@", String(describing: error))
+    /// When the check after this one may run, decided from the answer rather than
+    /// stamped before the question: a good answer waits `maxCacheAge`, a failed fetch
+    /// only `retryAfterFailure`.
+    static func nextAttempt(after outcome: Outcome, at now: Date) -> Date {
+        switch outcome {
+        case .freshCache, .fetched: return now.addingTimeInterval(maxCacheAge)
+        case .failed: return now.addingTimeInterval(retryAfterFailure)
         }
     }
 
-    private static func fetch() async throws -> [String: ModelPrice] {
+    /// Called on every poll; cheap no-op unless the next check is due. The first call
+    /// also seeds `ModelPricing` from the disk copy, so prices are correct even before
+    /// (or without) a network round-trip.
+    static func refreshIfStale() async {
+        await ModelsDevRefresher.shared.refreshIfStale()
+    }
+
+    /// Not private: the default fetch of `ModelsDevRefresher.init`.
+    static func fetchLive() async throws -> [String: ModelPrice] {
         var request = URLRequest(url: apiURL)
         request.timeoutInterval = 20
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -78,7 +78,7 @@ enum ModelsDevPricing {
         return try parse(root)
     }
 
-    /// Split out of `fetch` so the shape handling is testable against a fixture with no
+    /// Split out of `fetchLive` so the shape handling is testable against a fixture with no
     /// network round-trip. Only the base rates are read: `tiers` and `context_over_200k`
     /// describe the long-context surcharge, and neither CLI log says which tier a turn
     /// billed at, so applying them would be a guess.
@@ -142,17 +142,72 @@ enum ModelsDevPricing {
         return nil
     }
 
-    private static func readCache() -> Cache? {
-        guard let data = try? Data(contentsOf: cacheURL) else { return nil }
+    static func readCache(at url: URL) -> Cache? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try? decoder.decode(Cache.self, from: data)
     }
 
-    private static func writeCache(_ cache: Cache) {
+    static func writeCache(_ cache: Cache, to url: URL) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(cache) else { return }
-        try? data.write(to: cacheURL, options: [.atomic])
+        try? data.write(to: url, options: [.atomic])
+    }
+}
+
+/// The models.dev check and its schedule. One shared instance serves the app's poll;
+/// a test makes its own, with a temp cache file and a scripted fetch.
+///
+/// The next check is scheduled once the answer is in (`ModelsDevPricing.nextAttempt`),
+/// so a failed fetch is tried again within the quarter hour instead of the next day.
+/// While a fetch is out, a second call returns at once: the poll can come round before
+/// a slow fetch has answered, and asking twice would buy nothing.
+actor ModelsDevRefresher {
+    static let shared = ModelsDevRefresher()
+
+    private let cacheURL: URL
+    private let fetch: @Sendable () async throws -> [String: ModelPrice]
+    private var nextAttemptAt: Date = .distantPast
+    private var inFlight = false
+
+    init(
+        cacheURL: URL = ModelsDevPricing.defaultCacheURL,
+        fetch: @escaping @Sendable () async throws -> [String: ModelPrice] = {
+            try await ModelsDevPricing.fetchLive()
+        }
+    ) {
+        self.cacheURL = cacheURL
+        self.fetch = fetch
+    }
+
+    func refreshIfStale(now: Date = Date()) async {
+        guard !inFlight, now >= nextAttemptAt else { return }
+        inFlight = true
+        let outcome = await check(now: now)
+        nextAttemptAt = ModelsDevPricing.nextAttempt(after: outcome, at: now)
+        inFlight = false
+    }
+
+    private func check(now: Date) async -> ModelsDevPricing.Outcome {
+        if let cache = ModelsDevPricing.readCache(at: cacheURL) {
+            ModelPricing.updateDynamic(cache.prices)
+            if now.timeIntervalSince(cache.fetchedAt) < ModelsDevPricing.maxCacheAge {
+                NSLog("[UT] models.dev pricing: %d models from cache", cache.prices.count)
+                return .freshCache
+            }
+        }
+        do {
+            let prices = try await fetch()
+            ModelPricing.updateDynamic(prices)
+            ModelsDevPricing.writeCache(ModelsDevPricing.Cache(fetchedAt: now, prices: prices), to: cacheURL)
+            NSLog("[UT] models.dev pricing: %d models fetched", prices.count)
+            return .fetched
+        } catch {
+            // Keep whatever we had (disk copy or the hardcoded table); try again soon.
+            NSLog("[UT] models.dev pricing fetch failed: %@", String(describing: error))
+            return .failed
+        }
     }
 }

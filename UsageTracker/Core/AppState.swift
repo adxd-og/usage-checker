@@ -359,28 +359,47 @@ final class AppState: ObservableObject {
     /// count comes from it. `@Published` sends on the main actor because the store is
     /// `@MainActor`, which is what makes `assumeIsolated` true here rather than hopeful.
     private func observeAgentSessions() {
-        agentObserver = AgentSessionStore.shared.$sessions
-            .sink { _ in
+        agentObserver = Self.agentSummaries(of: AgentSessionStore.shared.$sessions)
+            .sink { agents in
                 MainActor.assumeIsolated {
                     AppState.shared.publishStatusFile(
-                        costs: AppState.shared.lastCosts, sessions: AppState.shared.lastSessions
+                        costs: AppState.shared.lastCosts,
+                        sessions: AppState.shared.lastSessions,
+                        agents: agents
                     )
                 }
             }
     }
 
+    /// What the file should say about the agents, from the list the store's publisher
+    /// hands its subscribers. `@Published` delivers in `willSet`: while a subscriber runs,
+    /// the store's own `sessions` still holds the list from before the change, so a
+    /// session `SessionEnd` just removed is still in it. Reading the property there kept
+    /// an ended session in `status.json` — the status line, `omelette status`,
+    /// `get_agents` — until the next poll.
+    nonisolated static func agentSummaries(
+        of sessions: Published<[AgentSession]>.Publisher
+    ) -> AnyPublisher<StatusFileWriter.AgentSummary, Never> {
+        sessions
+            .map { StatusFileWriter.AgentSummary(sessions: $0) }
+            .eraseToAnyPublisher()
+    }
+
     /// Writes the file, or schedules one write for when the throttle allows it — the
     /// last change has to reach disk, or a status line spends the rest of the day
-    /// showing a flag for an agent that stopped waiting an hour ago.
+    /// showing a flag for an agent that stopped waiting an hour ago. `agents` is the list
+    /// the agent observer was handed; the poll's writes and the trailing write read the
+    /// store, which holds the current list by then.
     private func publishStatusFile(
         costs: [String: StatusFileWriter.CostEntry],
-        sessions: [String: [SessionSummary]]
+        sessions: [String: [SessionSummary]],
+        agents: StatusFileWriter.AgentSummary? = nil
     ) {
         let built = StatusFileWriter.build(
             services: snapshot.services,
             costs: costs,
             sessions: sessions,
-            agents: StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
+            agents: agents ?? StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
             now: Date(),
             mode: SettingsStore.shared.percentMode
         )

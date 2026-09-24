@@ -1,6 +1,6 @@
 import Foundation
 
-struct ModelPrice: Sendable, Codable {
+struct ModelPrice: Sendable, Codable, Equatable {
     let inputPerM: Double
     let outputPerM: Double
     let cacheReadPerM: Double
@@ -40,12 +40,28 @@ enum ModelPricing {
     /// hardcoded table so a freshly launched model prices correctly with no code
     /// change; the static table remains the offline fallback. Keys are normalized.
     nonisolated(unsafe) private static var dynamicTable: [String: ModelPrice] = [:]
+    /// Moves by one every time `updateDynamic` actually changes the live table.
+    nonisolated(unsafe) private static var dynamicGeneration = 0
     private static let dynamicLock = NSLock()
 
     static func updateDynamic(_ prices: [String: ModelPrice]) {
         dynamicLock.lock()
         defer { dynamicLock.unlock() }
+        // The same rates again — the launch reads the disk copy, the daily fetch
+        // usually brings what it already said — are not a new table.
+        guard prices != dynamicTable else { return }
         dynamicTable = prices
+        dynamicGeneration &+= 1
+    }
+
+    /// Which live table prices are being read from. A cost aggregator remembers the
+    /// generation it last priced its recent turns at and prices them again when this
+    /// moves: a model models.dev did not know at the first scan was read at $0 (Codex,
+    /// Grok) or at its family's rate (Claude) and would otherwise stay that way.
+    static var generation: Int {
+        dynamicLock.lock()
+        defer { dynamicLock.unlock() }
+        return dynamicGeneration
     }
 
     private static func dynamicPrice(for normalized: String) -> ModelPrice? {
@@ -72,18 +88,26 @@ enum ModelPricing {
         return nil
     }
 
-    static func price(for model: String) -> ModelPrice {
+    /// `price(for:)`, and whether the answer is a guess: true when neither models.dev nor
+    /// the offline table names the model and the rate is its family's newest member's, or
+    /// the generic fallback. `JSONLAggregator` prices a guessed turn again once the live
+    /// table learns its model.
+    static func lookup(for model: String) -> (price: ModelPrice, isFallback: Bool) {
         let normalized = normalize(model)
-        if let live = dynamicPrice(for: normalized) { return live }
-        if let exact = table[normalized] { return exact }
+        if let live = dynamicPrice(for: normalized) { return (live, false) }
+        if let exact = table[normalized] { return (exact, false) }
         // Newest family member as the price fallback: deprecated models that priced
         // differently (Opus 4 / 4.1) are pinned in the table by their exact ids above.
-        if normalized.contains("fable") { return table["claude-fable-5"]! }
-        if normalized.contains("mythos") { return table["claude-mythos-5"]! }
-        if normalized.contains("opus") { return table["claude-opus-4-8"]! }
-        if normalized.contains("haiku") { return table["claude-haiku-4-5"]! }
-        if normalized.contains("sonnet") { return table["claude-sonnet-4-6"]! }
-        return fallback
+        if normalized.contains("fable") { return (table["claude-fable-5"]!, true) }
+        if normalized.contains("mythos") { return (table["claude-mythos-5"]!, true) }
+        if normalized.contains("opus") { return (table["claude-opus-4-8"]!, true) }
+        if normalized.contains("haiku") { return (table["claude-haiku-4-5"]!, true) }
+        if normalized.contains("sonnet") { return (table["claude-sonnet-4-6"]!, true) }
+        return (fallback, true)
+    }
+
+    static func price(for model: String) -> ModelPrice {
+        lookup(for: model).price
     }
 
     // Both functions run a regex and sit on per-turn hot paths (cost aggregation
