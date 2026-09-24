@@ -100,11 +100,18 @@ enum PassiveSessionScanner {
     /// the scan window — the tree is date-partitioned, so a year that ended long ago is
     /// thousands of files the poll never has to walk.
     ///
-    /// The relative path is read as up to three integers (`YYYY`, `MM`, `DD`); anything
-    /// that is not one of those — an unexpected directory name, the root itself — is
-    /// walked rather than skipped. The partition is compared by its *end* (the start of
-    /// the next year/month/day) plus a day of slack, because the CLI names the directory
-    /// in its own local calendar while the cutoff is an absolute instant.
+    /// Only years and months are judged. A day directory is always walked: Codex may
+    /// append a resumed thread to the rollout it started, under the day the thread
+    /// began, and judging the day by its name hid a thread resumed a week later. Its
+    /// files are still filtered by modification time. The cost is at most one month
+    /// of day directories per poll; a thread resumed from an earlier month stays out
+    /// of the scan, and hooks still see it.
+    ///
+    /// The relative path is read as up to two integers (`YYYY`, `MM`); anything that is
+    /// not one of those — an unexpected directory name, the root itself — is walked
+    /// rather than skipped. A partition is compared by its *end* (the start of the next
+    /// year or month) plus a day of slack, because the CLI names the directory in its
+    /// own local calendar while the cutoff is an absolute instant.
     static func codexPartitionIsRecent(
         _ directory: URL, root: URL, cutoff: Date, calendar: Calendar = .current
     ) -> Bool {
@@ -113,19 +120,18 @@ enum PassiveSessionScanner {
         guard directoryComponents.count > rootComponents.count,
               Array(directoryComponents.prefix(rootComponents.count)) == rootComponents else { return true }
 
+        let relative = directoryComponents.dropFirst(rootComponents.count)
+        // A day, or anything below one: walked. Its month has already been judged.
+        guard relative.count <= 2 else { return true }
         var parts: [Int] = []
-        for component in directoryComponents.dropFirst(rootComponents.count).prefix(3) {
+        for component in relative {
             guard let value = Int(component) else { return true }
             parts.append(value)
         }
         guard let year = parts.first else { return true }
 
-        let start = DateComponents(
-            year: year,
-            month: parts.count > 1 ? parts[1] : 1,
-            day: parts.count > 2 ? parts[2] : 1
-        )
-        let unit: Calendar.Component = parts.count == 1 ? .year : (parts.count == 2 ? .month : .day)
+        let start = DateComponents(year: year, month: parts.count > 1 ? parts[1] : 1, day: 1)
+        let unit: Calendar.Component = parts.count == 1 ? .year : .month
         guard let startDate = calendar.date(from: start),
               let end = calendar.date(byAdding: unit, value: 1, to: startDate) else { return true }
         return end.addingTimeInterval(86_400) >= cutoff

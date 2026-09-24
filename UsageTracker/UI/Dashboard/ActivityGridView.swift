@@ -27,6 +27,14 @@ struct ActivityGridView: View {
                 } else if let cache {
                     statCards(cache)
                         .padding(.horizontal, 24)
+                    // The cache's own kind, like the tooltips: the cards' figures came from it.
+                    if let caption = Self.statsCaption(isQuota: cache.usesStatusColor, caption: costCaption) {
+                        Text(caption)
+                            .font(OMFont.caption)
+                            .foregroundStyle(.tertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.horizontal, 24)
+                    }
                     if let note = Self.retentionNote(
                         provider: dashboard.selectedService, showsQuota: showsQuota
                     ) {
@@ -218,7 +226,8 @@ struct ActivityGridView: View {
                   : Self.cellBase(intensity: intensity, usesStatusColor: cache.usesStatusColor, unobserved: unobserved)
                       .opacity(Self.cellOpacity(intensity: intensity, unobserved: unobserved)))
             .frame(width: cellSize, height: cellSize)
-            .help(day.tooltip)
+            // The cache's own kind, not the picker's: the tooltip text came from it.
+            .help(Self.cellTooltip(day.tooltip, hasReading: day.hasReading, isQuota: cache.usesStatusColor, caption: costCaption))
     }
 
     /// The colour a square is built from. Dollars have no "too much" level, so cost
@@ -245,6 +254,32 @@ struct ActivityGridView: View {
     /// to the cost grid alone.
     nonisolated static func retentionNote(provider: String, showsQuota: Bool) -> String? {
         showsQuota ? nil : ActivityCopy.retentionNote(provider: provider)
+    }
+
+    /// Whether the selected provider's dollars are a bill, as the last poll saw it —
+    /// the rule Overview and Insights use.
+    private var costCaption: String? {
+        CostCopy.apiEquivalentCaption(
+            for: AppState.shared.snapshot.services.first(where: { $0.id == dashboard.selectedService })
+        )
+    }
+
+    /// The line under the 30/90/365-day cards: the API-equivalent caption when they
+    /// are dollars on a subscription. The quota grid's cards are percentages, and a
+    /// pay-as-you-go account's dollars are the bill (nil caption); both get no line.
+    nonisolated static func statsCaption(isQuota: Bool, caption: String?) -> String? {
+        isQuota ? nil : caption
+    }
+
+    /// A square's tooltip. The tooltip is the one place the cost grid names a day's
+    /// dollars, so a day with dollars gets the API-equivalent caption on a second line.
+    /// A quota square, a day with nothing on it, a future square (no tooltip at all)
+    /// and a pay-as-you-go account (no caption) keep the tooltip as built.
+    nonisolated static func cellTooltip(
+        _ tooltip: String, hasReading: Bool, isQuota: Bool, caption: String?
+    ) -> String {
+        guard !isQuota, hasReading, !tooltip.isEmpty, let caption else { return tooltip }
+        return "\(tooltip)\n\(caption)"
     }
 
     private func legend(_ c: GridCache) -> some View {

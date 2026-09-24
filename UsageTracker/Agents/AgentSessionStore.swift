@@ -53,6 +53,13 @@ final class AgentSessionStore: ObservableObject {
     /// the scan there is nothing left to suppress.
     static let endedTombstoneTTL: TimeInterval = 30 * 60
 
+    /// How long after a Codex row's last state change a rollout write has to land
+    /// before the passive scan may call the session working again. Codex writes a
+    /// turn's last lines a moment before it fires Stop, and the scan calls a file
+    /// working for 30 seconds after its last write: without the margin, a poll in
+    /// that half minute put a finished session back to working.
+    static let scanUpgradeMargin: TimeInterval = 5
+
     /// Injectable history location — the tests point it at a temp file instead of
     /// `~/Library/Application Support/UsageTracker/agent-sessions.jsonl`.
     init(historyURL: URL = AgentPaths.historyURL) {
@@ -124,8 +131,10 @@ final class AgentSessionStore: ObservableObject {
             session.host = event.host
         }
         // A hook has spoken for this id, so whatever the passive scan guessed is
-        // superseded from here on.
+        // superseded from here on: its approximate row, and a working it lifted.
         session.isApproximate = false
+        session.workingFromScan = false
+        session.stateBeforeScan = nil
         session.lastEventAt = now
 
         switch event.kind {
@@ -208,9 +217,13 @@ final class AgentSessionStore: ObservableObject {
     /// Precedence: a session id a hook has spoken for is never rewritten by a file
     /// mtime — the hook knows whether the agent is waiting for you, the file only
     /// knows that bytes were appended. The single exception is Codex, which has no
-    /// "turn started" hook at all: a rollout file that changed in the last 30 seconds
-    /// is the only evidence its agent is running again, so it may lift a Codex session
-    /// out of `done`/`idle` into `working`.
+    /// "turn started" hook at all: a rollout written more than `scanUpgradeMargin`
+    /// after the row's last state change is the only evidence its agent is running
+    /// again, so it may lift a Codex session out of `done`/`idle` into `working`. A
+    /// write from before that is the turn that just ended. The lift is a guess
+    /// (`workingFromScan`, with the state it replaced in `stateBeforeScan`): a later
+    /// scan that finds the file quiet restores that state, and any hook event makes
+    /// the row the hook's again.
     ///
     /// Passive-only sessions mirror the scan exactly: added when they appear, updated
     /// while they are in it, dropped when they fall out of the 30-minute window.
@@ -221,7 +234,9 @@ final class AgentSessionStore: ObservableObject {
 
         for existing in sessions {
             guard existing.isApproximate else {
-                merged.append(upgradedIfCodexIsWorking(existing, scannedByID[existing.id], now: now))
+                let reading = scannedByID[existing.id]
+                let settled = settledIfTheScanWentQuiet(existing, reading, now: now)
+                merged.append(upgradedIfCodexIsWorking(settled, reading, now: now))
                 continue
             }
             guard var fresh = scannedByID[existing.id] else { continue } // gone from the scan
@@ -269,18 +284,44 @@ final class AgentSessionStore: ObservableObject {
         }
     }
 
+    /// Codex only: a scan that saw the rollout written after the row last changed
+    /// state lifts a `done`/`idle` row to `working`. The write has to come more than
+    /// `scanUpgradeMargin` after `stateSince`; an earlier one is the turn that just
+    /// ended, not a new one.
     private func upgradedIfCodexIsWorking(
         _ session: AgentSession, _ scanned: AgentSession?, now: Date
     ) -> AgentSession {
         guard session.source == .codex,
               let scanned, scanned.state == .working,
-              session.state == .done || session.state == .idle
+              session.state == .done || session.state == .idle,
+              scanned.lastEventAt > session.stateSince.addingTimeInterval(Self.scanUpgradeMargin)
         else { return session }
         var upgraded = session
         upgraded.state = .working
         upgraded.stateSince = now
         upgraded.lastEventAt = max(session.lastEventAt, scanned.lastEventAt)
+        upgraded.workingFromScan = true
+        upgraded.stateBeforeScan = session.state
         return upgraded
+    }
+
+    /// Takes back a `working` the scan itself guessed (`workingFromScan`) once the
+    /// scan finds the rollout quiet — idle, or gone from the 30-minute window. The row
+    /// returns to the state the lift replaced (`stateBeforeScan`), counted from the
+    /// file's last write when the scan still has it and from now when it does not.
+    /// No callback fires: it is the same `done` or `idle` the user was already told
+    /// about. A `working` a hook reported is never touched.
+    private func settledIfTheScanWentQuiet(
+        _ session: AgentSession, _ scanned: AgentSession?, now: Date
+    ) -> AgentSession {
+        guard session.workingFromScan, session.state == .working, scanned?.state != .working
+        else { return session }
+        var settled = session
+        settled.state = session.stateBeforeScan ?? .idle
+        settled.stateSince = scanned?.stateSince ?? now
+        settled.workingFromScan = false
+        settled.stateBeforeScan = nil
+        return settled
     }
 
     /// Stale two ways: quiet for `staleAfter` with a dead (or unknown) host process,

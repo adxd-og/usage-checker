@@ -49,6 +49,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Status file
 - A session that ends leaves `status.json` (status line, `omelette status`, `get_agents`) at once instead of at the next poll.
 
+### Agents
+- **Codex MCP setup finds its own table however it is spelled.** A header with
+  a comment, a quoted name or spaces in the brackets, or a comment after the
+  command (as in the README's example), read as "not installed", and Enable
+  added a second table that stopped Codex from starting.
+- **A finished Codex session stays finished.** A poll in the half minute after
+  a turn ends no longer marks it working again, and a "working" guessed from
+  the Codex log is undone once the log is quiet.
+- **A resumed Codex thread shows up without hooks.** The log scan reads every
+  day folder of the current month, not only the most recent ones.
+
+### Costs
+- **Local dollar figures say they are API-equivalent where they were bare:**
+  the All tab's cost tile and its VoiceOver label, `omelette status`
+  ("(API-equivalent)"), the status line (`≈$`), `get_sessions`, Insights, and
+  the Activity cost cards and tooltips. Pay-as-you-go accounts, billed per
+  token, stay unlabelled.
+
 ## [2.6.5] — 2026-09-24
 
 ### Fixed

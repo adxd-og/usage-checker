@@ -47,7 +47,7 @@ final class StatusLineTextVerificationTests: XCTestCase {
             ),
             now: now
         )
-        XCTAssertEqual(text, "◐ 42% · resets in 1h 10m · $4.20 today")
+        XCTAssertEqual(text, "◐ 42% · resets in 1h 10m · ≈$4.20 today")
         XCTAssertFalse(text.contains("⚑"))
     }
 

@@ -72,4 +72,57 @@ final class OMCostTileTests: XCTestCase {
     func testTheWeekTotalStillIgnoresProvidersWithoutASpend() {
         XCTAssertEqual(OMCostTile.total(services), 409.67, accuracy: 0.0001)
     }
+
+    // MARK: - API-equivalent caption
+
+    /// A provider that reported a window of its own is on a subscription, where local
+    /// dollars are what the same tokens would cost through the API.
+    private var subscription: ServiceSnapshot {
+        Fixture.snapshot(
+            id: "claude", displayName: "Claude",
+            buckets: [Fixture.bucket(id: "five_hour", label: "Current session", percent: 42, kind: .session)],
+            weekCost: 408.03
+        )
+    }
+
+    func testASubscriptionInTheTileGetsTheCaption() {
+        XCTAssertEqual(OMCostTile.caption(services: [subscription]), CostCopy.apiEquivalent)
+        XCTAssertEqual(
+            OMCostTile.caption(services: [subscription] + services.filter { $0.id == "codex" }),
+            CostCopy.apiEquivalent,
+            "one subscription among the dollars is enough"
+        )
+    }
+
+    /// `services` above report no window: pay-as-you-go by `CostCopy.isPayAsYouGo`,
+    /// whose dollars are close to the bill.
+    func testAnAllPayAsYouGoTileHasNoCaption() {
+        XCTAssertNil(OMCostTile.caption(services: services))
+    }
+
+    func testOnlyProvidersWithDollarsInTheTileCount() {
+        let quiet = Fixture.snapshot(
+            id: "codex", displayName: "Codex",
+            buckets: [Fixture.bucket(id: "codex_session", kind: .session)],
+            weekCost: 0
+        )
+        let payg = Fixture.snapshot(id: "claude", displayName: "Claude", weekCost: 12)
+        XCTAssertNil(OMCostTile.caption(services: [payg, quiet]), "a subscription with nothing spent does not caption someone else's dollars")
+        XCTAssertEqual(
+            OMCostTile.caption(services: [payg, quiet], today: ["codex": 1.5]),
+            CostCopy.apiEquivalent,
+            "today's dollars are dollars in the tile too"
+        )
+    }
+
+    func testVoiceOverHearsTheCaptionToo() {
+        XCTAssertEqual(
+            OMCostTile.accessibilityText(services: [subscription], today: ["claude": 12.5], locale: us),
+            "Today $12.50. API-equivalent cost of your CLI usage — not what your subscription bills."
+        )
+        XCTAssertEqual(
+            OMCostTile.accessibilityText(services: services, today: ["claude": 12.5], locale: us),
+            "Today $12.50"
+        )
+    }
 }

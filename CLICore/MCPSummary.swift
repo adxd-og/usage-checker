@@ -183,6 +183,10 @@ enum MCPSummary {
     /// provider, so a bigger number is a promise the file cannot keep.
     static let maxSessionLimit = 15
 
+    /// The last line of `sessions` when a chat on the list has dollars at API list
+    /// prices: what those figures are, said once for the whole list.
+    static let sessionsCostQualifier = "Chat costs are API-equivalent: what the same tokens would cost at API list prices, not a subscription bill."
+
     /// The `limit` argument, from whatever JSON the client actually sent. A model that
     /// sends `"7"`, `"7.0"` or `7.0` gets seven; anything unreadable gets the default,
     /// because a protocol error over an optional argument helps nobody. The number is
@@ -199,9 +203,10 @@ enum MCPSummary {
         return Int(min(max(1, asked), Double(maxSessionLimit)))
     }
 
-    /// One line per chat, newest first, then the stamp. Newline-separated rather than
-    /// run together like `usage`: this is a list, and a model quoting one row back to
-    /// the user should be able to find its edges.
+    /// One line per chat, newest first, then the stamp, then — when a chat on the list
+    /// has dollars from a subscription — `sessionsCostQualifier`. Newline-separated
+    /// rather than run together like `usage`: this is a list, and a model quoting one
+    /// row back to the user should be able to find its edges.
     static func sessions(
         snapshot: StatusSnapshot, provider: String?, limit: Int, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
@@ -209,10 +214,25 @@ enum MCPSummary {
         let rows = sessionRows(snapshot, provider: provider, limit: limit)
         let stampText = stamp(snapshot, now: now, calendar: calendar, locale: locale)
         guard !rows.isEmpty else { return "\(noSessions(provider: provider)) \(stampText)" }
-        let lines = rows.map {
+        var lines = rows.map {
             sessionLine($0.service, $0.session, now: now, calendar: calendar, locale: locale)
         }
-        return (lines + [stampText]).joined(separator: "\n")
+        lines.append(stampText)
+        if let qualifier = sessionsQualifier(rows) { lines.append(qualifier) }
+        return lines.joined(separator: "\n")
+    }
+
+    /// `sessionsCostQualifier` when a listed chat shows dollars and its provider's are
+    /// an API-list-price equivalent (`apiEquivalent == true`). nil for a pay-as-you-go
+    /// account, whose dollars are close to the bill, for a file that says nothing, and
+    /// for a list with no dollar on it.
+    static func sessionsQualifier(
+        _ rows: [(service: StatusSnapshot.Service, session: StatusSnapshot.SessionEntry)]
+    ) -> String? {
+        for row in rows where row.service.apiEquivalent == true && row.session.cost != nil {
+            return sessionsCostQualifier
+        }
+        return nil
     }
 
     /// The chats the file carries, merged across providers and cut to `limit`. No

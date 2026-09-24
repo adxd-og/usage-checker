@@ -16,13 +16,22 @@ enum CostCopy {
 
     static let apiEquivalent = "API-equivalent cost of your CLI usage — not what your subscription bills."
 
-    /// The short form, for a notification body that has no room for the sentence.
-    static let apiEquivalentSuffix = "(API-equivalent)"
+    /// The short form, for a notification body that has no room for the sentence —
+    /// `CLIText`'s constant, so the notification and `omelette status` say it alike.
+    static let apiEquivalentSuffix = CLIText.apiEquivalentSuffix
 
     /// nil for a pay-as-you-go account: there the dollars really are what gets billed,
     /// and a disclaimer would be worse than nothing.
     static func apiEquivalentCaption(isPayAsYouGo: Bool) -> String? {
         isPayAsYouGo ? nil : apiEquivalent
+    }
+
+    /// The caption for one provider's dollars on a dashboard page, where the provider
+    /// may be missing from the snapshot (disabled, or not polled yet). An account that
+    /// is not known to be pay-as-you-go gets the caption: saying "API-equivalent" of a
+    /// bill is a smaller error than presenting an estimate as one.
+    static func apiEquivalentCaption(for service: ServiceSnapshot?) -> String? {
+        apiEquivalentCaption(isPayAsYouGo: service.map(isPayAsYouGo) ?? false)
     }
 
     /// Pay-as-you-go: the provider reports no rate-limit window of its own. That is

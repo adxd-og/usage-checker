@@ -61,4 +61,20 @@ final class CostCopyTests: XCTestCase {
         )
         XCTAssertFalse(CostCopy.isPayAsYouGo(mixed))
     }
+
+    /// A dashboard page is about one provider, which may be missing from the snapshot
+    /// (disabled, or not polled yet). Overview's rule, shared: an unknown account is
+    /// not known to be pay-as-you-go, so it gets the caption.
+    func testADashboardPageCaptionsASubscriptionAndAnUnknownProvider() {
+        let subscription = Fixture.snapshot(
+            id: "claude",
+            buckets: [Fixture.bucket(id: "five_hour", label: "Current session", percent: 42, kind: .session)],
+            weekCost: 31.7
+        )
+        let payg = Fixture.snapshot(id: "claude", buckets: [], weekCost: 12.4)
+
+        XCTAssertEqual(CostCopy.apiEquivalentCaption(for: subscription), CostCopy.apiEquivalent)
+        XCTAssertNil(CostCopy.apiEquivalentCaption(for: payg))
+        XCTAssertEqual(CostCopy.apiEquivalentCaption(for: nil), CostCopy.apiEquivalent)
+    }
 }

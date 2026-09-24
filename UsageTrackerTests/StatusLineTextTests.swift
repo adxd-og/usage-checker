@@ -29,6 +29,7 @@ final class StatusLineTextTests: XCTestCase {
         id: String = "claude",
         windows: [StatusSnapshot.Window],
         todayCost: Double? = nil,
+        apiEquivalent: Bool? = true,
         needsYou: Int = 0,
         updatedAt: Date? = nil
     ) -> StatusSnapshot {
@@ -39,7 +40,7 @@ final class StatusLineTextTests: XCTestCase {
                 StatusSnapshot.Service(
                     id: id, name: id.capitalized, state: "ok", retained: false, retainedAt: nil,
                     plan: nil, windows: windows, todayCost: todayCost, weekCost: nil,
-                    todayTokens: nil, apiEquivalent: true
+                    todayTokens: nil, apiEquivalent: apiEquivalent
                 ),
             ],
             agents: StatusSnapshot.Agents(needsYou: needsYou, working: 0, sessions: [])
@@ -55,7 +56,7 @@ final class StatusLineTextTests: XCTestCase {
             now: now
         )
 
-        XCTAssertEqual(text, "◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1")
+        XCTAssertEqual(text, "◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1")
     }
 
     func testEveryPartCanBeAbsent() {
@@ -68,7 +69,7 @@ final class StatusLineTextTests: XCTestCase {
         )
         XCTAssertEqual(
             StatusLineText.render(
-                snapshot: snapshot(windows: [], todayCost: 4.2, needsYou: 2), now: now
+                snapshot: snapshot(windows: [], todayCost: 4.2, apiEquivalent: false, needsYou: 2), now: now
             ),
             "$4.20 today · ⚑ 2",
             "a pay-as-you-go account has no window to lead with"
@@ -157,5 +158,36 @@ final class StatusLineTextTests: XCTestCase {
             now: now
         )
         XCTAssertEqual(text, "◐ 98% · resets now")
+    }
+
+    /// The status bar has no room for "(API-equivalent)", so a subscription's dollars
+    /// carry one character in front instead. A pay-as-you-go account's dollars are
+    /// close to its bill and carry none; a file that says nothing makes no claim.
+    func testSubscriptionDollarsAreMarkedAsAnEquivalent() {
+        XCTAssertEqual(StatusLineText.render(snapshot: snapshot(windows: [], todayCost: 4.2, apiEquivalent: true), now: now), "≈$4.20 today")
+        XCTAssertEqual(StatusLineText.render(snapshot: snapshot(windows: [], todayCost: 4.2, apiEquivalent: false), now: now), "$4.20 today")
+        XCTAssertEqual(StatusLineText.render(snapshot: snapshot(windows: [], todayCost: 4.2, apiEquivalent: nil), now: now), "$4.20 today")
+    }
+
+    func testTodaysDollarsAreOneRule() {
+        func service(today: Double?, apiEquivalent: Bool?) -> StatusSnapshot.Service {
+            StatusSnapshot.Service(
+                id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil,
+                plan: nil, windows: [], todayCost: today, weekCost: nil,
+                todayTokens: nil, apiEquivalent: apiEquivalent
+            )
+        }
+        XCTAssertEqual(StatusLineText.apiEquivalentMarker, "≈")
+        XCTAssertEqual(StatusLineText.todayCostText(service(today: 386.64, apiEquivalent: true)), "≈$386.64 today")
+        XCTAssertEqual(StatusLineText.todayCostText(service(today: 386.64, apiEquivalent: false)), "$386.64 today")
+        XCTAssertNil(StatusLineText.todayCostText(service(today: 0, apiEquivalent: true)), "nothing spent, nothing shown")
+        XCTAssertNil(StatusLineText.todayCostText(service(today: nil, apiEquivalent: true)))
+    }
+
+    /// `≈` alone would be a riddle; `omelette --help` says what it and the longer
+    /// suffix mean.
+    func testTheHelpTextSaysWhatTheMarksMean() {
+        XCTAssertTrue(CLIText.usage.contains(StatusLineText.apiEquivalentMarker), CLIText.usage)
+        XCTAssertTrue(CLIText.usage.contains(CLIText.apiEquivalentSuffix), CLIText.usage)
     }
 }

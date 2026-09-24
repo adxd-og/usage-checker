@@ -1,8 +1,9 @@
 import SwiftUI
 
 /// Full-width cost tile on the All tab: today's local $ accounting across providers,
-/// with the week's total and the per-provider breakdown on the line below. Callers
-/// hide it when `total == 0`.
+/// with the week's total and the per-provider breakdown on the line below, and the
+/// API-equivalent caption under both when any of those dollars are a subscription's.
+/// Callers hide it when `total == 0`.
 ///
 /// Today leads because a week-only tile reads as a switch someone else made: a day
 /// with no spend under a "Last 7 days $409.67" headline looks like the app quietly
@@ -43,8 +44,8 @@ struct OMCostTile: View {
         return known.isEmpty ? nil : known.reduce(0, +)
     }
 
-    /// VoiceOver reads the tile as one element, so the label has to carry both the
-    /// headline and what it is measuring.
+    /// VoiceOver reads the tile as one element, so the label has to carry the
+    /// headline, what it is measuring and, on a subscription, what the dollars are.
     nonisolated static func accessibilityText(
         services: [ServiceSnapshot],
         today: [String: Double],
@@ -52,12 +53,24 @@ struct OMCostTile: View {
     ) -> String {
         let todayTotal = todayTotal(services, today: today)
         let headline = todayTotal ?? total(services)
-        return "\(title(todayKnown: todayTotal != nil)) \(money(headline, locale: locale))"
+        let label = "\(title(todayKnown: todayTotal != nil)) \(money(headline, locale: locale))"
+        guard let note = caption(services: services, today: today) else { return label }
+        return "\(label). \(note)"
     }
 
     /// What the hero numeral is counting.
     nonisolated static func title(todayKnown: Bool) -> String {
         todayKnown ? "Today" : "Last 7 days"
+    }
+
+    /// `CostCopy`'s API-equivalent sentence when any provider with dollars in the tile
+    /// (spent this week, or today) is on a subscription: there the figure is what the
+    /// same tokens would cost through the API, not the bill. nil when every such
+    /// provider is pay-as-you-go, or when no provider has dollars at all.
+    nonisolated static func caption(services: [ServiceSnapshot], today: [String: Double] = [:]) -> String? {
+        let contributing = services.filter { ($0.weekCost ?? 0) > 0 || (today[$0.id] ?? 0) > 0 }
+        guard !contributing.isEmpty else { return nil }
+        return CostCopy.apiEquivalentCaption(isPayAsYouGo: contributing.allSatisfy(CostCopy.isPayAsYouGo))
     }
 
     /// "Last 7 days $409.67 · Claude $408.03 · Codex $1.64" — the week keeps its
@@ -77,16 +90,26 @@ struct OMCostTile: View {
     var body: some View {
         let todayTotal = Self.todayTotal(services, today: today)
         let headline = todayTotal ?? Self.total(services)
-        return HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Self.title(todayKnown: todayTotal != nil)).font(OMFont.bodyStrong)
-                Text(Self.secondary(services: services, today: today))
-                    .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.title(todayKnown: todayTotal != nil)).font(OMFont.bodyStrong)
+                    Text(Self.secondary(services: services, today: today))
+                        .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer()
+                Text(Self.money(headline))
+                    .font(OMFont.heroNumeral)
+                    .monospacedDigit()
             }
-            Spacer()
-            Text(Self.money(headline))
-                .font(OMFont.heroNumeral)
-                .monospacedDigit()
+            // Full width under the numbers: the sentence is too long for the column
+            // beside the hero numeral, and it qualifies every dollar in the tile.
+            if let caption = Self.caption(services: services, today: today) {
+                Text(caption)
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(10)
         .frame(maxWidth: .infinity)

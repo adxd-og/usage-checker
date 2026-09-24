@@ -197,7 +197,7 @@ final class CLIProcessVerificationTests: XCTestCase {
 
         XCTAssertEqual(run.status, 0)
         XCTAssertTrue(run.stdout.hasPrefix("◐ 42% · resets in "), run.stdout)
-        XCTAssertTrue(run.stdout.hasSuffix("· $4.20 today\n"), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("· ≈$4.20 today\n"), run.stdout)
         XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1, "one line out, regardless of stdin size")
         XCTAssertLessThan(run.elapsed, 3, "a big write must not stall the tool")
     }

@@ -98,6 +98,9 @@ enum MCPInstaller {
 
     static let codexHeader = "[mcp_servers.\(serverKey)]"
 
+    /// The dotted key `codexHeader` names, as `codexHeaderKey` reads any header.
+    static let codexKey = ["mcp_servers", serverKey]
+
     static func codexTable(cliPath: String) -> [String] {
         [
             codexHeader,
@@ -113,17 +116,38 @@ enum MCPInstaller {
 
     /// Our table's lines: the header, and everything up to the next header — except a
     /// sub-table of ours (`[mcp_servers.omelette.env]`), which belongs to it. Leaving
-    /// an orphan sub-table behind would give Codex a config it refuses to parse.
+    /// an orphan sub-table behind would give Codex a config it refuses to parse. Both
+    /// ends are decided by `codexHeaderKey`, so a header spelled with quotes, spaces or
+    /// a trailing comment starts and ends a table like any other.
     static func codexTableRange(in lines: [String]) -> Range<Int>? {
-        guard let start = lines.firstIndex(where: { codexInterpreted($0) == codexHeader })
-        else { return nil }
+        guard let start = lines.firstIndex(where: codexIsOurHeader) else { return nil }
         var end = start + 1
         while end < lines.count {
-            let line = codexInterpreted(lines[end])
-            if line.hasPrefix("["), !line.hasPrefix("[mcp_servers.\(serverKey).") { break }
+            if let key = codexHeaderKey(lines[end]),
+               !(key.count > codexKey.count && key.starts(with: codexKey)) { break }
             end += 1
         }
         return start..<end
+    }
+
+    /// The key a table header names, split on its dots, or nil when the line is not a
+    /// header. TOML, and Codex with it, accepts one table under several spellings:
+    /// `[mcp_servers.omelette]`, `[mcp_servers.omelette] # note`,
+    /// `[mcp_servers."omelette"]`, `[ mcp_servers . 'omelette' ]`. Matching the exact
+    /// text found only the first, so Settings said "not installed" and Enable appended
+    /// a second table, which Codex refuses to load ("Cannot declare … twice").
+    ///
+    /// The comment is cut outside quotes, the brackets trimmed, the key split on dots
+    /// outside quotes and each part unquoted: a bare key is `A-Za-z0-9_-`, a basic
+    /// string `"…"` takes `\"` and `\\`, a literal string `'…'` takes nothing. An
+    /// array-of-tables header (`[[x.y]]`) is a header too — it ends the table above it.
+    static func codexHeaderKey(_ line: String) -> [String]? {
+        let text = codexStrippingComment(codexInterpreted(line))
+        if text.hasPrefix("[["), text.hasSuffix("]]"), text.count >= 4 {
+            return codexDottedKey(text.dropFirst(2).dropLast(2))
+        }
+        guard text.hasPrefix("["), text.hasSuffix("]"), text.count >= 2 else { return nil }
+        return codexDottedKey(text.dropFirst().dropLast())
     }
 
     /// One line ready to interpret: no carriage return from a CRLF file, no surrounding
@@ -134,6 +158,100 @@ enum MCPInstaller {
     /// for the same reason.
     private static func codexInterpreted(_ raw: String) -> String {
         raw.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Our table's header in any spelling — a standard table, not an array of tables
+    /// that happens to share the name.
+    private static func codexIsOurHeader(_ line: String) -> Bool {
+        codexHeaderKey(line) == codexKey && !codexInterpreted(line).hasPrefix("[[")
+    }
+
+    /// `mcp_servers . "omelette"` → `["mcp_servers", "omelette"]`; nil for anything
+    /// that is not a well-formed dotted key.
+    private static func codexDottedKey(_ text: Substring) -> [String]? {
+        var segments: [String] = []
+        var index = text.startIndex
+        func skipBlanks() {
+            while index < text.endIndex, text[index] == " " || text[index] == "\t" {
+                index = text.index(after: index)
+            }
+        }
+        while true {
+            skipBlanks()
+            guard index < text.endIndex else { return nil }
+            var segment = ""
+            let opening = text[index]
+            if opening == "\"" || opening == "'" {
+                index = text.index(after: index)
+                var closed = false
+                while index < text.endIndex {
+                    let character = text[index]
+                    index = text.index(after: index)
+                    if character == opening { closed = true; break }
+                    if opening == "\"", character == "\\", index < text.endIndex {
+                        let escaped = text[index]
+                        index = text.index(after: index)
+                        if escaped != "\"" && escaped != "\\" { segment.append("\\") }
+                        segment.append(escaped)
+                        continue
+                    }
+                    segment.append(character)
+                }
+                guard closed else { return nil }
+            } else {
+                while index < text.endIndex, codexIsBareKeyCharacter(text[index]) {
+                    segment.append(text[index])
+                    index = text.index(after: index)
+                }
+                guard !segment.isEmpty else { return nil }
+            }
+            segments.append(segment)
+            skipBlanks()
+            guard index < text.endIndex else { return segments }
+            guard text[index] == "." else { return nil }
+            index = text.index(after: index)
+        }
+    }
+
+    private static func codexIsBareKeyCharacter(_ character: Character) -> Bool {
+        character.isASCII && (character.isLetter || character.isNumber || character == "_" || character == "-")
+    }
+
+    /// The line without a trailing `# comment`, trimmed. A `#` inside a basic or
+    /// literal string is part of the string, so the scan follows quotes — and `\"`
+    /// inside a basic one, which does not close it.
+    private static func codexStrippingComment(_ line: String) -> String {
+        var quote: Character?
+        var escaped = false
+        for index in line.indices {
+            let character = line[index]
+            if let open = quote {
+                if escaped {
+                    escaped = false
+                } else if open == "\"", character == "\\" {
+                    escaped = true
+                } else if character == open {
+                    quote = nil
+                }
+            } else if character == "\"" || character == "'" {
+                quote = character
+            } else if character == "#" {
+                return line[..<index].trimmingCharacters(in: .whitespaces)
+            }
+        }
+        return line.trimmingCharacters(in: .whitespaces)
+    }
+
+    /// A table's lines as `codexTable` is compared with them: no comments, no blank
+    /// lines, and our header in the one spelling `codexTable` writes. A table that says
+    /// exactly what ours says is installed, whether or not someone quoted the key or
+    /// left a note beside a line.
+    private static func codexMeaningful(_ body: [String]) -> [String] {
+        body.compactMap { raw -> String? in
+            let line = codexStrippingComment(codexInterpreted(raw))
+            guard !line.isEmpty else { return nil }
+            return codexIsOurHeader(line) ? codexHeader : line
+        }
     }
 
     /// The line ending the file already uses, so a CRLF config stays CRLF. Untouched
@@ -152,14 +270,15 @@ enum MCPInstaller {
 
     /// `key = "value"` inside a table's lines, unescaped. Hand-rolled for the same
     /// reason `AgentHooksInstaller.trustTable` is: this reads two keys of a file we
-    /// otherwise only append to.
+    /// otherwise only append to. A trailing `# comment` is not part of the value:
+    /// `command = "…/omelette"  # full path` is our command.
     static func codexValue(_ key: String, in lines: [String]) -> String? {
         for raw in lines {
             let line = codexInterpreted(raw)
             guard line.hasPrefix(key) else { continue }
             let rest = line.dropFirst(key.count).trimmingCharacters(in: .whitespaces)
             guard rest.hasPrefix("=") else { continue }
-            let value = rest.dropFirst().trimmingCharacters(in: .whitespaces)
+            let value = codexStrippingComment(String(rest.dropFirst()))
             guard value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 else { return nil }
             return String(value.dropFirst().dropLast())
                 .replacingOccurrences(of: "\\\"", with: "\"")
@@ -175,7 +294,7 @@ enum MCPInstaller {
         let body = Array(lines[range])
         guard let command = codexValue("command", in: body) else { return .conflict(codexUnreadableTableReason) }
         guard command.contains(ourCommandMarker) else { return .conflict(command) }
-        let meaningful = body.map(codexInterpreted).filter { !$0.isEmpty }
+        let meaningful = codexMeaningful(body)
         return meaningful == codexTable(cliPath: cliPath) ? .installed : .outdated
     }
 
@@ -195,7 +314,7 @@ enum MCPInstaller {
             let body = Array(lines[range])
             guard let command = codexValue("command", in: body) else { throw Error.conflict(codexUnreadableTableReason) }
             guard command.contains(ourCommandMarker) else { throw Error.conflict(command) }
-            let meaningful = body.map(codexInterpreted).filter { !$0.isEmpty }
+            let meaningful = codexMeaningful(body)
             if meaningful == table { return }
             lines.replaceSubrange(range, with: written)
         } else {

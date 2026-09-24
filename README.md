@@ -181,9 +181,10 @@ agents.
 | `omelette --version` / `--help` | version and usage |
 
 `omelette statusline` installs with one click from Settings → General →
-Command line: `◐ 42% · resets in 1h 10m · $4.20 today · ⚑ 1`. Or add it
-yourself to `~/.claude/settings.json` (Claude Code runs the command through a
-shell, so `$HOME` expands):
+Command line: `◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1`, where `≈`
+marks API-equivalent dollars (`omelette status` writes "(API-equivalent)").
+Or add it yourself to `~/.claude/settings.json` (Claude Code runs the command
+through a shell, so `$HOME` expands):
 
 ```json
 {

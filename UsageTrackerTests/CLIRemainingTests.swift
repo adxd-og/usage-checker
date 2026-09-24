@@ -111,7 +111,7 @@ final class CLIRemainingTests: XCTestCase {
                                todayCost: 4.2, showsRemaining: true),
             now: now, calendar: calendar, locale: locale
         )
-        XCTAssertEqual(text, "Claude  Session 58% left, resets in 1h 40m (13:00) · $4.20 today\n")
+        XCTAssertEqual(text, "Claude  Session 58% left, resets in 1h 40m (13:00) · $4.20 today (API-equivalent)\n")
     }
 
     func testTheStatusLinesAreUnchangedWhenTheSwitchIsOff() {
@@ -120,7 +120,7 @@ final class CLIRemainingTests: XCTestCase {
                                todayCost: 4.2, showsRemaining: false),
             now: now, calendar: calendar, locale: locale
         )
-        XCTAssertEqual(text, "Claude  Session 42%, resets in 1h 40m (13:00) · $4.20 today\n")
+        XCTAssertEqual(text, "Claude  Session 42%, resets in 1h 40m (13:00) · $4.20 today (API-equivalent)\n")
     }
 
     func testAWindowPastItsLimitHasNothingLeftInTheTerminalEither() {
@@ -151,7 +151,7 @@ final class CLIRemainingTests: XCTestCase {
                                    todayCost: 4.2, showsRemaining: true),
                 now: now
             ),
-            "◐ 58% left · resets in 1h 10m · $4.20 today"
+            "◐ 58% left · resets in 1h 10m · ≈$4.20 today"
         )
     }
 
@@ -162,7 +162,7 @@ final class CLIRemainingTests: XCTestCase {
                                    todayCost: 4.2, showsRemaining: false),
                 now: now
             ),
-            "◐ 42% · resets in 1h 10m · $4.20 today"
+            "◐ 42% · resets in 1h 10m · ≈$4.20 today"
         )
     }
 

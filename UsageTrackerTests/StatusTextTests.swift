@@ -69,7 +69,7 @@ final class StatusTextTests: XCTestCase {
         ))
 
         XCTAssertEqual(text, """
-        Claude  Session 42%, resets in 1h 40m (13:00) · Weekly 18%, resets in 4d 2h (Thu 14:15) · $4.20 today · $31.70 this week
+        Claude  Session 42%, resets in 1h 40m (13:00) · Weekly 18%, resets in 4d 2h (Thu 14:15) · $4.20 today · $31.70 this week (API-equivalent)
         Agents: 1 needs you, 2 working
 
         """)
@@ -134,6 +134,28 @@ final class StatusTextTests: XCTestCase {
         XCTAssertEqual(StatusText.costParts(service(todayCost: 4.2, weekCost: 31.7)), ["$4.20 today", "$31.70 this week"])
         XCTAssertEqual(StatusText.costParts(service(todayCost: 0, weekCost: 31.7)), ["$31.70 this week"])
         XCTAssertEqual(StatusText.costParts(service()), [])
+    }
+
+    /// A subscription's dollars are what the same tokens would cost through the API,
+    /// not the bill; a pay-as-you-go account's are close to the bill. The same figures
+    /// print differently for the two, and the qualifier is said once per line.
+    func testSubscriptionDollarsSayTheyAreAPIEquivalent() {
+        XCTAssertEqual(
+            StatusText.costParts(service(todayCost: 4.2, weekCost: 31.7, apiEquivalent: true)),
+            ["$4.20 today", "$31.70 this week (API-equivalent)"]
+        )
+        XCTAssertEqual(
+            StatusText.costParts(service(todayCost: 4.2, weekCost: 31.7, apiEquivalent: false)),
+            ["$4.20 today", "$31.70 this week"]
+        )
+        XCTAssertEqual(StatusText.costParts(service(todayCost: 4.2, apiEquivalent: true)), ["$4.20 today (API-equivalent)"])
+        XCTAssertEqual(StatusText.costParts(service(todayCost: 4.2, apiEquivalent: nil)), ["$4.20 today"], "no flag, no claim")
+        XCTAssertEqual(StatusText.costParts(service(apiEquivalent: true)), [], "no dollars, nothing to qualify")
+    }
+
+    func testTheSuffixIsOneConstantForTheTerminalAndTheApp() {
+        XCTAssertEqual(CLIText.apiEquivalentSuffix, "(API-equivalent)")
+        XCTAssertEqual(CostCopy.apiEquivalentSuffix, CLIText.apiEquivalentSuffix)
     }
 
     func testTheAgentsLineDropsWhicheverHalfIsZero() {

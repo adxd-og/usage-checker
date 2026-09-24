@@ -142,6 +142,15 @@ struct AgentSession: Identifiable, Equatable, Sendable {
     /// (Allow / Deny buttons in the popover). Owned by `PermissionBroker`, written only
     /// through `AgentSessionStore.setPendingPermission(id:for:)`.
     var pendingPermissionID: String?
+    /// Set when the passive scan, not a hook, put this row in `working`: a Codex
+    /// rollout written after the session's last state change
+    /// (`AgentSessionStore.mergePassive`). A guess, so a later scan that finds the file
+    /// quiet takes it back, and any hook event clears it.
+    var workingFromScan: Bool = false
+    /// The state that lift replaced (`done` or `idle`), which the undo restores. nil
+    /// whenever `workingFromScan` is false. Neither field is an `init` parameter:
+    /// every row starts as the hook's or the scan's own, never as a lifted one.
+    var stateBeforeScan: AgentState? = nil
 
     static func makeID(source: AgentSource, sessionID: String) -> String {
         "\(source.rawValue):\(sessionID)"

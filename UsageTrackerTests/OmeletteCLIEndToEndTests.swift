@@ -193,7 +193,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
 
         XCTAssertEqual(run.status, 0)
         XCTAssertTrue(run.stdout.hasPrefix("◐ 42% · resets in "), run.stdout)
-        XCTAssertTrue(run.stdout.hasSuffix("· $4.20 today · ⚑ 1\n"), run.stdout)
+        XCTAssertTrue(run.stdout.hasSuffix("· ≈$4.20 today · ⚑ 1\n"), run.stdout)
         XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1, "exactly one newline, and it is the last byte")
         XCTAssertTrue(run.stderr.isEmpty)
     }

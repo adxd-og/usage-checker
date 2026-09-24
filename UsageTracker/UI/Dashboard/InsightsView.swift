@@ -170,6 +170,14 @@ struct InsightsView: View {
         return date.formatted(date: .omitted, time: .shortened)
     }
 
+    /// Whether the dollars on this page are a bill: the selected provider as the last
+    /// poll saw it, through `CostCopy`'s rule. nil for a pay-as-you-go account.
+    private var costCaption: String? {
+        CostCopy.apiEquivalentCaption(
+            for: AppState.shared.snapshot.services.first(where: { $0.id == dashboard.selectedService })
+        )
+    }
+
     private var cliBlock: some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel(dashboard.costSource.shortName ?? "CLI")
@@ -195,6 +203,12 @@ struct InsightsView: View {
                     value: insights.topProjectWeek?.displayName ?? "—",
                     sub: insights.topProjectWeek.map { String(format: "$%.2f · %d turns", $0.totalCost, $0.turns) }
                 )
+            }
+            if let caption = costCaption {
+                Text(caption)
+                    .font(OMFont.caption)
+                    .foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -240,6 +254,13 @@ struct InsightsView: View {
                 let maxCost = window.projects.first?.totalCost ?? 1
                 ForEach(window.projects.prefix(5)) { project in
                     projectRow(project, maxCost: maxCost)
+                }
+
+                if let caption = costCaption {
+                    Text(caption)
+                        .font(OMFont.caption)
+                        .foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
