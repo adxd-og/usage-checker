@@ -5,6 +5,18 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.5] — 2026-09-24
+
+### Fixed
+- **Enterprise spend shows again.** With an Admin API key, the Anthropic
+  Enterprise row expected the cost report's amounts in a shape the API does
+  not send, so it showed "Decoding failed" instead of the week's spend. The
+  amounts are now read as sent, in cents, and shown in dollars. Closes #11.
+- **A huge `limit` no longer stops the MCP server.** `get_sessions` with a
+  limit too large for a whole number, or infinity or NaN, crashed
+  `omelette mcp`. Such a limit is now clamped to 1–15, or falls back to 10.
+  Closes #12.
+
 ## [2.6.4] — 2026-09-24
 
 ### Fixed
