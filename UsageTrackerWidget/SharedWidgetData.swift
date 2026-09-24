@@ -179,3 +179,47 @@ enum SharedWidgetStore {
         return try? decoder.decode(WidgetSnapshot.self, from: data)
     }
 }
+
+/// What a widget entry draws, decided here rather than in the extension's views: the
+/// extension is its own module, and the app's test bundle can only reach code this
+/// file shares with the app.
+enum WidgetEntryRules {
+    /// No file to read: the app has never published, or wrote one this build cannot
+    /// decode (`SharedWidgetStore.read()` answers nil for both).
+    static let openAppMessage = "Open Omelette"
+    /// The chosen provider is not in the file: signed out, switched off or forgotten.
+    static let noDataMessage = "No data"
+    /// A file that names no provider at all — the app published "nothing to show".
+    static let nothingReportingMessage = "No provider is reporting"
+
+    /// The snapshot an entry is built from. `.placeholder` is invented — Claude at 42%
+    /// on a Mac that has never run Omelette — so it stands in only where WidgetKit asks
+    /// for a preview (the widget gallery). A widget on the desktop with nothing to read
+    /// says so instead.
+    static func snapshot(read: WidgetSnapshot?, isPreview: Bool) -> WidgetSnapshot? {
+        read ?? (isPreview ? .placeholder : nil)
+    }
+
+    /// One provider's widget: its numbers, or the line that says why there are none.
+    enum ProviderContent: Equatable {
+        case service(WidgetService)
+        case message(String)
+    }
+
+    static func providerContent(_ snapshot: WidgetSnapshot?, providerID: String) -> ProviderContent {
+        guard let snapshot else { return .message(openAppMessage) }
+        guard let service = snapshot.service(id: providerID) else { return .message(noDataMessage) }
+        return .service(service)
+    }
+
+    /// The All providers widget: the rows, or the line that says why there are none.
+    enum AllProvidersContent: Equatable {
+        case snapshot(WidgetSnapshot)
+        case message(String)
+    }
+
+    static func allProvidersContent(_ snapshot: WidgetSnapshot?) -> AllProvidersContent {
+        guard let snapshot else { return .message(openAppMessage) }
+        return snapshot.services.isEmpty ? .message(nothingReportingMessage) : .snapshot(snapshot)
+    }
+}
