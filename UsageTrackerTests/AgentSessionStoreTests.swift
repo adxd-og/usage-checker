@@ -578,14 +578,95 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertEqual(store.sessions.first?.state, .idle, "a write from the moment the session started is not a turn")
     }
 
-    func testAPassiveIdleNeverDowngradesACodexSession() {
+    /// Only a working the scan itself guessed can be taken back by it. A state a hook
+    /// set — done after the turn ended, working after a prompt — is the hook's, and a
+    /// quiet file says nothing against it.
+    func testAPassiveIdleNeverOverrulesAStateAHookSet() {
         let store = makeStore()
         store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.apply(event(.promptSubmitted, source: .codex, sessionID: "t2"), now: t0)
         store.mergePassive(
-            [passive(source: .codex, sessionID: "t1", state: .idle, at: at(60))],
-            now: at(60)
+            [
+                passive(source: .codex, sessionID: "t1", state: .idle, at: at(60)),
+                passive(source: .codex, sessionID: "t2", state: .idle, at: at(60)),
+            ],
+            now: at(90)
         )
+        XCTAssertEqual(store.sessions.first(where: { $0.sessionID == "t1" })?.state, .done)
+        XCTAssertEqual(store.sessions.first(where: { $0.sessionID == "t2" })?.state, .working)
+    }
+
+    /// A working the scan lifted is a guess. Once the rollout has gone quiet the scan
+    /// takes it back: the row returns to exactly the state the lift replaced, since
+    /// the file's last write. Before 2.7.0 every later idle reading was ignored and
+    /// the row said "working" until the next hook event.
+    func testALaterPassiveIdleRestoresTheStateTheScanReplaced() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(10))], now: at(20))
+        XCTAssertEqual(store.sessions.first?.state, .working)
+
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .idle, at: at(10))], now: at(90))
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .done, "a done row lifted and undone reads done again")
+        XCTAssertEqual(session?.stateSince, at(10), "since the file's last write")
+        XCTAssertFalse(session?.isApproximate ?? true, "still the hook's row")
+    }
+
+    func testAnIdleRowLiftedAndUndoneIsIdleAgain() {
+        let store = makeStore()
+        store.apply(event(.sessionStart, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(10))], now: at(20))
+        XCTAssertEqual(store.sessions.first?.state, .working)
+
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .idle, at: at(10))], now: at(90))
+
+        XCTAssertEqual(store.sessions.first?.state, .idle)
+        XCTAssertEqual(store.sessions.first?.stateSince, at(10))
+    }
+
+    /// Gone from the 30-minute window is quieter than idle; with no write time left to
+    /// read, the restored state counts from now.
+    func testALiftedSessionThatLeavesTheScanWindowGetsItsStateBackToo() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(10))], now: at(20))
+
+        store.mergePassive([], now: at(3600))
+
+        XCTAssertEqual(store.sessions.map(\.id), ["codex:t1"], "a hook-tracked row is not dropped with the scan")
         XCTAssertEqual(store.sessions.first?.state, .done)
+        XCTAssertEqual(store.sessions.first?.stateSince, at(3600))
+    }
+
+    /// Any hook event makes a lifted row the hook's again, and a quiet file has no say
+    /// over what a hook reported.
+    func testAHookEventMakesALiftedRowTheHooksAgain() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(10))], now: at(20))
+
+        store.apply(event(.toolStarted, source: .codex, sessionID: "t1", toolSummary: "Bash: swift test"), now: at(30))
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .idle, at: at(30))], now: at(90))
+
+        XCTAssertEqual(store.sessions.first?.state, .working)
+        XCTAssertEqual(store.sessions.first?.activity, "Bash: swift test")
+    }
+
+    /// What the store remembers about a lift, and that a hook event forgets both.
+    func testTheLiftRemembersWhatItReplacedUntilAHookSpeaks() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(10))], now: at(20))
+        XCTAssertEqual(store.sessions.first?.workingFromScan, true)
+        XCTAssertEqual(store.sessions.first?.stateBeforeScan, .done)
+
+        store.apply(event(.unknown("PreCompact"), source: .codex, sessionID: "t1"), now: at(30))
+
+        XCTAssertEqual(store.sessions.first?.workingFromScan, false)
+        XCTAssertNil(store.sessions.first?.stateBeforeScan)
+        XCTAssertEqual(store.sessions.first?.state, .working, "an event we do not model changes no state")
     }
 
     func testAPassiveWorkingNeverTouchesAClaudeNeedsYou() {
