@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v2.6.4</title>
+      <pubDate>Thu, 24 Sep 2026 13:22:38 +0300</pubDate>
+      <sparkle:version>46</sparkle:version>
+      <sparkle:shortVersionString>2.6.4</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Fixed</h3>
+<ul>
+<li><b>Dashboard text upside down, third round.</b> The trigger was never sleep: a closed dashboard window is only hidden, kept updating in the background, and on macOS 27.0 any text created while it was hidden came back flipped. The dashboard now ignores updates while it is off screen and rebuilds itself when it shows again, which also covers sleep and the lock screen.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v2.6.4">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v2.6.4/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="XQwQ0KrpMFVMsKclHsyau3EOW1jPad/3lefmN+ZXXQ0FumJUDfS+sDF0vjLsAT9Sy63mE+kjuuhz3PLpC5eECQ=="
+        length="24318472"/>
+    </item>
+    <item>
       <title>Omelette v2.6.3</title>
       <pubDate>Mon, 21 Sep 2026 01:33:24 +0300</pubDate>
       <sparkle:version>45</sparkle:version>
