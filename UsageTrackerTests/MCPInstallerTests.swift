@@ -294,4 +294,143 @@ final class MCPInstallerTests: XCTestCase {
         )
         XCTAssertEqual(MCPInstaller.codexStatus(configURL: codexURL, cliPath: weird), .installed)
     }
+
+    // MARK: - Codex: our table, however its header is spelled
+
+    /// Our table as it sits in a real config: a line above it and a blank line after.
+    /// `commandSuffix` puts something after the command, a comment for instance.
+    private func codexConfig(header: String, commandSuffix: String = "") -> String {
+        """
+        model = "gpt-6-astra"
+
+        \(header)
+        command = "\(cli)"\(commandSuffix)
+        args = ["mcp"]
+
+        """
+    }
+
+    /// Tables that are ours, counted through the installer's own header rule. A count
+    /// of the literal `[mcp_servers.omelette]` would miss the very spellings these
+    /// tests are about.
+    private func ourTableCount(in text: String) -> Int {
+        SettingsFile.lines(of: text).filter { MCPInstaller.codexHeaderKey($0) == MCPInstaller.codexKey }.count
+    }
+
+    func testAHeaderKeyIsReadHoweverTOMLSpellsIt() {
+        let ours = ["mcp_servers", "omelette"]
+        XCTAssertEqual(MCPInstaller.codexKey, ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette]"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette] # Omelette MCP"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."omelette"]"#), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.'omelette']"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[ mcp_servers.omelette ]"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("  [mcp_servers . omelette]\r"), ours, "spaces around the dot, CRLF, indentation")
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette.env]"), ["mcp_servers", "omelette", "env"])
+        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."a.b"]"#), ["mcp_servers", "a.b"], "a dot inside quotes is part of the name")
+        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."x#y"] # note"#), ["mcp_servers", "x#y"], "a hash inside quotes is not a comment")
+        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."say \"hi\""]"#), ["mcp_servers", #"say "hi""#], "an escaped quote does not close the name")
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[[profiles.fast]]"), ["profiles", "fast"], "an array of tables is a header too")
+    }
+
+    func testALineThatIsNotAHeaderHasNoKey() {
+        XCTAssertNil(MCPInstaller.codexHeaderKey(#"command = "x""#))
+        XCTAssertNil(MCPInstaller.codexHeaderKey("# [mcp_servers.omelette]"), "a commented-out header is a comment")
+        XCTAssertNil(MCPInstaller.codexHeaderKey(#"  ["a", "b"],"#), "a row of a nested array is not a header")
+        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers.omelette"))
+        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers..omelette]"))
+        XCTAssertNil(MCPInstaller.codexHeaderKey(#"[mcp_servers."omelette]"#))
+        XCTAssertNil(MCPInstaller.codexHeaderKey("[]"))
+        XCTAssertNil(MCPInstaller.codexHeaderKey(""))
+    }
+
+    /// The three spellings the 2.7.0 review ran through Python's `tomllib`. Each one is
+    /// our table, and each used to read as "not installed" and get a second table
+    /// appended — a config Codex refuses to load ("Cannot declare ('mcp_servers',
+    /// 'omelette') twice").
+    func testOurTableUnderAnyHeaderSpellingIsInstalledAndInstallLeavesItAlone() throws {
+        for header in [
+            "[mcp_servers.omelette] # Omelette MCP",
+            #"[mcp_servers."omelette"]"#,
+            "[ mcp_servers.omelette ]",
+        ] {
+            let existing = codexConfig(header: header)
+            try write(existing, to: codexURL)
+
+            XCTAssertEqual(codexStatus, .installed, header)
+
+            try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
+
+            let after = try text(at: codexURL)
+            XCTAssertEqual(ourTableCount(in: after), 1, "\(header):\n\(after)")
+            XCTAssertEqual(after, existing, "\(header): already installed, so the file is left exactly as it was")
+        }
+    }
+
+    func testAnOlderPathUnderAQuotedHeaderIsUpdatedInPlace() throws {
+        try write("""
+        [mcp_servers."omelette"] # added by hand
+        command = "/Users/other/Library/Application Support/UsageTracker/bin/omelette"
+        args = ["mcp"]
+
+        [mcp_servers.xcode]
+        command = "xcrun"
+
+        """, to: codexURL)
+        XCTAssertEqual(codexStatus, .outdated)
+
+        try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
+
+        let after = try text(at: codexURL)
+        XCTAssertEqual(codexStatus, .installed)
+        XCTAssertEqual(ourTableCount(in: after), 1, after)
+        XCTAssertFalse(after.contains("/Users/other/"), after)
+        XCTAssertTrue(after.contains("[mcp_servers.xcode]"), after)
+    }
+
+    /// The README's own hand-written example ends the command line with
+    /// `# full path, no $HOME`. Read with the comment attached, the value ended in
+    /// `$HOME`, not a quote, and the table was refused as one "with no command".
+    func testACommentAfterTheCommandIsNotPartOfIt() throws {
+        XCTAssertEqual(MCPInstaller.codexValue("command", in: [#"command = "/bin/omelette" # ours"#]), "/bin/omelette")
+        XCTAssertEqual(
+            MCPInstaller.codexValue("command", in: [#"command = "/tmp/#1/omelette"  # ours"#]), "/tmp/#1/omelette",
+            "a hash inside the quotes is part of the path"
+        )
+
+        let existing = codexConfig(header: "[mcp_servers.omelette]", commandSuffix: "  # full path, no $HOME")
+        try write(existing, to: codexURL)
+
+        XCTAssertEqual(codexStatus, .installed)
+        try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
+        XCTAssertEqual(try text(at: codexURL), existing)
+    }
+
+    func testRemoveFindsOurTableUnderAnyHeaderSpelling() throws {
+        try write(codexConfig(header: "[ mcp_servers.'omelette' ] # Omelette"), to: codexURL)
+
+        try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
+
+        let after = try text(at: codexURL)
+        XCTAssertEqual(ourTableCount(in: after), 0, after)
+        XCTAssertFalse(after.contains("args"), after)
+        XCTAssertTrue(after.contains("model = \"gpt-6-astra\""), after)
+        XCTAssertEqual(codexStatus, .notInstalled)
+    }
+
+    func testOurTableEndsAtTheNextHeaderHoweverEitherIsSpelled() {
+        let lines = [
+            #"[mcp_servers."omelette"]"#,
+            "command = \"x\"",
+            "[ mcp_servers.omelette.env ] # ours too",
+            "DEBUG = \"1\"",
+            "[[profiles]]",
+            "name = \"fast\"",
+        ]
+        XCTAssertEqual(MCPInstaller.codexTableRange(in: lines), 0..<4)
+        XCTAssertNil(
+            MCPInstaller.codexTableRange(in: ["[[mcp_servers.omelette]]", "command = \"x\""]),
+            "an array of tables that shares the name is not our table"
+        )
+    }
 }
