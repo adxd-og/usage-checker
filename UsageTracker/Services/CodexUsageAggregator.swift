@@ -186,8 +186,9 @@ actor CodexUsageAggregator: CostLogAggregating {
     private let archivedURL: URL?
     /// `~/.codex/session_index.jsonl`, read in Task 5. Derived the same way.
     private let indexURL: URL?
-    /// The calendar every day boundary is taken in. Injected so a session test can pin
-    /// UTC instead of drifting with the machine's time zone.
+    /// The calendar every day boundary is taken in: the system's own by default, which
+    /// follows a time-zone change while the app runs. Injected so a session test can
+    /// pin UTC instead of drifting with the machine's time zone.
     private let calendar: Calendar
     /// Per rollout, keyed by `fileKey(for:)` — the thread uuid, not the path.
     private var fileStates: [String: FileState] = [:]
@@ -220,7 +221,8 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// Chats are kept three times longer than turns: the History list reaches back a
     /// quarter and holds one small aggregate per chat, not one record per turn.
     private let sessionRetention: TimeInterval = 92 * 24 * 3600
-    private var dayCache: (start: Date, next: Date)?
+    /// The day the last lookup fell in, dropped on a system time-zone change.
+    private let dayBins = DayBinCache()
     /// The `ModelPricing.generation` the turns in `recentTurns` were last priced at. nil
     /// before the first scan.
     private var pricedGeneration: Int?
@@ -247,7 +249,7 @@ actor CodexUsageAggregator: CostLogAggregating {
             .appendingPathComponent(".codex/sessions", isDirectory: true),
         archivedURL: URL? = nil,
         indexURL: URL? = nil,
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.rootURL = rootURL
         self.archivedURL = archivedURL ?? Self.sibling(of: rootURL, named: "archived_sessions")
@@ -792,11 +794,7 @@ actor CodexUsageAggregator: CostLogAggregating {
     }
 
     private func dayStart(for date: Date) -> Date {
-        if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let start = calendar.startOfDay(for: date)
-        let next = calendar.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-        dayCache = (start, next)
-        return start
+        dayBins.start(of: date, in: calendar)
     }
 
     // MARK: - File scanning

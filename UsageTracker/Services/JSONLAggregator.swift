@@ -501,7 +501,8 @@ actor JSONLAggregator: CostLogAggregating {
     private let rootURL: URL
     /// The calendar every day boundary in this actor comes from — the fold's, the
     /// daily rows', and the range `sessions(from:to:)` is asked about. One calendar so
-    /// the bins and the query can never disagree.
+    /// the bins and the query can never disagree. The system's own by default,
+    /// following a time-zone change while the app runs.
     private let calendar: Calendar
     /// Where the cache is kept; nil disables it entirely (the tests that don't care).
     private let cacheURL: URL?
@@ -568,10 +569,8 @@ actor JSONLAggregator: CostLogAggregating {
     /// kept chat empties the chat's sums, so a chat whose transcript survives is rebuilt
     /// from it, and a chat whose transcript is gone keeps what it had.
     private var rebuiltChats: Set<String>?
-    /// One cached day interval covers the common case: log lines arrive in
-    /// near-chronological runs, and `Calendar.startOfDay` is far too expensive
-    /// to call per turn.
-    private var dayCache: (start: Date, next: Date)?
+    /// The day the last lookup fell in, dropped on a system time-zone change.
+    private let dayBins = DayBinCache()
     /// How many transcripts the last scan actually opened. Zero is the normal answer
     /// for a poll with nothing new, and for a relaunch off a warm cache.
     private(set) var filesParsedInLastScan = 0
@@ -614,7 +613,7 @@ actor JSONLAggregator: CostLogAggregating {
             .appendingPathComponent(".claude/projects", isDirectory: true),
         cacheURL: URL? = JSONLAggregator.defaultCacheURL,
         saveInterval: TimeInterval = 300,
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.rootURL = rootURL
         self.cacheURL = cacheURL
@@ -1173,12 +1172,7 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     private func dayStart(for date: Date) -> Date {
-        if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = calendar
-        let start = cal.startOfDay(for: date)
-        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-        dayCache = (start, next)
-        return start
+        dayBins.start(of: date, in: calendar)
     }
 
     /// FNV-1a over UTF-8: stable across launches (unlike `Hasher`), 8 bytes per

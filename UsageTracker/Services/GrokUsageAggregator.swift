@@ -81,7 +81,8 @@ actor GrokUsageAggregator: CostLogAggregating {
     /// Stable hashes of `_meta.eventId`s already counted — a resumed session replays
     /// its earlier lines, and a re-read tail would otherwise double-bill them.
     private var seenEventIDs: Set<UInt64> = []
-    private var dayCache: (start: Date, next: Date)?
+    /// The day the last lookup fell in, dropped on a system time-zone change.
+    private let dayBins = DayBinCache()
     /// The `ModelPricing.generation` the table-priced slices in `recentTurns` were last
     /// priced at. nil before the first refresh.
     private var pricedGeneration: Int?
@@ -91,7 +92,7 @@ actor GrokUsageAggregator: CostLogAggregating {
     init(
         rootURL: URL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".grok/sessions", isDirectory: true),
-        calendar: Calendar = .current
+        calendar: Calendar = .autoupdatingCurrent
     ) {
         self.rootURL = rootURL
         self.calendar = calendar
@@ -331,12 +332,7 @@ actor GrokUsageAggregator: CostLogAggregating {
     }
 
     private func dayStart(for date: Date) -> Date {
-        if let c = dayCache, date >= c.start, date < c.next { return c.start }
-        let cal = calendar
-        let start = cal.startOfDay(for: date)
-        let next = cal.date(byAdding: .day, value: 1, to: start) ?? start.addingTimeInterval(86400)
-        dayCache = (start, next)
-        return start
+        dayBins.start(of: date, in: calendar)
     }
 
     /// FNV-1a over UTF-8: stable across launches (unlike `Hasher`), 8 bytes per entry
