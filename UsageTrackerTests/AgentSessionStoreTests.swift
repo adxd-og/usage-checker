@@ -540,6 +540,44 @@ final class AgentSessionStoreTests: XCTestCase {
         XCTAssertFalse(session?.isApproximate ?? true, "it is still a hook-tracked session")
     }
 
+    /// Codex writes a turn's last lines a moment before it fires Stop, and the scan
+    /// calls a rollout working for 30 seconds after its last write. A poll in that half
+    /// minute used to lift the finished row back to working, where it stayed. A write
+    /// from before the Stop is the turn that ended, not a new one.
+    func testARolloutWriteFromBeforeTheStopDoesNotLiftAFinishedCodexSession() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive(
+            [passive(source: .codex, sessionID: "t1", state: .working, at: at(-1))],
+            now: at(20)
+        )
+
+        let session = store.sessions.first
+        XCTAssertEqual(session?.state, .done)
+        XCTAssertEqual(session?.stateSince, t0)
+    }
+
+    /// The margin is five seconds, and a write exactly at the margin is still the turn
+    /// that ended.
+    func testOnlyAWriteMoreThanFiveSecondsAfterTheStopLiftsTheSession() {
+        let store = makeStore()
+        store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
+
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(5))], now: at(20))
+        XCTAssertEqual(store.sessions.first?.state, .done)
+
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(6))], now: at(21))
+        XCTAssertEqual(store.sessions.first?.state, .working)
+        XCTAssertEqual(store.sessions.first?.stateSince, at(21))
+    }
+
+    func testTheSameMarginAppliesToACodexSessionThatJustStarted() {
+        let store = makeStore()
+        store.apply(event(.sessionStart, source: .codex, sessionID: "t1"), now: t0)
+        store.mergePassive([passive(source: .codex, sessionID: "t1", state: .working, at: at(2))], now: at(10))
+        XCTAssertEqual(store.sessions.first?.state, .idle, "a write from the moment the session started is not a turn")
+    }
+
     func testAPassiveIdleNeverDowngradesACodexSession() {
         let store = makeStore()
         store.apply(event(.codexTurnComplete, source: .codex, sessionID: "t1"), now: t0)
