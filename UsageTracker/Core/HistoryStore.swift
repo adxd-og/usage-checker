@@ -248,8 +248,15 @@ actor HistoryStore {
                 defer { try? handle.close() }
                 try handle.seekToEnd()
                 try handle.write(contentsOf: data)
-            } else {
+            } else if !FileManager.default.fileExists(atPath: fileURL.path) {
+                // No log yet: this record is the whole of it.
                 try data.write(to: fileURL, options: [.atomic])
+            } else {
+                // The log is there but will not open for writing — read-only, locked.
+                // Replacing it with this one line would throw away up to 90 days of
+                // history; it is left as it is, and the next full rewrite puts back
+                // everything still held in memory, this record included.
+                NSLog("[UT] HistoryStore append skipped: the log exists but will not open for writing")
             }
         } catch {
             NSLog("[UT] HistoryStore append failed: %@", String(describing: error))
