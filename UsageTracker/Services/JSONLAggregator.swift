@@ -308,7 +308,10 @@ actor JSONLAggregator: CostLogAggregating {
     /// There is deliberately no session-level total: every figure `sessions(from:to:)`
     /// reports is summed from `days`, so a revised turn has one place to be fixed and a
     /// clipped range can never disagree with an unclipped one.
-    private struct SessionAgg: Codable {
+    ///
+    /// Internal, not private, and its parts `Equatable`, so its day rules are tested on
+    /// a value built the way a transcript builds it — as Codex's `summary` is on its own.
+    struct SessionAgg: Codable {
         var projectSlug: String
         var firstAt: Date
         var lastAt: Date
@@ -323,7 +326,7 @@ actor JSONLAggregator: CostLogAggregating {
         /// in `init(projectSlug:at:)`; the cache always writes it (version 5).
         var byModel: [String: ModelTotals] = [:]
 
-        struct DayTotals: Codable {
+        struct DayTotals: Codable, Equatable {
             let day: Date
             var turns: Int
             var tokens: TokenBreakdown
@@ -332,7 +335,7 @@ actor JSONLAggregator: CostLogAggregating {
             var mainTokens: TokenBreakdown
         }
 
-        struct AgentTotals: Codable {
+        struct AgentTotals: Codable, Equatable {
             var kind: String
             var model: String?
             var effort: String?
@@ -345,7 +348,7 @@ actor JSONLAggregator: CostLogAggregating {
         /// One (model, effort) pair's running totals. The pair is kept in the value as
         /// well as in the key: a model id is a slug from a log nobody validates, and
         /// splitting the key back apart on "|" would be a second parser.
-        struct ModelTotals: Codable {
+        struct ModelTotals: Codable, Equatable {
             var model: String
             var effort: String?
             var turns: Int
