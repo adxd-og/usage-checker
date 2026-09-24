@@ -907,10 +907,11 @@ final class JSONLSessionsTests: XCTestCase {
         XCTAssertEqual(staleParsed, 3, "a version-5 snapshot means a full rescan of all three transcripts")
         XCTAssertEqual(staleSessions.map(\.id), [sessionID], "nothing from the old snapshot reaches the list")
 
-        // The control: the same bytes at version 6 ARE restored, so the assertions above
-        // are about the version number and not about an unreadable file.
+        // The control: the same bytes at the current version, 7, ARE restored, so the
+        // assertions above are about the version number and not about an unreadable file.
+        // (A version-6 file is carried over and re-read instead; see JSONLDeferredFoldTests.)
         let currentURL = cacheFile(named: "control")
-        try snapshot(version: 6).write(to: currentURL)
+        try snapshot(version: 7).write(to: currentURL)
         let current = aggregator(cache: currentURL)
         await current.refresh()
         let restored = await current.sessions(from: dayStart(daysAgo: 3), to: now)
