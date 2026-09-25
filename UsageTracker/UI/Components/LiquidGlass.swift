@@ -230,7 +230,8 @@ struct OMSidebarPillShape: InsettableShape {
 
 /// A sidebar item: `Button { … } label: { Label("Overview", systemImage: "square.grid.2x2") }`
 /// `.buttonStyle(.omSidebarPill(isSelected: selection == .overview))`. The dashboard's size
-/// unless `metrics` says otherwise.
+/// unless `metrics` says otherwise. An unselected item lights up under the pointer in the
+/// pill's own shape; the selected one stays still.
 struct OMSidebarPillButtonStyle: ButtonStyle {
     let isSelected: Bool
     var metrics: OMSidebarPillMetrics = .dashboard
@@ -246,6 +247,11 @@ struct OMSidebarPillButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(OMSidebarPillShape(radius: metrics.cornerRadius))
             .modifier(OMSidebarPillBackground(showsPill: look.showsPill, radius: metrics.cornerRadius))
+            .modifier(OMHoverHighlight(
+                shape: OMSidebarPillShape(radius: metrics.cornerRadius),
+                isPressed: configuration.isPressed,
+                isActive: OMButtonRules.showsHoverWhenSelectable(isSelected: isSelected)
+            ))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
