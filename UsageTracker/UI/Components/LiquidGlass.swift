@@ -162,3 +162,82 @@ private struct OMGlassSurface<S: InsettableShape>: ViewModifier {
         }
     }
 }
+
+// MARK: - Sidebar pill (spec § Components, "Sidebar")
+
+/// What one sidebar item wears.
+struct OMSidebarPillAppearance: Equatable {
+    let showsPill: Bool
+    let title: OMColorToken
+    let icon: OMColorToken
+    let weight: Font.Weight
+}
+
+/// The sidebar item from `Dashboard-Overview(-Light).dc.html`: the selected item is
+/// a raised pill with an accent icon and a semibold title; the others are bare, in
+/// secondary, medium weight.
+enum OMSidebarPillRules {
+    static let height: CGFloat = 34
+    static let horizontalPadding: CGFloat = 12
+    static let iconSpacing: CGFloat = 10
+    static let fontSize: CGFloat = 13
+
+    static func appearance(isSelected: Bool) -> OMSidebarPillAppearance {
+        isSelected
+            ? OMSidebarPillAppearance(showsPill: true, title: .text, icon: .accentText, weight: .semibold)
+            : OMSidebarPillAppearance(showsPill: false, title: .secondary, icon: .secondary, weight: .medium)
+    }
+}
+
+/// A sidebar item: `Button { … } label: { Label("Overview", systemImage: "square.grid.2x2") }`
+/// `.buttonStyle(.omSidebarPill(isSelected: selection == .overview))`.
+struct OMSidebarPillButtonStyle: ButtonStyle {
+    let isSelected: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let look = OMSidebarPillRules.appearance(isSelected: isSelected)
+        configuration.label
+            .foregroundStyle(.om(look.title))
+            .labelStyle(OMSidebarPillLabelStyle(appearance: look))
+            .font(.system(size: OMSidebarPillRules.fontSize, weight: look.weight))
+            .padding(.horizontal, OMSidebarPillRules.horizontalPadding)
+            .frame(height: OMSidebarPillRules.height)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(OMCornerShape(.navItem))
+            .modifier(OMSidebarPillBackground(showsPill: look.showsPill))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+extension ButtonStyle where Self == OMSidebarPillButtonStyle {
+    static func omSidebarPill(isSelected: Bool) -> OMSidebarPillButtonStyle {
+        OMSidebarPillButtonStyle(isSelected: isSelected)
+    }
+}
+
+/// Icon and title coloured separately: the selected icon takes the accent.
+private struct OMSidebarPillLabelStyle: LabelStyle {
+    let appearance: OMSidebarPillAppearance
+
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: OMSidebarPillRules.iconSpacing) {
+            configuration.icon
+                .foregroundStyle(.om(appearance.icon))
+            configuration.title
+                .foregroundStyle(.om(appearance.title))
+        }
+    }
+}
+
+private struct OMSidebarPillBackground: ViewModifier {
+    let showsPill: Bool
+
+    func body(content: Content) -> some View {
+        if showsPill {
+            content.raisedPill(in: OMCornerShape(.navItem))
+        } else {
+            content
+        }
+    }
+}
