@@ -335,9 +335,9 @@ extension OMPalette {
 
 /// The four glass surfaces of 3.0.
 enum OMGlassKind: CaseIterable, Sendable {
-    /// Popover body and window chrome.
+    /// Popover body, window chrome and the dashboard and Settings sidebars.
     case chrome
-    /// Glass over the content fill: sidebar and dashboard cards.
+    /// Glass over the content fill: the dashboard cards.
     case pane
     /// The capsule track under a segmented control. The spec files it under chrome
     /// glass; the mockups draw it on the chrome body as a faint overlay, so it has its

@@ -91,12 +91,12 @@ extension View {
         modifier(OMGlassSurface(kind: kind, shape: shape))
     }
 
-    /// Popover body and window chrome.
+    /// Popover body, window chrome and the dashboard and Settings sidebars.
     func chromeGlass<S: InsettableShape>(in shape: S) -> some View {
         omGlass(.chrome, in: shape)
     }
 
-    /// Glass over the content fill: sidebar and dashboard cards.
+    /// Glass over the content fill: the dashboard cards.
     func paneGlass<S: InsettableShape>(in shape: S) -> some View {
         omGlass(.pane, in: shape)
     }
