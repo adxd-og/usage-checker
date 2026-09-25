@@ -3,7 +3,7 @@
 ## Build from source
 
 Requirements:
-- macOS 14 (Sonoma) or newer
+- macOS 26 (Tahoe) or newer: the app and its test host launch only there
 - Xcode 26 or newer
 - [xcodegen](https://github.com/yonaskolb/XcodeGen) — `brew install xcodegen`
 

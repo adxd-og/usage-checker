@@ -8,12 +8,13 @@ struct OMSegmentItem: Identifiable, Equatable {
     var showsDot: Bool = false
 }
 
-/// Capsule segmented control ("All · Claude · Codex …"). The selected item is a
-/// glass capsule inside a GlassGroup (a cross-fade between items on macOS 26);
-/// on 14+ it is a quiet material capsule. With more than four items the
-/// provider names no longer fit 360 pt, so those segments go icon-only — the
-/// name stays in the tooltip and the accessibility label. `alwaysShowsTitles`
-/// opts a wider surface out of that, and `keyboardShortcuts` out of ⌘1…⌘9.
+/// Capsule segmented control ("All · Claude · Codex …") in the 3.0 look (liquid-glass
+/// spec § Components, "Segmented controls"): the track is tinted glass, the selected
+/// segment a raised pill on it, the labels read in the text and secondary tokens, and
+/// keyboard focus is the yolk focus ring. With more than four items the provider
+/// names no longer fit 360 pt, so those segments go icon-only — the name stays in
+/// the tooltip and the accessibility label. `alwaysShowsTitles` opts a wider surface
+/// out of that, and `keyboardShortcuts` out of ⌘1…⌘9.
 struct OMSegmentedControl: View {
     let items: [OMSegmentItem]
     @Binding var selection: String
@@ -45,20 +46,34 @@ struct OMSegmentedControl: View {
         }
     }
 
+    /// The track under the segments: tinted system glass. `body` draws exactly this
+    /// kind through `omGlass`.
+    nonisolated static var trackSurface: OMGlassKind { .controlTrack }
+
+    /// The selected segment: a raised pill on the track — not accent blue, and not a
+    /// second layer of glass. `SelectedPill` draws exactly this kind through `omGlass`.
+    nonisolated static var selectedSurface: OMGlassKind { .raisedPill }
+
+    /// Keyboard focus: the yolk focus ring, not the system accent colour.
+    nonisolated static var focusRingToken: OMColorToken { .focusRing }
+
+    /// The selected label reads in the text colour, the others in secondary.
+    nonisolated static func labelToken(isSelected: Bool) -> OMColorToken {
+        isSelected ? .text : .secondary
+    }
+
     private var showsTitles: Bool {
         Self.showsTitles(count: items.count, alwaysShowsTitles: alwaysShowsTitles)
     }
 
     var body: some View {
-        GlassGroup(spacing: 2) {
-            HStack(spacing: 2) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    segment(item, index: index)
-                }
+        HStack(spacing: 2) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                segment(item, index: index)
             }
         }
         .padding(3)
-        .background(Capsule(style: .continuous).fill(OMSurface.row))
+        .omGlass(Self.trackSurface, in: Capsule(style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Provider")
     }
@@ -81,7 +96,7 @@ struct OMSegmentedControl: View {
                         .lineLimit(1)
                 }
             }
-            .foregroundStyle(isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .foregroundStyle(.om(Self.labelToken(isSelected: isSelected)))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
             .frame(maxWidth: .infinity)
@@ -96,11 +111,13 @@ struct OMSegmentedControl: View {
         // The system's ring is a rectangle around a capsule; the ring below replaces it.
         .focusEffectDisabled()
         .focused($focusedItemID, equals: item.id)
-        .modifier(SelectedCapsule(isSelected: chrome.showsGlass))
+        .modifier(SelectedPill(isSelected: chrome.showsGlass))
         .overlay {
             if chrome.showsFocusRing {
+                // A band just outside the capsule, like the mockups' 3 px box-shadow ring.
                 Capsule(style: .continuous)
-                    .strokeBorder(Color.accentColor, lineWidth: 2)
+                    .strokeBorder(.om(Self.focusRingToken), lineWidth: OMFocusRing.width)
+                    .padding(-OMFocusRing.width)
                     .allowsHitTesting(false)
             }
         }
@@ -111,8 +128,10 @@ struct OMSegmentedControl: View {
     }
 }
 
-/// What one segment draws: nothing, the keyboard-focus ring, the selected glass
-/// capsule, or both. Decided by `OMSegmentedControl.segmentChrome(isSelected:isFocused:)`.
+/// What one segment draws: nothing, the keyboard-focus ring, the selected look, or
+/// both. The selected look keeps its 2.7 name, `glass`; since 3.0 it is the raised
+/// pill (`OMSegmentedControl.selectedSurface`). Decided by
+/// `OMSegmentedControl.segmentChrome(isSelected:isFocused:)`.
 enum SegmentChrome: Equatable, Sendable {
     case plain, focusRing, glass, glassAndRing
 
@@ -120,12 +139,13 @@ enum SegmentChrome: Equatable, Sendable {
     var showsFocusRing: Bool { self == .focusRing || self == .glassAndRing }
 }
 
-/// Glass capsule behind the selected segment, nothing behind the others.
-private struct SelectedCapsule: ViewModifier {
+/// The raised pill behind the selected segment, nothing behind the others. A change
+/// of selection cross-fades it.
+private struct SelectedPill: ViewModifier {
     let isSelected: Bool
     func body(content: Content) -> some View {
         if isSelected {
-            content.liquidGlass(in: Capsule(style: .continuous))
+            content.omGlass(OMSegmentedControl.selectedSurface, in: Capsule(style: .continuous))
         } else {
             content
         }

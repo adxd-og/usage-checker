@@ -347,7 +347,9 @@ Next: [Requirements](#requirements).
 
 ## Requirements
 
-- macOS 14 (Sonoma) or newer. Liquid Glass activates on macOS 26 Tahoe+
+- macOS 26 (Tahoe) or newer from Omelette 3.0 on
+- On macOS 14 or 15, [Omelette 2.7.1](../../releases/tag/v2.7.1) is the last version
+  that runs; an installed copy stays on it and is not offered 3.0
 - [Claude Code](https://docs.anthropic.com/claude-code) installed and
   signed in (`claude login`)
 - Works with Pro / Max / Team / Enterprise subscriptions **and**

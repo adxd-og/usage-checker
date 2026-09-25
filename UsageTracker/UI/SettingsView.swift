@@ -245,10 +245,10 @@ struct SettingsView: View {
                 Toggle("Notify when limits are getting close", isOn: $settings.notificationsEnabled)
                 if settings.notificationsEnabled {
                     Stepper(value: $settings.threshold80, in: 50...90, step: 5) {
-                        Text("First warning at ") + Text("\(settings.threshold80)%").bold()
+                        Text("First warning at \(Text("\(settings.threshold80)%").bold())")
                     }
                     Stepper(value: $settings.threshold95, in: 80...99, step: 1) {
-                        Text("Final warning at ") + Text("\(settings.threshold95)%").bold()
+                        Text("Final warning at \(Text("\(settings.threshold95)%").bold())")
                     }
                     Text("You'll get one macOS notification when any window crosses the threshold. Resets when it drops back.")
                         .font(OMFont.caption)
