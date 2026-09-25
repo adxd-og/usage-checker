@@ -161,8 +161,8 @@ sessions you already have running.
   WezTerm, VS Code, VS Code Insiders, Cursor and Windsurf all come to the
   front
 
-Finished sessions and run history live in the dashboard's
-[Agents tab](#dashboard).
+Finished chats live in the dashboard's [History tab](#dashboard); the
+Agents tab shows the same live rows full width.
 
 Next: [Command line and MCP](#command-line-and-mcp).
 
@@ -298,11 +298,12 @@ A sidebar window with six tabs.
 - **Notifications**: the two limit warnings, session timing, agent alerts,
   quiet hours and the daily summary
 - **Integrations**: Claude Code (hooks, status line, MCP server), Codex
-  (hooks, `notify`, MCP server, the trust line), the Allow/Deny switch with
-  its pending/answered/expired counts, Command line (PATH)
+  (hooks, `notify`, MCP server, the trust line), the Allow/Deny switch,
+  Command line (PATH)
 - **Advanced**: keychain access, optional Admin API key, pay-as-you-go
-  weekly budget, the `anthropic-beta` flag, agent diagnostics, replay the
-  welcome tour, reset all settings
+  weekly budget, the `anthropic-beta` flag, agent diagnostics (socket, last
+  event, the pending/answered/expired counts), replay the welcome tour,
+  reset all settings
 
 Old deep links still open the right tab (Agents → Integrations, Account →
 Providers).
