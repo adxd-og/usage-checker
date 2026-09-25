@@ -164,4 +164,15 @@ final class DashboardTabTests: XCTestCase {
         // Dashboard-Overview(-Light).dc.html: a 2×2 grid, a person, a clock, a bulb.
         XCTAssertEqual(DashboardTab.allCases.map(\.icon), ["square.grid.2x2", "person", "clock", "lightbulb"])
     }
+
+    func testDownAndUpArrowsStepThroughTheTabsInSidebarOrder() {
+        XCTAssertEqual(DashboardTab.step(from: .overview, by: 1), .agents)
+        XCTAssertEqual(DashboardTab.step(from: .agents, by: 1), .history)
+        XCTAssertEqual(DashboardTab.step(from: .insights, by: -1), .history)
+    }
+
+    func testTheArrowsStopAtTheFirstAndLastTabAsAListDoes() {
+        XCTAssertEqual(DashboardTab.step(from: .overview, by: -1), .overview)
+        XCTAssertEqual(DashboardTab.step(from: .insights, by: 1), .insights)
+    }
 }

@@ -35,4 +35,13 @@ enum DashboardTab: String, CaseIterable, Identifiable, Sendable {
         if storedValue == retiredActivityValue { return .history }
         return DashboardTab(rawValue: storedValue) ?? .overview
     }
+
+    /// The tab an arrow key moves to from `tab`: `offset` places down the sidebar,
+    /// stopping at the first and the last tab as a list does rather than wrapping.
+    static func step(from tab: DashboardTab, by offset: Int) -> DashboardTab {
+        let tabs = allCases
+        guard let index = tabs.firstIndex(of: tab) else { return tab }
+        let target = min(max(index + offset, 0), tabs.count - 1)
+        return tabs[target]
+    }
 }

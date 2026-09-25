@@ -23,6 +23,8 @@ enum DashboardSidebarRules {
     static let brandHorizontalPadding: CGFloat = 8
     static let brandBottomPadding: CGFloat = 14
     static let accessibilityName = "Sidebar"
+    /// Keyboard focus on an item: the yolk ring, as on the segmented controls.
+    static let focusRingToken: OMColorToken = .focusRing
 }
 
 /// The dashboard's floating sidebar: a chrome-glass pane inset in the window, room for
@@ -33,6 +35,10 @@ struct DashboardSidebar<Footer: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
+    /// Which item keyboard focus is on. nil unless the user moves through the window
+    /// with Tab (Keyboard navigation on); a click does not set it.
+    @FocusState private var focusedTab: DashboardTab?
+
     var body: some View {
         VStack(alignment: .leading, spacing: DashboardSidebarRules.itemSpacing) {
             Color.clear
@@ -40,12 +46,7 @@ struct DashboardSidebar<Footer: View>: View {
                 .accessibilityHidden(true)
             brand
             ForEach(DashboardTab.allCases) { tab in
-                Button {
-                    selection = tab
-                } label: {
-                    Label(tab.rawValue, systemImage: tab.icon)
-                }
-                .buttonStyle(.omSidebarPill(isSelected: tab == selection))
+                item(tab)
             }
             Spacer(minLength: 0)
             footer()
@@ -59,6 +60,38 @@ struct DashboardSidebar<Footer: View>: View {
         .background { shadowCaster }
         .accessibilityElement(children: .contain)
         .accessibilityLabel(DashboardSidebarRules.accessibilityName)
+    }
+
+    /// One tab: a raised pill when selected, the yolk ring while keyboard focus is on
+    /// it, and ↑ / ↓ to the neighbouring tab, selection and focus together, as the 2.x
+    /// sidebar list moved.
+    private func item(_ tab: DashboardTab) -> some View {
+        Button {
+            selection = tab
+        } label: {
+            Label(tab.rawValue, systemImage: tab.icon)
+        }
+        .buttonStyle(.omSidebarPill(isSelected: tab == selection))
+        // The system's ring is a rectangle; the ring below follows the pill.
+        .focusEffectDisabled()
+        .focused($focusedTab, equals: tab)
+        .overlay {
+            if focusedTab == tab {
+                OMCornerShape(.navItem)
+                    .strokeBorder(.om(DashboardSidebarRules.focusRingToken), lineWidth: OMFocusRing.width)
+                    .padding(-OMFocusRing.width)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onKeyPress(.upArrow) { move(from: tab, by: -1) }
+        .onKeyPress(.downArrow) { move(from: tab, by: 1) }
+    }
+
+    private func move(from tab: DashboardTab, by offset: Int) -> KeyPress.Result {
+        let next = DashboardTab.step(from: tab, by: offset)
+        selection = next
+        focusedTab = next
+        return .handled
     }
 
     /// The mockups' drop shadows (`OMGlass.sidebarShadows`), outside the sidebar only,

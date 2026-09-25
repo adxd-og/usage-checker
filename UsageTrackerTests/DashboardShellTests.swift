@@ -58,4 +58,8 @@ final class DashboardShellTests: XCTestCase {
         XCTAssertEqual(DashboardShellLayout.minWidth, 884)
         XCTAssertEqual(DashboardShellLayout.minHeight, 560)
     }
+
+    func testKeyboardFocusOnAnItemWearsTheYolkRing() {
+        XCTAssertEqual(DashboardSidebarRules.focusRingToken, .focusRing)
+    }
 }
