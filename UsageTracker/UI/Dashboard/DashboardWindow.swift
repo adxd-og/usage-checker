@@ -24,32 +24,45 @@ struct DashboardWindow: View {
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(Tab.allCases, selection: tabSelection) { tab in
-                Label(tab.rawValue, systemImage: tab.icon).tag(tab)
-            }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            // How fresh the numbers are (spec § Removals: it replaces the data-source
-            // line). Its text changes while the window is hidden, so it is rebuilt
-            // with the detail column when the window comes back (`DetailRebuildRule`).
-            .safeAreaInset(edge: .bottom) {
+        HStack(spacing: 0) {
+            DashboardSidebar(selection: tabSelection) {
+                // How fresh the numbers are (spec § Removals: it replaces the data-source
+                // line). Its text changes while the window is hidden, so it is rebuilt
+                // with the detail column when the window comes back (`DetailRebuildRule`).
                 UpdatedFootnote(snapshot: appState.snapshot)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, UpdatedFootnoteRules.horizontalPadding)
-                    .padding(.vertical, 8)
                     .id(detailGeneration)
             }
-        } detail: {
+            .padding([.top, .bottom, .leading], DashboardShellLayout.windowInset)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Figures and chat titles are worth copying out of the app. One
                 // modifier on the detail root and every tab inherits it.
                 .textSelection(.enabled)
                 .id(detailGeneration)
+                .padding([.top, .bottom, .trailing], DashboardShellLayout.windowInset)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 820, idealWidth: 920, minHeight: 560, idealHeight: 640)
+        // The sidebar reaches up under the traffic lights, `windowInset` below the
+        // window's top edge. The scene hides the title bar (`.windowStyle(.hiddenTitleBar)`
+        // in `UsageTrackerApp`) and the shell draws into its strip: the backdrop, its
+        // tint and the sidebar's glass are the whole chrome (spec § Components, "Sidebar").
+        .ignoresSafeArea(.container, edges: .top)
+        .background {
+            ZStack {
+                OMWindowBackground()
+                // The window's body over the backdrop (ruling R4, `windowTint`).
+                Rectangle()
+                    .fill(.om(.windowTint))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(
+            minWidth: DashboardShellLayout.minWidth,
+            idealWidth: DashboardShellLayout.idealWidth,
+            minHeight: DashboardShellLayout.minHeight,
+            idealHeight: DashboardShellLayout.idealHeight
+        )
         .onAppear {
             dashboard.refreshAll()
             Updater.shared.checkInBackgroundIfDue()
