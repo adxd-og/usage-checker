@@ -7,7 +7,6 @@ import WidgetKit
 enum ProviderChoice: String, AppEnum {
     case claude
     case codex
-    case gemini
     case antigravity
     case grok
 
@@ -15,7 +14,6 @@ enum ProviderChoice: String, AppEnum {
     static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
         .claude: "Claude",
         .codex: "Codex (OpenAI)",
-        .gemini: "Gemini",
         .antigravity: "Antigravity",
         .grok: "Grok",
     ]
@@ -24,7 +22,6 @@ enum ProviderChoice: String, AppEnum {
         switch self {
         case .claude: return "Claude"
         case .codex: return "Codex"
-        case .gemini: return "Gemini"
         case .antigravity: return "Antigravity"
         case .grok: return "Grok"
         }
@@ -34,7 +31,6 @@ enum ProviderChoice: String, AppEnum {
         switch self {
         case .claude: return "sparkles"
         case .codex: return "chevron.left.forwardslash.chevron.right"
-        case .gemini: return "diamond"
         case .antigravity: return "circle.grid.cross"
         case .grok: return "x.circle"
         }
