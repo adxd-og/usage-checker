@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An Antigravity that is not running reads "Last known HH:mm" instead of a reset
   countdown.
 - Provider tabs cross-fade with a slight slide; off under Reduce Motion.
+- The header's second line says "Just updated", as the dashboard does.
 
 ### Dashboard
 - **A floating glass sidebar with four tabs:** Overview, Agents, History, Insights.
@@ -32,8 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Overview
 - Concentric rings per provider window; hovering or focusing a legend row
   magnifies its ring and shows its figure in the centre.
-- The CLI card links to History and keeps today's spend by model (up to five rows).
+- The CLI card links to History and keeps today's spend by model (up to five rows);
+  "Tokens by day" opens History on its chart.
 - Tokens today: tokens against cost per category, with thinking called out.
+- The provider's logo sits beside the title.
 
 ### Agents
 - The tab is Sessions plus the Live card, full width, with a link to
@@ -68,6 +71,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Command line and MCP
 - `omelette status` and `get_sessions` print token counts from a billion as "2.5B".
+- The MCP server's instructions and tool descriptions say where the answers come
+  from: the app's last snapshot, its age, what happens when there is none, and
+  which dollars are API-list-price equivalents.
 
 ## [2.7.1] — 2026-09-25
 
