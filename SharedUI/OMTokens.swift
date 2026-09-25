@@ -53,3 +53,163 @@ func usageStatusColor(_ percent: Double) -> Color {
     if percent >= 70 { return .orange }
     return .green
 }
+
+// MARK: - 3.0 colour roles (liquid-glass spec § Design → Tokens)
+
+/// One colour as sRGB components and an opacity. A plain value, so the token table
+/// can be compared in tests and composited for contrast checks without a renderer.
+struct OMRGBA: Equatable, Sendable {
+    let red: Double
+    let green: Double
+    let blue: Double
+    let opacity: Double
+
+    init(red: Double, green: Double, blue: Double, opacity: Double = 1) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+        self.opacity = opacity
+    }
+
+    /// `0xF2B544` → sRGB components: the mockups' hex values go in unchanged.
+    init(hex: UInt32, opacity: Double = 1) {
+        self.init(
+            red: Double((hex >> 16) & 0xFF) / 255,
+            green: Double((hex >> 8) & 0xFF) / 255,
+            blue: Double(hex & 0xFF) / 255,
+            opacity: opacity
+        )
+    }
+
+    static func white(_ opacity: Double) -> OMRGBA { OMRGBA(red: 1, green: 1, blue: 1, opacity: opacity) }
+    static func black(_ opacity: Double) -> OMRGBA { OMRGBA(red: 0, green: 0, blue: 0, opacity: opacity) }
+
+    func withOpacity(_ opacity: Double) -> OMRGBA {
+        OMRGBA(red: red, green: green, blue: blue, opacity: opacity)
+    }
+
+    var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: opacity) }
+
+    /// This colour laid over an opaque background, straight alpha in sRGB — how the
+    /// mockups' `rgba()` fills composite. The result is opaque.
+    func composited(over background: OMRGBA) -> OMRGBA {
+        OMRGBA(
+            red: red * opacity + background.red * (1 - opacity),
+            green: green * opacity + background.green * (1 - opacity),
+            blue: blue * opacity + background.blue * (1 - opacity)
+        )
+    }
+
+    /// WCAG 2 relative luminance of the RGB components (opacity ignored).
+    var relativeLuminance: Double {
+        func linear(_ c: Double) -> Double { c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
+        return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
+    }
+
+    /// WCAG 2 contrast ratio between two opaque colours, 1…21, in either order.
+    static func contrastRatio(_ a: OMRGBA, _ b: OMRGBA) -> Double {
+        let lighter = max(a.relativeLuminance, b.relativeLuminance)
+        let darker = min(a.relativeLuminance, b.relativeLuminance)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
+}
+
+/// Every 3.0 colour role. Each has one value per appearance, from
+/// `OMPalette.rgba(_:scheme:)`; views use `.om(_:)`.
+enum OMColorToken: CaseIterable, Sendable {
+    /// Yolk, as a fill: Needs you, Allow, today's bar, heatmap.
+    case accent
+    /// The accent as text and small glyphs (links, selected nav icon): yolk in dark,
+    /// yolk mixed 52 % with the text colour in light, where plain yolk is too faint.
+    case accentText
+    case text
+    /// Captions. Never below 4.5:1 on the window or a card.
+    case secondary
+    /// Cards and groups; `contentBorder` is their 1 px edge.
+    case contentFill
+    case contentBorder
+    /// Bar and ring tracks.
+    case track
+    /// Row separators.
+    case hairline
+    /// Gauges and "On track"; `okText` when it is text.
+    case ok
+    case okText
+    /// The agent working dot and the 3 px halo around it.
+    case working
+    case workingHalo
+    /// Keyboard focus on a ring, a legend row or a control (`OMFocusRing.width` wide).
+    case focusRing
+    /// Overview rings.
+    case seriesSession
+    case seriesAllModels
+    case seriesPerModel
+    /// Token categories in stacked bars and legends.
+    case tokenInput
+    case tokenOutput
+    case tokenCacheRead
+    case tokenCacheWrite
+    /// The flat colour under the window backdrop's gradients.
+    case windowBase
+}
+
+/// The 3.0 colour table (spec § Tokens; hex values are the mockups').
+enum OMPalette {
+    /// The value `token` takes in `scheme`. Anything that is not `.dark` reads the
+    /// light table, so an appearance SwiftUI adds later falls back instead of failing.
+    static func rgba(_ token: OMColorToken, scheme: ColorScheme) -> OMRGBA {
+        let (dark, light) = values(token)
+        return scheme == .dark ? dark : light
+    }
+
+    private static func values(_ token: OMColorToken) -> (dark: OMRGBA, light: OMRGBA) {
+        switch token {
+        case .accent: return (OMRGBA(hex: 0xF2B544), OMRGBA(hex: 0xF2B544))
+        // color-mix(in oklab, #F2B544 52%, #1D1D1F), computed once.
+        case .accentText: return (OMRGBA(hex: 0xF2B544), OMRGBA(hex: 0x846739))
+        case .text: return (OMRGBA(hex: 0xF5F5F7), OMRGBA(hex: 0x1D1D1F))
+        case .secondary: return (OMRGBA(hex: 0xF5F5F7, opacity: 0.64), OMRGBA(hex: 0x1D1D1F, opacity: 0.64))
+        case .contentFill: return (.white(0.055), .white(0.72))
+        case .contentBorder: return (.white(0.05), .black(0.05))
+        case .track: return (.white(0.10), .black(0.08))
+        case .hairline: return (.white(0.07), .black(0.08))
+        case .ok: return (OMRGBA(hex: 0x6FD99A), OMRGBA(hex: 0x2FB36A))
+        case .okText: return (OMRGBA(hex: 0x7FE3A8), OMRGBA(hex: 0x1E8A4F))
+        case .working: return (OMRGBA(hex: 0x6EA8FF), OMRGBA(hex: 0x2F7BF5))
+        case .workingHalo: return (OMRGBA(hex: 0x6EA8FF, opacity: 0.25), OMRGBA(hex: 0x2F7BF5, opacity: 0.25))
+        case .focusRing: return (OMRGBA(hex: 0xF2B544, opacity: 0.28), OMRGBA(hex: 0xF2B544, opacity: 0.28))
+        case .seriesSession: return (OMRGBA(hex: 0x6FD99A), OMRGBA(hex: 0x2FB36A))
+        case .seriesAllModels: return (OMRGBA(hex: 0x7AA2FF), OMRGBA(hex: 0x4C7EF3))
+        case .seriesPerModel: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
+        case .tokenInput: return (OMRGBA(hex: 0x7AA2FF), OMRGBA(hex: 0x4C7EF3))
+        case .tokenOutput: return (OMRGBA(hex: 0xF59E6B), OMRGBA(hex: 0xEE7B3A))
+        case .tokenCacheRead: return (OMRGBA(hex: 0x5CC8C8), OMRGBA(hex: 0x26A8A8))
+        case .tokenCacheWrite: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
+        case .windowBase: return (OMRGBA(hex: 0x0D0E13), OMRGBA(hex: 0xECE8F1))
+        }
+    }
+}
+
+/// Keyboard focus: a `focusRing` band this wide just outside the focused shape.
+enum OMFocusRing {
+    static let width: CGFloat = 3
+}
+
+/// A colour token as a `ShapeStyle` that takes its value from the environment's
+/// `colorScheme` when SwiftUI draws it: `.foregroundStyle(.om(.secondary))`. Pure
+/// SwiftUI, so the widget compiles it too.
+struct OMColor: ShapeStyle {
+    let token: OMColorToken
+
+    init(_ token: OMColorToken) {
+        self.token = token
+    }
+
+    func resolve(in environment: EnvironmentValues) -> Color {
+        OMPalette.rgba(token, scheme: environment.colorScheme).color
+    }
+}
+
+extension ShapeStyle where Self == OMColor {
+    static func om(_ token: OMColorToken) -> OMColor { OMColor(token) }
+}
