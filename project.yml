@@ -1,8 +1,10 @@
 name: UsageTracker
 options:
   bundleIdPrefix: com.usagetracker
+  # One floor for the whole bundle (app, widget, helpers, tests): 3.0 draws native
+  # Liquid Glass only. 2.7.1 stays in docs/appcast.xml for macOS 14–15.
   deploymentTarget:
-    macOS: "14.0"
+    macOS: "26.0"
   createIntermediateGroups: true
   generateEmptyDirectories: true
 
@@ -34,7 +36,7 @@ packages:
 settings:
   base:
     SWIFT_VERSION: "6.0"
-    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
     # Hardened Runtime deliberately lives in signing.xcconfig, not here: a value set
     # at this level outranks the xcconfig and would silently win over it.
     SWIFT_STRICT_CONCURRENCY: minimal
@@ -43,7 +45,7 @@ targets:
   UsageTracker:
     type: application
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "26.0"
     sources:
       - path: UsageTracker
         excludes:
@@ -139,7 +141,7 @@ targets:
   UsageTrackerTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "26.0"
     sources:
       - path: UsageTrackerTests
     # Also wires TEST_HOST/BUNDLE_LOADER, which is what lets `@testable import
@@ -166,7 +168,7 @@ targets:
   UsageTrackerWidget:
     type: app-extension
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "26.0"
     sources:
       - path: UsageTrackerWidget
         excludes:
@@ -197,7 +199,7 @@ targets:
   OmeletteHook:
     type: tool
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "26.0"
     sources:
       - path: HookHelper
       # By path, not by folder: the address a tmux pane is named by has to mean the
@@ -227,7 +229,7 @@ targets:
   OmeletteCLI:
     type: tool
     platform: macOS
-    deploymentTarget: "14.0"
+    deploymentTarget: "26.0"
     sources:
       - path: CLI
       # Shared with the app target, which compiles the same folder — one declaration
