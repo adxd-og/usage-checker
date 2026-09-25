@@ -62,4 +62,11 @@ final class DashboardShellTests: XCTestCase {
     func testKeyboardFocusOnAnItemWearsTheYolkRing() {
         XCTAssertEqual(DashboardSidebarRules.focusRingToken, .focusRing)
     }
+
+    func testTheHeaderSitsOnTheMockupsColumnGutters() {
+        // The detail column's `padding: 24px 32px 32px 30px` in every dashboard mockup.
+        XCTAssertEqual(DashboardShellLayout.columnTop, 24)
+        XCTAssertEqual(DashboardShellLayout.columnLeading, 30)
+        XCTAssertEqual(DashboardShellLayout.columnTrailing, 32)
+    }
 }

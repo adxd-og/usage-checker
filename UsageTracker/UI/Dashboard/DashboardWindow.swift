@@ -127,8 +127,9 @@ struct DashboardHeader: View {
             twoRows
             threeRows
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        .padding(.leading, DashboardShellLayout.columnLeading)
+        .padding(.trailing, DashboardShellLayout.columnTrailing)
+        .padding(.top, DashboardShellLayout.columnTop)
         .padding(.bottom, 12)
     }
 

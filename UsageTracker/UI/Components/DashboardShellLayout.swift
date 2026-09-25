@@ -13,6 +13,12 @@ enum DashboardShellLayout {
     /// default. The wider 3.0 sidebar raises the window's floor, not the column's.
     static let minimumDetailWidth: CGFloat = 640
     static let minWidth: CGFloat = windowInset + DashboardSidebarRules.width + minimumDetailWidth + windowInset
+    /// The detail column's padding in every dashboard mockup (`24px 32px 32px 30px`).
+    /// The header sits on it now; each tab's body moves onto it in its own package
+    /// (P3–P6), since they cannot all edit the shared header.
+    static let columnTop: CGFloat = 24
+    static let columnLeading: CGFloat = 30
+    static let columnTrailing: CGFloat = 32
     /// Unchanged from 2.7: the mockups set no floor.
     static let minHeight: CGFloat = 560
 }
