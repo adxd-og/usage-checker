@@ -5,6 +5,76 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] — 2026-09-26
+
+### Requirements
+- **Omelette 3.0 requires macOS 26.** The interface is native Liquid Glass with no
+  fallback; 2.7.1 stays available to macOS 14–15 through the update feed.
+
+### Popover
+- **Redesigned on glass:** provider tiles, a cost tile for local spend, the agents
+  group, and a footer with Dashboard, the floating window, Settings and Quit.
+  The refresh button and the version link are gone (⌘R still refreshes;
+  Settings → General has the version and the update check).
+- An Antigravity that is not running reads "Last known HH:mm" instead of a reset
+  countdown.
+- Provider tabs cross-fade with a slight slide; off under Reduce Motion.
+- The header's second line says "Just updated", as the dashboard does.
+
+### Dashboard
+- **A floating glass sidebar with four tabs:** Overview, Agents, History, Insights.
+  The Activity tab is gone; its calendar lives in History → Calendar.
+- The window's title bar is hidden and the traffic lights sit inside the sidebar.
+- "Updated 7s ago" with a status dot replaces the sidebar footnote.
+- Every control lights up under the pointer; focus rings show only while
+  navigating with the keyboard.
+- Tabs cross-fade; off under Reduce Motion.
+
+### Overview
+- Concentric rings per provider window; hovering or focusing a legend row
+  magnifies its ring and shows its figure in the centre.
+- The CLI card links to History and keeps today's spend by model (up to five rows);
+  "Tokens by day" opens History on its chart.
+- Tokens today: tokens against cost per category, with thinking called out.
+- The provider's logo sits beside the title.
+
+### Agents
+- The tab is Sessions plus the Live card, full width, with a link to
+  History → Sessions. The run history list and Busiest project are gone.
+
+### History
+- One controls row: provider, Chart or Calendar, range up to 1 year.
+- Chart bars carry tooltips; the per-day tables (Cost, Tokens, quota peaks) are gone.
+- Chats expand in place to show sub-agents and what each model cost.
+- Quota-only providers (Antigravity) get a line chart of their windows.
+- Token counts from a billion read "2.5B".
+
+### Insights
+- "Days at limit, 7 days" for every provider; the model split is scoped to today.
+- Snapshots recorded, observed peak, Top project this week and the 30-day project
+  list are gone.
+
+### Settings
+- **A sidebar window with six tabs:** General, Menu bar, Providers, Notifications,
+  Integrations, Advanced. Every row maps onto an existing setting; Force refresh
+  and Quit are gone (the popover has Quit). Old deep links still open the
+  right tab.
+- Providers: one row per provider with its source, status and switch, and
+  "Forget last known" inline.
+- While recording the popover shortcut the field says "Press the keys. Esc
+  cancels, Delete clears."
+
+### Providers
+- **The Gemini CLI provider is removed.** Antigravity's Gemini windows are
+  unaffected. Gemini CLI history already on disk stays and is not shown. A
+  widget that was set to Gemini needs to be edited to another provider.
+
+### Command line and MCP
+- `omelette status` and `get_sessions` print token counts from a billion as "2.5B".
+- The MCP server's instructions and tool descriptions say where the answers come
+  from: the app's last snapshot, its age, what happens when there is none, and
+  which dollars are API-list-price equivalents.
+
 ## [2.7.1] — 2026-09-25
 
 ### Time zones

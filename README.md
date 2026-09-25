@@ -61,7 +61,7 @@ two disclosures underneath.
 </details>
 
 <details>
-<summary><b>More of the dashboard</b>: overview per provider, history in dollars or tokens, quota history, activity, agents, insights</summary>
+<summary><b>More of the dashboard</b>: overview per provider, history in dollars or tokens, quota history, calendar, agents, insights</summary>
 <br>
 <table>
   <tr>
@@ -130,9 +130,8 @@ on its own tab.
   per-provider split underneath
 - **Spend-limit and extra-usage providers show both dollar amounts under the
   ring** ("$431 of $1,500"), not a bare percentage
-- **Footer**: Dashboard, floating window, Settings and Refresh buttons, plus
-  the app version linking to the GitHub page (drops to its own line at
-  narrow widths, so Quit is never pushed off)
+- **Footer**: Dashboard, floating window, Settings and Quit. ⌘R refreshes;
+  the version and the update check live in Settings → General
 
 Next: [Agents at a glance](#agents-at-a-glance).
 
@@ -152,9 +151,9 @@ sessions you already have running.
   already in front, the CLI just asks there
 - **Hooks for both CLIs**: eight Claude Code hooks in
   `~/.claude/settings.json`, seven Codex hooks in `~/.codex/hooks.json`,
-  installed with one click (Settings → Agents shows the exact JSON first).
+  installed with one click (Settings → Integrations shows the exact JSON first).
   Codex refuses a hook until you trust it once with `/hooks` inside Codex;
-  Settings → Agents says when that's still outstanding
+  Settings → Integrations says when that's still outstanding
 - **Jump to the tab**: clicking a row brings its terminal back. Terminal and
   iTerm2 select the exact tab; tmux brings the attached client's window
   forward and selects the session, window and pane; cmux selects the exact
@@ -180,8 +179,8 @@ agents.
 | `omelette mcp` | a read-only MCP server on stdio |
 | `omelette --version` / `--help` | version and usage |
 
-`omelette statusline` installs with one click from Settings → General →
-Command line: `◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1`, where `≈`
+`omelette statusline` installs with one click from Settings → Integrations →
+Claude Code: `◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1`, where `≈`
 marks API-equivalent dollars (`omelette status` writes "(API-equivalent)").
 Or add it yourself to `~/.claude/settings.json` (Claude Code runs the command
 through a shell, so `$HOME` expands):
@@ -233,26 +232,31 @@ Next: [Dashboard](#dashboard).
 A separate window, per provider, built from the same local logs. Opens from
 the popover footer or ⌘D.
 
-- **Overview**: the leading window as a ring with the burn verdict, and the
-  day's cost; a spend-limit provider shows both dollar amounts under the
-  ring here too
-- **Tokens today**: input, output, cache read, cache write and (nested
-  under output) thinking, plus the share of context that came from cache
-- **History**: a Cost / Tokens / **Sessions** switch. Sessions lists your
-  last 10 chats plus the 5 most expensive, for Claude Code and Codex:
-  title, project, tokens and cost, expandable to the input/output/cache
-  split, the sub-agents it launched, and a per-day breakdown. "Show all"
-  reveals every chat with a Recent / Cost sort
-- **Insights**: top project, week-over-week change, peak day, busiest hour
-- **Activity**: a GitHub-style heatmap of the last 52 weeks, with 30-day,
-  90-day and one-year totals above it. Claude Code deletes local transcripts
-  after 30 days by default, so a fresh install can show less than a year —
-  see [How it works](#how-it-works)
-- **Agents tab**: live sessions plus the run history: sessions, agent
-  time, approval requests and busiest project over the range you pick,
-  finished sessions grouped by day
-- The sidebar footer names the data source and the app version, linking to
-  the GitHub page
+- **Overview**: every window of the provider as concentric rings; hovering
+  or focusing a legend row magnifies its ring and puts its figure in the
+  centre. The CLI card shows today's spend by model and links to History;
+  a spend-limit provider shows both dollar amounts
+- **Tokens today**: input, output, cache read and cache write as bars
+  against their cost, with thinking called out under output
+- **History**: one controls row — provider, **Chart** or **Calendar**,
+  range up to a year. The chart is Cost or Tokens per day with tooltips;
+  the calendar is the GitHub-style year of squares (the former Activity
+  tab). Under it, your chats: title, project, tokens and cost, expandable
+  to the input/output/cache split, the sub-agents it launched and what each
+  model cost. "Show all" reveals every chat with a Recent / Cost sort. A
+  provider without a token log (Antigravity) gets a line chart of its
+  windows instead. Claude Code deletes local transcripts after 30 days by
+  default, so a fresh install can show less than a year — see
+  [How it works](#how-it-works)
+- **Insights**: days at limit in the last 7 days for every provider, this
+  week vs last, the 30-day daily average, the biggest day, the most-used
+  model today, and what filled the current session window by project. A
+  quota-only provider shows its average daily peak, quota used per day and
+  busiest day and hour instead
+- **Agents tab**: the Sessions figure and the Live card (the same rows as
+  the popover, full width), with a link to History's chats
+- The sidebar footer says when the numbers were last updated, with a status
+  dot
 - Every dollar figure here is the API-equivalent cost of your CLI usage,
   not what your subscription bills, except on a pay-as-you-go account,
   where it's the real bill
@@ -282,19 +286,26 @@ Next: [Settings](#settings).
 
 ## Settings
 
-- **General**: refresh interval, menu bar (percentage mode, per-provider
-  visibility), the global peek shortcut, launch at login, provider toggles
-  with Forget last known numbers, Command line (PATH, status line, MCP
-  server, both installers above), and a "Show remaining instead of used"
-  switch that turns every ring, bar and percent around
-- **Notifications**: threshold %, session timing, quiet hours, daily summary
-- **Agents**: hooks status and install for Claude Code and Codex (with the
-  Codex trust line), the Codex `notify` line, alert toggles, the Allow/Deny
-  switch with its pending/answered/expired counts, socket diagnostics
-- **Account**: connected services, keychain access, optional Admin API
-  key, pay-as-you-go weekly budget
-- **Advanced**: override the `anthropic-beta` OAuth header, replay the
-  welcome tour, force a refresh, reset all settings
+A sidebar window with six tabs.
+
+- **General**: launch at login, the popover shortcut, refresh interval,
+  automatic updates and Check now, the version and the GitHub link
+- **Menu bar**: the percentage mode, a "Count down remaining instead of
+  used" switch that turns every ring, bar and percent around, which
+  providers show in the menu bar, agents in the menu bar
+- **Providers**: one row per provider with its source, status and switch,
+  and Forget last known numbers inline
+- **Notifications**: the two limit warnings, session timing, agent alerts,
+  quiet hours and the daily summary
+- **Integrations**: Claude Code (hooks, status line, MCP server), Codex
+  (hooks, `notify`, MCP server, the trust line), the Allow/Deny switch with
+  its pending/answered/expired counts, Command line (PATH)
+- **Advanced**: keychain access, optional Admin API key, pay-as-you-go
+  weekly budget, the `anthropic-beta` flag, agent diagnostics, replay the
+  welcome tour, reset all settings
+
+Old deep links still open the right tab (Agents → Integrations, Account →
+Providers).
 
 Next: [How it works](#how-it-works).
 
@@ -309,7 +320,7 @@ Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server, or the
 local Grok CLI (with a grok.com fallback).
 
-Cost and Activity are read from the CLIs' own logs, so they reach back as far
+Cost and the History calendar are read from the CLIs' own logs, so they reach back as far
 as those logs do — up to a year. Claude Code deletes its local transcripts
 after 30 days by default; raise `cleanupPeriodDays` in `~/.claude/settings.json`
 to keep a year of them:
@@ -371,11 +382,11 @@ Next: [Install](#install).
    Keychain item: click **Always Allow**. From then on Omelette works off its
    own copy and never raises that dialog from a background refresh. It can
    reappear after something resets the item's access list (a reinstall, or a
-   differently signed build); Settings → Account → **Request keychain access
+   differently signed build); Settings → Advanced → **Request keychain access
    now** brings it back on demand
 4. The icon appears in your menu bar; click it to see usage
 5. That's the last manual install. Updates arrive automatically via Sparkle
-   (signed & notarized), or on demand via Settings → **Check for updates now**
+   (signed & notarized), or on demand via Settings → General → **Check now**
 
 Next: [Build from source](#build-from-source).
 
