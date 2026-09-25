@@ -137,3 +137,11 @@ extension HistoryLayout {
     static let quotaLegendItemWidth: CGFloat = 150
     static let quotaLineWidth: CGFloat = 2
 }
+
+// MARK: - Notes
+
+extension HistoryLayout {
+    /// A line under a card: 12 px secondary, `padding: 0 4px`.
+    static let noteSize: CGFloat = 12
+    static let noteInset: CGFloat = 4
+}

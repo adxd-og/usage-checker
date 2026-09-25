@@ -232,3 +232,28 @@ final class HistoryCopyQuotaTests: XCTestCase {
         )
     }
 }
+
+/// The quota-only screen's one line (spec § Removals: the sidebar's "usage history
+/// only" fact lands here), from `Dashboard-Quota-History`.
+final class HistoryCopyQuotaNoteTests: XCTestCase {
+    func testAntigravitySaysItKeepsNoTokenLog() {
+        XCTAssertEqual(
+            HistoryCopy.quotaOnlyNote(provider: "antigravity"),
+            "Antigravity keeps no local token log, so there are no costs or sessions here. Quota over time is charted instead."
+        )
+    }
+
+    func testGeminiSaysOmeletteDoesNotReadItsLog() {
+        XCTAssertEqual(
+            HistoryCopy.quotaOnlyNote(provider: "gemini"),
+            "Omelette doesn't read the Gemini CLI's token log, so there are no costs or sessions here. Quota over time is charted instead."
+        )
+    }
+
+    func testAnyOtherProviderIsNamedFromItsID() {
+        XCTAssertEqual(
+            HistoryCopy.quotaOnlyNote(provider: "new_thing"),
+            "New Thing keeps no local token log, so there are no costs or sessions here. Quota over time is charted instead."
+        )
+    }
+}

@@ -214,3 +214,21 @@ extension HistoryCopy {
 
     static let noQuotaHint = "Windows are recorded on every successful poll — this fills in as the app runs."
 }
+
+// MARK: - Quota-only note
+
+extension HistoryCopy {
+    /// Why a provider's History has a quota chart and nothing else. `provider` is the
+    /// service id: the reason differs per provider (`DashboardState.costSource`).
+    static func quotaOnlyNote(provider: String) -> String {
+        let rest = "so there are no costs or sessions here. Quota over time is charted instead."
+        switch provider {
+        case "antigravity":
+            return "Antigravity keeps no local token log, \(rest)"
+        case "gemini":
+            return "Omelette doesn't read the Gemini CLI's token log, \(rest)"
+        default:
+            return "\(QuotaAnalytics.prettifiedLabel(for: provider)) keeps no local token log, \(rest)"
+        }
+    }
+}

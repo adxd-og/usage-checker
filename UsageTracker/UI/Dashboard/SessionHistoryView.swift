@@ -106,7 +106,12 @@ struct SessionHistoryView: View {
 
                 Group {
                     if showsQuota {
-                        quotaContent
+                        HistoryQuotaCard(
+                            series: quota.series,
+                            domain: quota.domain,
+                            range: range,
+                            providerName: dashboard.displayName(for: dashboard.selectedService)
+                        )
                     } else {
                         HistoryChartCard(
                             days: HistoryRules.days(
@@ -118,11 +123,13 @@ struct SessionHistoryView: View {
                             now: now,
                             command: DashboardState.cliCommandName(for: dashboard.selectedService)
                         )
-                        // The chat list sits under the chart in both units (spec
-                        // § Screens, "History · Chart").
-                        if hasSessionLog {
-                            HistorySessionsCard(dashboard: dashboard, isWide: isWide)
-                        }
+                    }
+                    if showsQuota {
+                        quotaOnlyNote
+                    } else if hasSessionLog {
+                        // The chat list sits under the chart (spec § Screens, "History ·
+                        // Chart"), for the providers whose logs name a chat.
+                        HistorySessionsCard(dashboard: dashboard, isWide: isWide)
                     }
                 }
                 .padding(.leading, DashboardShellLayout.columnLeading)
@@ -201,24 +208,14 @@ struct SessionHistoryView: View {
 
     // MARK: - Quota
 
-    @ViewBuilder
-    private var quotaContent: some View {
-        HistoryQuotaCard(
-            series: quota.series,
-            domain: quota.domain,
-            range: range,
-            providerName: dashboard.displayName(for: dashboard.selectedService)
-        )
-        costFootnote
-    }
-
-    /// The quota chart answers "how much did I use", not "what did it cost" — say
-    /// which of the two this is, so the missing dollars don't read as a bug.
-    private var costFootnote: some View {
-        Text(dashboard.costSource.reason ?? "")
-            .font(OMFont.caption)
-            .foregroundStyle(.tertiary)
+    /// Why a quota-only provider shows no dollars and no chats: the sidebar's old
+    /// "usage history only" fact (spec § Removals) lands here, under the chart.
+    private var quotaOnlyNote: some View {
+        Text(HistoryCopy.quotaOnlyNote(provider: dashboard.selectedService))
+            .font(.system(size: HistoryLayout.noteSize))
+            .foregroundStyle(.om(.secondary))
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, HistoryLayout.noteInset)
     }
 }
 
