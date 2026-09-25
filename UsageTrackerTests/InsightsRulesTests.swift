@@ -385,4 +385,63 @@ final class InsightsRulesTests: XCTestCase {
         XCTAssertEqual(split.map(\.isOther), [false, false, true])
         XCTAssertEqual(split.map(\.cost).reduce(0, +), usage.cost, accuracy: 1e-9)
     }
+
+    // MARK: - Page
+
+    /// Dashboard-Insights.dc.html, in order: the session window, This week vs last and
+    /// Days at limit, then the strip.
+    func testACostProviderGetsTheMockupsPage() {
+        XCTAssertEqual(
+            InsightsRules.page(hasCostLog: true, hasSessionWindow: true),
+            InsightsPage(
+                showsSessionWindow: true,
+                cards: [.weekOverWeek, .daysAtLimit],
+                strip: [.dailyAverage, .biggestDay, .mostUsedModelToday]
+            )
+        )
+    }
+
+    /// Grok reports no session window; the rest of its page stays.
+    func testACostProviderWithoutASessionWindowKeepsItsFigures() {
+        XCTAssertEqual(
+            InsightsRules.page(hasCostLog: true, hasSessionWindow: false),
+            InsightsPage(
+                showsSessionWindow: false,
+                cards: [.weekOverWeek, .daysAtLimit],
+                strip: [.dailyAverage, .biggestDay, .mostUsedModelToday]
+            )
+        )
+    }
+
+    /// No dollars to show: the quota figures take the same places, Days at limit first.
+    func testAQuotaOnlyProviderShowsItsQuotaFiguresInTheSamePlaces() {
+        XCTAssertEqual(
+            InsightsRules.page(hasCostLog: false, hasSessionWindow: false),
+            InsightsPage(
+                showsSessionWindow: false,
+                cards: [.daysAtLimit, .averageDailyPeak],
+                strip: [.quotaPerDay, .busiestQuotaDay, .busiestHour]
+            )
+        )
+    }
+
+    // MARK: - Footnote
+
+    func testTheFootnoteSaysOnceThatTheDollarsAreAPIEquivalent() {
+        let claude = DashboardState.costSource(for: "claude")
+        let subscription = Fixture.snapshot(buckets: [Fixture.bucket(id: "five_hour", kind: .session)])
+        let payAsYouGo = Fixture.snapshot(buckets: [])
+
+        XCTAssertEqual(InsightsRules.footnote(costSource: claude, service: subscription), CostCopy.apiEquivalent)
+        XCTAssertEqual(InsightsRules.footnote(costSource: claude, service: nil), CostCopy.apiEquivalent)
+        // Pay-as-you-go: the dollars are the bill.
+        XCTAssertNil(InsightsRules.footnote(costSource: claude, service: payAsYouGo))
+    }
+
+    func testAProviderWithoutACostLogIsToldWhy() {
+        let antigravity = DashboardState.costSource(for: "antigravity")
+
+        XCTAssertNotNil(antigravity.reason)
+        XCTAssertEqual(InsightsRules.footnote(costSource: antigravity, service: nil), antigravity.reason)
+    }
 }

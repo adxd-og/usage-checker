@@ -52,6 +52,14 @@ enum InsightsFigure: String, CaseIterable, Identifiable, Sendable {
     var id: String { rawValue }
 }
 
+/// What the page is made of, in the mockup's order: the session window card when the
+/// provider has one open, two figure cards, then a strip of figures.
+struct InsightsPage: Equatable, Sendable {
+    let showsSessionWindow: Bool
+    let cards: [InsightsFigure]
+    let strip: [InsightsFigure]
+}
+
 /// What every figure is computed from, built in one pass off the main actor: it reduces
 /// over the daily rows and the whole quota history, far too heavy for a view's body.
 struct InsightsSummary: Equatable, Sendable {
@@ -264,5 +272,34 @@ enum InsightsRules {
     /// provider has stopped reporting it.
     static func windowLabel(for bucketID: String, in buckets: [QuotaBucketInfo]) -> String {
         buckets.first(where: { $0.id == bucketID })?.label ?? QuotaAnalytics.prettifiedLabel(for: bucketID)
+    }
+
+    /// What the page shows, in the mockup's order. A provider with a cost log gets the
+    /// mockup: the session window when it has one open (Grok reports none), This week vs
+    /// last and Days at limit, then the daily average, the biggest day and today's
+    /// most-used model. A provider without one has no dollars, so its quota figures take
+    /// the same places: Days at limit beside the average daily peak, then quota per day,
+    /// the busiest day and the busiest hour.
+    static func page(hasCostLog: Bool, hasSessionWindow: Bool) -> InsightsPage {
+        if hasCostLog {
+            return InsightsPage(
+                showsSessionWindow: hasSessionWindow,
+                cards: [.weekOverWeek, .daysAtLimit],
+                strip: [.dailyAverage, .biggestDay, .mostUsedModelToday]
+            )
+        }
+        return InsightsPage(
+            showsSessionWindow: false,
+            cards: [.daysAtLimit, .averageDailyPeak],
+            strip: [.quotaPerDay, .busiestQuotaDay, .busiestHour]
+        )
+    }
+
+    /// The one line under the page: for dollars from a local log, `CostCopy`'s
+    /// API-equivalent sentence (none for a pay-as-you-go account, where they are the
+    /// bill); for a provider without a log, why it has no dollars.
+    static func footnote(costSource: CostSource, service: ServiceSnapshot?) -> String? {
+        if costSource.hasBreakdown { return CostCopy.apiEquivalentCaption(for: service) }
+        return costSource.reason
     }
 }
