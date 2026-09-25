@@ -1,0 +1,305 @@
+import Foundation
+
+/// A day and what was spent on it.
+struct InsightsDayCost: Equatable, Sendable {
+    let day: Date
+    let cost: Double
+}
+
+/// A model and its dollars.
+struct InsightsModelCost: Equatable, Sendable {
+    let model: String
+    let cost: Double
+}
+
+/// The mean spend of the days that had any, and how many there were.
+struct InsightsDailyAverage: Equatable, Sendable {
+    /// nil when not one day had spend.
+    let average: Double?
+    let activeDays: Int
+}
+
+/// One row of the session window's "By project" list.
+struct InsightsProjectRow: Equatable, Sendable, Identifiable {
+    /// The project's slug, which is also the row's tooltip.
+    let id: String
+    let name: String
+    let cost: Double
+    let turns: Int
+    /// The bar's length against the dearest project shown, from
+    /// `InsightsRules.minimumProjectBarFraction` to 1; 0 when none had spend.
+    let fraction: Double
+}
+
+/// One slice of the session window's split bar: a model, or "Other".
+struct InsightsModelShare: Equatable, Sendable, Identifiable {
+    /// The model's name, or `InsightsCopy.otherModels` for the summed slice.
+    let model: String
+    let cost: Double
+    /// Its share of the window's cost, 0…1; the slices sum to 1.
+    let fraction: Double
+    /// The slice that sums every model past the top two.
+    let isOther: Bool
+
+    var id: String { isOther ? "other-models" : model }
+}
+
+/// Every figure the Insights tab can show.
+enum InsightsFigure: String, CaseIterable, Identifiable, Sendable {
+    case weekOverWeek, daysAtLimit, dailyAverage, biggestDay, mostUsedModelToday
+    case averageDailyPeak, quotaPerDay, busiestQuotaDay, busiestHour
+
+    var id: String { rawValue }
+}
+
+/// What the page is made of, in the mockup's order: the session window card when the
+/// provider has one open, two figure cards, then a strip of figures.
+struct InsightsPage: Equatable, Sendable {
+    let showsSessionWindow: Bool
+    let cards: [InsightsFigure]
+    let strip: [InsightsFigure]
+}
+
+/// What every figure is computed from, built in one pass off the main actor: it reduces
+/// over the daily rows and the whole quota history, far too heavy for a view's body.
+struct InsightsSummary: Equatable, Sendable {
+    let weekOverWeek: WeekOverWeek
+    let dailyAverage: InsightsDailyAverage
+    let biggestDay: InsightsDayCost?
+    let mostUsedModelToday: InsightsModelCost?
+    let daysAtLimit: QuotaDaysAtCapacity
+    /// `.empty` for a provider with a cost log: nothing on its page reads it.
+    let quota: QuotaInsights
+
+    static let empty = InsightsSummary(
+        weekOverWeek: .empty,
+        dailyAverage: InsightsDailyAverage(average: nil, activeDays: 0),
+        biggestDay: nil,
+        mostUsedModelToday: nil,
+        daysAtLimit: QuotaDaysAtCapacity(atCapacity: 0, observed: 0, span: InsightsRules.daysAtLimitSpan),
+        quota: .empty
+    )
+}
+
+/// What the Insights pass is computed from, as `.task(id:)` sees it: a new value is a
+/// new pass. The local day is part of it (review F1), so "Days at limit" and every
+/// "today" figure move on at midnight even when nothing else changed. The view reads it
+/// on every body evaluation, and the dashboard re-evaluates the tab on each poll while
+/// the window is on screen and refreshes when the window comes back, so the new day is
+/// picked up at the next of either.
+struct InsightsCacheKey: Hashable, Sendable {
+    let service: String
+    let cliUpdatedAt: Date
+    let historyCount: Int
+    let lastHistoryAt: Date
+    let quotaBucketIDs: [String]
+    let day: Date
+}
+
+/// What the Insights tab decides (liquid-glass spec § Screens, "Insights"; § Decisions,
+/// "What limit hit counts"). Pure: the clock and the calendar come in as arguments.
+enum InsightsRules {
+    /// One model's line in `CLIBreakdown.byModelToday` and `WindowUsage.models`.
+    typealias ModelEntry = (model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)
+
+    /// "Days at limit, 7 days": today and the six local days before it.
+    static let daysAtLimitSpan = 7
+
+    /// Of the last seven local days, the ones whose peak across the provider's core
+    /// windows reached `QuotaAnalytics.capacityThreshold`, and how many of the seven had
+    /// a reading at all. Every provider is sampled into `HistoryStore` on each poll, so
+    /// the figure means the same for Claude and for a provider without a cost log.
+    static func daysAtLimit(
+        records: [HistoryRecord],
+        bucketIDs: [String],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> QuotaDaysAtCapacity {
+        QuotaAnalytics.daysAtCapacity(
+            records: records,
+            bucketIDs: bucketIDs,
+            lastDays: daysAtLimitSpan,
+            now: now,
+            calendar: calendar
+        )
+    }
+
+    /// The key the Insights pass runs under, with the local day of `now` in it.
+    static func cacheKey(
+        service: String,
+        cliUpdatedAt: Date,
+        historyCount: Int,
+        lastHistoryAt: Date,
+        quotaBucketIDs: [String],
+        now: Date,
+        calendar: Calendar = .current
+    ) -> InsightsCacheKey {
+        InsightsCacheKey(
+            service: service,
+            cliUpdatedAt: cliUpdatedAt,
+            historyCount: historyCount,
+            lastHistoryAt: lastHistoryAt,
+            quotaBucketIDs: quotaBucketIDs,
+            day: calendar.startOfDay(for: now)
+        )
+    }
+
+    /// Every figure's inputs for one provider: its cost log's summary (nil without one),
+    /// its quota history and core windows, and whether it has a cost log at all.
+    static func summary(
+        cli: CLIBreakdown?,
+        history: [HistoryRecord],
+        coreBucketIDs: [String],
+        hasCostLog: Bool,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> InsightsSummary {
+        let dailies = cli?.daily ?? []
+        return InsightsSummary(
+            weekOverWeek: weekOverWeek(dailies: dailies, now: now, calendar: calendar),
+            dailyAverage: dailyAverage(dailies: dailies, now: now, calendar: calendar),
+            biggestDay: InsightsView.peakDay(in: dailies, now: now, calendar: calendar)
+                .map { InsightsDayCost(day: $0.day, cost: $0.cost) },
+            mostUsedModelToday: mostUsedModelToday(cli?.byModelToday ?? []),
+            daysAtLimit: daysAtLimit(records: history, bucketIDs: coreBucketIDs, now: now, calendar: calendar),
+            // Only a provider without a cost log shows these. Claude has months of
+            // history across half a dozen windows, and walking all of it every poll to
+            // fill cards nobody sees is pure waste.
+            quota: hasCostLog
+                ? .empty
+                : QuotaAnalytics.insights(records: history, bucketIDs: coreBucketIDs, calendar: calendar, now: now)
+        )
+    }
+
+    /// "Daily average, 30 days": the mean over the days that had spend, among the thirty
+    /// calendar days ending today. The cutoff is `ActivityCardRule`'s 30-day one, so this
+    /// and the Activity figures can never cover different days.
+    static func dailyAverage(dailies: [CLIDailySummary], now: Date, calendar: Calendar = .current) -> InsightsDailyAverage {
+        let cutoff = ActivityCardRule.cutoffs(now: now, calendar: calendar).thirty
+        let active = dailies.filter { $0.day >= cutoff && $0.totalCost > 0 }
+        let total = active.reduce(0) { $0 + $1.totalCost }
+        return InsightsDailyAverage(
+            average: active.isEmpty ? nil : total / Double(active.count),
+            activeDays: active.count
+        )
+    }
+
+    /// This week and last as the two latest runs of seven local days: today and the six
+    /// before it, then the seven before those. Calendar days, not 7 × 86 400 s: every
+    /// `CLIDailySummary.day` is a day start, and a cut at the current time of day moves
+    /// a day across the boundary on a clock change (the `ActivityCardRule` lesson).
+    static func weekOverWeek(dailies: [CLIDailySummary], now: Date, calendar: Calendar = .current) -> WeekOverWeek {
+        let today = calendar.startOfDay(for: now)
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today),
+              let thisWeekStart = calendar.date(byAdding: .day, value: -6, to: today),
+              let lastWeekStart = calendar.date(byAdding: .day, value: -13, to: today)
+        else { return .empty }
+        var thisWeek = 0.0
+        var lastWeek = 0.0
+        for daily in dailies where daily.day < tomorrow {
+            if daily.day >= thisWeekStart {
+                thisWeek += daily.totalCost
+            } else if daily.day >= lastWeekStart {
+                lastWeek += daily.totalCost
+            }
+        }
+        return WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek)
+    }
+
+    /// Today's dearest model. `byModelToday` is today's already: the aggregators cut it
+    /// at the local day's start. Picked here rather than trusted in order, because equal
+    /// costs come out of a dictionary in any order: ties go to the name first in the
+    /// alphabet.
+    static func mostUsedModelToday(_ byModelToday: [ModelEntry]) -> InsightsModelCost? {
+        byModelToday
+            .min { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
+            .map { InsightsModelCost(model: $0.model, cost: $0.cost) }
+    }
+
+    /// The session window's split shows at most this many slices (the mockup's three).
+    static let modelSplitLimit = 3
+
+    /// The window's dollars by model, as at most three slices whose fractions sum to 1.
+    /// Up to three models with dollars get a slice each (the mockup's 58.1 + 35.8 + 6.1).
+    /// Past three, the two dearest keep theirs and every other model is summed into a
+    /// third "Other" slice (session ruling 5). The slices add up to the window's cost,
+    /// the headline: every non-synthetic model has a display name, and the aggregator
+    /// drops synthetic turns at ingestion (review F3). A model with no dollars has
+    /// nothing to draw; ties go alphabetically.
+    static func modelSplit(_ models: [ModelEntry]) -> [InsightsModelShare] {
+        let ranked = models
+            .filter { $0.cost > 0 }
+            .sorted { $0.cost != $1.cost ? $0.cost > $1.cost : $0.model < $1.model }
+        let total = ranked.reduce(0) { $0 + $1.cost }
+        guard total > 0 else { return [] }
+        func slice(_ model: String, _ cost: Double, isOther: Bool = false) -> InsightsModelShare {
+            InsightsModelShare(model: model, cost: cost, fraction: cost / total, isOther: isOther)
+        }
+        guard ranked.count > modelSplitLimit else {
+            return ranked.map { slice($0.model, $0.cost) }
+        }
+        let named = ranked.prefix(modelSplitLimit - 1).map { slice($0.model, $0.cost) }
+        let rest = ranked.dropFirst(modelSplitLimit - 1).reduce(0) { $0 + $1.cost }
+        return named + [slice(InsightsCopy.otherModels, rest, isOther: true)]
+    }
+
+    /// The session window lists this many projects.
+    static let projectRowLimit = 5
+
+    /// The shortest bar: the mockup draws $0.98 of $164.31 at 1 %, so a project that
+    /// cost cents still shows it ran.
+    static let minimumProjectBarFraction = 0.01
+
+    /// The session window's dearest projects, each with its bar against the dearest.
+    /// Ties go alphabetically, so the order holds between polls.
+    static func projectRows(_ projects: [ProjectSummary], limit: Int = projectRowLimit) -> [InsightsProjectRow] {
+        let shown = projects
+            .sorted { $0.totalCost != $1.totalCost ? $0.totalCost > $1.totalCost : $0.displayName < $1.displayName }
+            .prefix(limit)
+        let dearest = shown.first?.totalCost ?? 0
+        return shown.map { project in
+            InsightsProjectRow(
+                id: project.slug,
+                name: project.displayName,
+                cost: project.totalCost,
+                turns: project.turns,
+                fraction: dearest > 0 ? max(minimumProjectBarFraction, project.totalCost / dearest) : 0
+            )
+        }
+    }
+
+    /// A window's name: the live snapshot's label, or one inferred from its id when the
+    /// provider has stopped reporting it.
+    static func windowLabel(for bucketID: String, in buckets: [QuotaBucketInfo]) -> String {
+        buckets.first(where: { $0.id == bucketID })?.label ?? QuotaAnalytics.prettifiedLabel(for: bucketID)
+    }
+
+    /// What the page shows, in the mockup's order. A provider with a cost log gets the
+    /// mockup: the session window when it has one open (Grok reports none), This week vs
+    /// last and Days at limit, then the daily average, the biggest day and today's
+    /// most-used model. A provider without one has no dollars, so its quota figures take
+    /// the same places: Days at limit beside the average daily peak, then quota per day,
+    /// the busiest day and the busiest hour.
+    static func page(hasCostLog: Bool, hasSessionWindow: Bool) -> InsightsPage {
+        if hasCostLog {
+            return InsightsPage(
+                showsSessionWindow: hasSessionWindow,
+                cards: [.weekOverWeek, .daysAtLimit],
+                strip: [.dailyAverage, .biggestDay, .mostUsedModelToday]
+            )
+        }
+        return InsightsPage(
+            showsSessionWindow: false,
+            cards: [.daysAtLimit, .averageDailyPeak],
+            strip: [.quotaPerDay, .busiestQuotaDay, .busiestHour]
+        )
+    }
+
+    /// The one line under the page: for dollars from a local log, `CostCopy`'s
+    /// API-equivalent sentence (none for a pay-as-you-go account, where they are the
+    /// bill); for a provider without a log, why it has no dollars.
+    static func footnote(costSource: CostSource, service: ServiceSnapshot?) -> String? {
+        if costSource.hasBreakdown { return CostCopy.apiEquivalentCaption(for: service) }
+        return costSource.reason
+    }
+}

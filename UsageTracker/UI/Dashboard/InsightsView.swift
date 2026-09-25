@@ -1,33 +1,28 @@
 import SwiftUI
 
+/// Dashboard → Insights (liquid-glass spec § Screens, "Insights";
+/// `Dashboard-Insights(-Light).dc.html`): what ran in the open session window, this
+/// week against last, how many of the last seven days hit a limit, and a strip of three
+/// figures. The cards are `InsightsRules.page`'s, their words `InsightsCopy.text`'s, the
+/// first row's split `InsightsLayout.topRow`'s and every measure `InsightsMetrics`'.
 struct InsightsView: View {
     @ObservedObject var dashboard: DashboardState
 
-    // Rebuilt off the main actor only when the inputs actually change — the
-    // init reduces over every daily summary and the full history array, far
-    // too heavy to re-run on each body evaluation (same pattern as
-    // ActivityGridView's GridCache).
-    @State private var insights = Insights.empty
-    /// The quota half — what a provider with no cost log can still say about itself.
-    @State private var quota = QuotaInsights.empty
+    // Rebuilt off the main actor only when the inputs actually change — the summary
+    // reduces over every daily summary and the full history array, far too heavy to
+    // re-run on each body evaluation (same pattern as ActivityGridView's GridCache).
+    @State private var summary = InsightsSummary.empty
 
-    private struct CacheKey: Hashable {
-        let service: String
-        let cliUpdatedAt: Date
-        let historyCount: Int
-        let lastHistoryAt: Date
-        let peakBucketID: String?
-        let quotaBucketIDs: [String]
-    }
-
-    private var cacheKey: CacheKey {
-        CacheKey(
+    /// Read on every body evaluation, so the day in it follows the clock (see
+    /// `InsightsCacheKey`).
+    private var cacheKey: InsightsCacheKey {
+        InsightsRules.cacheKey(
             service: dashboard.selectedService,
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            peakBucketID: dashboard.burnBucket?.id,
-            quotaBucketIDs: dashboard.quotaCoreBucketIDs
+            quotaBucketIDs: dashboard.quotaCoreBucketIDs,
+            now: Date()
         )
     }
 
@@ -36,17 +31,18 @@ struct InsightsView: View {
         let started = cacheKey
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
-        let peakBucketID = dashboard.burnBucket?.id
-        // Empty for a provider whose cost log is showing, which short-circuits the quota
-        // pass entirely: Claude has months of history across half a dozen windows, and
-        // walking all of it every poll to fill cards nobody sees is pure waste.
-        let quotaBucketIDs = dashboard.costSource.hasBreakdown ? [] : dashboard.quotaCoreBucketIDs
-        // Both halves in one detached pass: they read the same history array, and
-        // copying it across two tasks doubles the cost of the expensive part.
+        let coreBucketIDs = dashboard.quotaCoreBucketIDs
+        let hasCostLog = dashboard.costSource.hasBreakdown
+        let now = Date()
+        // One detached pass: every figure reads the same history array, and copying it
+        // across two tasks doubles the cost of the expensive part.
         let built = await Task.detached(priority: .userInitiated) {
-            (
-                Insights(from: cli, history: history, peakBucketID: peakBucketID),
-                QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
+            InsightsRules.summary(
+                cli: cli,
+                history: history,
+                coreBucketIDs: coreBucketIDs,
+                hasCostLog: hasCostLog,
+                now: now
             )
         }.value
         // See `DerivedCacheGate`: a pass for the provider just left must not replace
@@ -54,40 +50,38 @@ struct InsightsView: View {
         guard DerivedCacheGate.canPublish(
             started: started, current: cacheKey, cancelled: Task.isCancelled
         ) else { return }
-        insights = built.0
-        quota = built.1
+        summary = built
+    }
+
+    /// The cards the selected provider gets, in the mockup's order.
+    private var page: InsightsPage {
+        InsightsRules.page(
+            hasCostLog: dashboard.costSource.hasBreakdown,
+            hasSessionWindow: dashboard.sessionWindow != nil
+        )
+    }
+
+    /// The selected provider as the last poll saw it: whether its dollars are a bill.
+    private var selectedSnapshot: ServiceSnapshot? {
+        AppState.shared.snapshot.services.first(where: { $0.id == dashboard.selectedService })
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                DashboardHeader(title: "Insights")
-
-                if let window = dashboard.sessionWindow {
-                    sessionWindowBlock(window)
-                        .padding(.horizontal, 24)
+        // Measured once, off the width the tab is given, as History does: the first row
+        // and everything in it draw to one decision.
+        GeometryReader { proxy in
+            let contentWidth = proxy.size.width
+                - DashboardShellLayout.columnLeading
+                - DashboardShellLayout.columnTrailing
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    DashboardHeader(title: "Insights")
+                    content(contentWidth: contentWidth)
+                        .padding(.top, InsightsMetrics.headerGap)
+                        .padding(.leading, DashboardShellLayout.columnLeading)
+                        .padding(.trailing, DashboardShellLayout.columnTrailing)
+                        .padding(.bottom, InsightsMetrics.columnBottom)
                 }
-
-                usageBlock
-                    .padding(.horizontal, 24)
-
-                // Cost, projects and models come from the selected provider's own CLI
-                // log. A provider without one gets the reason, not another provider's
-                // spend under its name.
-                if dashboard.costSource.hasBreakdown {
-                    cliBlock
-                        .padding(.horizontal, 24)
-
-                    if let projects = dashboard.cliBreakdown?.projectsMonth, !projects.isEmpty {
-                        projectsBlock(projects: projects)
-                            .padding(.horizontal, 24)
-                    }
-                } else {
-                    quotaBlock
-                        .padding(.horizontal, 24)
-                }
-
-                Spacer(minLength: 24)
             }
         }
         .task(id: cacheKey) {
@@ -95,272 +89,326 @@ struct InsightsView: View {
         }
     }
 
-    /// The half that follows the provider picker: everything here is derived from
-    /// the selected provider's own usage snapshots.
-    private var usageBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionLabel(dashboard.displayName(for: dashboard.selectedService) + " · usage history")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                card(
-                    title: (dashboard.burnBucket?.label ?? "Window") + " observed peak",
-                    value: insights.windowPeak.map { String(format: "%.0f%%", min(100, $0)) } ?? "—",
-                    sub: "from snapshots"
-                )
-                card(
-                    title: "Snapshots recorded",
-                    value: "\(insights.snapshotCount)",
-                    sub: insights.firstSnapshotAgo
-                )
+    private func content(contentWidth: CGFloat) -> some View {
+        let page = self.page
+        return VStack(alignment: .leading, spacing: InsightsMetrics.gap) {
+            topRow(page: page, contentWidth: contentWidth)
+            strip(page.strip)
+            // Once per page, under everything: what the dollars are, or why a provider
+            // has none.
+            if let footnote = InsightsRules.footnote(
+                costSource: dashboard.costSource, service: selectedSnapshot
+            ) {
+                Text(footnote)
+                    .font(.system(size: InsightsMetrics.footnoteSize))
+                    .foregroundStyle(.om(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
 
-    /// What a provider without a cost log can still be asked. On a subscription the
-    /// quota is the bill, so these read as the cost cards' counterparts: how often the
-    /// limit actually got in the way, how much of a window a day costs, when.
-    private var quotaBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionLabel("Quota over time")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                card(
-                    title: "Days at capacity",
-                    value: "\(quota.daysAtCapacity)",
-                    sub: "of \(quota.daysObserved) days recorded"
-                )
-                card(
-                    title: "Average daily peak",
-                    value: quota.averageDailyPeak.map { String(format: "%.0f%%", $0) } ?? "—",
-                    sub: quota.todayPeak.map { String(format: "%.0f%% so far today", $0) }
-                )
-                card(
-                    title: "Quota used per day",
-                    value: quota.averageDailyConsumption.map { String(format: "%.0f%%", $0) } ?? "—",
-                    sub: "of a window, resets counted"
-                )
-                card(
-                    title: "Busiest day",
-                    value: quota.busiestDay.map { String(format: "%.0f%%", $0.peak) } ?? "—",
-                    sub: quota.busiestDay.map { busiestDaySubtitle($0) }
-                )
-                card(
-                    title: "Busiest hour",
-                    value: quota.busiestHour.map(formatHour) ?? "—",
-                    sub: "when the quota climbs most"
-                )
-            }
-            Text(dashboard.costSource.reason ?? "")
-                .font(OMFont.caption)
-                .foregroundStyle(.tertiary)
+    // MARK: - First row
+
+    @ViewBuilder
+    private func topRow(page: InsightsPage, contentWidth: CGFloat) -> some View {
+        if page.showsSessionWindow, let window = dashboard.sessionWindow {
+            switch InsightsLayout.topRow(contentWidth: contentWidth) {
+            case let .sideBySide(sessionWidth, cardsWidth):
+                HStack(alignment: .top, spacing: InsightsMetrics.gap) {
+                    sessionWindowCard(window)
+                        .frame(width: sessionWidth)
+                    VStack(spacing: InsightsMetrics.gap) {
+                        ForEach(page.cards) { figure in
+                            figureCard(figure)
+                        }
+                    }
+                    .frame(width: cardsWidth)
+                }
+                // One height for both columns: the figure cards share the session
+                // window's, as the mockup's grid row stretches them.
                 .fixedSize(horizontal: false, vertical: true)
+            case .stacked:
+                VStack(alignment: .leading, spacing: InsightsMetrics.gap) {
+                    sessionWindowCard(window)
+                    cardsRow(page.cards)
+                }
+            }
+        } else {
+            cardsRow(page.cards)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func busiestDaySubtitle(_ peak: DailyPeak) -> String {
-        let label = dashboard.quotaBuckets.first(where: { $0.id == peak.peakBucketID })?.label
-            ?? QuotaAnalytics.prettifiedLabel(for: peak.peakBucketID)
-        return "\(peak.day.formatted(date: .abbreviated, time: .omitted)) · \(label)"
-    }
-
-    /// Rendered through the user's own clock format — "14:00" is the wrong answer on a
-    /// machine that shows 2 PM everywhere else.
-    private func formatHour(_ hour: Int) -> String {
-        let cal = Calendar.current
-        guard let date = cal.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) else {
-            return String(format: "%02d:00", hour)
+    /// The figure cards side by side, at equal widths and one height.
+    private func cardsRow(_ figures: [InsightsFigure]) -> some View {
+        HStack(alignment: .top, spacing: InsightsMetrics.gap) {
+            ForEach(figures) { figure in
+                figureCard(figure)
+            }
         }
-        return date.formatted(date: .omitted, time: .shortened)
+        .fixedSize(horizontal: false, vertical: true)
     }
 
-    /// Whether the dollars on this page are a bill: the selected provider as the last
-    /// poll saw it, through `CostCopy`'s rule. nil for a pay-as-you-go account.
-    private var costCaption: String? {
-        CostCopy.apiEquivalentCaption(
-            for: AppState.shared.snapshot.services.first(where: { $0.id == dashboard.selectedService })
+    // MARK: - Figures
+
+    /// One figure on its own card, centred in the card's height.
+    private func figureCard(_ figure: InsightsFigure) -> some View {
+        figureBlock(figure, valueSize: InsightsMetrics.cardValueSize)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .insightsCard(
+                vertical: InsightsMetrics.figureCardVerticalPadding,
+                horizontal: InsightsMetrics.figureCardHorizontalPadding
+            )
+    }
+
+    /// The mockup's strip: figures in equal columns, a hairline between neighbours.
+    private func strip(_ figures: [InsightsFigure]) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            ForEach(Array(figures.enumerated()), id: \.element) { index, figure in
+                if index > 0 {
+                    Rectangle()
+                        .fill(.om(.hairline))
+                        .frame(width: InsightsMetrics.stripDividerWidth)
+                        .frame(maxHeight: .infinity)
+                        .padding(.horizontal, InsightsMetrics.stripColumnGap)
+                        .accessibilityHidden(true)
+                }
+                figureBlock(figure, valueSize: InsightsMetrics.stripValueSize)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .insightsCard(
+            vertical: InsightsMetrics.stripVerticalPadding,
+            horizontal: InsightsMetrics.stripHorizontalPadding
         )
     }
 
-    private var cliBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionLabel(dashboard.costSource.shortName ?? "CLI")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                weekOverWeekCard(insights.weekOverWeek)
-                card(
-                    title: "Daily average (30d)",
-                    value: insights.avgDailyCost.map { String(format: "$%.2f", $0) } ?? "—",
-                    sub: insights.activeDays.map { "\($0) active days" }
-                )
-                card(
-                    title: "Biggest day",
-                    value: insights.peakDay.map { String(format: "$%.2f", $0.cost) } ?? "—",
-                    sub: insights.peakDay.map { $0.day.formatted(date: .abbreviated, time: .omitted) }
-                )
-                card(
-                    title: "Most-used model",
-                    value: insights.topModel?.model ?? "—",
-                    sub: insights.topModel.map { String(format: "$%.2f today", $0.cost) }
-                )
-                card(
-                    title: "Top project this week",
-                    value: insights.topProjectWeek?.displayName ?? "—",
-                    sub: insights.topProjectWeek.map { String(format: "$%.2f · %d turns", $0.totalCost, $0.turns) }
-                )
+    /// Title, value (This week vs last's change beside it), caption: one figure as the
+    /// mockup draws it on a card and in the strip alike.
+    private func figureBlock(_ figure: InsightsFigure, valueSize: CGFloat) -> some View {
+        let text = InsightsCopy.text(for: figure, summary: summary, quotaBuckets: dashboard.quotaBuckets)
+        return VStack(alignment: .leading, spacing: InsightsMetrics.figureSpacing) {
+            Text(text.title)
+                .font(.system(size: InsightsMetrics.figureTitleSize, weight: .semibold))
+                .foregroundStyle(.om(.secondary))
+                .lineLimit(1)
+            HStack(alignment: .firstTextBaseline, spacing: InsightsMetrics.deltaSpacing) {
+                Text(text.value)
+                    .font(OMFont.numerals(size: valueSize, weight: .bold))
+                    .tracking(InsightsMetrics.figureValueTracking)
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
+                    .minimumScaleFactor(InsightsMetrics.valueMinimumScale)
+                if let delta = text.delta {
+                    // A direction, not a verdict: more spend than last week is not the
+                    // same thing as being close to a limit.
+                    Text(delta)
+                        .font(.system(size: InsightsMetrics.deltaSize, weight: .semibold))
+                        .foregroundStyle(.om(.accentText))
+                        .lineLimit(1)
+                }
             }
-            if let caption = costCaption {
+            if let caption = text.caption {
                 Text(caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: InsightsMetrics.figureCaptionSize))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(1)
             }
         }
+        .accessibilityElement(children: .combine)
     }
 
-    private func sectionLabel(_ text: String) -> some View {
-        OMSectionHeader(title: text)
-    }
+    // MARK: - Session window
 
-    /// Answers "why is my session at 90%?" with what actually ran while the window
-    /// filled. Dollars rank the work; they don't decompose the percentage — the two are
-    /// measured in different units, and usage from the Claude apps never reaches the CLI
-    /// logs at all. The empty state says so rather than implying nothing happened.
-    private func sessionWindowBlock(_ window: WindowUsage) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            OMSectionHeader(
-                title: "Current session window",
-                trailing: "since \(window.start.formatted(date: .omitted, time: .shortened))"
-            )
-
+    /// What ran while the session window filled. Dollars rank the work; they don't
+    /// decompose the percentage — the two are measured in different units, and usage
+    /// from the Claude apps never reaches the CLI logs at all. The empty state says so
+    /// rather than implying nothing happened.
+    private func sessionWindowCard(_ window: WindowUsage) -> some View {
+        VStack(alignment: .leading, spacing: InsightsMetrics.sessionSpacing) {
+            sessionHeader(window)
             if window.isEmpty {
-                Text("No Claude Code activity in this window. Whatever the session limit is showing came from somewhere else — the Claude apps, or another machine on this account.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
+                Text(InsightsCopy.emptySession(providerID: dashboard.selectedService))
+                    .font(.system(size: InsightsMetrics.figureCaptionSize))
+                    .foregroundStyle(.om(.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             } else {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(String(format: "$%.2f", window.cost))
-                        .font(OMFont.heroNumeral)
-                        .monospacedDigit()
-                    Text("\(window.turns) turns")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.tertiary)
+                sessionTotal(window)
+                let shares = InsightsRules.modelSplit(window.models)
+                if !shares.isEmpty {
+                    modelSplitBar(shares)
+                    modelLegend(shares)
                 }
-
-                if !window.models.isEmpty {
-                    Text(window.models.prefix(3)
-                        .map { "\($0.model) " + String(format: "$%.2f", $0.cost) }
-                        .joined(separator: "  ·  "))
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                let maxCost = window.projects.first?.totalCost ?? 1
-                ForEach(window.projects.prefix(5)) { project in
-                    projectRow(project, maxCost: maxCost)
-                }
-
-                if let caption = costCaption {
-                    Text(caption)
-                        .font(OMFont.caption)
-                        .foregroundStyle(.tertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                let rows = InsightsRules.projectRows(window.projects)
+                if !rows.isEmpty {
+                    projectList(rows)
                 }
             }
         }
-        .dashboardCard()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .insightsCard(
+            vertical: InsightsMetrics.sessionCardVerticalPadding,
+            horizontal: InsightsMetrics.sessionCardHorizontalPadding
+        )
     }
 
-    private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("This week vs last week")
-                .font(OMFont.body)
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(String(format: "$%.2f", wow.thisWeek))
-                    .font(OMFont.heroNumeral)
-                    .monospacedDigit()
-                if let delta = wow.deltaPercent, wow.lastWeek > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("\(abs(Int(delta.rounded())))%")
-                            .font(OMFont.bodyStrong)
-                            .monospacedDigit()
-                    }
-                    // A direction, not a utilisation: up is more spend than last week,
-                    // which is not the same thing as being close to a limit.
-                    .foregroundStyle(delta >= 0 ? Color.orange : Color.green)
+    /// "Current session window" with "since 10:30" on its baseline.
+    private func sessionHeader(_ window: WindowUsage) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: InsightsMetrics.sessionHeaderSpacing) {
+            Text(InsightsCopy.sessionWindowTitle)
+                .font(.system(size: InsightsMetrics.sessionTitleSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .accessibilityAddTraits(.isHeader)
+            Spacer(minLength: InsightsMetrics.sessionHeaderSpacing)
+            Text(InsightsCopy.since(window.start))
+                .font(.system(size: InsightsMetrics.sessionTrailingSize))
+                .foregroundStyle(.om(.secondary))
+                .lineLimit(1)
+        }
+    }
+
+    /// The window's dollars and turns.
+    private func sessionTotal(_ window: WindowUsage) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: InsightsMetrics.sessionValueSpacing) {
+            Text(InsightsCopy.money(window.cost))
+                .font(OMFont.numerals(size: InsightsMetrics.sessionValueSize, weight: .bold))
+                .tracking(InsightsMetrics.sessionValueTracking)
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .minimumScaleFactor(InsightsMetrics.valueMinimumScale)
+            Text(InsightsCopy.turns(window.turns))
+                .font(.system(size: InsightsMetrics.sessionTurnsSize))
+                .foregroundStyle(.om(.secondary))
+                .lineLimit(1)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The window's dollars by model: one segment per model, `splitBarGap` apart, in a
+    /// bar with rounded ends.
+    private func modelSplitBar(_ shares: [InsightsModelShare]) -> some View {
+        GeometryReader { geo in
+            let gaps = InsightsMetrics.splitBarGap * CGFloat(max(shares.count - 1, 0))
+            let available = max(geo.size.width - gaps, 0)
+            HStack(spacing: InsightsMetrics.splitBarGap) {
+                ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+                    Rectangle()
+                        .fill(.om(InsightsMetrics.splitToken(for: share, at: index)))
+                        .frame(width: available * share.fraction)
                 }
             }
-            HStack(spacing: 4) {
-                Text("Last week: " + String(format: "$%.2f", wow.lastWeek))
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
+        }
+        .frame(height: InsightsMetrics.splitBarHeight)
+        .clipShape(RoundedRectangle(cornerRadius: InsightsMetrics.splitBarRadius, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    /// Dot, name and dollars per model, on one line where they fit and stacked where
+    /// the card is too narrow.
+    private func modelLegend(_ shares: [InsightsModelShare]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: InsightsMetrics.legendSpacing) {
+                legendItems(shares)
+            }
+            VStack(alignment: .leading, spacing: InsightsMetrics.legendItemSpacing) {
+                legendItems(shares)
             }
         }
-        .dashboardCard()
     }
 
-    private func card(title: String, value: String, sub: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(OMFont.body).foregroundStyle(.secondary)
-            Text(value)
-                .font(OMFont.heroNumeral)
-                .lineLimit(2)
-                .truncationMode(.tail)
-            if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
-        }
-        .dashboardCard()
-    }
-
-    private func projectsBlock(projects: [ProjectSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            OMSectionHeader(title: "Projects · last 30 days", trailing: "\(projects.count) total")
-
-            let maxCost = projects.first?.totalCost ?? 1
-            ForEach(projects.prefix(10)) { p in
-                projectRow(p, maxCost: maxCost)
-            }
-        }
-        .dashboardCard()
-    }
-
-    private func projectRow(_ p: ProjectSummary, maxCost: Double) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(p.displayName)
-                    .font(OMFont.bodyStrong)
+    @ViewBuilder
+    private func legendItems(_ shares: [InsightsModelShare]) -> some View {
+        ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+            HStack(spacing: InsightsMetrics.legendItemSpacing) {
+                Circle()
+                    .fill(.om(InsightsMetrics.splitToken(for: share, at: index)))
+                    .frame(width: InsightsMetrics.legendDotSize, height: InsightsMetrics.legendDotSize)
+                Text(share.model)
+                    .font(.system(size: InsightsMetrics.legendTextSize))
+                    .foregroundStyle(.om(.secondary))
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                Text(String(format: "$%.2f", p.totalCost))
-                    .font(OMFont.numeral)
-                    .monospacedDigit()
+                Text(InsightsCopy.money(share.cost))
+                    .font(OMFont.numerals(size: InsightsMetrics.legendTextSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
             }
-            HStack(spacing: 8) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule(style: .continuous)
-                            .fill(.quaternary)
-                        // Dollars, not utilisation: the accent colour, never the
-                        // battery ramp — a big spend is not a warning.
-                        Capsule(style: .continuous)
-                            .fill(Color.accentColor)
-                            .frame(width: geo.size.width * CGFloat(p.totalCost / max(maxCost, 0.01)))
-                    }
-                }
-                .frame(height: 6)
+            .accessibilityElement(children: .combine)
+        }
+    }
 
-                Text("\(p.turns) turn\(p.turns == 1 ? "" : "s")")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 70, alignment: .trailing)
+    /// "By project" and the rows under it, a hairline between two rows.
+    private func projectList(_ rows: [InsightsProjectRow]) -> some View {
+        VStack(alignment: .leading, spacing: InsightsMetrics.sessionSpacing) {
+            Text(InsightsCopy.byProject)
+                .font(.system(size: InsightsMetrics.byProjectSize, weight: .semibold))
+                .foregroundStyle(.om(.secondary))
+                .padding(.top, InsightsMetrics.byProjectTopPadding)
+            VStack(spacing: 0) {
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                    projectRow(row)
+                        .overlay(alignment: .top) {
+                            if index > 0 {
+                                Rectangle()
+                                    .fill(.om(.hairline))
+                                    .frame(height: InsightsMetrics.projectDividerHeight)
+                                    .accessibilityHidden(true)
+                            }
+                        }
+                }
             }
         }
-        .help(p.slug)
+    }
+
+    /// Name · bar against the dearest project · dollars · turns: the mockup's
+    /// `170px 1fr 90px 80px` grid.
+    private func projectRow(_ row: InsightsProjectRow) -> some View {
+        HStack(spacing: InsightsMetrics.projectColumnGap) {
+            Text(row.name)
+                .font(.system(size: InsightsMetrics.projectNameSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(width: InsightsMetrics.projectNameWidth, alignment: .leading)
+            // Dollars, not utilisation: the accent, never the gauge ramp — a big spend
+            // is not a warning.
+            Capsule(style: .continuous)
+                .fill(.om(.track))
+                .frame(height: InsightsMetrics.projectBarHeight)
+                .overlay(alignment: .leading) {
+                    GeometryReader { geo in
+                        Capsule(style: .continuous)
+                            .fill(.om(.accent))
+                            .frame(width: geo.size.width * row.fraction)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            Text(InsightsCopy.money(row.cost))
+                .font(OMFont.numerals(size: InsightsMetrics.projectCostSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .frame(width: InsightsMetrics.projectCostWidth, alignment: .trailing)
+            Text(InsightsCopy.turns(row.turns))
+                .font(.system(size: InsightsMetrics.projectTurnsSize))
+                .foregroundStyle(.om(.secondary))
+                .lineLimit(1)
+                .frame(width: InsightsMetrics.projectTurnsWidth, alignment: .trailing)
+        }
+        .padding(.vertical, InsightsMetrics.projectRowVerticalPadding)
+        .help(row.id)
+        .accessibilityElement(children: .combine)
     }
 }
 
-struct WeekOverWeek {
+private extension View {
+    /// `dashboardCard(padding:)` pads all four sides alike; the mockup's cards pad their
+    /// sides more than their top and bottom, so the difference goes on first.
+    func insightsCard(vertical: CGFloat, horizontal: CGFloat) -> some View {
+        padding(.horizontal, horizontal - vertical)
+            .dashboardCard(padding: vertical)
+    }
+}
+
+struct WeekOverWeek: Equatable, Sendable {
     let thisWeek: Double
     let lastWeek: Double
     let deltaPercent: Double?
@@ -403,57 +451,5 @@ extension InsightsView {
             peak.totalCost > 0
         else { return nil }
         return (peak.day, peak.totalCost)
-    }
-}
-
-private struct Insights: Sendable {
-    static let empty = Insights(from: nil, history: [], peakBucketID: nil)
-
-    let avgDailyCost: Double?
-    let activeDays: Int?
-    let peakDay: (day: Date, cost: Double)?
-    let topModel: (model: String, cost: Double)?
-    let topProjectWeek: ProjectSummary?
-    /// Highest utilization ever observed for the provider's leading window.
-    let windowPeak: Double?
-    let snapshotCount: Int
-    let firstSnapshotAgo: String?
-    let weekOverWeek: WeekOverWeek
-
-    init(from cli: CLIBreakdown?, history: [HistoryRecord], peakBucketID: String?) {
-        let dailies = cli?.daily ?? []
-        let last30 = dailies.filter { $0.day >= Date().addingTimeInterval(-30 * 24 * 3600) }
-        let active = last30.filter { $0.totalCost > 0 }
-        self.activeDays = active.count
-        self.avgDailyCost = active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count)
-        self.peakDay = InsightsView.peakDay(in: dailies)
-        if let top = cli?.byModelToday.first {
-            self.topModel = (top.model, top.cost)
-        } else {
-            self.topModel = nil
-        }
-        self.topProjectWeek = cli?.projectsWeek.first
-        self.snapshotCount = history.count
-        // Keyed on whichever window the provider actually leads with — a fixed
-        // "five_hour" read as "—" for every provider that doesn't have one.
-        self.windowPeak = peakBucketID.flatMap { id in
-            history.compactMap { $0.percent(for: id) }.max()
-        }
-        if let first = history.first {
-            let delta = Date().timeIntervalSince(first.timestamp)
-            let days = Int(delta / (24 * 3600))
-            if days >= 1 { self.firstSnapshotAgo = "since \(days)d ago" }
-            else { self.firstSnapshotAgo = "since today" }
-        } else {
-            self.firstSnapshotAgo = nil
-        }
-
-        // Week-over-week (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
-        let now = Date()
-        let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
-        let last14Cutoff = now.addingTimeInterval(-14 * 24 * 3600)
-        let thisWeek = dailies.filter { $0.day >= last7Cutoff }.map(\.totalCost).reduce(0, +)
-        let lastWeek = dailies.filter { $0.day >= last14Cutoff && $0.day < last7Cutoff }.map(\.totalCost).reduce(0, +)
-        self.weekOverWeek = WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek)
     }
 }
