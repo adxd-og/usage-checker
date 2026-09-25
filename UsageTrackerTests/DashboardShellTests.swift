@@ -69,4 +69,41 @@ final class DashboardShellTests: XCTestCase {
         XCTAssertEqual(DashboardShellLayout.columnLeading, 30)
         XCTAssertEqual(DashboardShellLayout.columnTrailing, 32)
     }
+
+    // MARK: Traffic lights (owner's visual check, 2026-09-25)
+
+    /// AppKit's close button on macOS 26 and later: 14 × 14 pt.
+    private let closeButton = CGSize(width: 14, height: 14)
+
+    func testTheTrafficLightsSitSixteenPointsInsideTheSidebarsTopCorner() {
+        // Dashboard-Overview.dc.html: the <nav> sits 10 pt inside the window and its
+        // lights row starts 16 pt below its top edge and 10 + 6 pt in from its left.
+        XCTAssertEqual(DashboardShellLayout.windowButtonsPadding, 16)
+        // AppKit frames count up from the bottom: an 840 pt window puts the close
+        // button's bottom-left corner 26 pt in and 10 + 16 + 14 pt below the top.
+        XCTAssertEqual(DashboardShellLayout.windowButtonsOrigin(closeButtonSize: closeButton, contentHeight: 840),
+                       CGPoint(x: 26, y: 800))
+    }
+
+    func testTheLightsKeepTheirDistanceFromTheTopWhateverTheWindowsHeight() {
+        XCTAssertEqual(DashboardShellLayout.windowButtonsOrigin(closeButtonSize: closeButton, contentHeight: 560),
+                       CGPoint(x: 26, y: 520))
+        XCTAssertEqual(DashboardShellLayout.windowButtonsOrigin(closeButtonSize: CGSize(width: 16, height: 16),
+                                                                 contentHeight: 840),
+                       CGPoint(x: 26, y: 798))
+    }
+
+    func testTheTitleBarStripReachesDownToTheLightsSoEveryPointOfAButtonTakesAClick() {
+        // AppKit's strip is 32 pt tall; the part of a button below it is outside the
+        // strip's hit-test and clicks fall through to the sidebar.
+        XCTAssertEqual(DashboardShellLayout.windowButtonsStripHeight(closeButtonSize: closeButton), 40)
+    }
+
+    func testTheAppNameRowStartsBelowTheLights() {
+        // 16 pt padding, the 30 pt lights row and the 4 pt gap: the mockups' 50 pt,
+        // 20 pt under the bottom of a 14 pt button that sits 16 pt below the same edge.
+        XCTAssertEqual(DashboardSidebarRules.appNameRowTop, 50)
+        XCTAssertGreaterThan(DashboardSidebarRules.appNameRowTop,
+                             DashboardShellLayout.windowButtonsPadding + closeButton.height)
+    }
 }

@@ -21,4 +21,26 @@ enum DashboardShellLayout {
     static let columnTrailing: CGFloat = 32
     /// Unchanged from 2.7: the mockups set no floor.
     static let minHeight: CGFloat = 560
+
+    /// The traffic lights sit inside the sidebar panel, this far from its top and left
+    /// edges (the mockups' `<nav>` padding: 16 pt on top, 10 + 6 pt on the left).
+    static let windowButtonsPadding: CGFloat = 16
+
+    /// Where the close button goes, as an AppKit frame origin in the content view's
+    /// bottom-left coordinates: `windowButtonsPadding` inside the sidebar's top-left
+    /// corner, which is `windowInset` inside the window's. The other two buttons keep
+    /// their system offsets from it.
+    nonisolated static func windowButtonsOrigin(closeButtonSize: CGSize, contentHeight: CGFloat) -> CGPoint {
+        CGPoint(
+            x: windowInset + windowButtonsPadding,
+            y: contentHeight - windowInset - windowButtonsPadding - closeButtonSize.height
+        )
+    }
+
+    /// How far the title-bar strip must reach down from the window's top edge to hold
+    /// the moved buttons whole. AppKit's strip is shorter, and a click on the part of a
+    /// button outside it falls through to the content.
+    nonisolated static func windowButtonsStripHeight(closeButtonSize: CGSize) -> CGFloat {
+        windowInset + windowButtonsPadding + closeButtonSize.height
+    }
 }

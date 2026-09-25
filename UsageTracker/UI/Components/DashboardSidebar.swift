@@ -22,6 +22,11 @@ enum DashboardSidebarRules {
     static let brandFontSize: CGFloat = 13.5
     static let brandHorizontalPadding: CGFloat = 8
     static let brandBottomPadding: CGFloat = 14
+    /// Where the app-name row starts below the panel's top edge: the padding, the
+    /// lights row and one row gap, as the sidebar's stack lays them out (the mockups'
+    /// 16 + 30 + 4). It clears the traffic lights, which sit `windowButtonsPadding`
+    /// below the same edge.
+    static var appNameRowTop: CGFloat { topPadding + windowControlsRowHeight + itemSpacing }
     static let accessibilityName = "Sidebar"
     /// Keyboard focus on an item: the yolk ring, as on the segmented controls.
     static let focusRingToken: OMColorToken = .focusRing
