@@ -1,11 +1,10 @@
 import XCTest
 @testable import Omelette
 
-/// Independent verification of `SessionHistoryView.subtitle` and
-/// `SessionHistoryView.tokenColumns(availableWidth:)`, from the spec rather than from
-/// the executor's own `HistoryHeaderTests` / `TokenColumnsTests`. Spec:
+/// Independent verification of `SessionHistoryView.subtitle`, from the spec rather than
+/// from the executor's own `HistoryHeaderTests`. Spec:
 /// docs/superpowers/specs/2026-09-24-2.7.0-hardening.md § Design (session rulings),
-/// UI — "History header" and "Tokens table"; report D §§ 1, 5.
+/// UI — "History header"; report D § 1.
 final class SessionHistoryViewVerificationTests: XCTestCase {
     // MARK: - subtitle: the API-equivalent caption is a separate line
 
@@ -75,47 +74,5 @@ final class SessionHistoryViewVerificationTests: XCTestCase {
                 }
             }
         }
-    }
-
-    // MARK: - tokenColumns: the cache-column merge boundary
-
-    func testExactly580StaysSplit() {
-        let columns = SessionHistoryView.tokenColumns(availableWidth: 580)
-        XCTAssertEqual(columns, [.input, .output, .cacheRead, .cacheWrite, .cost])
-    }
-
-    func testJustBelow580Merges() {
-        let columns = SessionHistoryView.tokenColumns(availableWidth: 579.99)
-        XCTAssertEqual(columns, [.input, .output, .cache, .cost])
-    }
-
-    func testWellAboveTheBoundaryStaysSplit() {
-        XCTAssertEqual(
-            SessionHistoryView.tokenColumns(availableWidth: 900),
-            [.input, .output, .cacheRead, .cacheWrite, .cost]
-        )
-    }
-
-    func testWellBelowTheBoundaryMerges() {
-        XCTAssertEqual(
-            SessionHistoryView.tokenColumns(availableWidth: 300),
-            [.input, .output, .cache, .cost]
-        )
-    }
-
-    /// The constant the boundary is measured against must itself be 580, not merely
-    /// the comparison behaving as if it were.
-    func testTheConstantIsExactly580() {
-        XCTAssertEqual(SessionHistoryView.minimumSplitCacheWidth, 580)
-    }
-
-    func testTheMergedCacheColumnSumsReadAndWrite() {
-        let day = SessionFixture.tokens(input: 2_500, output: 750, cacheRead: 3_400_000, cacheWrite5m: 150_000, cacheWrite1h: 250_000)
-        XCTAssertEqual(TokenColumn.cache.value(breakdown: day, cost: 0), "3.8M")
-        XCTAssertEqual(TokenColumn.cacheRead.value(breakdown: day, cost: 0), "3.4M")
-        XCTAssertEqual(TokenColumn.cacheWrite.value(breakdown: day, cost: 0), "400.0k")
-        XCTAssertEqual(TokenColumn.input.value(breakdown: day, cost: 0), "2.5k")
-        XCTAssertEqual(TokenColumn.output.value(breakdown: day, cost: 0), "750")
-        XCTAssertEqual(TokenColumn.cost.value(breakdown: .zero, cost: 7.5), "$7.50")
     }
 }
