@@ -1,486 +1,78 @@
-import KeyboardShortcuts
 import SwiftUI
+import AppKit
 
+/// The Settings window (liquid-glass spec § Design → Settings): 780 pt wide, as tall as
+/// the selected tab's mockup, the dashboard's floating glass sidebar with six tabs, and
+/// the tab's page beside it. Every row is a 2.x setting, regrouped; the pages live in
+/// `UsageTracker/UI/Settings/`.
 struct SettingsView: View {
-    @StateObject private var settings = SettingsStore.shared
-    @ObservedObject private var state = AppState.shared
     @ObservedObject private var route = SettingsRoute.shared
-    /// Observed for the Updates section: "Last check" and the check button follow
-    /// Sparkle through `Updater`'s published copies, not the next poll's redraw.
-    @ObservedObject private var updater = Updater.shared
-    @State private var selectedTab: Tab = .general
-    @State private var adminKeyDraft: String = ""
-    @State private var savedAdminKeyMasked: String = ""
-    @State private var launchAtLogin: Bool = LaunchAtLogin.isEnabled
-    @State private var keychainReadStatus: KeychainReadStatus?
-    @State private var showsResetConfirmation = false
-
-    enum Tab: String, CaseIterable, Identifiable {
-        case general = "General"
-        case notifications = "Notifications"
-        case agents = "Agents"
-        case account = "Account"
-        case advanced = "Advanced"
-        var id: String { rawValue }
-
-        var icon: String {
-            switch self {
-            case .general: return "gearshape"
-            case .notifications: return "bell.badge"
-            case .agents: return "bolt.horizontal.circle"
-            case .account: return "person.crop.circle"
-            case .advanced: return "slider.horizontal.3"
-            }
-        }
-    }
-
-    /// The keychain button reports two very different things: a one-word success
-    /// that belongs in a chip, and a system error message that does not.
-    private enum KeychainReadStatus: Equatable {
-        case granted
-        case failed(String)
-    }
-
-    /// "1.7.0 (13)" — marketing version + build number from the bundle.
-    private static let appVersion: String = {
-        let info = Bundle.main.infoDictionary
-        let version = info?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = info?["CFBundleVersion"] as? String ?? "?"
-        return "\(version) (\(build))"
-    }()
+    @State private var selectedTab: SettingsTab = .general
 
     var body: some View {
-        TabView(selection: $selectedTab) {
-            generalTab
-                .tabItem { Label(Tab.general.rawValue, systemImage: Tab.general.icon) }
-                .tag(Tab.general)
-            notificationsTab
-                .tabItem { Label(Tab.notifications.rawValue, systemImage: Tab.notifications.icon) }
-                .tag(Tab.notifications)
-            AgentsSettingsView()
-                .tabItem { Label(Tab.agents.rawValue, systemImage: Tab.agents.icon) }
-                .tag(Tab.agents)
-            accountTab
-                .tabItem { Label(Tab.account.rawValue, systemImage: Tab.account.icon) }
-                .tag(Tab.account)
-            advancedTab
-                .tabItem { Label(Tab.advanced.rawValue, systemImage: Tab.advanced.icon) }
-                .tag(Tab.advanced)
+        HStack(spacing: 0) {
+            SettingsSidebar(selection: $selectedTab)
+                .padding([.top, .bottom, .leading], SettingsWindowLayout.windowInset)
+            page
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding([.top, .bottom, .trailing], SettingsWindowLayout.windowInset)
         }
-        .frame(width: 520, height: 540)
-        .onAppear {
-            updateMaskedView()
-            applyPendingTab()
+        // The sidebar reaches up under the traffic lights, as the dashboard's does: the
+        // scene hides the title bar (`UsageTrackerApp`) and the window draws its own chrome.
+        .ignoresSafeArea(.container, edges: .top)
+        .background {
+            ZStack {
+                OMWindowBackground()
+                // The window's body over the backdrop, as on the dashboard.
+                Rectangle()
+                    .fill(.om(.windowTint))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
         }
-        // The window may already be open when the popover asks for a tab, in
-        // which case onAppear has long since fired.
+        .frame(
+            width: SettingsWindowLayout.width,
+            height: SettingsWindowLayout.height(
+                for: selectedTab, availableHeight: NSScreen.main?.visibleFrame.height
+            )
+        )
+        // Backs up the scene's hidden title bar: no title text, no toolbar band.
+        .toolbar(removing: .title)
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+        // The traffic lights inside the sidebar panel, as the mockups draw them.
+        .background(WindowButtonsPlacement())
+        .onAppear(perform: applyPendingTab)
+        // The window may already be open when the popover asks for a tab, in which case
+        // onAppear has long since fired.
         .onChange(of: route.pendingTab) { _, _ in applyPendingTab() }
     }
 
-    private var generalTab: some View {
-        Form {
-            Section("Refresh") {
-                Picker("Update every", selection: $settings.refreshIntervalSeconds) {
-                    ForEach(RefreshInterval.allCases) { iv in
-                        Text(iv.label).tag(iv.rawValue)
-                    }
-                }
-                // The poll loop reads the interval only when a sleep cycle ends, so
-                // without a restart a 5m → 30s change waited out the old 5 minutes.
-                .onChange(of: settings.refreshIntervalSeconds) { _, _ in
-                    AppState.shared.restartTimer()
-                }
-                Text("How often the widget polls Anthropic. Faster = closer to real-time, but risks rate limits.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Menu bar") {
-                Picker("Show the percentage", selection: $settings.menuBarNumberMode) {
-                    ForEach(MenuBarNumberMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                let candidates = state.snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
-                if candidates.isEmpty {
-                    Text("Providers appear here once they report usage.")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                } else {
-                    let shown = candidates.filter { settings.isShownInMenuBar($0.id) }
-                    ForEach(candidates) { service in
-                        Toggle(
-                            "Show \(service.displayName)",
-                            isOn: Binding(
-                                get: { settings.isShownInMenuBar(service.id) },
-                                set: { settings.setShownInMenuBar(service.id, $0) }
-                            )
-                        )
-                        // Hiding the last one left the menu bar with nothing but an
-                        // empty chart glyph and no way back except this screen.
-                        .disabled(shown.count == 1 && shown.first?.id == service.id)
-                    }
-                    Text(shown.count == 1
-                         ? "Hidden providers stay in the popover, the widget and notifications. The last visible one can't be hidden — the menu bar would show nothing but an empty icon."
-                         : "Hidden providers stay in the popover, the widget and notifications — this only frees up menu bar width.")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Percentages") {
-                Toggle("Show remaining instead of used", isOn: $settings.showsRemaining)
-                    // The app's own views observe the store and repaint on their own;
-                    // the widget extension and the omelette CLI read files, and those
-                    // have to be rewritten now rather than at the next poll.
-                    .onChange(of: settings.showsRemaining) { _, _ in
-                        AppState.shared.republishDisplayMode()
-                    }
-                Text("Rings, bars and numbers count down from 100% instead of up from 0% — in the menu bar, the popover, the dashboard, the widgets and the omelette command. Colours and alerts keep following how much you have used, so red still means nearly out.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Shortcut") {
-                KeyboardShortcuts.Recorder("Peek at usage", name: .peekUsage)
-                Text("Opens the popover from any app. Unset by default — click the field and press a combination.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Startup") {
-                Toggle("Launch at login", isOn: $launchAtLogin)
-                    .onChange(of: launchAtLogin) { _, newValue in
-                        LaunchAtLogin.isEnabled = newValue
-                    }
-            }
-
-            Section("Providers") {
-                Toggle("Show Codex (OpenAI) usage", isOn: $settings.codexProviderEnabled)
-                    .onChange(of: settings.codexProviderEnabled) { _, _ in
-                        AppState.shared.refreshNow()
-                    }
-                Text("Reads session and weekly limits from the local Codex CLI. Requires being signed in (`codex login`).")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-                Toggle("Show Antigravity usage", isOn: $settings.antigravityProviderEnabled)
-                    .onChange(of: settings.antigravityProviderEnabled) { _, _ in
-                        AppState.shared.refreshNow()
-                    }
-                Text("Reads model-pool quotas from a running Antigravity app, `agy` CLI, or IDE. The Gemini-CLI replacement for personal Google accounts.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-                Toggle("Show Grok usage", isOn: $settings.grokProviderEnabled)
-                    .onChange(of: settings.grokProviderEnabled) { _, _ in
-                        AppState.shared.refreshNow()
-                    }
-                Text("Reads billing-period credit usage from the local Grok CLI, with a grok.com fallback. Requires being signed in (`grok login`).")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-                if !forgettableServices.isEmpty {
-                    Divider()
-                    ForEach(forgettableServices) { service in
-                        HStack {
-                            Text(service.displayName)
-                            Spacer()
-                            Button("Forget last known numbers") {
-                                state.forgetLastKnown(serviceID: service.id)
-                            }
-                            .controlSize(.small)
-                        }
-                    }
-                    Text("Clears the stored reading for that provider. The dimmed \"last known\" numbers disappear straight away and come back only when it reports again.")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            CommandLineSettingsView()
-
-            Section("Updates") {
-                Toggle("Automatically check for updates", isOn: Binding(
-                    get: { updater.automaticallyChecksForUpdates },
-                    set: { updater.automaticallyChecksForUpdates = $0 }
-                ))
-                HStack {
-                    Button("Check for updates now") {
-                        updater.checkForUpdates()
-                    }
-                    .disabled(!updater.canCheckForUpdates)
-                    Spacer()
-                    if let lastCheck = Updater.lastCheckText(updater.lastUpdateCheckDate) {
-                        Text(lastCheck)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                HStack {
-                    Text("Version")
-                    Spacer()
-                    Text(Self.appVersion)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-                HStack {
-                    Text(AppVersion.githubLabel)
-                    Spacer()
-                    Link(AppVersion.githubURL.host ?? "", destination: AppVersion.githubURL)
-                        .help(AppVersion.githubHelp)
-                }
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private var notificationsTab: some View {
-        Form {
-            Section("Threshold alerts") {
-                Toggle("Notify when limits are getting close", isOn: $settings.notificationsEnabled)
-                if settings.notificationsEnabled {
-                    Stepper(value: $settings.threshold80, in: 50...90, step: 5) {
-                        Text("First warning at \(Text("\(settings.threshold80)%").bold())")
-                    }
-                    Stepper(value: $settings.threshold95, in: 80...99, step: 1) {
-                        Text("Final warning at \(Text("\(settings.threshold95)%").bold())")
-                    }
-                    Text("You'll get one macOS notification when any window crosses the threshold. Resets when it drops back.")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Session timing") {
-                Toggle("Warn when the session window is burning fast", isOn: $settings.paceAlertsEnabled)
-                if settings.paceAlertsEnabled {
-                    Picker("Warn this far ahead", selection: $settings.paceAlertLeadMinutes) {
-                        Text("15 min").tag(15)
-                        Text("30 min").tag(30)
-                        Text("45 min").tag(45)
-                        Text("1 hour").tag(60)
-                    }
-                }
-                Toggle("Tell me when the session window is about to reset", isOn: $settings.resetAlertsEnabled)
-                Text("The first fires only when you'd hit the limit *before* the window resets — a pace that resets in time isn't a problem. The second fires in the last 15 minutes of a window you're already pressed against.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Quiet hours") {
-                Toggle("Silence notifications at night", isOn: $settings.quietHoursEnabled)
-                if settings.quietHoursEnabled {
-                    HStack {
-                        hourPicker(label: "From", selection: $settings.quietHoursStart)
-                        Spacer()
-                        hourPicker(label: "To", selection: $settings.quietHoursEnd)
-                    }
-                    Text("Every alert — thresholds, session timing and the daily summary — is suppressed during quiet hours.")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-
-            Section("Extra notifications") {
-                Toggle("Daily summary at \(formatHour(settings.dailySummaryHour))", isOn: $settings.dailySummaryEnabled)
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private func hourPicker(label: String, selection: Binding<Int>) -> some View {
-        HStack(spacing: 6) {
-            Text(label).font(OMFont.caption).foregroundStyle(.secondary)
-            Picker("", selection: selection) {
-                ForEach(0..<24, id: \.self) { h in
-                    Text(formatHour(h)).tag(h)
-                }
-            }
-            .labelsHidden()
-            .frame(width: 80)
+    @ViewBuilder
+    private var page: some View {
+        switch selectedTab {
+        case .general: GeneralSettingsView()
+        case .menuBar: MenuBarSettingsView()
+        case .providers: ProvidersSettingsView()
+        case .notifications: NotificationsSettingsView()
+        case .integrations: IntegrationsSettingsView()
+        case .advanced: AdvancedSettingsView()
         }
     }
 
-    private func formatHour(_ h: Int) -> String {
-        String(format: "%02d:00", h)
+    /// A tab parked by the popover or the hooks banner. 2.x's ids still land
+    /// (`SettingsTab.route(legacyID:)`: Agents → Integrations, Account → Providers).
+    private func applyPendingTab() {
+        guard let id = route.consumePendingTab() else { return }
+        selectedTab = SettingsTab.route(legacyID: id)
     }
 
-    private var accountTab: some View {
-        Form {
-            Section("Connected services") {
-                let snap = state.snapshot
-                if snap.services.isEmpty {
-                    Text("Loading…").foregroundStyle(.secondary)
-                } else {
-                    ForEach(snap.services) { svc in
-                        HStack(spacing: 8) {
-                            ProviderIconView(serviceID: svc.id, sfFallback: svc.icon, size: 14)
-                                .foregroundStyle(.tint)
-                                .frame(width: 18)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(svc.displayName).font(OMFont.bodyStrong)
-                                HStack(spacing: OMSpacing.xs) {
-                                    OMChip(text: stateLabel(svc.state), tint: stateTint(svc.state))
-                                    if let plan = svc.plan {
-                                        Text(plan)
-                                            .font(OMFont.caption)
-                                            .foregroundStyle(.secondary)
-                                    }
-                                }
-                            }
-                            Spacer()
-                            Text(Self.usageSummary(svc, mode: settings.percentMode))
-                                .font(OMFont.caption)
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-                }
-                LabeledContent("Last fetch", value: lastFetchText(snap.fetchedAt))
-                if let err = snap.lastError {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundStyle(.orange)
-                        Text(err)
-                            .font(OMFont.caption)
-                            .textSelection(.enabled)
-                    }
-                }
-            }
-
-            Section {
-                HStack {
-                    Button("Request keychain access now") {
-                        do {
-                            try ClaudeOAuthProvider.forceKeychainRead()
-                            keychainReadStatus = .granted
-                            AppState.shared.refreshNow()
-                            // Confirmation, not a progress claim — clear it after a beat.
-                            Task {
-                                try? await Task.sleep(nanoseconds: 5_000_000_000)
-                                keychainReadStatus = nil
-                            }
-                        } catch {
-                            keychainReadStatus = .failed(error.localizedDescription)
-                        }
-                    }
-                    Spacer()
-                    keychainStatusView
-                }
-                Text("Shows the macOS dialog for the Claude Code-credentials item immediately, skipping the hourly retry limit — use it if Claude shows errors right after an install. Click Always Allow in the dialog.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Claude keychain access")
-            }
-
-            Section {
-                Toggle("Prefer Admin API source when available", isOn: $settings.preferAdminWhenAvailable)
-                SecureField("sk-ant-admin01-…", text: $adminKeyDraft)
-                HStack {
-                    Button("Save key") {
-                        guard !adminKeyDraft.isEmpty else { return }
-                        try? KeychainStore.saveAdminKey(adminKeyDraft)
-                        adminKeyDraft = ""
-                        updateMaskedView()
-                        AppState.shared.refreshNow()
-                    }
-                    .disabled(adminKeyDraft.isEmpty)
-                    Button("Delete key", role: .destructive) {
-                        KeychainStore.deleteAdminKey()
-                        updateMaskedView()
-                        AppState.shared.refreshNow()
-                    }
-                    Spacer()
-                    Text(savedAdminKeyMasked)
-                        .font(OMFont.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                }
-                Text("Only needed for Anthropic Team/Enterprise organisations. Personal Pro/Max accounts use the Claude Code OAuth token automatically.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Admin API (Enterprise)")
-            }
-
-            Section {
-                HStack {
-                    Text("Weekly budget")
-                    Spacer()
-                    TextField("0", value: $settings.claudeWeeklyBudgetUSD, format: .currency(code: "USD").precision(.fractionLength(0)))
-                        .frame(width: 100)
-                        .multilineTextAlignment(.trailing)
-                        .onSubmit { AppState.shared.refreshNow() }
-                }
-                Text("For pay-as-you-go accounts without session limits: local CLI spend is measured against this budget — bars, thresholds and notifications work off the percentage. Set to $0 to just show the dollar figure.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Pay-as-you-go budget")
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    private var advancedTab: some View {
-        Form {
-            Section("Anthropic beta flag") {
-                TextField("anthropic-beta", text: $settings.anthropicBetaHeader)
-                    .font(.system(.body, design: .monospaced))
-                    .disableAutocorrection(true)
-                Text("Only change if Anthropic ships a new value and the OAuth endpoint starts returning 401. Default: oauth-2025-04-20.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section("Onboarding") {
-                Button("Replay welcome tour") {
-                    settings.hasSeenOnboarding = false
-                    NotificationCenter.default.post(name: .replayOnboarding, object: nil)
-                }
-            }
-
-            Section {
-                Button("Reset all settings", role: .destructive) {
-                    showsResetConfirmation = true
-                }
-                .confirmationDialog(
-                    "Reset all settings?",
-                    isPresented: $showsResetConfirmation,
-                    titleVisibility: .visible
-                ) {
-                    Button("Reset everything", role: .destructive) {
-                        settings.resetToDefaults()
-                        // Launch at login is OS state, not a stored preference, so
-                        // `resetToDefaults()` deliberately can't reach it — and the
-                        // toggle's own `@State` has to be re-read afterwards or it goes
-                        // on showing the value it had before the reset.
-                        LaunchAtLogin.isEnabled = false
-                        launchAtLogin = LaunchAtLogin.isEnabled
-                        AppState.shared.restartTimer()
-                        AppState.shared.refreshNow()
-                    }
-                    Button("Cancel", role: .cancel) {}
-                } message: {
-                    Text("Every preference goes back to its default — providers, thresholds, quiet hours, the menu bar and the welcome tour. Your saved Admin API key is not touched.")
-                }
-            } header: {
-                Text("Actions")
-            }
-        }
-        .formStyle(.grouped)
-    }
-
-    /// Providers with a stored reading on disk: the only ones with anything to forget.
-    private var forgettableServices: [ServiceSnapshot] {
-        state.snapshot.services.filter { state.lastKnownServiceIDs.contains($0.id) }
-    }
-
-    /// What this service is actually reporting, in the words the rest of the app
-    /// uses: the two windows closest to their limit, or the pay-as-you-go spend, or
-    /// a dash when it has reported nothing (the state label beside it says why).
+    /// What a service reported, in the words the rest of the app uses: the two windows
+    /// closest to their limit, or the pay-as-you-go spend, or a dash when it has reported
+    /// nothing. 2.x's Account tab showed it beside each provider; 3.0's Providers row shows
+    /// the plan instead. It stays because the remaining-mode tests pin its ranking.
     ///
-    /// Which two windows is a question about usage and never changes; what they
-    /// print is the user's choice. Pure, so both halves of that are tested.
+    /// Which two windows is a question about usage and never changes; what they print is
+    /// the user's choice.
     nonisolated static func usageSummary(_ svc: ServiceSnapshot, mode: PercentDisplay.Mode) -> String {
         let worst = svc.buckets
             .filter { !$0.isPromotional }
@@ -507,64 +99,6 @@ struct SettingsView: View {
         case .modelSpecific, .other: return b.label
         }
     }
-
-    private func stateLabel(_ s: ServiceState) -> String {
-        switch s {
-        case .ok: return "Connected"
-        case .notSignedIn: return "Sign in needed"
-        case .notRunning: return "Not running"
-        case .error: return "Error"
-        }
-    }
-
-    /// Same battery semantics as everywhere else: green is fine, amber wants an
-    /// action from you, red is broken, grey is "nothing to say".
-    private func stateTint(_ s: ServiceState) -> Color {
-        switch s {
-        case .ok: return .green
-        case .notSignedIn: return .orange
-        case .notRunning: return .secondary
-        case .error: return .red
-        }
-    }
-
-    @ViewBuilder
-    private var keychainStatusView: some View {
-        switch keychainReadStatus {
-        case .granted:
-            OMChip(text: "Access granted", tint: .green)
-        case .failed(let message):
-            Text("Failed: \(message)")
-                .font(OMFont.caption)
-                .foregroundStyle(.orange)
-                .textSelection(.enabled)
-        case nil:
-            EmptyView()
-        }
-    }
-
-    private func lastFetchText(_ date: Date) -> String {
-        if date.timeIntervalSince1970 == 0 { return "—" }
-        let f = RelativeDateTimeFormatter()
-        f.unitsStyle = .short
-        return f.localizedString(for: date, relativeTo: Date())
-    }
-
-    /// The popover can ask for a specific tab ("Enable precise status" → Agents).
-    /// An unknown name is ignored, which keeps the request harmless.
-    private func applyPendingTab() {
-        guard let name = route.consumePendingTab(), let tab = Tab(rawValue: name) else { return }
-        selectedTab = tab
-    }
-
-    private func updateMaskedView() {
-        if let key = KeychainStore.loadAdminKey(), !key.isEmpty {
-            let prefix = String(key.prefix(14))
-            savedAdminKeyMasked = "Saved: \(prefix)…"
-        } else {
-            savedAdminKeyMasked = "Not set"
-        }
-    }
 }
 
 extension Notification.Name {
@@ -572,9 +106,9 @@ extension Notification.Name {
 }
 
 #if DEBUG
-// The window reads the real stores, which is the point: this preview is how the
-// tabs get checked in both schemes. It touches the keychain on appear (the
-// masked admin key), so macOS may show one access dialog the first time.
+// The window reads the real stores, which is the point: this preview is how the tabs get
+// checked in both schemes. Advanced reads the keychain on appear (the masked admin key),
+// so macOS may show one access dialog the first time.
 #Preview("Settings — light") {
     SettingsView()
 }
