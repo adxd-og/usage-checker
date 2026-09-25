@@ -18,11 +18,12 @@ enum DashboardTab: String, CaseIterable, Identifiable, Sendable {
     /// What 2.x stored while the window was on its Activity tab.
     static let retiredActivityValue = "Activity"
 
-    /// The SF Symbol beside the tab's name in the sidebar.
+    /// The SF Symbol beside the tab's name in the sidebar: the mockups' glyphs
+    /// (`Dashboard-Overview(-Light).dc.html`), a 2×2 grid, a person, a clock, a bulb.
     var icon: String {
         switch self {
-        case .overview: return "chart.bar.doc.horizontal"
-        case .agents: return "bolt.horizontal.circle"
+        case .overview: return "square.grid.2x2"
+        case .agents: return "person"
         case .history: return "clock"
         case .insights: return "lightbulb"
         }

@@ -159,4 +159,9 @@ final class DashboardTabTests: XCTestCase {
     func testTheTabIsKeptUnderTheKey2xWrote() {
         XCTAssertEqual(DashboardTab.storageKey, "dashboardTab")
     }
+
+    func testTheSidebarIconsAreTheMockups() {
+        // Dashboard-Overview(-Light).dc.html: a 2×2 grid, a person, a clock, a bulb.
+        XCTAssertEqual(DashboardTab.allCases.map(\.icon), ["square.grid.2x2", "person", "clock", "lightbulb"])
+    }
 }
