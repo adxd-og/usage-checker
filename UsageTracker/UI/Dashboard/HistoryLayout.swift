@@ -145,3 +145,26 @@ extension HistoryLayout {
     static let noteSize: CGFloat = 12
     static let noteInset: CGFloat = 4
 }
+
+// MARK: - Calendar card
+
+extension HistoryLayout {
+    /// `Dashboard-History-Calendar`: `padding: 22px 24px; gap: 14px`; 13 pt squares 4 pt
+    /// apart with 4 pt corners; weekday names 10.5 px in a 30 pt column 10 pt from the
+    /// grid; month names 11 px on a 14 pt row 8 pt above it; the total 17 px rounded;
+    /// the legend 11.5 px; today ringed 1.5 pt.
+    static var calendarCardPadding: EdgeInsets { EdgeInsets(top: 22, leading: 24, bottom: 22, trailing: 24) }
+    static let calendarCardSpacing: CGFloat = 14
+    static let calendarCellSize: CGFloat = 13
+    static let calendarCellSpacing: CGFloat = 4
+    static let calendarCellRadius: CGFloat = 4
+    static let calendarWeekdayWidth: CGFloat = 30
+    static let calendarWeekdayGap: CGFloat = 10
+    static let calendarWeekdaySize: CGFloat = 10.5
+    static let calendarMonthSize: CGFloat = 11
+    static let calendarMonthRowHeight: CGFloat = 14
+    static let calendarMonthGap: CGFloat = 8
+    static let calendarTotalSize: CGFloat = 17
+    static let calendarLegendSize: CGFloat = 11.5
+    static let todayRingWidth: CGFloat = 1.5
+}

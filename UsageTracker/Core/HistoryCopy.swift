@@ -232,3 +232,35 @@ extension HistoryCopy {
         }
     }
 }
+
+// MARK: - Calendar card
+
+extension HistoryCopy {
+    static func rangePhrase(_ range: TimeRange) -> String {
+        switch range {
+        case .fiveHours: return "last 5 hours"
+        case .oneDay: return "last 24 hours"
+        case .sevenDays: return "last 7 days"
+        case .thirtyDays: return "last 30 days"
+        case .ninetyDays: return "last 90 days"
+        case .oneYear: return "last year"
+        }
+    }
+
+    /// "Cost per day, last year"; a quota-only provider's squares are daily peaks.
+    static func calendarTitle(range: TimeRange, showsQuota: Bool) -> String {
+        "\(showsQuota ? "Daily peak" : "Cost per day"), \(rangePhrase(range))"
+    }
+
+    static func activeDays(_ n: Int) -> String {
+        n == 1 ? "1 active day" : "\(count(n)) active days"
+    }
+
+    /// "3 of 28 days at limit"; nil before anything was recorded in the range.
+    static func daysAtLimit(_ n: Int, of observed: Int) -> String? {
+        guard observed > 0 else { return nil }
+        return "\(count(n)) of \(dayCount(observed)) at limit"
+    }
+
+    static let calendarLoading = "Loading…"
+}

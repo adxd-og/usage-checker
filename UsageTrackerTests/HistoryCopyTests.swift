@@ -257,3 +257,30 @@ final class HistoryCopyQuotaNoteTests: XCTestCase {
         )
     }
 }
+
+/// The calendar card's header (`Dashboard-History-Calendar`).
+final class HistoryCopyCalendarTests: XCTestCase {
+    func testTheTitleNamesTheUnitAndTheRange() {
+        XCTAssertEqual(HistoryCopy.calendarTitle(range: .oneYear, showsQuota: false), "Cost per day, last year")
+        XCTAssertEqual(HistoryCopy.calendarTitle(range: .ninetyDays, showsQuota: false), "Cost per day, last 90 days")
+        XCTAssertEqual(HistoryCopy.calendarTitle(range: .sevenDays, showsQuota: false), "Cost per day, last 7 days")
+        XCTAssertEqual(HistoryCopy.calendarTitle(range: .oneDay, showsQuota: false), "Cost per day, last 24 hours")
+        XCTAssertEqual(HistoryCopy.calendarTitle(range: .thirtyDays, showsQuota: true), "Daily peak, last 30 days")
+    }
+
+    func testActiveDaysCountsDaysWithDollars() {
+        XCTAssertEqual(HistoryCopy.activeDays(49), "49 active days")
+        XCTAssertEqual(HistoryCopy.activeDays(1), "1 active day")
+        XCTAssertEqual(HistoryCopy.activeDays(0), "0 active days")
+    }
+
+    func testAQuotaCalendarSaysHowManyRecordedDaysHitTheLimit() {
+        XCTAssertEqual(HistoryCopy.daysAtLimit(3, of: 28), "3 of 28 days at limit")
+        XCTAssertEqual(HistoryCopy.daysAtLimit(0, of: 1), "0 of 1 day at limit")
+        XCTAssertNil(HistoryCopy.daysAtLimit(0, of: 0), "nothing recorded, nothing to say")
+    }
+
+    func testTheCalendarSaysItIsLoading() {
+        XCTAssertEqual(HistoryCopy.calendarLoading, "Loading…")
+    }
+}
