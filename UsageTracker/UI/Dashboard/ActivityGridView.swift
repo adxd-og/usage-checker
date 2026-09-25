@@ -189,6 +189,9 @@ struct ActivityGridView: View {
                     }
                 }
             }
+            // Room for today's ring at the clip edges (`HistoryLayout.calendarGridEdgeInset`).
+            .padding(.bottom, HistoryLayout.calendarGridEdgeInset)
+            .padding(.trailing, HistoryLayout.calendarGridEdgeInset)
         }
         .defaultScrollAnchor(.trailing)
     }

@@ -167,4 +167,9 @@ extension HistoryLayout {
     static let calendarTotalSize: CGFloat = 17
     static let calendarLegendSize: CGFloat = 11.5
     static let todayRingWidth: CGFloat = 1.5
+    /// The grid scrolls in a clipping view and today sits in its last column (and, on
+    /// the week's last day, its last row). The ring is drawn half its width past the
+    /// square, so the content keeps this much room at the bottom and trailing edges or
+    /// the clip cuts the ring on two sides.
+    static let calendarGridEdgeInset: CGFloat = todayRingWidth / 2
 }
