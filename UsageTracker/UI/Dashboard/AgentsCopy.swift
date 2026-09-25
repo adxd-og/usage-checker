@@ -26,4 +26,7 @@ enum AgentsCopy {
 
     /// The card's only row when nothing is running; the popover's empty row says the same.
     static let liveEmpty = "No agent sessions"
+
+    /// The link at the Live card's trailing edge. The chevron is `OMLinkButtonStyle`'s.
+    static let historyLink = "All sessions in History"
 }

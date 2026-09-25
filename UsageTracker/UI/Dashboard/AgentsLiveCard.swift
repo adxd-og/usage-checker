@@ -6,9 +6,12 @@ import SwiftUI
 /// dashboard's size, with the provider logo and a state dot at its bottom-right, Needs
 /// you in the accent, Allow filled and Deny on glass. Hairlines split the rows. The card
 /// is full width, and the page scrolls, so the list never does. Finished sessions are
-/// listed in History.
+/// listed in History, which the header's "All sessions in History ›" opens.
 struct AgentsLiveCard: View {
     let sessions: [AgentSession]
+    /// The link's action. The host owns it: it knows the source filter, and the provider
+    /// switch goes through `DashboardState` (`AgentsLinkRules`).
+    let onShowHistory: () -> Void
 
     /// Rows from both sources can mix here (the filter's All), so each wears its logo.
     nonisolated static let showsProviderIcon = true
@@ -50,6 +53,8 @@ struct AgentsLiveCard: View {
                     .foregroundStyle(.om(.secondary))
             }
             Spacer(minLength: OMSpacing.m)
+            Button(AgentsCopy.historyLink, action: onShowHistory)
+                .buttonStyle(.omLink)
         }
     }
 
@@ -97,20 +102,20 @@ struct AgentsLiveCard: View {
 
 #if DEBUG
 #Preview("Live card — dark") {
-    AgentsLiveCard(sessions: AgentPreviewData.mixed)
+    AgentsLiveCard(sessions: AgentPreviewData.mixed, onShowHistory: {})
         .padding()
         .frame(width: 900)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Live card — light") {
-    AgentsLiveCard(sessions: AgentPreviewData.mixed)
+    AgentsLiveCard(sessions: AgentPreviewData.mixed, onShowHistory: {})
         .padding()
         .frame(width: 900)
 }
 
 #Preview("Live card — nothing running") {
-    AgentsLiveCard(sessions: [])
+    AgentsLiveCard(sessions: [], onShowHistory: {})
         .padding()
         .frame(width: 900)
 }

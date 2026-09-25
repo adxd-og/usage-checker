@@ -27,4 +27,14 @@ final class AgentsCopyTests: XCTestCase {
         XCTAssertNil(AgentsCopy.liveCount(0))
         XCTAssertEqual(AgentsCopy.liveEmpty, "No agent sessions")
     }
+
+    // MARK: Link
+
+    func testTheLinkNamesWhereEveryFinishedSessionIsListed() {
+        XCTAssertEqual(AgentsCopy.historyLink, "All sessions in History")
+    }
+
+    func testTheChevronBelongsToTheLinkStyleNotTheCopy() {
+        XCTAssertFalse(AgentsCopy.historyLink.contains("›"))
+    }
 }

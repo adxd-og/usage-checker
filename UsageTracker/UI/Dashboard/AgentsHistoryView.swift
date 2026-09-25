@@ -11,6 +11,8 @@ struct AgentsHistoryView: View {
     nonisolated static let sourceKey = "agentsHistorySource"
 
     @AppStorage(AgentsHistoryView.sourceKey) private var storedSource: String = "all"
+    /// The window's tab. Writing it is how any view switches tabs; the window follows.
+    @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
 
     /// nil = every source. An unknown stored value (a provider that never shipped, a
     /// hand-edited plist) reads as All rather than filtering everything away.
@@ -48,7 +50,7 @@ struct AgentsHistoryView: View {
                 VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
                     AgentsStatsCard(tiles: AgentsStatsRules.tiles(summary))
 
-                    AgentsLiveCard(sessions: liveSessions)
+                    AgentsLiveCard(sessions: liveSessions, onShowHistory: { showHistory() })
                 }
                 // The mockup's column, whose side gutters the header already sits on.
                 .padding(.top, AgentsLayout.headerGap)
@@ -87,5 +89,18 @@ struct AgentsHistoryView: View {
             .fixedSize()
             RangePicker(range: $dashboard.range)
         }
+    }
+
+    /// "All sessions in History ›": History, on the provider the source filter names
+    /// (`AgentsLinkRules`); All leaves the provider as it is. The provider goes through
+    /// `selectedService`, which stores it under `DashboardState.selectionKey` and also
+    /// clears and reloads the provider's numbers. A bare write to that key would leave the
+    /// old provider's figures on screen under the new name.
+    private func showHistory() {
+        let target = AgentsLinkRules.target(source: source)
+        if let serviceID = target.serviceID {
+            dashboard.selectedService = serviceID
+        }
+        storedTab = target.tab.rawValue
     }
 }
