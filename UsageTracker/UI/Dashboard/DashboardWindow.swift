@@ -229,17 +229,38 @@ struct ServicePicker: View {
     }
 }
 
+/// The time range History and Agents chart over, on the 3.0 glass capsule (spec
+/// § Components, "Segmented controls"). Short names and no logos; the window's number
+/// keys stay off, as on the provider row.
 struct RangePicker: View {
     @Binding var range: TimeRange
 
+    nonisolated static let accessibilityName = "Time range"
+
     var body: some View {
-        Picker("", selection: $range) {
-            ForEach(TimeRange.allCases) { r in
-                Text(r.displayName).tag(r)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 280)
+        OMSegmentedControl(
+            items: Self.items(for: TimeRange.allCases),
+            selection: Binding(
+                get: { range.rawValue },
+                set: { range = Self.timeRange(forSegment: $0, current: range) }
+            ),
+            alwaysShowsTitles: true,
+            keyboardShortcuts: false
+        )
+        // The header is a flexible HStack; without this the capsule would stretch
+        // across whatever the title leaves free.
+        .fixedSize()
+        // The control names itself "Provider"; this one is not about a provider.
+        .accessibilityLabel(Self.accessibilityName)
+    }
+
+    /// One segment per range, titled with its short name ("7d").
+    nonisolated static func items(for ranges: [TimeRange]) -> [OMSegmentItem] {
+        ranges.map { OMSegmentItem(id: $0.rawValue, title: $0.displayName) }
+    }
+
+    /// The range a segment stands for; an id no range answers to changes nothing.
+    nonisolated static func timeRange(forSegment id: String, current: TimeRange) -> TimeRange {
+        TimeRange(rawValue: id) ?? current
     }
 }
