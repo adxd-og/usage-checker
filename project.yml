@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.usagetracker
   # One floor for the whole bundle (app, widget, helpers, tests): 3.0 draws native
   # Liquid Glass only. 2.7.1 stays in docs/appcast.xml for macOS 14–15.
+  # scripts/update_appcast.sh writes this floor into every new appcast item.
   deploymentTarget:
     macOS: "26.0"
   createIntermediateGroups: true

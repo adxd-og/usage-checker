@@ -3,6 +3,11 @@
 # <item> to docs/appcast.xml. Run AFTER gh release create, then commit + push
 # docs/appcast.xml — GitHub Pages serves the feed installed apps poll.
 #
+# The item's <sparkle:minimumSystemVersion> is the deployment floor in project.yml,
+# read rather than repeated so the two cannot drift. Items already in the feed keep
+# their own floor, which is how Sparkle leaves a Mac below the new floor on the last
+# build that runs there (2.7.1 for macOS 14–15).
+#
 # Usage: ./scripts/update_appcast.sh <version> <build> [dmg-path]
 #   e.g. ./scripts/update_appcast.sh 1.8.0 14
 set -euo pipefail
@@ -13,6 +18,13 @@ BUILD="${2:?usage: update_appcast.sh <version> <build> [dmg-path]}"
 DMG="${3:-$ROOT/build/Omelette.dmg}"
 APPCAST="$ROOT/docs/appcast.xml"
 REPO_URL="https://github.com/adxd-og/usage-checker"
+
+# Every floor in project.yml (options, base setting, each target) must agree: the
+# bundle has one. An item that claimed a lower floor than the binary would offer an
+# update that cannot launch.
+FLOORS="$(sed -nE 's/^ +(macOS|MACOSX_DEPLOYMENT_TARGET|deploymentTarget): "([0-9.]+)"$/\2/p' "$ROOT/project.yml" | sort -u)"
+[ -n "$FLOORS" ] && [ "$(printf '%s\n' "$FLOORS" | wc -l | tr -d ' ')" = 1 ] || { echo "ERROR: project.yml must carry one deployment floor, found: ${FLOORS:-none}"; exit 1; }
+MIN_SYSTEM="$FLOORS"
 
 # Sparkle's tool comes with the package checkout; the release build has its own
 # DerivedData (see build_dmg.sh), the test suite's is the fallback.
@@ -26,7 +38,7 @@ PUB_DATE="$(LC_ALL=C date "+%a, %d %b %Y %H:%M:%S %z")"
 
 CHANGELOG="$ROOT/CHANGELOG.md"
 
-export VERSION BUILD SIG_LINE PUB_DATE REPO_URL CHANGELOG
+export VERSION BUILD SIG_LINE PUB_DATE REPO_URL CHANGELOG MIN_SYSTEM
 /usr/bin/python3 - "$APPCAST" <<'PY'
 import html, os, re, sys
 
@@ -35,6 +47,7 @@ sig = os.environ["SIG_LINE"]
 ed = re.search(r'sparkle:edSignature="([^"]+)"', sig).group(1)
 length = re.search(r'length="(\d+)"', sig).group(1)
 v, b = os.environ["VERSION"], os.environ["BUILD"]
+min_sys = os.environ["MIN_SYSTEM"]
 repo = os.environ["REPO_URL"]
 
 # --- release notes: CHANGELOG section for this version -> embedded HTML.
@@ -73,7 +86,7 @@ item = f"""    <item>
       <pubDate>{os.environ["PUB_DATE"]}</pubDate>
       <sparkle:version>{b}</sparkle:version>
       <sparkle:shortVersionString>{v}</sparkle:shortVersionString>
-      <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+      <sparkle:minimumSystemVersion>{min_sys}</sparkle:minimumSystemVersion>
       <description><![CDATA[
 {notes}
       ]]></description>
@@ -103,7 +116,7 @@ try:
 finally:
     if os.path.isfile(tmp):
         os.remove(tmp)
-print(f"prepended v{v} (build {b}) to {path}")
+print(f"prepended v{v} (build {b}, macOS {min_sys}+) to {path}")
 PY
 
 echo "Now: git add docs/appcast.xml && git commit && git push"
