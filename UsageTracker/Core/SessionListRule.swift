@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// One chat in History's Sessions list, and why it is on it.
@@ -86,31 +85,6 @@ enum SessionListRule {
 
     /// Whether the "Show all N" button has anything to reveal.
     static func canShowAll(shown: Int, total: Int) -> Bool { shown < total }
-
-    // MARK: - How wide the list draws
-
-    /// The width the wide chat row needs, in points, and so the width at which the list
-    /// draws its five columns instead of folding three of them onto a caption.
-    ///
-    /// The row's own arithmetic: chevron 16 + title 160 (the least a chat name and its
-    /// chips can live in) + last active 104 + turns 64 + tokens 84 + cost 76 = 504,
-    /// plus the six 8 pt gaps between the row's seven children (48) and the spacer's
-    /// 8 pt minimum — 560.
-    ///
-    /// The dashboard's narrowest window clears it: 820 pt less the 160 pt sidebar, its
-    /// divider and the list's 24 pt gutters is about 611 pt. So does the block an
-    /// expanded chat unfolds: the widest table in it (sub-agents) asks 528 pt inside a
-    /// block indented 24 pt, so a list wide enough for a row is wide enough for what
-    /// opens under it.
-    static let minimumWideWidth: CGFloat = 560
-
-    /// Whether the list draws wide. One decision, taken once and obeyed by the header
-    /// and by every row: they used to take it separately, and a header carrying no chat
-    /// title fits at widths where a row carrying one does not — which is how five column
-    /// names came to stand over two-column rows.
-    static func isWide(availableWidth: CGFloat) -> Bool {
-        availableWidth >= minimumWideWidth
-    }
 
     // MARK: - Inside one chat
 
