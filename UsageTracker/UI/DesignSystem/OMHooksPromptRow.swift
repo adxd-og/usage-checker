@@ -42,7 +42,7 @@ struct OMHooksPromptRow: View {
                         .buttonStyle(.omCapsule(Self.enableButtonSize))
                         .help("Writes Omelette's hooks into ~/.claude/settings.json")
                     Button("Not now", action: onDismiss)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.omText)
                         .font(.system(size: 12.5))
                         .foregroundStyle(.om(.secondary))
                         .help("Hides this; Settings → Agents can still turn hooks on later")

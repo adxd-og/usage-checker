@@ -331,3 +331,23 @@ struct OMLinkButtonStyle: ButtonStyle {
 extension ButtonStyle where Self == OMLinkButtonStyle {
     static var omLink: OMLinkButtonStyle { OMLinkButtonStyle() }
 }
+
+/// Words alone, in the call site's font and colour, with no chevron: the hooks prompt's
+/// "Not now", History's "Show all 23 sub-agents". Lit under the pointer as a link is, a
+/// capsule `OMButtonRules.linkHoverOutset` past the words, and dimmed as a link while pressed.
+/// `Button("Not now") { … }.buttonStyle(.omText)`.
+struct OMTextButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(
+                shape: Capsule(style: .continuous),
+                isPressed: configuration.isPressed,
+                outset: OMButtonRules.linkHoverOutset
+            ))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+extension ButtonStyle where Self == OMTextButtonStyle {
+    static var omText: OMTextButtonStyle { OMTextButtonStyle() }
+}
