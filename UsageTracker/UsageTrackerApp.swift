@@ -41,6 +41,11 @@ struct UsageTrackerApp: App {
         Settings {
             SettingsView()
         }
+        // Settings draws its own chrome as the dashboard does: the sidebar reaches up under
+        // the traffic lights and no title bar shows (liquid-glass spec § Design → Settings).
+        // The window takes each tab's height from the view.
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
     }
 }
 

@@ -44,8 +44,6 @@ struct DashboardSidebar<Footer: View>: View {
     @Binding var selection: DashboardTab
     @ViewBuilder var footer: () -> Footer
 
-    @Environment(\.colorScheme) private var colorScheme
-
     /// Which item holds focus. With Keyboard navigation on a click can leave it on an
     /// item too, so it alone does not decide the ring.
     @FocusState private var focusedTab: DashboardTab?
@@ -71,7 +69,7 @@ struct DashboardSidebar<Footer: View>: View {
         .frame(width: DashboardSidebarRules.width)
         .frame(maxHeight: .infinity, alignment: .top)
         .omGlass(DashboardSidebarRules.surface, in: OMCornerShape(DashboardSidebarRules.corner))
-        .background { shadowCaster }
+        .omSidebarShadow(corner: DashboardSidebarRules.corner)
         // The ring follows the input: focus a key press moved in turns it on, a click
         // turns it off (↑ / ↓ turn it on in `move`).
         .onChange(of: focusedTab) { _, focused in
@@ -116,47 +114,6 @@ struct DashboardSidebar<Footer: View>: View {
         selection = next
         focusedTab = next
         return .handled
-    }
-
-    /// The mockups' drop shadows (`OMGlass.sidebarShadows`), outside the sidebar only,
-    /// as a CSS `box-shadow` paints them. System glass draws no recipe shadow, and a
-    /// shadow on the glass itself would shade every glyph on it, so opaque shapes behind
-    /// the glass cast the shadows and a reverse mask removes everything inside the
-    /// sidebar's shape. The casters add nothing under the glass: the backdrop and the
-    /// window's one tint show through it untouched. The mask reaches three shadow radii
-    /// (the Gaussian's visible tail) plus the offset beyond the sidebar, so the halo is
-    /// clipped only past three blur radii. The casters are inset 1 pt from the mask's
-    /// cutout because both edges are anti-aliased: partial coverage on each would leave
-    /// residual black on the edge pixels, a dark fringe against the backdrop.
-    private var shadowCaster: some View {
-        let shadows = OMGlass.sidebarShadows(scheme: colorScheme)
-        let shape = OMCornerShape(DashboardSidebarRules.corner)
-        let reach = shadows
-            .map { 3 * OMGlassRules.shadowRadius(cssBlur: $0.blur) + abs($0.y) }
-            .max() ?? 0
-        return ZStack {
-            ForEach(Array(shadows.enumerated()), id: \.offset) { _, shadow in
-                // Opaque only to give the shadow its silhouette; the mask removes it.
-                shape
-                    .inset(by: 1)
-                    .fill(Color.black)
-                    .shadow(
-                        color: shadow.color.color,
-                        radius: OMGlassRules.shadowRadius(cssBlur: shadow.blur),
-                        x: 0,
-                        y: shadow.y
-                    )
-            }
-        }
-        .mask {
-            ZStack {
-                Rectangle().padding(-reach)
-                shape.blendMode(.destinationOut)
-            }
-            .compositingGroup()
-        }
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
     }
 
     /// The app's own icon, as the popover header shows it, and its name.

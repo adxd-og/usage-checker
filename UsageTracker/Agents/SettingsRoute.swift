@@ -10,8 +10,9 @@ import Foundation
 final class SettingsRoute: ObservableObject {
     static let shared = SettingsRoute()
 
-    /// Matches `SettingsView.Tab.rawValue`. A name with no matching tab is
-    /// ignored, so a request can outlive a tab being renamed or not existing yet.
+    /// 2.x's Agents tab. Its hooks now live on Integrations, where
+    /// `SettingsTab.route(legacyID:)` sends this id; a 3.0 tab's own name
+    /// (`SettingsTab.rawValue`) lands on that tab, and any other name on General.
     static let agentsTab = "Agents"
 
     @Published var pendingTab: String?
