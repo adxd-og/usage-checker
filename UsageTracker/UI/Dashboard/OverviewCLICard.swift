@@ -18,6 +18,8 @@ enum OverviewCLIRules {
     static let figureLabelSize: CGFloat = 12
     static let figureSize: CGFloat = 18
     static let captionSize: CGFloat = 11
+    /// Between the "By model" title and its rows, and between rows.
+    static let modelRowSpacing: CGFloat = 3
 
     /// The calendar days "Last 7 days" and "Last 30 days" cover, today included.
     static let weekDays = 7
@@ -98,6 +100,7 @@ struct OverviewCLICard: View {
                         OverviewCLIRules.cost(daily: cli.daily, lastDays: OverviewCLIRules.monthDays, now: now, calendar: .current)
                     )
                 }
+                byModel(OverviewCLIRules.modelRows(cli.byModelToday))
                 if let caption {
                     Text(caption)
                         .font(.system(size: OverviewCLIRules.captionSize))
@@ -118,6 +121,27 @@ struct OverviewCLICard: View {
         .padding(.bottom, OverviewCLIRules.bottomPadding)
         .frame(maxHeight: .infinity, alignment: .top)
         .dashboardCard(padding: 0)
+    }
+
+    /// Today's models by cost, under the figures (spec § Decisions, "Overview by-model
+    /// rows"). Nothing at all on a day with no spend.
+    @ViewBuilder
+    private func byModel(_ rows: [OverviewCLIRules.ModelRow]) -> some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: OverviewCLIRules.modelRowSpacing) {
+                Text(OverviewCopy.byModelTitle)
+                    .font(.system(size: OverviewCLIRules.figureLabelSize))
+                    .foregroundStyle(.om(.secondary))
+                ForEach(rows) { row in
+                    Text(OverviewCopy.modelLine(row))
+                        .font(.system(size: OverviewCLIRules.captionSize))
+                        .foregroundStyle(.om(.secondary))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private func figure(_ label: String, _ dollars: Double) -> some View {
@@ -248,5 +272,37 @@ struct OverviewDayBarsView: View {
             .foregroundStyle(.om(.secondary))
         }
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - By model (spec § Decisions, "Overview by-model rows")
+
+extension OverviewCLIRules {
+    /// One model's line in `CLIBreakdown.byModelToday`: today's already, the aggregators
+    /// cut it at the local day's start.
+    typealias ModelEntry = (model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)
+
+    /// One row of the card's "By model" block.
+    struct ModelRow: Equatable, Identifiable {
+        let model: String
+        let tokens: Int
+        let cost: Double
+
+        var id: String { model }
+    }
+
+    /// The block lists at most this many models, as 2.7.1's rows did.
+    static let modelRowLimit = 5
+
+    /// Today's models by what they cost, dearest first, at most `limit`. Ties go to the
+    /// name first in the alphabet: the models arrive from a dictionary, so equal costs
+    /// would otherwise swap places between polls. A model that cost nothing is left out,
+    /// and a day with no spend has no rows, so the card draws no block.
+    static func modelRows(_ byModelToday: [ModelEntry], limit: Int = modelRowLimit) -> [ModelRow] {
+        let rows = byModelToday
+            .filter { $0.cost > 0 }
+            .sorted { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
+            .map { ModelRow(model: $0.model, tokens: $0.tokens, cost: $0.cost) }
+        return Array(rows.prefix(max(0, limit)))
     }
 }

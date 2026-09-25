@@ -68,3 +68,16 @@ extension OverviewCopy {
     static let axisStart = "30 days ago"
     static let axisEnd = "Today"
 }
+
+// MARK: - CLI card's models
+
+extension OverviewCopy {
+    /// Over today's per-model rows.
+    static let byModelTitle = "By model"
+
+    /// "Opus 4.5 · 1.2M tokens · $41.20": the model, its tokens today and its dollars in
+    /// the card's money format.
+    static func modelLine(_ row: OverviewCLIRules.ModelRow, locale: Locale = .current) -> String {
+        "\(row.model) · \(TokenFormat.formatTokens(row.tokens)) tokens · \(OMCostTile.money(row.cost, locale: locale))"
+    }
+}
