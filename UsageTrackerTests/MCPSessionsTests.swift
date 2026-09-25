@@ -308,7 +308,7 @@ final class MCPSessionsTests: XCTestCase {
 
     func testTheInstructionsMentionTheNewTool() {
         XCTAssertTrue(
-            MCPServer.instructions.contains("get_sessions lists the recent chats with their token and cost totals."),
+            MCPServer.instructions.contains("get_sessions: recent chats with token and cost totals."),
             MCPServer.instructions
         )
     }
