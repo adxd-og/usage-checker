@@ -241,3 +241,40 @@ private struct OMSidebarPillBackground: ViewModifier {
         }
     }
 }
+
+// MARK: - Link (spec § Components, "Links")
+
+/// A summary's way to the screen that owns the detail: accent text and a chevron,
+/// no button chrome ("History ›", "Show all 103"). Values from
+/// `Dashboard-Overview(-Light).dc.html`.
+enum OMLinkRules {
+    static let textToken: OMColorToken = .accentText
+    static let chevronSymbol = "chevron.right"
+    static let spacing: CGFloat = 2
+    static let fontSize: CGFloat = 12.5
+    /// The mockups' 12 pt chevron box draws a glyph about 6 pt tall; SF Symbols' bold
+    /// chevron at 9 pt matches it.
+    static let chevronSize: CGFloat = 9
+}
+
+/// `Button("History") { … }.buttonStyle(.omLink)`.
+struct OMLinkButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: OMLinkRules.spacing) {
+            configuration.label
+            Image(systemName: OMLinkRules.chevronSymbol)
+                .font(.system(size: OMLinkRules.chevronSize, weight: .bold))
+                .accessibilityHidden(true)
+        }
+        .font(.system(size: OMLinkRules.fontSize, weight: .semibold))
+        .foregroundStyle(.om(OMLinkRules.textToken))
+        .lineLimit(1)
+        .fixedSize()
+        .contentShape(Rectangle())
+        .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+extension ButtonStyle where Self == OMLinkButtonStyle {
+    static var omLink: OMLinkButtonStyle { OMLinkButtonStyle() }
+}
