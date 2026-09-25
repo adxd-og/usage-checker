@@ -7,6 +7,7 @@ enum TimeRange: String, CaseIterable, Identifiable {
     case sevenDays = "7d"
     case thirtyDays = "30d"
     case ninetyDays = "90d"
+    case oneYear = "1y"
 
     var id: String { rawValue }
     var displayName: String { rawValue }
@@ -18,6 +19,7 @@ enum TimeRange: String, CaseIterable, Identifiable {
         case .sevenDays: return 7 * 24 * 3600
         case .thirtyDays: return 30 * 24 * 3600
         case .ninetyDays: return 90 * 24 * 3600
+        case .oneYear: return 365 * 24 * 3600
         }
     }
 }

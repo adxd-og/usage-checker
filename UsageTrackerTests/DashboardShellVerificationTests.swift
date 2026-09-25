@@ -229,9 +229,9 @@ final class RangePickerVerificationTests: XCTestCase {
         }
     }
 
-    func testAllFiveRangesAppearInTheirDeclaredOrder() {
+    func testAllSixRangesAppearInTheirDeclaredOrder() {
         let items = RangePicker.items(for: TimeRange.allCases)
-        XCTAssertEqual(items.map(\.id), ["5h", "24h", "7d", "30d", "90d"])
+        XCTAssertEqual(items.map(\.id), ["5h", "24h", "7d", "30d", "90d", "1y"])
     }
 
     func testAnUnrecognisedSegmentIdLeavesTheCurrentRangeAlone() {

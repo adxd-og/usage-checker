@@ -241,12 +241,15 @@ struct ServicePicker: View {
 /// keys stay off, as on the provider row.
 struct RangePicker: View {
     @Binding var range: TimeRange
+    /// The segments, in order: every range unless a tab offers fewer (History's five,
+    /// `HistoryRules.ranges`).
+    var ranges: [TimeRange] = TimeRange.allCases
 
     nonisolated static let accessibilityName = "Time range"
 
     var body: some View {
         OMSegmentedControl(
-            items: Self.items(for: TimeRange.allCases),
+            items: Self.items(for: ranges),
             selection: Binding(
                 get: { range.rawValue },
                 set: { range = Self.timeRange(forSegment: $0, current: range) }
