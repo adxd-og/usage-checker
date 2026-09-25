@@ -22,6 +22,18 @@ enum AgentsSettingsText {
         }
     }
 
+    /// The same four states as 3.0 colour roles, for the dot beside the status (spec
+    /// § Settings: "status is a dot + text"): green installed, amber older than this
+    /// build, muted absent, red when something else owns the entry.
+    static func hookStatusDot(_ status: HookInstallStatus) -> OMColorToken {
+        switch status {
+        case .installed: return .ok
+        case .outdated: return .warning
+        case .notInstalled: return .muted
+        case .conflict: return .critical
+        }
+    }
+
     /// The line under the Codex hooks row. Codex refuses a hook it has not been told
     /// to trust and says nothing when it does, so the tab has to say it instead. It
     /// counts what is left rather than naming it: the events are wire identifiers
