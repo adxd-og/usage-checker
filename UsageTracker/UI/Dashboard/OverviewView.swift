@@ -47,7 +47,6 @@ struct OverviewView: View {
                 Spacer(minLength: 24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
     }
 
     /// The provider tab's hero, reused verbatim: the session window when the provider

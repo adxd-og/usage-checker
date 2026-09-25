@@ -83,7 +83,6 @@ struct AgentsHistoryView: View {
                 Spacer(minLength: 24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
         // A session ending is what appends to the log, so the live store changing is
         // the cheapest signal that the history is stale. Also runs on first appearance.
         .task(id: Self.historyReloadKey(sessions: agents.sessions.count, lastEventAt: agents.lastEventAt)) {

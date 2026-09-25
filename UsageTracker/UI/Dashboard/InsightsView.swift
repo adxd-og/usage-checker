@@ -90,7 +90,6 @@ struct InsightsView: View {
                 Spacer(minLength: 24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
         .task(id: cacheKey) {
             await rebuildInsights()
         }

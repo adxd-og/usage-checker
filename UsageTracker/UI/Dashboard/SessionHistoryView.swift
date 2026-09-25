@@ -156,7 +156,6 @@ struct SessionHistoryView: View {
                 Spacer(minLength: 24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
         .task(id: cacheKey) {
             await rebuildQuota()
         }

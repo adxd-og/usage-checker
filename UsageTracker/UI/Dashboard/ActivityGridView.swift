@@ -54,7 +54,6 @@ struct ActivityGridView: View {
                 Spacer(minLength: 24)
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
         .task(id: taskKey) {
             await rebuildCache()
         }
