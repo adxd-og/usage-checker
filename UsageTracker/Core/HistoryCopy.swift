@@ -27,3 +27,48 @@ extension HistoryCopy {
     /// What VoiceOver calls the Cost/Tokens switch.
     static let modePickerLabel = "Unit"
 }
+
+// MARK: - Sessions card
+
+extension HistoryCopy {
+    /// Counts and dollars are grouped the US way ("1,729", "$1,352.28") whatever the
+    /// Mac's region, like every "$" figure in the app, so a count never reads
+    /// differently from the dollars beside it.
+    static let numberLocale = Locale(identifier: "en_US")
+
+    static func count(_ n: Int) -> String {
+        n.formatted(.number.locale(numberLocale))
+    }
+
+    static let sessionsTitle = "Sessions"
+
+    /// "4 of 103" while the list is cut, "103" when it is all of them.
+    static func sessionCount(shown: Int, total: Int) -> String {
+        shown < total ? "\(count(shown)) of \(count(total))" : count(total)
+    }
+
+    /// The column titles, in the order the wide row draws them.
+    static let sessionColumns = ["Session", "Last active", "Turns", "Tokens", "Cost"]
+
+    /// The line under a chat's name: its project, then what 2.x wore as chips — the
+    /// chat is on the list for what it cost, or an agent drove it (`exec`).
+    static func sessionSubtitle(project: String, isTop: Bool, origin: String?) -> String {
+        var parts = [project]
+        if isTop { parts.append(SessionCopy.topSpendChip) }
+        if let origin = SessionCopy.originChip(origin) { parts.append(origin) }
+        return parts.joined(separator: " · ")
+    }
+
+    static func turns(_ n: Int) -> String {
+        n == 1 ? "1 turn" : "\(count(n)) turns"
+    }
+
+    /// A narrow row's figures, folded onto one line under the name.
+    static func narrowCaption(lastActive: String, turns: Int, tokens: Int) -> String {
+        [lastActive, Self.turns(turns), "\(TokenFormat.formatTokens(tokens)) tokens"]
+            .joined(separator: " · ")
+    }
+
+    /// What VoiceOver calls the Recent/Cost switch of the whole list.
+    static let sortPickerLabel = "Sort"
+}
