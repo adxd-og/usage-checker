@@ -447,9 +447,6 @@ struct SettingsView: View {
             }
 
             Section {
-                Button("Force refresh now") {
-                    AppState.shared.refreshNow()
-                }
                 Button("Reset all settings", role: .destructive) {
                     showsResetConfirmation = true
                 }
@@ -472,9 +469,6 @@ struct SettingsView: View {
                     Button("Cancel", role: .cancel) {}
                 } message: {
                     Text("Every preference goes back to its default — providers, thresholds, quiet hours, the menu bar and the welcome tour. Your saved Admin API key is not touched.")
-                }
-                Button("Quit Omelette", role: .destructive) {
-                    NSApp.terminate(nil)
                 }
             } header: {
                 Text("Actions")
