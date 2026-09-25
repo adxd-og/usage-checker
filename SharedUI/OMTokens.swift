@@ -223,6 +223,24 @@ enum OMColorToken: CaseIterable, Sendable {
     case tokenCacheWrite
     /// The flat colour under the window backdrop's gradients.
     case windowBase
+    /// The popover's tiles and groups. Dark matches the content fill; the light
+    /// popover draws them at white 55 % with a white 70 % edge (`Popover-All-Light`),
+    /// because they sit on its white-56 % chrome glass, not on a window.
+    case groupFill
+    case groupBorder
+    /// A mark that is there but says nothing live: a last-known ring's arc, an idle
+    /// agent's dot.
+    case muted
+    /// The pace dot on a ring and the pace tick on a bar.
+    case paceMarker
+    /// A label on an accent fill (Allow).
+    case onAccent
+    /// Gauges and state text at 70–89 % used, and a provider that wants signing in.
+    /// The spec's table has no amber: this is the system orange the 2.x gauges draw.
+    case warning
+    /// Gauges and state text at 90 % used and over, and a provider in error: the
+    /// system red.
+    case critical
 }
 
 /// The 3.0 colour table (spec § Tokens; hex values are the mockups').
@@ -258,6 +276,13 @@ enum OMPalette {
         case .tokenCacheRead: return (OMRGBA(hex: 0x5CC8C8), OMRGBA(hex: 0x26A8A8))
         case .tokenCacheWrite: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
         case .windowBase: return (OMRGBA(hex: 0x0D0E13), OMRGBA(hex: 0xECE8F1))
+        case .groupFill: return (.white(0.055), .white(0.55))
+        case .groupBorder: return (.white(0.05), .white(0.70))
+        case .muted: return (OMRGBA(hex: 0xF5F5F7, opacity: 0.40), OMRGBA(hex: 0x1D1D1F, opacity: 0.35))
+        case .paceMarker: return (.white(0.75), OMRGBA(hex: 0x1D1D1F, opacity: 0.60))
+        case .onAccent: return (OMRGBA(hex: 0x231704), OMRGBA(hex: 0x231704))
+        case .warning: return (OMRGBA(hex: 0xFF9F0A), OMRGBA(hex: 0xFF9500))
+        case .critical: return (OMRGBA(hex: 0xFF453A), OMRGBA(hex: 0xFF3B30))
         }
     }
 }
