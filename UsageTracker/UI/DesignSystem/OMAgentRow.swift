@@ -161,6 +161,33 @@ enum AgentRowText {
     }
 }
 
+/// The two sizes the 3.0 mockups draw an agent row at (liquid-glass spec § Components,
+/// "Agent row (dashboard)"). The popover's (`Main.dc.html`) is the default. The
+/// dashboard's Live card (`Dashboard-Agents(-Light).dc.html`) opts into one a size up.
+/// Paddings, spacing and the buttons are the same in both.
+struct OMAgentRowMetrics: Equatable, Sendable {
+    /// The provider logo's box, which the state badge sits on.
+    let logoSide: CGFloat
+    let badgeDiameter: CGFloat
+    let titleSize: CGFloat
+    /// The status line and the elapsed time.
+    let subtitleSize: CGFloat
+
+    /// The logo inside its box: 2 pt smaller, as the popover has always drawn it.
+    var iconSize: CGFloat { logoSide - 2 }
+
+    /// 20 pt logo, 8 pt badge, 13 / 11.5 pt text: the row as it was before metrics.
+    static let popover = OMAgentRowMetrics(
+        logoSide: 20,
+        badgeDiameter: OMAgentRow.badgeDiameter,
+        titleSize: OMAgentRow.titleSize,
+        subtitleSize: OMAgentRow.subtitleSize
+    )
+
+    /// 28 pt logo, 10 pt badge, 13.5 / 12.5 pt text.
+    static let dashboard = OMAgentRowMetrics(logoSide: 28, badgeDiameter: 10, titleSize: 13.5, subtitleSize: 12.5)
+}
+
 /// One agent session (`Main.dc.html`'s agents card). The leading mark is the provider
 /// logo with a state dot at its bottom-right on the All tab and the dashboard, where
 /// rows from every provider mix, and the state dot alone — haloed while live — on a
@@ -172,6 +199,8 @@ enum AgentRowText {
 struct OMAgentRow: View {
     let session: AgentSession
     var showsProviderIcon: Bool = true
+    /// The popover's size unless the host opts into the dashboard's (`OMAgentRowMetrics`).
+    var metrics: OMAgentRowMetrics = OMAgentRow.defaultMetrics
     /// Called by the row's **Allow** / **Deny**. Defaults do nothing so previews and
     /// any host that does not deal in permissions can ignore them. They precede
     /// `action`, which is why every call site passes `action:` by name: an unlabeled
@@ -196,15 +225,17 @@ struct OMAgentRow: View {
     nonisolated static let badgeRing: CGFloat = 2
     nonisolated static let titleSize: CGFloat = 13
     nonisolated static let subtitleSize: CGFloat = 11.5
+    /// Every host but the dashboard's Live card.
+    nonisolated static let defaultMetrics: OMAgentRowMetrics = .popover
 
-    /// The leading mark's width: a 20 pt logo, or the 8 pt dot.
-    nonisolated static func leadingWidth(showsProviderIcon: Bool) -> CGFloat {
-        showsProviderIcon ? 20 : dotDiameter
+    /// The leading mark's width: the logo's box (20 pt in the popover), or the 8 pt dot.
+    nonisolated static func leadingWidth(showsProviderIcon: Bool, metrics: OMAgentRowMetrics = .popover) -> CGFloat {
+        showsProviderIcon ? metrics.logoSide : dotDiameter
     }
 
     /// Where the detail block and the buttons start: under the text, past the mark.
-    nonisolated static func textInset(showsProviderIcon: Bool) -> CGFloat {
-        leadingWidth(showsProviderIcon: showsProviderIcon) + leadingSpacing
+    nonisolated static func textInset(showsProviderIcon: Bool, metrics: OMAgentRowMetrics = .popover) -> CGFloat {
+        leadingWidth(showsProviderIcon: showsProviderIcon, metrics: metrics) + leadingSpacing
     }
 
     private var showsPermission: Bool {
@@ -227,7 +258,7 @@ struct OMAgentRow: View {
         AgentRowText.detailIsExpandable(session.activityDetail)
     }
 
-    private var textInset: CGFloat { Self.textInset(showsProviderIcon: showsProviderIcon) }
+    private var textInset: CGFloat { Self.textInset(showsProviderIcon: showsProviderIcon, metrics: metrics) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Self.lineSpacing) {
@@ -315,7 +346,7 @@ struct OMAgentRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 titleLine
                 Text(AgentRowText.rowSubtitle(for: session, providerTab: !showsProviderIcon))
-                    .font(.system(size: Self.subtitleSize))
+                    .font(.system(size: metrics.subtitleSize))
                     .foregroundStyle(.om(.secondary))
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -324,7 +355,7 @@ struct OMAgentRow: View {
             // Only the elapsed time is on a clock, so only it re-renders.
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(AgentRowText.elapsed(since: session.stateSince, now: context.date, state: session.state))
-                    .font(.system(size: Self.subtitleSize))
+                    .font(.system(size: metrics.subtitleSize))
                     .monospacedDigit()
                     .foregroundStyle(.om(.secondary))
             }
@@ -347,7 +378,7 @@ struct OMAgentRow: View {
                     .fixedSize()
             }
         }
-        .font(.system(size: Self.titleSize, weight: .semibold))
+        .font(.system(size: metrics.titleSize, weight: .semibold))
     }
 
     /// The held request, answerable here. Deliberately plain: the tool it wants to
@@ -371,14 +402,14 @@ struct OMAgentRow: View {
     @ViewBuilder
     private var leading: some View {
         if showsProviderIcon {
-            let side = Self.leadingWidth(showsProviderIcon: true)
-            ProviderIconView(serviceID: session.source.rawValue, sfFallback: Self.sfFallback(session.source), size: 18)
+            let side = Self.leadingWidth(showsProviderIcon: true, metrics: metrics)
+            ProviderIconView(serviceID: session.source.rawValue, sfFallback: Self.sfFallback(session.source), size: metrics.iconSize)
                 .foregroundStyle(.om(.secondary))
                 .frame(width: side, height: side)
                 .overlay(alignment: .bottomTrailing) {
                     // A badge, not a beacon: no halo on a logo; a ring in the window
                     // colour cuts it out of the logo instead.
-                    AgentStateDot(state: session.state, diameter: Self.badgeDiameter, isBadge: true)
+                    AgentStateDot(state: session.state, diameter: metrics.badgeDiameter, isBadge: true)
                         .offset(x: 3, y: 3)
                 }
         } else {
