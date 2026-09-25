@@ -105,7 +105,10 @@ struct DashboardWindow: View {
 
 struct DashboardHeader: View {
     let title: String
-    let subtitle: String?
+    /// A line under the title only where it says something the title does not
+    /// (History's unit and its API-equivalent note); 3.0 drops the filler ones
+    /// (liquid-glass spec § Removals).
+    var subtitle: String? = nil
     var trailing: AnyView? = nil
     /// The Agents tab is not about one provider, so it hides the picker rather than
     /// showing a control that changes nothing on screen.

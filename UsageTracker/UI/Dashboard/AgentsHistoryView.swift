@@ -53,7 +53,6 @@ struct AgentsHistoryView: View {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
                     title: "Agents",
-                    subtitle: "Live sessions and run history",
                     trailing: AnyView(RangePicker(range: $dashboard.range)),
                     showsServicePicker: false
                 )
