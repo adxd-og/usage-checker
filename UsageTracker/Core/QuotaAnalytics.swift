@@ -72,7 +72,7 @@ struct QuotaBucketInfo: Equatable, Sendable, Identifiable {
 
 /// Quota over time, for providers that keep no local cost log.
 ///
-/// Antigravity, Gemini and Codex never expose what a turn consumed — the API answers
+/// Antigravity and Codex never expose what a turn consumed — the API answers
 /// in quota fractions and nothing on disk says more. For a subscription that is not a
 /// gap: consumption *is* the quota, so the same charts the cost tabs draw in dollars
 /// are drawn here in percent, out of the history the app has been recording all along.
@@ -319,7 +319,7 @@ enum QuotaAnalytics {
     }
 
     /// A readable name for a window the provider no longer reports. Bucket ids are
-    /// snake_case and self-describing ("gemini_pro", "seven_day_opus"), so word-casing
+    /// snake_case and self-describing ("codex_weekly", "seven_day_opus"), so word-casing
     /// one beats showing the raw key.
     static func prettifiedLabel(for bucketID: String) -> String {
         let words = bucketID.split(whereSeparator: { $0 == "_" || $0 == "-" })

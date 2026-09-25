@@ -78,7 +78,7 @@ final class DashboardState: ObservableObject {
     /// of borrowing the selected one's verdict.
     @Published private(set) var burnByService: [String: BurnRatePrediction] = [:]
     /// Which bucket `sessionBurn` is about — providers name their session window
-    /// differently ("five_hour", "codex_session", "gemini_pro").
+    /// differently ("five_hour", "codex_session").
     @Published private(set) var burnBucket: UsageBucket?
     /// What ran during the session window that's open right now.
     @Published private(set) var sessionWindow: WindowUsage?
@@ -147,8 +147,8 @@ final class DashboardState: ObservableObject {
 
     /// Every provider either writes a local per-turn cost log or has a specific reason
     /// it can't be costed. Claude Code, the Codex CLI and the Grok CLI all write one;
-    /// Gemini and Antigravity keep no per-turn token log at all, and saying so is more
-    /// use than telling their users to switch to Claude.
+    /// Antigravity keeps no per-turn token log at all, and saying so is more use than
+    /// telling its users to switch to Claude.
     nonisolated static func costSource(for serviceID: String) -> CostSource {
         switch serviceID {
         case "claude":
@@ -159,8 +159,6 @@ final class DashboardState: ObservableObject {
             return .log(shortName: "Codex CLI", longName: "the Codex CLI's session logs")
         case "antigravity":
             return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
-        case "gemini":
-            return .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota over time is charted instead.")
         default:
             return .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota over time is charted instead.")
         }
@@ -418,8 +416,10 @@ final class DashboardState: ObservableObject {
     /// `.ok` at least once, so a Grok-only user — whose Claude never reports — kept the
     /// default "claude" selection, and the floating window and popover followed it into
     /// an empty tab. The live snapshot answers for a provider that is reporting right
-    /// now; recorded history keeps a signed-out provider's past readable; and a provider
-    /// switched off in Settings is not on offer at all.
+    /// now; recorded history keeps a signed-out provider's past readable; a provider
+    /// switched off in Settings is not on offer at all; and history left by a provider
+    /// this build no longer polls (`ProviderCoordinator.serviceIDs`) stays on disk but
+    /// is not offered, since its tab could never fill again.
     nonisolated static func availableServices(
         recorded: [String],
         snapshot: UsageSnapshot,
@@ -428,17 +428,26 @@ final class DashboardState: ObservableObject {
         let live = snapshot.services
             .filter { !$0.buckets.isEmpty || $0.weekCost != nil }
             .map(\.id)
+        let polled = recorded.filter { ProviderCoordinator.serviceIDs.contains($0) }
         var seen = Set<String>()
-        return (live + recorded.sorted()).filter {
+        return (live + polled.sorted()).filter {
             !disabled.contains($0) && seen.insert($0).inserted
         }
     }
 
     /// The selection to use when the stored one is no longer on offer. Falls back to the
     /// stored value when there is nothing to heal to, so an empty first launch doesn't
-    /// blank the picker.
-    nonisolated static func healedSelection(stored: String, available: [String]) -> String {
-        available.contains(stored) || available.isEmpty ? stored : available[0]
+    /// blank the picker, but only for a provider this build polls (`polled`). A stored
+    /// id from a provider that is gone goes to Claude, which is always polled: standing
+    /// still on it would load that provider's leftover history onto the tab.
+    nonisolated static func healedSelection(
+        stored: String,
+        available: [String],
+        polled: Set<String> = ProviderCoordinator.serviceIDs
+    ) -> String {
+        if available.contains(stored) { return stored }
+        guard available.isEmpty else { return available[0] }
+        return polled.contains(stored) ? stored : "claude"
     }
 
     /// Providers switched off in Settings. Claude has no toggle — it is always polled.
@@ -446,7 +455,6 @@ final class DashboardState: ObservableObject {
         let s = SettingsStore.shared
         var off: Set<String> = []
         if !s.codexProviderEnabled { off.insert("codex") }
-        if !s.geminiProviderEnabled { off.insert("gemini") }
         if !s.antigravityProviderEnabled { off.insert("antigravity") }
         if !s.grokProviderEnabled { off.insert("grok") }
         return off
@@ -471,8 +479,8 @@ final class DashboardState: ObservableObject {
     }
 
     /// The window worth predicting: the session one when the provider has it,
-    /// otherwise whichever non-promo window is furthest along — Gemini expresses
-    /// every limit as a daily per-model quota and has no session window at all.
+    /// otherwise whichever non-promo window is furthest along — a provider whose
+    /// every limit is a per-model quota has no session window at all.
     private static func burnBucket(of serviceID: String) -> UsageBucket? {
         guard let service = AppState.shared.snapshot.services.first(where: { $0.id == serviceID })
         else { return nil }

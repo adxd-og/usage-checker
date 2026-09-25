@@ -41,11 +41,11 @@ final class StatusCostsTests: XCTestCase {
     }
 
     func testOnlyProvidersWithALocalLogAreEverGathered() async {
-        // Gemini and Antigravity keep no per-turn token log — `DashboardState`
-        // already says so — so they can never appear, whatever is enabled.
-        let gathered = await StatusCosts.gather(serviceIDs: ["gemini", "antigravity"])
+        // Antigravity keeps no per-turn token log — `DashboardState` already says
+        // so — so it can never appear, whatever is enabled.
+        let gathered = await StatusCosts.gather(serviceIDs: ["antigravity"])
 
         XCTAssertTrue(gathered.costs.isEmpty)
-        XCTAssertTrue(gathered.sessions.isEmpty, "and neither of them names a chat either")
+        XCTAssertTrue(gathered.sessions.isEmpty, "and it names no chat either")
     }
 }

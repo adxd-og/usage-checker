@@ -4,7 +4,7 @@ Omelette bundles the following third-party software.
 
 ## CodexBarCore (steipete/CodexBar)
 
-Multi-provider usage fetching (Codex, Gemini, Antigravity) is powered by
+Multi-provider usage fetching (Codex, Antigravity) is powered by
 `CodexBarCore` from <https://github.com/steipete/CodexBar>.
 
 MIT License

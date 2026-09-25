@@ -31,7 +31,7 @@ enum OverviewLink: Equatable, CaseIterable {
     }
 
     /// The first card carries History's link only when there is no CLI card to carry it: a
-    /// provider with no local cost log (Antigravity, Gemini). Whichever card comes first
+    /// provider with no local cost log (Antigravity). Whichever card comes first
     /// carries it, the rings or the burn-rate card that stands in for them when the
     /// provider has no current window (signed out, its readings only in History).
     static func onFirstCard(hasBreakdown: Bool) -> OverviewLink? {

@@ -19,7 +19,6 @@ enum ProvidersSettingsCopy {
     static let codexID = "codex"
     static let antigravityID = "antigravity"
     static let grokID = "grok"
-    static let geminiID = "gemini"
     static let adminID = "anthropic-admin"
 
     /// The mockup's four rows, in its order.
@@ -29,9 +28,6 @@ enum ProvidersSettingsCopy {
         Provider(id: antigravityID, name: "Antigravity", source: "Running Antigravity app, agy CLI or IDE", sfFallback: "circle.hexagongrid", hasSwitch: true),
         Provider(id: grokID, name: "Grok", source: "Local Grok CLI, grok.com fallback", sfFallback: "bolt", hasSwitch: true),
     ]
-
-    /// Deprecated (§ Removals): never listed, whatever its stored switch says.
-    static let deprecatedIDs: Set<String> = [geminiID]
 
     static let adminSource = "Admin API key, in Advanced"
     static let forgetLink = "Forget last known"
@@ -49,11 +45,10 @@ enum ProvidersSettingsCopy {
 
     /// The four listed providers, then any other service the last poll returned (the
     /// Admin API organisation, which 2.x's Account tab listed too), without a switch.
-    /// Never Gemini.
     static func rows(services: [ServiceSnapshot]) -> [Provider] {
         let listedIDs = Set(listed.map(\.id))
         let others = services
-            .filter { !listedIDs.contains($0.id) && !deprecatedIDs.contains($0.id) }
+            .filter { !listedIDs.contains($0.id) }
             .map { service in
                 Provider(
                     id: service.id,

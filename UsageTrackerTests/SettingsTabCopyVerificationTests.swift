@@ -83,19 +83,7 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
         XCTAssertEqual(ProvidersSettingsCopy.status(for: error, isEnabled: true, now: now).dot, .critical)
     }
 
-    // MARK: - ProvidersSettingsCopy.rows / showsForget (§ Removals: Gemini; D8)
-
-    /// § Removals: "Gemini CLI is gone (deprecated)" — never listed, even when the
-    /// last poll actually returned a Gemini snapshot.
-    func testGeminiNeverAppearsAmongTheRowsEvenWhenPolled() {
-        let services = [
-            Fixture.snapshot(id: "claude"),
-            Fixture.snapshot(id: "gemini", displayName: "Gemini"),
-            Fixture.snapshot(id: "codex"),
-        ]
-        let rows = ProvidersSettingsCopy.rows(services: services)
-        XCTAssertFalse(rows.contains { $0.id == "gemini" }, "rows: \(rows.map(\.id))")
-    }
+    // MARK: - ProvidersSettingsCopy.rows / showsForget (D8)
 
     /// D12: the four mocked rows appear in the mockup's order even with no poll yet,
     /// and an extra service the poll returned (the Admin API organisation) is appended

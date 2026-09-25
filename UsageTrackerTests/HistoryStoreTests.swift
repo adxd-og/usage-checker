@@ -196,10 +196,10 @@ final class HistoryStoreTests: XCTestCase {
 
         await store.append(snapshot: claude())
         await store.append(snapshot: codex())
-        await store.append(snapshot: Fixture.snapshot(id: "gemini"))
+        await store.append(snapshot: Fixture.snapshot(id: "grok"))
 
         let seen = await store.recordedServices()
-        XCTAssertEqual(seen, ["claude", "codex", "gemini"])
+        XCTAssertEqual(seen, ["claude", "codex", "grok"])
     }
 
     func testRecentByServicePartitionsInOnePass() async {

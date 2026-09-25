@@ -20,7 +20,7 @@ final class ActivityCopyTests: XCTestCase {
     /// something that does not happen is noise. Neither does a provider with no cost
     /// grid at all.
     func testAProviderThatKeepsItsLogsCarriesNoNote() {
-        for provider in ["codex", "grok", "gemini", "antigravity", ""] {
+        for provider in ["codex", "grok", "antigravity", ""] {
             XCTAssertNil(ActivityCopy.retentionNote(provider: provider), provider)
         }
     }

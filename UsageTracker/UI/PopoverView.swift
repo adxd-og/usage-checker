@@ -718,11 +718,6 @@ private struct ServiceStateLabel: View {
                 message: "Codex reports limits only for ChatGPT sign-in (API-key auth doesn't expose them).",
                 command: "codex logout && codex login"
             )
-        case ("gemini", .notSignedIn):
-            return StateHelp(
-                message: "Sign into the Gemini CLI with your Google account, then refresh.",
-                command: "gemini"
-            )
         case ("antigravity", _) where service.state != .ok:
             let installed = FileManager.default.fileExists(atPath: "/Applications/Antigravity.app")
             return StateHelp(

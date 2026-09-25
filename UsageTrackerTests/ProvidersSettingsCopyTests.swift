@@ -3,8 +3,7 @@ import XCTest
 
 /// Liquid-glass spec § Design → Settings, "Providers: one row per provider: logo,
 /// source, status (connected / not running + last known / off), enable switch, 'Forget
-/// last known' inline; … Gemini CLI is gone" (`Settings-Providers.dc.html`), and
-/// § Removals (Gemini CLI provider).
+/// last known' inline" (`Settings-Providers.dc.html`).
 final class ProvidersSettingsCopyTests: XCTestCase {
     private let calendar: Calendar = {
         var c = Calendar(identifier: .gregorian)
@@ -63,11 +62,6 @@ final class ProvidersSettingsCopyTests: XCTestCase {
         XCTAssertEqual(ProvidersSettingsCopy.antigravityID, "antigravity")
         XCTAssertEqual(ProvidersSettingsCopy.grokID, "grok")
         XCTAssertEqual(ProvidersSettingsCopy.adminID, "anthropic-admin")
-    }
-
-    func testGeminiIsNeverListedEvenWhileItStillReports() {
-        let gemini = Fixture.snapshot(id: "gemini", displayName: "Gemini")
-        XCTAssertFalse(ProvidersSettingsCopy.rows(services: [gemini]).map(\.id).contains("gemini"))
     }
 
     func testAnAdminAPIOrganisationIsListedAfterThemWithoutASwitch() {

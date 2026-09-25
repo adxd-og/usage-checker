@@ -244,10 +244,12 @@ final class HistoryCopyQuotaNoteTests: XCTestCase {
         )
     }
 
-    func testGeminiSaysOmeletteDoesNotReadItsLog() {
+    /// Liquid-glass spec § Packages P8: the Gemini CLI's own sentence went with the
+    /// provider. A `gemini` id is named from the id, like any other.
+    func testTheRemovedGeminiIDIsNamedFromItsIDLikeAnyOther() {
         XCTAssertEqual(
             HistoryCopy.quotaOnlyNote(provider: "gemini"),
-            "Omelette doesn't read the Gemini CLI's token log, so there are no costs or sessions here. Quota over time is charted instead."
+            "Gemini keeps no local token log, so there are no costs or sessions here. Quota over time is charted instead."
         )
     }
 

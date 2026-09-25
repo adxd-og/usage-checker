@@ -40,10 +40,13 @@ final class CostSourceTests: XCTestCase {
         XCTAssertNil(codex.reason, "the old 'running totals' empty state is retired")
     }
 
-    func testGeminiSaysItIsNotSupportedYet() {
+    /// Liquid-glass spec § Packages P8: the Gemini CLI provider is gone, and so is its
+    /// own reason. A `gemini` id, only ever a stored record now, gets what any unknown
+    /// id gets.
+    func testTheRemovedGeminiIDGetsTheGenericReason() {
         XCTAssertEqual(
             DashboardState.costSource(for: "gemini"),
-            .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota over time is charted instead.")
+            .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota over time is charted instead.")
         )
     }
 
@@ -58,7 +61,7 @@ final class CostSourceTests: XCTestCase {
     }
 
     func testTheAggregatorExistsExactlyWhenTheCostSourceSaysItDoes() {
-        for id in ["claude", "grok", "codex", "gemini", "antigravity", "anthropic-admin"] {
+        for id in ["claude", "grok", "codex", "antigravity", "anthropic-admin"] {
             XCTAssertEqual(
                 DashboardState.costAggregator(for: id) != nil,
                 DashboardState.costSource(for: id).hasBreakdown,

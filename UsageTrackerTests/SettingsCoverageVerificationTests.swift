@@ -85,19 +85,6 @@ final class SettingsCoverageVerificationTests: XCTestCase {
         }
     }
 
-    /// § Removals: "Gemini CLI provider: deprecated, dropped from Settings (toggle and
-    /// its caption)". The key survives in the store (ruling S6) but no tab file may
-    /// bind a control to it.
-    func testGeminiProviderEnabledIsBoundNowhereInSettings() throws {
-        let sources = try settingsSources()
-        for file in tabFiles {
-            XCTAssertFalse(
-                sources[file]?.contains(".geminiProviderEnabled") ?? false,
-                "\(file) must not bind geminiProviderEnabled (§ Removals: Gemini CLI provider)"
-            )
-        }
-    }
-
     /// § Removals: "Force refresh (⌘R does it), Quit (the popover has it)" — neither
     /// button's title text survives anywhere under `UI/Settings/`.
     func testForceRefreshAndQuitButtonsAreGoneFromEveryTabFile() throws {

@@ -226,8 +226,6 @@ extension HistoryCopy {
         switch provider {
         case "antigravity":
             return "Antigravity keeps no local token log, \(rest)"
-        case "gemini":
-            return "Omelette doesn't read the Gemini CLI's token log, \(rest)"
         default:
             return "\(QuotaAnalytics.prettifiedLabel(for: provider)) keeps no local token log, \(rest)"
         }

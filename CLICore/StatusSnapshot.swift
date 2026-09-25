@@ -76,7 +76,7 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         var apiEquivalent: Bool?
         /// The chats this provider's own session log knows about — the last seven days,
         /// ranked by `SessionListRule.pick` and capped at `StatusFileWriter.maxFileSessions`.
-        /// Absent, not empty, for a provider whose log names no chat (Grok, Gemini,
+        /// Absent, not empty, for a provider whose log names no chat (Grok,
         /// Antigravity) and for a quiet week: "no chat log" and "no chats" are different
         /// answers, and the optional is also what lets the synthesized decoder accept a
         /// `Service` object written without the key.
