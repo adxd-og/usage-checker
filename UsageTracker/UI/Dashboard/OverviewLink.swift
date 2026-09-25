@@ -2,11 +2,12 @@ import Foundation
 
 /// A summary's way to the screen that owns its detail (liquid-glass spec § Design,
 /// Principle 4; § Components, "Links"). Following one is a write to the dashboard's tab
-/// key (`DashboardTab.storageKey`); the window follows.
+/// key (`DashboardTab.storageKey`), after History's view and chart keys where the link
+/// names them; the window follows.
 enum OverviewLink: Equatable, CaseIterable {
     /// "History ›": on the CLI card; for a provider with no cost log, on its first card.
     case history
-    /// "Tokens by day ›": History on its tokens chart.
+    /// "Tokens by day ›": History on its Chart view, tokens chart.
     case tokensByDay
 
     /// The key `SessionHistoryView` keeps its chart mode under (`@AppStorage`).
@@ -27,6 +28,16 @@ enum OverviewLink: Equatable, CaseIterable {
         switch self {
         case .history: return nil
         case .tokensByDay: return .tokens
+        }
+    }
+
+    /// The view History opens on (`HistoryRules.viewModeKey`); nil keeps the one the user
+    /// left it on. The tokens chart lives on Chart, so a History left on Calendar would
+    /// otherwise swallow "Tokens by day".
+    var viewMode: HistoryViewMode? {
+        switch self {
+        case .history: return nil
+        case .tokensByDay: return .chart
         }
     }
 

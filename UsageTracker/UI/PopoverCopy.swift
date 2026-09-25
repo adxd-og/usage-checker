@@ -22,21 +22,11 @@ enum PopoverCopy {
         label.hasSuffix(" only") ? String(label.dropLast(" only".count)) : label
     }
 
-    /// "Updated just now", "Updated 12s ago", "Updated 4m ago", "Updated 2h ago";
-    /// "Never updated" before the first reading.
-    static func updatedText(fetchedAt: Date, now: Date) -> String {
-        if fetchedAt.timeIntervalSince1970 < 1 { return "Never updated" }
-        let delta = max(0, now.timeIntervalSince(fetchedAt))
-        if delta < 5 { return "Updated just now" }
-        if delta < 60 { return "Updated \(Int(delta))s ago" }
-        if delta < 3600 { return "Updated \(Int(delta / 60))m ago" }
-        return "Updated \(Int(delta / 3600))h ago"
-    }
-
     /// The header's second line. A provider tab names the provider and its plan first
-    /// ("Claude Max 20x · Updated 7s ago"); All says only when it updated.
+    /// ("Claude Max 20x · Updated 7s ago"); All says only when it updated. The age is
+    /// `UpdatedCopy`'s, so it reads as the dashboard sidebar's footnote does.
     static func metaLine(service: ServiceSnapshot?, fetchedAt: Date, now: Date) -> String {
-        let updated = updatedText(fetchedAt: fetchedAt, now: now)
+        let updated = UpdatedCopy.text(fetchedAt: fetchedAt, now: now)
         guard let service else { return updated }
         let name = [service.displayName, planLine(plan: service.plan, displayName: service.displayName)]
             .compactMap { $0 }

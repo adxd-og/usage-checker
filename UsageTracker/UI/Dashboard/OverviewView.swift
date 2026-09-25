@@ -14,6 +14,8 @@ struct OverviewView: View {
     @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
     /// History's chart mode, which "Tokens by day" sets before it switches the tab.
     @AppStorage(OverviewLink.historyChartModeKey) private var historyChartMode: String = HistoryChartMode.cost.rawValue
+    /// History's Chart/Calendar view, which "Tokens by day" sets to Chart with the mode.
+    @AppStorage(HistoryRules.viewModeKey) private var historyViewMode: String = HistoryViewMode.chart.rawValue
 
     private var service: ServiceSnapshot? {
         appState.snapshot.services.first(where: { $0.id == dashboard.selectedService })
@@ -30,7 +32,9 @@ struct OverviewView: View {
                             service: service,
                             snapshotFetchedAt: appState.snapshot.fetchedAt,
                             now: context.date
-                        )
+                        ),
+                        leading: OverviewHeaderRules.logo(serviceID: dashboard.selectedService, service: service)
+                            .map { AnyView(OverviewHeaderLogoTile(logo: $0)) }
                     )
                 }
 
@@ -69,9 +73,10 @@ struct OverviewView: View {
         }
     }
 
-    /// Follows a summary's link: History's chart mode first, then the tab, so History
-    /// opens on the right chart rather than switching under the user.
+    /// Follows a summary's link: History's view and chart mode first, then the tab, so
+    /// History opens on the right chart rather than switching under the user.
     private func follow(_ link: OverviewLink) {
+        if let view = link.viewMode { historyViewMode = view.rawValue }
         if let mode = link.chartMode { historyChartMode = mode.rawValue }
         storedTab = link.tab.rawValue
     }
@@ -152,15 +157,6 @@ struct OverviewView: View {
             return burn.percentPerMinute > 0 ? "Stable" : "Idle"
         }
         return "Hit limit in \(formatDuration(secs))"
-    }
-
-    /// The two lines of `burnCard` as one caption, for under the hero.
-    nonisolated static func burnLine(
-        burn: BurnRatePrediction?,
-        bucket: UsageBucket?,
-        retained: Bool = false
-    ) -> String {
-        "\(burnTitle(bucket)) · \(burnValue(burn, retained: retained))"
     }
 
     nonisolated static func formatDuration(_ secs: TimeInterval) -> String {

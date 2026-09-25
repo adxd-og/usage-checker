@@ -3,7 +3,8 @@ import XCTest
 @testable import Omelette
 
 /// Session rulings of 2026-09-25 on the P2 plan (R4), over liquid-glass spec § Tokens:
-/// the dashboard window's tint, the sidebar's shadows and light edge, the screen title.
+/// the dashboard window's tint, the sidebar's shadows and light edge, the screen title and
+/// its subtitle.
 /// Values from `Dashboard-Overview(-Light).dc.html` lines 18–19 and the header rows.
 final class DashboardChromeTokensTests: XCTestCase {
     func testTheWindowTintIsTheMockupsWindowFill() {
@@ -46,5 +47,11 @@ final class DashboardChromeTokensTests: XCTestCase {
     func testDashboardTitlesAre26PointBoldAndTheTourKeepsItsOwn() {
         XCTAssertEqual(OMFont.dashboardTitle, Font.system(size: 26, weight: .bold))
         XCTAssertEqual(OMFont.screenTitle, Font.system(size: 22, weight: .semibold))
+    }
+
+    func testTheHeadersSubtitleIsTwelveAndAHalfPointAsTheMockupDrawsIt() {
+        // Under the title: `font-size: 12.5px; color: rgba(245,245,247,0.64)`.
+        XCTAssertEqual(OMFont.dashboardSubtitle, Font.system(size: 12.5))
+        XCTAssertEqual(DashboardHeader.subtitleFont, OMFont.dashboardSubtitle)
     }
 }

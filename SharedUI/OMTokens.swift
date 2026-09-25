@@ -105,6 +105,9 @@ enum OMFont {
     /// Dashboard screen titles in 3.0: the mockups' `font-size: 26px; font-weight: 700`.
     /// Its own role because `screenTitle` also titles the welcome tour, which 3.0 leaves as it is.
     static let dashboardTitle = Font.system(size: 26, weight: .bold)
+    /// The line under a dashboard screen title: the mockups' `font-size: 12.5px`, half a
+    /// point over `body`.
+    static let dashboardSubtitle = Font.system(size: 12.5)
 }
 
 /// Content surfaces use quiet system fills; Liquid Glass is reserved for controls

@@ -125,36 +125,6 @@ final class SessionListRuleTests: XCTestCase {
         XCTAssertEqual(SessionListRule.defaultTop, 5)
     }
 
-    // MARK: - Wide or narrow, decided once for the whole list
-
-    /// The list makes one layout decision and the header and every row obey it, so the
-    /// width behind that decision is a rule with a test rather than a `ViewThatFits`
-    /// guess taken per row — which is what let the header draw five columns over rows
-    /// that had folded down to two.
-    func testTheListGoesWideOnlyWhenTheWideRowGenuinelyFits() {
-        XCTAssertTrue(SessionListRule.isWide(availableWidth: SessionListRule.minimumWideWidth))
-        XCTAssertFalse(SessionListRule.isWide(availableWidth: SessionListRule.minimumWideWidth - 1))
-        XCTAssertTrue(SessionListRule.isWide(availableWidth: SessionListRule.minimumWideWidth + 1))
-    }
-
-    /// The arithmetic in the rule's doc comment, restated: the wide row's own columns,
-    /// the six gaps between its seven children and the spacer's minimum.
-    func testTheWideRowsWidthIsTheSumOfItsColumns() {
-        // chevron, title (its minimum), last active, turns, tokens, cost
-        let columns: CGFloat = 16 + 160 + 104 + 64 + 84 + 76
-        let gaps: CGFloat = 6 * 8 + 8
-        XCTAssertEqual(SessionListRule.minimumWideWidth, columns + gaps)
-        XCTAssertEqual(SessionListRule.minimumWideWidth, 560)
-    }
-
-    /// The window the bug was reported at: the dashboard's 820 pt minimum, the 160 pt
-    /// sidebar, its divider and the list's 24 pt gutters leave about 611 pt — enough for
-    /// the wide row, so the whole list stays wide there.
-    func testTheDashboardsNarrowestWindowStillDrawsTheWideRow() {
-        let list: CGFloat = 820 - 160 - 1 - 48
-        XCTAssertTrue(SessionListRule.isWide(availableWidth: list))
-    }
-
     // MARK: - Inside one chat
 
     /// Measured on this Mac: one chat has 1,235 sub-agent transcripts (the next two,

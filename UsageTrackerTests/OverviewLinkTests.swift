@@ -2,7 +2,7 @@ import XCTest
 @testable import Omelette
 
 /// Liquid-glass spec § Components, "Links", and § Screens, "Overview": "History ›" opens
-/// History as the user left it; "Tokens by day ›" opens it on the tokens chart. Following
+/// History as the user left it; "Tokens by day ›" opens it on the Chart view's tokens chart. Following
 /// a link writes the keys the dashboard window and History read; a provider with no cost
 /// log carries History's link on its first card, rings or burn rate.
 final class OverviewLinkTests: XCTestCase {
@@ -22,6 +22,14 @@ final class OverviewLinkTests: XCTestCase {
         XCTAssertEqual(OverviewLink.tokensByDay.chartMode, .tokens)
         XCTAssertEqual(HistoryChartMode(rawValue: "tokens"), .tokens)
         XCTAssertEqual(OverviewLink.historyChartModeKey, "historyChartMode")
+    }
+
+    func testTokensByDayOpensHistoryOnItsChartViewAndHistoryKeepsTheUsersView() {
+        // History remembers Chart or Calendar; the tokens chart is only on Chart, so
+        // "Tokens by day ›" must switch a Calendar-left History back to Chart.
+        XCTAssertNil(OverviewLink.history.viewMode)
+        XCTAssertEqual(OverviewLink.tokensByDay.viewMode, .chart)
+        XCTAssertEqual(HistoryViewMode(rawValue: "chart"), .chart)
     }
 
     func testOnlyAProviderWithNoCostLogCarriesHistorysLinkOnItsFirstCard() {
