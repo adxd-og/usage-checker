@@ -279,6 +279,15 @@ enum OMColorToken: CaseIterable, Sendable {
     /// Gauges and state text at 90 % used and over, and a provider in error: the
     /// system red.
     case critical
+    /// The quota chart's one line colour no other series has (`Dashboard-Quota-History`).
+    case seriesQuota
+    /// A heatmap square for a day with nothing on it (`Dashboard-History-Calendar`).
+    case calendarEmpty
+    /// The chart tooltip's opaque bubble and its edge (`Dashboard-History-Cost`).
+    case tooltipFill
+    case tooltipBorder
+    /// The wash under an open chat in History (`Dashboard-History-Chats`).
+    case insetFill
 }
 
 /// The 3.0 colour table (spec § Tokens; hex values are the mockups').
@@ -322,6 +331,11 @@ enum OMPalette {
         case .onAccent: return (OMRGBA(hex: 0x231704), OMRGBA(hex: 0x231704))
         case .warning: return (OMRGBA(hex: 0xFF9F0A), OMRGBA(hex: 0xFF9500))
         case .critical: return (OMRGBA(hex: 0xFF453A), OMRGBA(hex: 0xFF3B30))
+        case .seriesQuota: return (OMRGBA(hex: 0xFF7A7A), OMRGBA(hex: 0xE85555))
+        case .calendarEmpty: return (.white(0.06), .black(0.06))
+        case .tooltipFill: return (OMRGBA(hex: 0x2A2B31), OMRGBA(hex: 0xFFFFFF))
+        case .tooltipBorder: return (.white(0.12), .black(0.10))
+        case .insetFill: return (.white(0.035), .black(0.025))
         }
     }
 }
