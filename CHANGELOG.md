@@ -70,7 +70,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   widget that was set to Gemini needs to be edited to another provider.
 
 ### Command line and MCP
-- `omelette status` and `get_sessions` print token counts from a billion as "2.5B".
+- `get_sessions` prints token counts from a billion as "2.5B", as the dashboard
+  does; `omelette status --json` keeps raw integers.
 - The MCP server's instructions and tool descriptions say where the answers come
   from: the app's last snapshot, its age, what happens when there is none, and
   which dollars are API-list-price equivalents.
