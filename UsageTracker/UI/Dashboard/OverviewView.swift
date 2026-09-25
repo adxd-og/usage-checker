@@ -25,11 +25,6 @@ struct OverviewView: View {
                 }
                 .padding(.horizontal, 24)
 
-                if let service {
-                    bucketsBlock(service: service)
-                        .padding(.horizontal, 24)
-                }
-
                 // Below the hero row and above the CLI dollars: this is the same
                 // log's data, one question earlier ("what did those tokens do?").
                 if dashboard.costSource.hasBreakdown,
@@ -49,52 +44,34 @@ struct OverviewView: View {
         }
     }
 
-    /// The provider tab's hero, reused verbatim: the session window when the provider
-    /// has one, otherwise its most-constrained window, with the burn verdict under it.
-    /// A provider with no windows at all (nothing polled yet) keeps the old burn-rate
-    /// wording rather than showing an empty card.
+    /// The rings card: one ring per window beside a legend of every window. A provider
+    /// with no window at all (nothing polled yet) keeps the burn-rate card rather than an
+    /// empty one.
     @ViewBuilder
     private var heroCard: some View {
-        if let service, let hero = WindowRanking.detailHero(for: service) {
-            // Last-known numbers can't be extrapolated: a provider that stopped
-            // reporting isn't burning anything, whatever the last slope said.
-            let verdict = service.isRetained ? nil : BurnVerdict.make(
-                burn: dashboard.sessionBurn,
-                sessionBuckets: service.buckets.filter { $0.kind == .session }
+        if let service, !OverviewRingsRules.windows(for: service).isEmpty {
+            OverviewRingsCard(
+                service: service,
+                mode: settings.percentMode,
+                footer: OverviewCopy.footer(
+                    verdict: verdict(for: service),
+                    burn: dashboard.sessionBurn,
+                    retained: service.isRetained
+                ),
+                retainedCaption: RetainedCopy.caption(for: service)
             )
-            VStack(alignment: .leading, spacing: OMSpacing.xs) {
-                OMHero(hero: hero, mode: settings.percentMode, verdict: verdict)
-                    .opacity(service.isRetained ? 0.55 : 1)
-                // A spend limit's ring is a percentage of a number nobody keeps in
-                // their head. The provider tab prints both amounts; so does this.
-                if hero.id == WindowRanking.extraUsageBucketID(for: service),
-                   let spend = SpendLimitCopy.caption(service.extraUsage, compact: false) {
-                    Text(spend)
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                        .monospacedDigit()
-                        .opacity(service.isRetained ? 0.55 : 1)
-                }
-                if verdict == nil {
-                    // Stale, absent or too-flat to extrapolate: the hero would say
-                    // nothing at all about the burn rate, so the burn card's own line
-                    // goes here instead.
-                    Text(Self.burnLine(burn: dashboard.sessionBurn, bucket: dashboard.burnBucket,
-                                       retained: service.isRetained))
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if let caption = RetainedCopy.caption(for: service) {
-                    Text(caption)
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .dashboardCard(padding: 14)
         } else {
             burnCard
         }
+    }
+
+    /// Last-known numbers can't be extrapolated: a provider that stopped reporting isn't
+    /// burning anything, whatever the last slope said.
+    private func verdict(for service: ServiceSnapshot) -> BurnVerdict? {
+        service.isRetained ? nil : BurnVerdict.make(
+            burn: dashboard.sessionBurn,
+            sessionBuckets: service.buckets.filter { $0.kind == .session }
+        )
     }
 
     /// Titled after the window it actually predicts — with several providers a
@@ -170,32 +147,6 @@ struct OverviewView: View {
                 .foregroundStyle(.tertiary)
         }
         .dashboardCard(padding: 14)
-    }
-
-    private func bucketsBlock(service: ServiceSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
-            OMSectionHeader(title: "Usage windows")
-            // Dimmed as a block, so no individual row has to remember to do it.
-            VStack(alignment: .leading, spacing: OMSpacing.m) {
-                ForEach(service.buckets) { b in
-                    // Same row, more of an answer: the countdown now carries the
-                    // wall-clock time past the first hour, and the tooltip carries it
-                    // always. "resets —" stays the wording for a window that reports
-                    // no reset time at all.
-                    let now = Date()
-                    OMKeyValueRow(
-                        label: b.label,
-                        value: ResetCopy.both(resetsAt: b.resetsAt, now: now) ?? "resets —",
-                        barUsedPercent: b.clampedPercent,
-                        barMode: settings.percentMode,
-                        pace: b.elapsedFraction(),
-                        help: ResetCopy.absolute(resetsAt: b.resetsAt, now: now).map { "Resets \($0)" } ?? ""
-                    )
-                }
-            }
-            .opacity(service.isRetained ? 0.55 : 1)
-        }
-        .dashboardCard()
     }
 
     private func cliBlock(cli: CLIBreakdown) -> some View {
