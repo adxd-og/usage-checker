@@ -114,3 +114,77 @@ final class HistoryTooltipRulesTests: XCTestCase {
         XCTAssertNil(HistoryRules.day(containing: wednesday.addingTimeInterval(-3600), in: days, calendar: calendar))
     }
 }
+
+/// The quota chart's tooltip (`Dashboard-Quota-History`): the fullest windows at the
+/// pointer, fullest first, and the reading the dot rings.
+final class HistoryQuotaHoverTests: XCTestCase {
+    private let calendar = SessionFixture.calendar
+    private let locale = SessionFixture.locale
+    /// Thursday 3 September 2026, 12:00 UTC.
+    private let noon = Date(timeIntervalSince1970: 1_788_436_800)
+
+    /// Readings as (minutes from noon, percent).
+    private func series(_ id: String, _ label: String, _ readings: [(Double, Double)]) -> HistoryQuotaSeries {
+        HistoryQuotaSeries(
+            bucket: QuotaBucketInfo(id: id, label: label, isCore: true, isLive: true),
+            points: readings.map { QuotaPoint(time: noon.addingTimeInterval($0.0 * 60), percent: $0.1) }
+        )
+    }
+
+    func testTheTooltipListsTheThreeFullestWindowsAtThePointer() {
+        let all = [
+            series("weekly", "Claude/GPT weekly", [(-5, 21)]),
+            series("models", "Claude & GPT models", [(-5, 21)]),
+            series("five", "Claude/GPT 5-hour", [(0, 1)]),
+            series("gmodels", "Gemini models", [(2, 28)]),
+            series("gweekly", "Gemini weekly", [(0, 8)]),
+            series("gfive", "Gemini 5-hour", [(1, 29)]),
+        ]
+        let hover = HistoryTooltipRules.quotaHover(at: noon, series: all, range: .sevenDays, calendar: calendar, locale: locale)
+        XCTAssertEqual(hover?.tooltip, HistoryTooltip(title: "Thu, 3 Sep", headline: nil, rows: [
+            HistoryTooltipRow(label: "Gemini 5-hour", value: "29%"),
+            HistoryTooltipRow(label: "Gemini models", value: "28%"),
+            HistoryTooltipRow(label: "Claude/GPT weekly", value: "21%"),
+        ]), "a tie keeps the provider's order")
+        XCTAssertEqual(hover?.seriesID, "gfive")
+        XCTAssertEqual(hover?.point, QuotaPoint(time: noon.addingTimeInterval(60), percent: 29))
+    }
+
+    func testAWindowWithNoReadingNearThePointerIsLeftOut() {
+        // A week's tolerance is 1 % of it, about 100 minutes; this reading is 10 hours off.
+        let all = [series("a", "A", [(-600, 90)]), series("b", "B", [(0, 10)])]
+        let hover = HistoryTooltipRules.quotaHover(at: noon, series: all, range: .sevenDays, calendar: calendar, locale: locale)
+        XCTAssertEqual(hover?.tooltip.rows, [HistoryTooltipRow(label: "B", value: "10%")])
+    }
+
+    func testNothingNearThePointerMeansNoTooltip() {
+        XCTAssertNil(HistoryTooltipRules.quotaHover(
+            at: noon, series: [series("a", "A", [(-600, 90)])], range: .sevenDays,
+            calendar: calendar, locale: locale
+        ))
+    }
+
+    func testADayLongChartNamesTheTimeToo() {
+        let hover = HistoryTooltipRules.quotaHover(
+            at: noon, series: [series("a", "A", [(0, 50)])], range: .oneDay,
+            calendar: calendar, locale: locale
+        )
+        XCTAssertEqual(hover?.tooltip.title, "Thu, 3 Sep · 12:00")
+    }
+
+    func testTheNearestReadingWinsAndTheEarlierWinsATie() {
+        let points = [
+            QuotaPoint(time: noon.addingTimeInterval(-60), percent: 1),
+            QuotaPoint(time: noon.addingTimeInterval(60), percent: 2),
+            QuotaPoint(time: noon.addingTimeInterval(300), percent: 3),
+        ]
+        XCTAssertEqual(HistoryTooltipRules.nearestPoint(in: points, to: noon)?.percent, 1)
+        XCTAssertEqual(HistoryTooltipRules.nearestPoint(in: points, to: noon.addingTimeInterval(250))?.percent, 3)
+        XCTAssertNil(HistoryTooltipRules.nearestPoint(in: [], to: noon))
+    }
+
+    func testTheToleranceIsOnePercentOfTheRange() {
+        XCTAssertEqual(HistoryTooltipRules.tolerance(range: .sevenDays), 6_048)
+        XCTAssertEqual(HistoryTooltipRules.tolerance(range: .oneDay), 864)
+    }
+}

@@ -64,3 +64,62 @@ enum HistoryTooltipRules {
         return max(0, anchorX - clearance - width)
     }
 }
+
+// MARK: - Quota chart
+
+/// What hovering the quota chart shows: the tooltip, and which reading the dot rings.
+struct HistoryQuotaHover: Equatable, Sendable {
+    let tooltip: HistoryTooltip
+    let seriesID: String
+    let point: QuotaPoint
+}
+
+extension HistoryTooltipRules {
+    /// `Dashboard-Quota-History`: a 196 pt bubble 14 pt right of the dot, 10 pt above it.
+    static let quotaWidth: CGFloat = 196
+    static let quotaClearance: CGFloat = 14
+    static let quotaLift: CGFloat = 10
+    /// The mockup lists three of its six windows; more would hide the lines under it.
+    static let maxQuotaRows = 3
+
+    /// How far from the pointer a reading may be and still count: 1 % of the range. A
+    /// window that has no reading that close was not being recorded there.
+    static func tolerance(range: TimeRange) -> TimeInterval {
+        range.seconds / 100
+    }
+
+    /// The reading nearest `time`; the earlier of two equally near.
+    static func nearestPoint(in points: [QuotaPoint], to time: Date) -> QuotaPoint? {
+        points.min { abs($0.time.timeIntervalSince(time)) < abs($1.time.timeIntervalSince(time)) }
+    }
+
+    /// The windows at the pointer, fullest first, ties in the provider's order, at most
+    /// `maxQuotaRows`; nil when no window has a reading near it. A day-long chart names
+    /// the time as well as the day.
+    static func quotaHover(
+        at time: Date, series: [HistoryQuotaSeries], range: TimeRange,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> HistoryQuotaHover? {
+        let limit = tolerance(range: range)
+        let hits = series.enumerated()
+            .compactMap { entry -> (order: Int, series: HistoryQuotaSeries, point: QuotaPoint)? in
+                guard let point = nearestPoint(in: entry.element.points, to: time),
+                      abs(point.time.timeIntervalSince(time)) <= limit
+                else { return nil }
+                return (entry.offset, entry.element, point)
+            }
+            .sorted {
+                $0.point.percent == $1.point.percent ? $0.order < $1.order : $0.point.percent > $1.point.percent
+            }
+        guard let top = hits.first else { return nil }
+        let withTime = range == .oneDay || range == .fiveHours
+        let tooltip = HistoryTooltip(
+            title: HistoryCopy.tooltipTitle(time, withTime: withTime, calendar: calendar, locale: locale),
+            headline: nil,
+            rows: hits.prefix(maxQuotaRows).map {
+                HistoryTooltipRow(label: $0.series.bucket.label, value: HistoryCopy.percent($0.point.percent))
+            }
+        )
+        return HistoryQuotaHover(tooltip: tooltip, seriesID: top.series.id, point: top.point)
+    }
+}

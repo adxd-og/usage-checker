@@ -16,6 +16,8 @@ struct HistoryQuotaCard: View {
 
     @Environment(\.colorScheme) private var colorScheme
     private let calendar = Calendar.current
+    /// What the pointer is over, while it is over the plot.
+    @State private var hover: HistoryQuotaHover?
 
     var body: some View {
         VStack(alignment: .leading, spacing: HistoryLayout.quotaCardSpacing) {
@@ -65,6 +67,19 @@ struct HistoryQuotaCard: View {
                     .lineStyle(StrokeStyle(lineWidth: HistoryLayout.quotaLineWidth, lineCap: .round, lineJoin: .round))
                 }
             }
+            // The reading the tooltip leads with, ringed in the bubble's colour.
+            if let hover, let index = series.firstIndex(where: { $0.id == hover.seriesID }) {
+                PointMark(
+                    x: .value("Time", hover.point.time),
+                    y: .value("Used", hover.point.percent)
+                )
+                .symbol {
+                    Circle()
+                        .fill(color(HistoryRules.quotaSeriesToken(index: index)))
+                        .overlay(Circle().stroke(color(.tooltipFill), lineWidth: 2))
+                        .frame(width: 10, height: 10)
+                }
+            }
         }
         .chartXScale(domain: domain)
         .chartYScale(domain: 0...100)
@@ -93,6 +108,48 @@ struct HistoryQuotaCard: View {
             }
         }
         .chartLegend(.hidden)
+        .chartOverlay { proxy in
+            hoverLayer(proxy)
+        }
+    }
+
+    /// The pointer's moment picks the readings (`HistoryTooltipRules.quotaHover`); the
+    /// bubble sits right of the ringed reading, or left of it near the plot's edge.
+    private func hoverLayer(_ proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            let plot = proxy.plotFrame.map { geometry[$0] } ?? .zero
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let time: Date? = proxy.value(atX: location.x - plot.minX)
+                            hover = time.flatMap {
+                                HistoryTooltipRules.quotaHover(at: $0, series: series, range: range, calendar: calendar)
+                            }
+                        case .ended:
+                            hover = nil
+                        }
+                    }
+                if let hover,
+                   let x = proxy.position(forX: hover.point.time),
+                   let y = proxy.position(forY: hover.point.percent) {
+                    HistoryTooltipView(tooltip: hover.tooltip, width: HistoryTooltipRules.quotaWidth)
+                        .offset(
+                            x: plot.minX + HistoryTooltipRules.leadingX(
+                                anchorX: x,
+                                clearance: HistoryTooltipRules.quotaClearance,
+                                width: HistoryTooltipRules.quotaWidth,
+                                plotWidth: plot.width
+                            ),
+                            y: plot.minY + max(0, y - HistoryTooltipRules.quotaLift)
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+        }
     }
 
     /// Quota history only starts when the app first polls this provider successfully,
