@@ -48,17 +48,7 @@ struct AgentsHistoryView: View {
                 VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
                     AgentsStatsCard(tiles: AgentsStatsRules.tiles(summary))
 
-                    AgentsSection(
-                        sessions: liveSessions,
-                        grouped: true,
-                        // The dashboard never nags about hooks — Settings → Agents owns that.
-                        hooksInstalled: true,
-                        title: "Live",
-                        // The page is already a ScrollView; a second one inside it would
-                        // eat the wheel and hide rows behind a cap the window doesn't need.
-                        maxListHeight: .infinity,
-                        onEnable: {}
-                    )
+                    AgentsLiveCard(sessions: liveSessions)
                 }
                 // The mockup's column, whose side gutters the header already sits on.
                 .padding(.top, AgentsLayout.headerGap)

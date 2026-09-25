@@ -11,4 +11,20 @@ final class AgentsCopyTests: XCTestCase {
     func testVoiceOverCallsTheSourceFilterTheSource() {
         XCTAssertEqual(AgentsCopy.sourcePickerName, "Source")
     }
+
+    // MARK: Live card
+
+    func testTheLiveCardIsTitledLiveInSentenceCase() {
+        XCTAssertEqual(AgentsCopy.liveTitle, "Live")
+    }
+
+    func testTheLiveCountIsPluralised() {
+        XCTAssertEqual(AgentsCopy.liveCount(1), "1 session")
+        XCTAssertEqual(AgentsCopy.liveCount(3), "3 sessions")
+    }
+
+    func testNoLiveSessionsDrawsNoCountBecauseTheEmptyRowSaysIt() {
+        XCTAssertNil(AgentsCopy.liveCount(0))
+        XCTAssertEqual(AgentsCopy.liveEmpty, "No agent sessions")
+    }
 }

@@ -34,4 +34,22 @@ enum AgentsLayout {
     static let statValueSize: CGFloat = 26
     static let statValueTracking: CGFloat = -0.5
     static let statLabelValueSpacing: CGFloat = 3
+
+    // MARK: Live card (`padding: 20px 24px 8px`)
+
+    /// "Live": 15 pt, weight 650 (semibold).
+    static let liveTitleSize: CGFloat = 15
+    /// "3 sessions" and the empty row: 12.5 pt, secondary.
+    static let liveCountSize: CGFloat = 12.5
+    static let liveTitleCountSpacing: CGFloat = 10
+    /// The mockup's 6 pt spacer between the header and the first row.
+    static let liveHeaderGap: CGFloat = 6
+    static let liveBottomPadding: CGFloat = 8
+    /// A row's padding above and below (`padding: 14px 0`).
+    static let liveRowPadding: CGFloat = 14
+    /// The rows' container inset, so a row's own 14 pt lands its logo on the title's
+    /// 24 pt edge.
+    static var liveRowsInset: CGFloat { cardHorizontalPadding - OMAgentRow.horizontalPadding }
+    /// Added above and below each `OMAgentRow`, whose own padding is 11 pt at either size.
+    static var liveRowOuterPadding: CGFloat { liveRowPadding - OMAgentRow.verticalPadding }
 }

@@ -12,4 +12,18 @@ enum AgentsCopy {
     /// The one stats tile 3.0 draws: sessions that finished inside the range, from the
     /// chosen source. Agent time and Approval requests are 3.1's (spec § Decisions).
     static let sessionsTile = "Sessions"
+
+    // MARK: Live card
+
+    /// Sentence case (spec § Principles 3).
+    static let liveTitle = "Live"
+
+    /// "3 sessions" beside "Live", in the popover's words. Nothing when none are live:
+    /// the empty row already says so, and a figure appears once per screen.
+    static func liveCount(_ count: Int) -> String? {
+        count > 0 ? AgentsSection.sessionsCaption(count) : nil
+    }
+
+    /// The card's only row when nothing is running; the popover's empty row says the same.
+    static let liveEmpty = "No agent sessions"
 }

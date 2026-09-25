@@ -39,4 +39,26 @@ final class AgentsLayoutTests: XCTestCase {
         XCTAssertEqual(AgentsLayout.statValueTracking, -0.5)
         XCTAssertEqual(AgentsLayout.statLabelValueSpacing, 3)
     }
+
+    // MARK: Live card
+
+    func testTheLiveHeaderIsA15PointTitleBesideA12Point5Count() {
+        XCTAssertEqual(AgentsLayout.liveTitleSize, 15)
+        XCTAssertEqual(AgentsLayout.liveCountSize, 12.5)
+        XCTAssertEqual(AgentsLayout.liveTitleCountSpacing, 10)
+    }
+
+    func testTheLiveCardIsPaddedEightPointsAtTheBottomWithSixUnderItsHeader() {
+        XCTAssertEqual(AgentsLayout.liveBottomPadding, 8)
+        XCTAssertEqual(AgentsLayout.liveHeaderGap, 6)
+    }
+
+    func testLiveRowsLineUpWithTheTitleAndKeepTheMockupsFourteenPointPadding() {
+        // The row pads 14 pt at the sides and 11 pt above and below at either size; the card adds the rest.
+        XCTAssertEqual(AgentsLayout.liveRowsInset, 10)
+        XCTAssertEqual(AgentsLayout.liveRowsInset + OMAgentRow.horizontalPadding, AgentsLayout.cardHorizontalPadding)
+        XCTAssertEqual(AgentsLayout.liveRowPadding, 14)
+        XCTAssertEqual(AgentsLayout.liveRowOuterPadding, 3)
+        XCTAssertEqual(AgentsLayout.liveRowOuterPadding + OMAgentRow.verticalPadding, AgentsLayout.liveRowPadding)
+    }
 }
