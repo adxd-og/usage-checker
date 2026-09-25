@@ -13,7 +13,7 @@ struct OverviewView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 0) {
                 // The age ticks every five seconds, as the sidebar footnote's does.
                 TimelineView(.periodic(from: .now, by: 5)) { context in
                     DashboardHeader(
@@ -26,27 +26,31 @@ struct OverviewView: View {
                     )
                 }
 
-                HStack(alignment: .top, spacing: 16) {
-                    heroCard
-                    if dashboard.costSource.hasBreakdown { todayCard }
-                }
-                .padding(.horizontal, 24)
+                VStack(alignment: .leading, spacing: OverviewLayout.spacing) {
+                    OverviewColumns {
+                        heroCard
+                        if OverviewLayout.showsCLICard(hasBreakdown: dashboard.costSource.hasBreakdown) {
+                            todayCard
+                        }
+                    }
 
-                // Below the hero row and above the CLI dollars: this is the same
-                // log's data, one question earlier ("what did those tokens do?").
-                if dashboard.costSource.hasBreakdown,
-                   let cli = dashboard.cliBreakdown,
-                   cli.todayTokenBreakdown.total > 0 {
-                    TokensTodayCard(breakdown: cli.todayTokenBreakdown)
-                        .padding(.horizontal, 24)
-                }
+                    // Under the cards and above the CLI dollars: the same log's data, one
+                    // question earlier ("what did those tokens do?").
+                    if OverviewLayout.showsTokensCard(
+                        hasBreakdown: dashboard.costSource.hasBreakdown,
+                        todayTokens: dashboard.cliBreakdown?.todayTokenBreakdown.total ?? 0
+                    ), let cli = dashboard.cliBreakdown {
+                        TokensTodayCard(breakdown: cli.todayTokenBreakdown)
+                    }
 
-                if dashboard.costSource.hasBreakdown, let cli = dashboard.cliBreakdown {
-                    cliBlock(cli: cli)
-                        .padding(.horizontal, 24)
+                    if dashboard.costSource.hasBreakdown, let cli = dashboard.cliBreakdown {
+                        cliBlock(cli: cli)
+                    }
                 }
-
-                Spacer(minLength: 24)
+                .padding(.top, OverviewLayout.contentTop)
+                .padding(.leading, DashboardShellLayout.columnLeading)
+                .padding(.trailing, DashboardShellLayout.columnTrailing)
+                .padding(.bottom, OverviewLayout.contentBottom)
             }
         }
     }
@@ -98,6 +102,7 @@ struct OverviewView: View {
             // a complete circle the moment the app is counting down.
             OMRing(used: bucket?.clampedPercent, mode: settings.percentMode, size: .medium)
         }
+        .frame(maxHeight: .infinity, alignment: .center)
         .dashboardCard(padding: 14)
     }
 
@@ -153,6 +158,7 @@ struct OverviewView: View {
                 .font(OMFont.caption)
                 .foregroundStyle(.tertiary)
         }
+        .frame(maxHeight: .infinity, alignment: .top)
         .dashboardCard(padding: 14)
     }
 
