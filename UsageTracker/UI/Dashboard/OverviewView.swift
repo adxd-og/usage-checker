@@ -54,7 +54,11 @@ struct OverviewView: View {
                         hasBreakdown: dashboard.costSource.hasBreakdown,
                         todayTokens: dashboard.cliBreakdown?.todayTokenBreakdown.total ?? 0
                     ), let cli = dashboard.cliBreakdown {
-                        TokensTodayCard(breakdown: cli.todayTokenBreakdown)
+                        TokensTodayCard(
+                            breakdown: cli.todayTokenBreakdown,
+                            onTokensByDay: { follow(.tokensByDay) },
+                            costCaption: CostCopy.apiEquivalentCaption(for: service)
+                        )
                     }
                 }
                 .padding(.top, OverviewLayout.contentTop)
