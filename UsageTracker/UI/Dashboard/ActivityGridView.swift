@@ -210,9 +210,9 @@ struct ActivityGridView: View {
     }
 
     private var weekdayLabels: some View {
-        VStack(alignment: .leading, spacing: spacing) {
+        let labels = GridCache.weekdayLabels(calendar: .current)
+        return VStack(alignment: .leading, spacing: spacing) {
             ForEach(0..<7, id: \.self) { d in
-                let labels = ["", "Mon", "", "Wed", "", "Fri", ""]
                 Text(labels[d])
                     .font(.system(size: 9))
                     .foregroundStyle(.tertiary)
@@ -540,8 +540,7 @@ struct GridCache: Sendable {
             calendar cal: Calendar
         ) {
             let today = cal.startOfDay(for: now)
-            let weekday = cal.component(.weekday, from: today) - 1
-            let startOfThisWeek = cal.date(byAdding: .day, value: -weekday, to: today) ?? today
+            let startOfThisWeek = GridCache.weekStart(of: today, calendar: cal)
 
             var matrix: [[Day]] = []
             matrix.reserveCapacity(weeks)
@@ -585,6 +584,29 @@ struct GridCache: Sendable {
 
             self.matrix = matrix
             self.markers = markers
+        }
+    }
+}
+
+// MARK: - Weeks
+
+extension GridCache {
+    /// The first day of the week `date` falls in, weeks starting on the calendar's own
+    /// first weekday (Monday in most of Europe, Sunday in the US): the column the grid
+    /// puts that day in.
+    static func weekStart(of date: Date, calendar: Calendar) -> Date {
+        let day = calendar.startOfDay(for: date)
+        let offset = (calendar.component(.weekday, from: day) - calendar.firstWeekday + 7) % 7
+        return calendar.date(byAdding: .day, value: -offset, to: day) ?? day
+    }
+
+    /// The row names, top to bottom in the order the calendar's week runs: Monday,
+    /// Wednesday and Friday named in its language, the other rows blank.
+    static func weekdayLabels(calendar: Calendar) -> [String] {
+        let symbols = calendar.shortWeekdaySymbols
+        return (0..<7).map { row in
+            let weekday = (calendar.firstWeekday - 1 + row) % 7 + 1
+            return [2, 4, 6].contains(weekday) ? symbols[weekday - 1] : ""
         }
     }
 }
