@@ -48,6 +48,24 @@ extension RetainedCopy {
         return "Last known values from \(stamp) — \(cut(message))"
     }
 
+    /// What a retained tile writes over its time, instead of a countdown to a reset it
+    /// can no longer see (spec § Screens, "Popover · All": a closed Antigravity shows
+    /// "Last known 12:50", no "resets now").
+    static let lastKnownTitle = "Last known"
+
+    /// "12:50" today, "24 Sep, 12:50" on an older reading: when a retained service's
+    /// numbers were true. nil for a live service. The same stamp as `caption`, so the
+    /// tile and the provider tab agree.
+    static func lastKnownStamp(
+        for service: ServiceSnapshot,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String? {
+        guard let at = service.retainedAt else { return nil }
+        return RelativeStamp.asOf(at, now: now, calendar: calendar, locale: locale)
+    }
+
     private static func cut(_ text: String) -> String {
         guard text.count > maxMessageLength else { return text }
         return String(text.prefix(maxMessageLength - 1)) + "…"

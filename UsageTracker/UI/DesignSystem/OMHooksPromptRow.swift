@@ -3,7 +3,9 @@ import SwiftUI
 /// The one-time offer to install Claude Code's hooks, shown above the agents
 /// list until it is answered. It says what will be written and where to undo it,
 /// because the click writes to a file Omelette does not own — and "Not now" is a
-/// real answer: the row never comes back on its own.
+/// real answer: the row never comes back on its own. A group card like the agents
+/// below it; Enable is a glass capsule, because Allow is the popover's one filled
+/// control.
 struct OMHooksPromptRow: View {
     let onEnable: () -> Void
     let onDismiss: () -> Void
@@ -14,39 +16,45 @@ struct OMHooksPromptRow: View {
         get a ping when one needs you. Reversible in Settings → Agents.
         """
 
+    nonisolated static let surface: OMPopoverSurface = .group
+    nonisolated static var iconToken: OMColorToken { .working }
+    nonisolated static let enableButtonSize: OMButtonSize = .small
+    nonisolated static let verticalPadding: CGFloat = 12
+    nonisolated static let horizontalPadding: CGFloat = 14
+
     var body: some View {
-        HStack(alignment: .top, spacing: OMSpacing.s + 1) {
+        HStack(alignment: .top, spacing: 11) {
             Image(systemName: "bolt.horizontal.circle")
                 .font(.system(size: 15))
                 .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(OMAgentColor.working)
+                .foregroundStyle(.om(Self.iconToken))
                 .frame(width: 20, height: 20)
             VStack(alignment: .leading, spacing: 3) {
                 Text(Self.title)
-                    .font(OMFont.bodyStrong)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.om(.text))
                 Text(Self.caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.om(.secondary))
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: OMSpacing.s) {
                     Button("Enable", action: onEnable)
-                        .glassProminentButtonStyle()
-                        .controlSize(.small)
+                        .buttonStyle(.omCapsule(Self.enableButtonSize))
                         .help("Writes Omelette's hooks into ~/.claude/settings.json")
                     Button("Not now", action: onDismiss)
                         .buttonStyle(.plain)
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.om(.secondary))
                         .help("Hides this; Settings → Agents can still turn hooks on later")
                 }
-                .padding(.top, 3)
+                .padding(.top, 5)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 8)
+        .padding(.vertical, Self.verticalPadding)
+        .padding(.horizontal, Self.horizontalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
+        .popoverSurface(Self.surface)
     }
 }
 

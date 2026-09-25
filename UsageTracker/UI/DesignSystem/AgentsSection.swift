@@ -1,52 +1,62 @@
 import SwiftUI
 
-/// One "Needs you" / "Working" / … block of the grouped list.
+/// One "Needs you" / "Working" / … block, in the order the All tab lists them.
 struct AgentGroup: Identifiable, Equatable {
     let state: AgentState
     let sessions: [AgentSession]
     var id: String { state.rawValue }
 }
 
-/// The popover's agent list. `grouped` (All tab) puts rows under status
-/// headings and shows provider logos, because rows from every provider mix
-/// there; flat (provider tab) is one list of state dots with whatever needs you
-/// first. The list is the only part of the popover that scrolls — the header,
-/// segments and footer must not move when an agent starts a long run.
+/// The popover's agent list (`Main.dc.html`): a sentence-case heading with the session
+/// count over one group card of rows split by hairlines. On the All tab (`grouped`) the
+/// rows run in state order — needs you, working, done, idle — with provider logos,
+/// because rows from every provider mix there; on a provider tab (flat) whatever needs
+/// you comes first, then the most recent. Each row says its own state, so there are no
+/// uppercase group headings (spec § Principles 3). The list is the only part of the
+/// popover that scrolls — the header, segments and footer must not move when an agent
+/// starts a long run.
 struct AgentsSection: View {
     let sessions: [AgentSession]
     let grouped: Bool
     let hooksInstalled: Bool
-    var title: String = "Agents"
+    var title: String = AgentsSection.defaultTitle
     /// `.infinity` means "grow to fit and never scroll" — what a host that already
     /// scrolls (the dashboard page) needs, since a scroll view inside a scroll view
     /// swallows the wheel.
     var maxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
     let onEnable: () -> Void
 
-    /// About five rows, or four rows with their group headings — the mockup's
-    /// layout. Past this the list scrolls instead of growing the popover.
+    nonisolated static let defaultTitle = "Agents"
+    /// About five rows. Past this the list scrolls instead of growing the popover.
     nonisolated static let defaultMaxListHeight: CGFloat = 260
+    /// The heading and the link sit 4 pt in from the card's edge.
+    nonisolated static let headerInset: CGFloat = 4
+    nonisolated static let surface: OMPopoverSurface = .group
 
     /// Used only until the list has measured itself once, so the section never
     /// flashes at 1 pt on the first frame.
-    nonisolated private static let estimatedRowHeight: CGFloat = 49
-    nonisolated private static let estimatedGroupLabelHeight: CGFloat = 27
+    nonisolated private static let estimatedRowHeight: CGFloat = 54
 
     @State private var listHeight: CGFloat = 0
 
     var body: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs) {
+        VStack(alignment: .leading, spacing: OMSpacing.s) {
             OMSectionHeader(title: title, trailing: sessions.isEmpty ? nil : Self.sessionsCaption(sessions.count))
-            if sessions.isEmpty {
-                emptyRow
-            } else {
-                list
+                .padding(.horizontal, Self.headerInset)
+            Group {
+                if sessions.isEmpty {
+                    emptyRow
+                } else {
+                    list
+                }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .popoverSurface(Self.surface)
             if !hooksInstalled {
                 Button("Enable precise status", action: onEnable)
-                    .buttonStyle(.link)
-                    .font(OMFont.caption)
+                    .buttonStyle(.omLink)
                     .help("Install Omelette's hooks so states are exact instead of guessed from log files")
+                    .padding(.horizontal, Self.headerInset)
             }
         }
     }
@@ -55,20 +65,11 @@ struct AgentsSection: View {
 
     private var list: some View {
         ScrollView(.vertical) {
-            VStack(alignment: .leading, spacing: OMSpacing.xs + 1) {
-                if grouped {
-                    ForEach(Self.groups(sessions)) { group in
-                        Text(Self.groupTitle(group.state))
-                            .font(OMFont.micro)
-                            .textCase(.uppercase)
-                            .tracking(0.5)
-                            .foregroundStyle(Self.groupColor(group.state))
-                            .padding(.top, OMSpacing.xs)
-                            .accessibilityAddTraits(.isHeader)
-                        ForEach(group.sessions) { row($0) }
-                    }
-                } else {
-                    ForEach(Self.flat(sessions)) { row($0) }
+            VStack(alignment: .leading, spacing: 0) {
+                let rows = Self.rows(sessions, grouped: grouped)
+                ForEach(Array(rows.enumerated()), id: \.element.id) { index, session in
+                    if index > 0 { hairline }
+                    row(session)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -86,6 +87,16 @@ struct AgentsSection: View {
         .frame(height: min(listHeight > 0 ? listHeight : estimatedHeight, maxListHeight))
         .scrollIndicators(listHeight > maxListHeight ? .automatic : .never)
         .scrollDisabled(listHeight <= maxListHeight)
+        // A scrolled row never paints past the card's corners.
+        .clipShape(OMCornerShape(Self.surface.corner))
+    }
+
+    /// The 1 pt line between rows, inset to the rows' text edge.
+    private var hairline: some View {
+        Rectangle()
+            .fill(.om(.hairline))
+            .frame(height: 1)
+            .padding(.horizontal, OMAgentRow.horizontalPadding)
     }
 
     /// Both list shapes go through here, so the grouped All tab and the flat
@@ -111,17 +122,15 @@ struct AgentsSection: View {
 
     private var emptyRow: some View {
         Text("No agent sessions")
-            .font(OMFont.caption)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 7)
+            .font(.system(size: 12.5))
+            .foregroundStyle(.om(.secondary))
+            .padding(.horizontal, OMAgentRow.horizontalPadding)
+            .padding(.vertical, OMAgentRow.verticalPadding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
     }
 
     private var estimatedHeight: CGFloat {
-        let labels = grouped ? Self.groups(sessions).count : 0
-        return CGFloat(sessions.count) * Self.estimatedRowHeight + CGFloat(labels) * Self.estimatedGroupLabelHeight
+        CGFloat(sessions.count) * Self.estimatedRowHeight + CGFloat(max(0, sessions.count - 1))
     }
 }
 
@@ -152,27 +161,15 @@ extension AgentsSection {
         }
     }
 
+    /// The rows in list order. All tab: every state group in turn, most recent first
+    /// within each — the order the headings used to carry, now one card with the state
+    /// on each row. Provider tab: `flat`.
+    nonisolated static func rows(_ sessions: [AgentSession], grouped: Bool) -> [AgentSession] {
+        grouped ? groups(sessions).flatMap(\.sessions) : flat(sessions)
+    }
+
     nonisolated static func sessionsCaption(_ count: Int) -> String {
         count == 1 ? "1 session" : "\(count) sessions"
-    }
-
-    nonisolated static func groupTitle(_ state: AgentState) -> String {
-        switch state {
-        case .needsYou: return "Needs you"
-        case .working: return "Working"
-        case .done: return "Done"
-        case .idle: return "Idle"
-        }
-    }
-
-    /// Only the live states are coloured — a green "Done" heading competes with
-    /// the amber one that actually needs the user.
-    nonisolated static func groupColor(_ state: AgentState) -> Color {
-        switch state {
-        case .needsYou: return OMAgentColor.needsYou
-        case .working: return OMAgentColor.working
-        case .done, .idle: return .secondary
-        }
     }
 
     /// Finished work stays readable but stops competing with live rows.
@@ -184,12 +181,12 @@ extension AgentsSection {
 #if DEBUG
 #Preview("Agents — grouped, light") {
     AgentsSection(sessions: AgentPreviewData.mixed, grouped: true, hooksInstalled: true, onEnable: {})
-        .padding().frame(width: 328)
+        .padding().frame(width: 360)
 }
 
 #Preview("Agents — grouped, dark") {
     AgentsSection(sessions: AgentPreviewData.mixed, grouped: true, hooksInstalled: true, onEnable: {})
-        .padding().frame(width: 328).preferredColorScheme(.dark)
+        .padding().frame(width: 360).preferredColorScheme(.dark)
 }
 
 #Preview("Agents — flat provider tab") {
@@ -197,15 +194,14 @@ extension AgentsSection {
         sessions: AgentPreviewData.mixed.filter { $0.source == .claude },
         grouped: false,
         hooksInstalled: true,
-        title: "Claude agents",
         onEnable: {}
     )
-    .padding().frame(width: 328)
+    .padding().frame(width: 360)
 }
 
 #Preview("Agents — empty, hooks missing") {
     AgentsSection(sessions: [], grouped: true, hooksInstalled: false, onEnable: {})
-        .padding().frame(width: 328)
+        .padding().frame(width: 360)
 }
 
 #Preview("Agents — long list scrolls") {
@@ -217,6 +213,6 @@ extension AgentsSection {
         hooksInstalled: true,
         onEnable: {}
     )
-    .padding().frame(width: 328)
+    .padding().frame(width: 360)
 }
 #endif

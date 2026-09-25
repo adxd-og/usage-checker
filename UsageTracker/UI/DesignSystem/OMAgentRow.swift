@@ -117,6 +117,41 @@ enum AgentRowText {
         return parts.joined(separator: ", ")
     }
 
+    /// The state on the title line, after the project and in the accent: only Needs
+    /// you, the one state that asks for the user (`Main.dc.html`: "test · Needs you").
+    /// Every other state is the dot's colour.
+    static func titleBadge(_ state: AgentState) -> String? {
+        state == .needsYou ? "Needs you" : nil
+    }
+
+    /// The row's second line. A provider tab has no logo to set the state against, so
+    /// the line says it ("Done · Probe whether…") — except Needs you, which the title
+    /// already says.
+    static func rowSubtitle(for session: AgentSession, providerTab: Bool) -> String {
+        subtitle(for: session, showsState: providerTab && titleBadge(session.state) == nil)
+    }
+
+    /// The state dot: yolk when it needs you, blue while it works, green when the turn
+    /// is done, muted when idle.
+    static func dotToken(_ state: AgentState) -> OMColorToken {
+        switch state {
+        case .needsYou: .accent
+        case .working: .working
+        case .done: .ok
+        case .idle: .muted
+        }
+    }
+
+    /// The 3 pt halo a live dot wears: the accent at 28 % (the mockups'
+    /// `color-mix(accent 28%)`, the focus-ring value) and the working blue at 25 %.
+    static func haloToken(_ state: AgentState) -> OMColorToken? {
+        switch state {
+        case .needsYou: .focusRing
+        case .working: .workingHalo
+        case .done, .idle: nil
+        }
+    }
+
     private static func isFinished(_ state: AgentState) -> Bool {
         state == .done || state == .idle
     }
@@ -126,12 +161,14 @@ enum AgentRowText {
     }
 }
 
-/// One agent session. The leading element is the provider logo with a small
-/// state badge on the All tab, where rows from every provider mix, and the state
-/// dot alone on a provider tab, where the provider is already the tab. The row's
-/// summary line is a button: clicking it jumps to that session. A session with a
-/// held permission request grows a second line carrying **Allow** / **Deny**,
-/// which is why the button is the line and not the whole card.
+/// One agent session (`Main.dc.html`'s agents card). The leading mark is the provider
+/// logo with a state dot at its bottom-right on the All tab and the dashboard, where
+/// rows from every provider mix, and the state dot alone — haloed while live — on a
+/// provider tab, where the provider is already the tab. The title says Needs you in
+/// the accent. The row's summary line is a button: clicking it jumps to that session.
+/// A session with a held permission request grows a second line carrying **Allow**,
+/// the one filled accent control, and **Deny** on glass — which is why the button is
+/// the line and not the whole row.
 struct OMAgentRow: View {
     let session: AgentSession
     var showsProviderIcon: Bool = true
@@ -144,6 +181,31 @@ struct OMAgentRow: View {
     let action: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // MARK: - Metrics (`Main.dc.html`, `Popover-Claude.dc.html`)
+
+    nonisolated static let horizontalPadding: CGFloat = 14
+    nonisolated static let verticalPadding: CGFloat = 11
+    /// Between the summary line, the detail block and the buttons.
+    nonisolated static let lineSpacing: CGFloat = 10
+    nonisolated static let leadingSpacing: CGFloat = 11
+    nonisolated static let dotDiameter: CGFloat = 8
+    nonisolated static let haloWidth: CGFloat = 3
+    nonisolated static let badgeDiameter: CGFloat = 8
+    /// The ring in the window colour that cuts a badge out of its logo.
+    nonisolated static let badgeRing: CGFloat = 2
+    nonisolated static let titleSize: CGFloat = 13
+    nonisolated static let subtitleSize: CGFloat = 11.5
+
+    /// The leading mark's width: a 20 pt logo, or the 8 pt dot.
+    nonisolated static func leadingWidth(showsProviderIcon: Bool) -> CGFloat {
+        showsProviderIcon ? 20 : dotDiameter
+    }
+
+    /// Where the detail block and the buttons start: under the text, past the mark.
+    nonisolated static func textInset(showsProviderIcon: Bool) -> CGFloat {
+        leadingWidth(showsProviderIcon: showsProviderIcon) + leadingSpacing
+    }
 
     private var showsPermission: Bool {
         AgentRowText.permissionButtonsVisible(
@@ -165,9 +227,11 @@ struct OMAgentRow: View {
         AgentRowText.detailIsExpandable(session.activityDetail)
     }
 
+    private var textInset: CGFloat { Self.textInset(showsProviderIcon: showsProviderIcon) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs + 2) {
-            // The jump target is the row's text, not the whole card: the chevron and
+        VStack(alignment: .leading, spacing: Self.lineSpacing) {
+            // The jump target is the row's text, not the whole row: the chevron and
             // the buttons must not be nested inside another button, or which one
             // takes the click stops being predictable.
             HStack(spacing: OMSpacing.xs) {
@@ -193,10 +257,9 @@ struct OMAgentRow: View {
                 permissionLine
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
+        .padding(.horizontal, Self.horizontalPadding)
+        .padding(.vertical, Self.verticalPadding)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
         // The row grows by a line when a request arrives and shrinks when it is
         // answered; without this the list jumps. Reduce Motion gets the jump.
         .animation(reduceMotion ? nil : .smooth(duration: 0.18), value: showsPermission)
@@ -210,8 +273,8 @@ struct OMAgentRow: View {
             expanded.toggle()
         } label: {
             Image(systemName: "chevron.down")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.om(.secondary))
                 .rotationEffect(.degrees(expanded ? 0 : -90))
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
@@ -228,7 +291,7 @@ struct OMAgentRow: View {
         ScrollView(.vertical) {
             Text(detail)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.om(.secondary))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background {
@@ -243,20 +306,17 @@ struct OMAgentRow: View {
         .frame(height: min(detailHeight > 0 ? detailHeight : Self.detailMaxHeight, Self.detailMaxHeight))
         .scrollIndicators(detailHeight > Self.detailMaxHeight ? .automatic : .never)
         .scrollDisabled(detailHeight <= Self.detailMaxHeight)
-        .padding(.leading, 20 + OMSpacing.s + 1)   // clears the leading icon, so the text lines up
+        .padding(.leading, textInset)
     }
 
     private var summaryLine: some View {
-        HStack(spacing: OMSpacing.s + 1) {
+        HStack(spacing: Self.leadingSpacing) {
             leading
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.projectName)
-                    .font(OMFont.bodyStrong)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(AgentRowText.subtitle(for: session, showsState: !showsProviderIcon))
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
+                titleLine
+                Text(AgentRowText.rowSubtitle(for: session, providerTab: !showsProviderIcon))
+                    .font(.system(size: Self.subtitleSize))
+                    .foregroundStyle(.om(.secondary))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -264,13 +324,30 @@ struct OMAgentRow: View {
             // Only the elapsed time is on a clock, so only it re-renders.
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(AgentRowText.elapsed(since: session.stateSince, now: context.date, state: session.state))
-                    .font(OMFont.caption)
+                    .font(.system(size: Self.subtitleSize))
                     .monospacedDigit()
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(.om(.secondary))
             }
             .fixedSize()
         }
         .contentShape(Rectangle())
+    }
+
+    /// "test · Needs you": the project, and the badge in the accent when there is one.
+    private var titleLine: some View {
+        HStack(spacing: 0) {
+            Text(session.projectName)
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            if let badge = AgentRowText.titleBadge(session.state) {
+                Text(" · \(badge)")
+                    .foregroundStyle(.om(.accentText))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .font(.system(size: Self.titleSize, weight: .semibold))
     }
 
     /// The held request, answerable here. Deliberately plain: the tool it wants to
@@ -279,37 +356,34 @@ struct OMAgentRow: View {
     private var permissionLine: some View {
         HStack(spacing: OMSpacing.s) {
             Button("Allow", action: onAllow)
-                .glassProminentButtonStyle()
-                .controlSize(.small)
+                .buttonStyle(.omAccent(.small))
                 .accessibilityLabel("Allow \(session.projectName) to run this tool")
                 .help("Answers Claude Code with allow, once, for this tool call")
             Button("Deny", action: onDeny)
-                .glassButtonStyle()
-                .controlSize(.small)
+                .buttonStyle(.omCapsule(.small))
                 .accessibilityLabel("Deny \(session.projectName) this tool")
                 .help("Refuses this one tool call; the session carries on")
             Spacer(minLength: 0)
         }
-        .padding(.leading, 20 + OMSpacing.s + 1)   // clears the leading icon, so the buttons line up under the text
+        .padding(.leading, textInset)
     }
 
     @ViewBuilder
     private var leading: some View {
         if showsProviderIcon {
+            let side = Self.leadingWidth(showsProviderIcon: true)
             ProviderIconView(serviceID: session.source.rawValue, sfFallback: Self.sfFallback(session.source), size: 18)
-                .foregroundStyle(.secondary)
-                .frame(width: 20, height: 20)
+                .foregroundStyle(.om(.secondary))
+                .frame(width: side, height: side)
                 .overlay(alignment: .bottomTrailing) {
-                    // A badge, not a beacon: the group heading already says the
-                    // state on this tab, so the dot never pulses here.
-                    AgentStateDot(state: session.state, animates: false, diameter: 6)
-                        .padding(1)
-                        .background(Circle().fill(.background))
+                    // A badge, not a beacon: no halo on a logo; a ring in the window
+                    // colour cuts it out of the logo instead.
+                    AgentStateDot(state: session.state, diameter: Self.badgeDiameter, isBadge: true)
                         .offset(x: 3, y: 3)
                 }
         } else {
-            AgentStateDot(state: session.state, animates: !reduceMotion, diameter: 8)
-                .frame(width: 20, height: 20)
+            AgentStateDot(state: session.state, diameter: Self.dotDiameter, isBadge: false)
+                .frame(width: Self.leadingWidth(showsProviderIcon: false))
         }
     }
 
@@ -322,48 +396,27 @@ struct OMAgentRow: View {
     }
 }
 
-/// The state as a colour: amber with a halo when the agent is waiting for you,
-/// a pulsing blue while it works, green when the turn is done, grey when idle.
-/// Reduce Motion drops the pulse; the halo stays, because a halo is not motion.
+/// The state as a colour (`AgentRowText.dotToken`). Standing alone it wears the 3 pt
+/// halo a live state has (`haloToken`); as a badge on a logo it wears a ring in the
+/// window colour instead. No pulse: the mockups' halo is still, and a halo is not motion.
 private struct AgentStateDot: View {
     let state: AgentState
-    var animates: Bool = true
-    var diameter: CGFloat = 8
-
-    @State private var pulsing = false
-
-    private var color: Color {
-        switch state {
-        case .needsYou: return OMAgentColor.needsYou
-        case .working: return OMAgentColor.working
-        case .done: return OMAgentColor.done
-        case .idle: return OMAgentColor.idle
-        }
-    }
+    var diameter: CGFloat = OMAgentRow.dotDiameter
+    var isBadge: Bool = false
 
     var body: some View {
         Circle()
-            .fill(color)
+            .fill(.om(AgentRowText.dotToken(state)))
             .frame(width: diameter, height: diameter)
-            .overlay {
-                if state == .needsYou {
-                    Circle()
-                        .strokeBorder(color.opacity(0.28), lineWidth: 3)
-                        .padding(-3)
-                }
-            }
             .background {
-                if state == .working, animates {
+                if isBadge {
                     Circle()
-                        .stroke(color.opacity(0.55), lineWidth: 2)
-                        .scaleEffect(pulsing ? 2.2 : 1)
-                        .opacity(pulsing ? 0 : 0.6)
-                }
-            }
-            .onAppear {
-                guard state == .working, animates else { return }
-                withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) {
-                    pulsing = true
+                        .fill(.om(.windowBase))
+                        .padding(-OMAgentRow.badgeRing)
+                } else if let halo = AgentRowText.haloToken(state) {
+                    Circle()
+                        .fill(.om(halo))
+                        .padding(-OMAgentRow.haloWidth)
                 }
             }
     }

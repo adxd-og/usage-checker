@@ -86,7 +86,8 @@ enum OMFont {
     static let body = Font.system(size: 12)
     static let bodyStrong = Font.system(size: 12, weight: .semibold)
     static let caption = Font.system(size: 11)
-    /// Section labels: apply `.textCase(.uppercase)` and `.tracking(0.6)` at the use site (OMSectionHeader does).
+    /// The 2.x uppercase label (`.textCase(.uppercase)`, `.tracking(0.6)` at the use site).
+    /// 3.0 section titles are sentence case (`OMSectionHeader`).
     static let micro = Font.system(size: 10, weight: .semibold)
     /// Dashboard screen titles. The popover's `title` (13 pt) is far too small for a
     /// 920 pt window, and `.title2` is a dynamic role the rest of the kit doesn't use.
@@ -128,6 +129,37 @@ func usageStatusColor(_ percent: Double) -> Color {
     if percent >= 90 { return .red }
     if percent >= 70 { return .orange }
     return .green
+}
+
+/// The band a gauge is in, decided on the used value: `usageStatusColor`'s three
+/// bands (under 70, 70–89, 90 and over) as 3.0 tokens. The 2.x gauges and the widget
+/// keep `usageStatusColor`.
+enum OMGaugeTone: CaseIterable, Sendable {
+    case ok, warning, critical
+
+    static func forUsed(_ percent: Double) -> OMGaugeTone {
+        if percent >= 90 { return .critical }
+        if percent >= 70 { return .warning }
+        return .ok
+    }
+
+    /// Arcs and bar fills.
+    var fill: OMColorToken {
+        switch self {
+        case .ok: .ok
+        case .warning: .warning
+        case .critical: .critical
+        }
+    }
+
+    /// Text in the band's colour ("On track", "Running hot").
+    var text: OMColorToken {
+        switch self {
+        case .ok: .okText
+        case .warning: .warning
+        case .critical: .critical
+        }
+    }
 }
 
 // MARK: - 3.0 colour roles (liquid-glass spec § Design → Tokens)
@@ -229,6 +261,24 @@ enum OMColorToken: CaseIterable, Sendable {
     case windowBase
     /// The dashboard window's body over the backdrop: the mockups' window fill.
     case windowTint
+    /// The popover's tiles and groups. Dark matches the content fill; the light
+    /// popover draws them at white 55 % with a white 70 % edge (`Popover-All-Light`),
+    /// because they sit on its white-56 % chrome glass, not on a window.
+    case groupFill
+    case groupBorder
+    /// A mark that is there but says nothing live: a last-known ring's arc, an idle
+    /// agent's dot.
+    case muted
+    /// The pace dot on a ring and the pace tick on a bar.
+    case paceMarker
+    /// A label on an accent fill (Allow).
+    case onAccent
+    /// Gauges and state text at 70–89 % used, and a provider that wants signing in.
+    /// The spec's table has no amber: this is the system orange the 2.x gauges draw.
+    case warning
+    /// Gauges and state text at 90 % used and over, and a provider in error: the
+    /// system red.
+    case critical
 }
 
 /// The 3.0 colour table (spec § Tokens; hex values are the mockups').
@@ -265,6 +315,13 @@ enum OMPalette {
         case .tokenCacheWrite: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
         case .windowBase: return (OMRGBA(hex: 0x0D0E13), OMRGBA(hex: 0xECE8F1))
         case .windowTint: return (OMRGBA(hex: 0x14151A, opacity: 0.9), OMRGBA(hex: 0xF7F6FA, opacity: 0.86))
+        case .groupFill: return (.white(0.055), .white(0.55))
+        case .groupBorder: return (.white(0.05), .white(0.70))
+        case .muted: return (OMRGBA(hex: 0xF5F5F7, opacity: 0.40), OMRGBA(hex: 0x1D1D1F, opacity: 0.35))
+        case .paceMarker: return (.white(0.75), OMRGBA(hex: 0x1D1D1F, opacity: 0.60))
+        case .onAccent: return (OMRGBA(hex: 0x231704), OMRGBA(hex: 0x231704))
+        case .warning: return (OMRGBA(hex: 0xFF9F0A), OMRGBA(hex: 0xFF9500))
+        case .critical: return (OMRGBA(hex: 0xFF453A), OMRGBA(hex: 0xFF3B30))
         }
     }
 }

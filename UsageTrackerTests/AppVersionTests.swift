@@ -2,8 +2,8 @@ import XCTest
 @testable import Omelette
 
 /// Issue #4: which build am I running, and where does this thing live? Both answers
-/// belonged only to Settings. `AppVersion` is the one rule the popover footer and the
-/// dashboard sidebar draw their label and their link from.
+/// belonged only to Settings. `AppVersion` is the one rule the dashboard sidebar and
+/// Settings draw their label and their link from; the 3.0 popover footer has neither.
 final class AppVersionTests: XCTestCase {
     func testTheLabelIsTheAppNameAndTheMarketingVersion() {
         XCTAssertEqual(AppVersion.label(version: "2.4.1", build: "39"), "Omelette 2.4.1")

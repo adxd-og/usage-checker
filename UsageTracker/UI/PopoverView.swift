@@ -25,16 +25,37 @@ struct PopoverView: View {
     /// stored value stays put until the user picks again.
     @AppStorage("selectedProviderTab") private var selectedProviderTab: String = WindowRanking.allTab
 
+    // MARK: - Metrics (`Main.dc.html`)
+
+    nonisolated static let width: CGFloat = 360
+    nonisolated static let padding: CGFloat = 14
+    nonisolated static let spacing: CGFloat = 12
+    nonisolated static let bodyCorner: OMCornerContext = .popover
+    nonisolated static let bodyGlass: OMGlassKind = .chrome
+    nonisolated static let appIconSize: CGFloat = 30
+    nonisolated static let appIconSpacing: CGFloat = 10
+    nonisolated static let titleSize: CGFloat = 14
+    nonisolated static let metaSize: CGFloat = 11.5
+    nonisolated static var staleNoticeToken: OMColorToken { .warning }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
+        VStack(alignment: .leading, spacing: Self.spacing) {
             header
             if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
             if showsSegments { segments }
             content
             footer
         }
-        .padding(OMSpacing.l)
-        .frame(width: 360)
+        .padding(Self.padding)
+        .frame(width: Self.width)
+        // The 3.0 body: chrome glass in the popover's 24 pt corner, over the window
+        // backdrop it refracts (spec § Tokens: the window background is the popover
+        // body's too). NSPopover draws its own frame and arrow around it.
+        .omGlass(Self.bodyGlass, in: OMCornerShape(Self.bodyCorner))
+        .background {
+            OMWindowBackground()
+                .clipShape(OMCornerShape(Self.bodyCorner))
+        }
         // Same as the dashboard: a percentage or a reset time can be selected and
         // copied straight out of the popover.
         .textSelection(.enabled)
@@ -128,6 +149,43 @@ struct PopoverView: View {
         displayedServices.first { $0.id == currentTab }
     }
 
+    /// The All tab's rows: two tiles each, the last one alone when the count is odd.
+    nonisolated static func tileRows(_ services: [ServiceSnapshot]) -> [[ServiceSnapshot]] {
+        stride(from: 0, to: services.count, by: 2).map { Array(services[$0..<min($0 + 2, services.count)]) }
+    }
+
+    /// `Main.dc.html`'s grid gap.
+    nonisolated static let tileSpacing: CGFloat = 10
+
+    // MARK: - Provider tab rules (pure, unit-tested)
+
+    /// `Popover-Claude.dc.html`'s weekly-limits card: 14 pt in, 14 pt between rows.
+    nonisolated static let groupPadding: CGFloat = 14
+    nonisolated static let groupSpacing: CGFloat = 14
+
+    /// A window nobody has touched keeps its row, so the list stays in order, but
+    /// dims — as its ring did.
+    nonisolated static func limitRowOpacity(_ bucket: UsageBucket) -> Double {
+        bucket.clampedPercent == 0 ? 0.55 : 1
+    }
+
+    /// Whether a provider tab draws its spend card: the week's dollars (as the headline
+    /// of a windowless account, or under a hero), or an enabled extra-usage or spend
+    /// limit.
+    nonisolated static func showsSpendGroup(service: ServiceSnapshot, hasHero: Bool) -> Bool {
+        if !hasHero, service.spendHeadline != nil { return true }
+        if let extra = service.extraUsage, extra.isEnabled { return true }
+        return hasHero && (service.weekCost ?? 0) > 0
+    }
+
+    /// A provider tab's state line: its word in its colour ("Not running" in secondary,
+    /// "Sign in" amber, "Error" red); nil while the provider is live.
+    nonisolated static func stateLabel(for service: ServiceSnapshot) -> OMColoredText? {
+        guard service.state != .ok else { return nil }
+        return OMColoredText(text: RetainedCopy.chipText(for: service.state),
+                             token: OMProviderTile.stateToken(for: service.state))
+    }
+
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
@@ -143,30 +201,32 @@ struct PopoverView: View {
             selection: Binding(
                 get: { currentTab },
                 set: { selectedProviderTab = $0 }
-            )
+            ),
+            metrics: .popover
         )
     }
 
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Self.appIconSpacing) {
             // The real app icon, not a drawn stand-in — matches the welcome
             // tour and tracks icon updates for free.
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 26, height: 26)
+                .frame(width: Self.appIconSize, height: Self.appIconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Omelette")
-                    .font(OMFont.title)
+                    .font(.system(size: Self.titleSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
                 // Only the relative "Updated Xs ago" text needs a clock tick —
                 // keep the periodic timeline off the rest of the header.
                 TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                    Text(metaLine(now: ctx.date))
+                    Text(PopoverCopy.metaLine(service: selectedService, fetchedAt: state.snapshot.fetchedAt, now: ctx.date))
                 }
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: Self.metaSize))
+                .foregroundStyle(.om(.secondary))
             }
             Spacer()
             if state.isLoading {
@@ -174,22 +234,6 @@ struct PopoverView: View {
             }
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private func metaLine(now: Date) -> String {
-        let updated = updatedText(now: now)
-        if let plan = selectedService?.plan { return "\(plan) · \(updated)" }
-        return updated
-    }
-
-    private func updatedText(now: Date) -> String {
-        let t = state.snapshot.fetchedAt.timeIntervalSince1970
-        if t < 1 { return "Never updated" }
-        let delta = max(0, now.timeIntervalSince(state.snapshot.fetchedAt))
-        if delta < 5 { return "Just updated" }
-        if delta < 60 { return "Updated \(Int(delta))s ago" }
-        if delta < 3600 { return "Updated \(Int(delta / 60))m ago" }
-        return "Updated \(Int(delta / 3600))h ago"
     }
 
     // MARK: - Content
@@ -200,8 +244,8 @@ struct PopoverView: View {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading…")
-                    .font(OMFont.body)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.om(.secondary))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, OMSpacing.xs)
@@ -227,20 +271,24 @@ struct PopoverView: View {
         }
     }
 
-    /// Every provider at a glance; tapping a tile is the same as picking its tab.
+    /// Every provider at a glance; tapping a tile is the same as picking its tab. Two
+    /// tiles a row, each row as tall as its taller tile (the mockup's grid): a row
+    /// sized to its ideal height, with tiles that fill it.
     private var allTab: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: OMSpacing.s),
-                    GridItem(.flexible(), spacing: OMSpacing.s),
-                ],
-                spacing: OMSpacing.s
-            ) {
-                ForEach(displayedServices) { service in
-                    OMProviderTile(service: service, mode: settings.percentMode) {
-                        withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
+            VStack(spacing: Self.tileSpacing) {
+                ForEach(Array(Self.tileRows(displayedServices).enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: Self.tileSpacing) {
+                        ForEach(row) { service in
+                            OMProviderTile(service: service, mode: settings.percentMode) {
+                                withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
+                            }
+                        }
+                        if row.count == 1 {
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+                        }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if OMCostTile.total(displayedServices) > 0 {
@@ -264,21 +312,20 @@ struct PopoverView: View {
     /// Last-good data stays on screen; this row says why it isn't moving.
     private var staleNotice: some View {
         noticeRow(
-            icon: "wifi.exclamationmark", tint: .orange,
+            icon: "wifi.exclamationmark", token: Self.staleNoticeToken,
             text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
         )
         .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
     }
 
-    private func noticeRow(icon: String, tint: Color, text: String) -> some View {
+    private func noticeRow(icon: String, token: OMColorToken, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.caption)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.om(token))
             Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.om(.secondary))
             Spacer()
         }
         .padding(.horizontal, 4)
@@ -286,96 +333,89 @@ struct PopoverView: View {
 
     // MARK: - Footer
 
+    /// `Main.dc.html`'s footer: Dashboard, the floating window and Settings on glass,
+    /// then Quit (`PopoverFooterRules.buttons`, `.trailing`). No version link: Settings
+    /// → General carries the version and the GitHub link. Refresh has no button; ⌘R
+    /// stays (`PopoverFooterRules.keyboardOnly`).
     private var footer: some View {
-        VStack(spacing: OMSpacing.s) {
-            Rectangle()
-                .fill(OMSurface.hairline)
-                .frame(height: 0.5)
-            // 328 pt is not much room for four controls, a version and Quit. The
-            // version rides in the row when it fits and takes its own line when it
-            // doesn't — Quit is never the thing that gets pushed off the edge.
-            ViewThatFits(in: .horizontal) {
-                footerRow(showsVersion: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    footerRow(showsVersion: false)
-                    HStack(spacing: 0) {
-                        versionLink
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-        }
+        footerRow
+            .padding(.top, 2)
+            .background { keyboardOnlyShortcuts }
     }
 
-    private func footerRow(showsVersion: Bool) -> some View {
-        HStack(spacing: 8) {
-            GlassGroup(spacing: 6) {
-                HStack(spacing: 6) {
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openWindow(id: "dashboard")
-                    } label: {
-                        Label("Dashboard", systemImage: "chart.bar.doc.horizontal")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut("d", modifiers: .command)
-                    .help("Open dashboard (⌘D)")
-
-                    Button {
-                        FloatingWindowController.shared.toggle()
-                    } label: {
-                        Image(systemName: FloatingWindowController.shared.isOpen
-                              ? "pip.exit" : "pip.enter")
-                    }
-                    .glassButtonStyle()
-                    .help(FloatingWindowController.shared.isOpen
-                          ? "Close floating window" : "Show floating mini window")
-
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openSettings()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut(",", modifiers: .command)
-                    .help("Settings (⌘,)")
-
-                    Button {
-                        state.refreshNow()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Refresh now (⌘R)")
-                }
+    private var footerRow: some View {
+        HStack(spacing: PopoverFooterRules.spacing) {
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "dashboard")
+            } label: {
+                Label(PopoverFooterRules.title(.dashboard), systemImage: PopoverFooterRules.symbol(.dashboard))
             }
+            .buttonStyle(.omCapsule(.regular))
+            .modifier(FooterShortcut(action: .dashboard))
+            .help(PopoverFooterRules.help(.dashboard))
 
-            Spacer()
+            Button {
+                FloatingWindowController.shared.toggle()
+            } label: {
+                Label(
+                    PopoverFooterRules.title(.floatingWindow),
+                    systemImage: PopoverFooterRules.symbol(.floatingWindow, floatingWindowOpen: FloatingWindowController.shared.isOpen)
+                )
+            }
+            .buttonStyle(.omCircle)
+            .help(PopoverFooterRules.help(.floatingWindow, floatingWindowOpen: FloatingWindowController.shared.isOpen))
 
-            if showsVersion { versionLink }
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            } label: {
+                Label(PopoverFooterRules.title(.settings), systemImage: PopoverFooterRules.symbol(.settings))
+            }
+            .buttonStyle(.omCircle)
+            .modifier(FooterShortcut(action: .settings))
+            .help(PopoverFooterRules.help(.settings))
+
+            Spacer(minLength: 0)
 
             Button {
                 NSApp.terminate(nil)
             } label: {
-                Text("Quit")
-                    .font(OMFont.caption)
+                Text(PopoverFooterRules.title(.quit))
+                    .font(.system(size: OMButtonRules.fontSize))
+                    .foregroundStyle(.om(.secondary))
+                    .padding(.horizontal, 10)
+                    .frame(height: OMButtonRules.height(.regular))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .keyboardShortcut("q", modifiers: .command)
+            .buttonStyle(.plain)
+            .modifier(FooterShortcut(action: .quit))
+            .help(PopoverFooterRules.help(.quit))
         }
     }
 
-    /// "Omelette 2.4.1", and the way to the project page. Settings keeps the exact
-    /// build number; this is the version you can read without going looking for it.
-    private var versionLink: some View {
-        Link(AppVersion.current, destination: AppVersion.githubURL)
-            .font(OMFont.caption)
-            .foregroundStyle(.secondary)
-            .help("Open the GitHub page")
+    /// Shortcuts with no button: invisible, zero-sized and hidden from VoiceOver, but
+    /// in the view tree, so ⌘R still reaches them.
+    private var keyboardOnlyShortcuts: some View {
+        Button(PopoverFooterRules.title(.refresh)) { state.refreshNow() }
+            .modifier(FooterShortcut(action: .refresh))
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// ⌘ plus the rule's key for one footer action; nothing for an action without one.
+private struct FooterShortcut: ViewModifier {
+    let action: PopoverAction
+
+    func body(content: Content) -> some View {
+        if let key = PopoverFooterRules.shortcutKey(action) {
+            content.keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+        } else {
+            content
+        }
     }
 }
 
@@ -430,21 +470,24 @@ private struct ProviderDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
-            if service.state != .ok {
+            if let stateLabel = PopoverView.stateLabel(for: service) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline) {
                         // A retained provider's caption already carries the message;
                         // saying it twice, two lines apart, reads as a bug.
                         if !service.isRetained, let msg = service.stateMessage, !msg.isEmpty {
-                            Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
+                            Text(msg)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.om(.secondary))
+                                .lineLimit(3)
                         }
                         Spacer()
-                        ServiceStateChip(service: service)
+                        ServiceStateLabel(service: service, label: stateLabel)
                     }
                     if let caption = RetainedCopy.caption(for: service) {
                         Text(caption)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.om(.secondary))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -464,7 +507,6 @@ private struct ProviderDetail: View {
                     // The prompt row above is the same offer, said better; the
                     // link would only repeat it.
                     hooksInstalled: hooksInstalled || showsHooksPrompt,
-                    title: "\(service.displayName) agents",
                     onEnable: onEnableAgents
                 )
             }
@@ -472,14 +514,15 @@ private struct ProviderDetail: View {
     }
 
     /// Everything the provider itself reported, as one block so the dimming for
-    /// last-known values is a single decision.
+    /// last-known values is a single decision: the hero ring, the limits card
+    /// (`Popover-Claude.dc.html`: weekly limits as bars) and the spend card.
     @ViewBuilder
     private var usageBlock: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if let hero {
                 // Last-known numbers can't be extrapolated: a provider that stopped
                 // reporting isn't burning anything, whatever the last slope said.
-                // The caption under the chip already says the numbers are frozen —
+                // The caption under the state already says the numbers are frozen —
                 // same call the dashboard's hero makes (`OverviewView.heroCard`).
                 OMHero(
                     hero: hero,
@@ -488,11 +531,26 @@ private struct ProviderDetail: View {
                         ? nil
                         : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
                 )
-            } else if let cost = service.spendHeadline {
-                // Pay-as-you-go without windows: the 7-day spend is the headline — live,
-                // or last known and dimmed with the rest of this block.
-                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
             }
+            if !sessionRows.isEmpty || !weeklyForRow.isEmpty || unusedWeekly.count > 1 {
+                limitsGroup
+            }
+            if PopoverView.showsSpendGroup(service: service, hasHero: hero != nil) {
+                spendGroup
+            }
+            if service.state == .ok, nothingToShow {
+                Text("Server responded but returned no usage data.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    /// A second session window (rare), then the weekly limits as bars under their
+    /// heading, in one card.
+    private var limitsGroup: some View {
+        VStack(alignment: .leading, spacing: PopoverView.groupSpacing) {
             ForEach(sessionRows) { bucket in
                 OMKeyValueRow(
                     label: bucket.label,
@@ -505,10 +563,37 @@ private struct ProviderDetail: View {
             }
             if !weeklyForRow.isEmpty {
                 OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
-                OMRingRow(buckets: weeklyForRow, mode: mode)
-                unusedToggle
-            } else if unusedWeekly.count > 1 {
-                unusedToggle
+                ForEach(weeklyForRow) { bucket in
+                    // The ring's tooltip and spoken line carry over: "when exactly?"
+                    // for the pointer, the full reset date for VoiceOver.
+                    OMKeyValueRow(
+                        label: PopoverCopy.limitRowLabel(bucket.label),
+                        value: PercentDisplay.percentText(bucket.clampedPercent, mode: mode),
+                        barUsedPercent: bucket.clampedPercent,
+                        barMode: mode,
+                        pace: bucket.elapsedFraction(),
+                        help: OMRingRow.tooltip(for: bucket),
+                        valueStyle: .figure,
+                        accessibilityText: OMRingRow.accessibilityLabel(for: bucket, mode: mode)
+                    )
+                    .opacity(PopoverView.limitRowOpacity(bucket))
+                }
+            }
+            unusedToggle
+        }
+        .padding(PopoverView.groupPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .popoverSurface(.group)
+    }
+
+    /// The dollars: a windowless account's week as its headline, the extra-usage or
+    /// spend limit, the week under a hero, and the API-equivalent line once.
+    private var spendGroup: some View {
+        VStack(alignment: .leading, spacing: PopoverView.groupSpacing) {
+            if hero == nil, let cost = service.spendHeadline {
+                // Pay-as-you-go without windows: the 7-day spend is the headline — live,
+                // or last known and dimmed with the rest of this block.
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost), valueStyle: .figure)
             }
             if let extra = service.extraUsage, extra.isEnabled {
                 OMKeyValueRow(
@@ -519,19 +604,18 @@ private struct ProviderDetail: View {
                 )
             }
             if hero != nil, let week = service.weekCost, week > 0 {
-                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week))
-            }
-            if service.state == .ok, nothingToShow {
-                Text("Server responded but returned no usage data.")
-                    .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week), valueStyle: .figure)
             }
             if let caption = costCaption {
                 Text(caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.om(.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(PopoverView.groupPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .popoverSurface(.group)
     }
 
     /// The tooltip under a countdown row: the wall-clock time, always — even inside
@@ -560,9 +644,9 @@ private struct ProviderDetail: View {
                         .font(.system(size: 8, weight: .bold))
                         .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
                     Text(showUnusedWindows ? "Hide unused windows" : "\(unusedWeekly.count) unused windows")
-                        .font(OMFont.caption)
+                        .font(.system(size: 11.5))
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.om(.secondary))
                 .frame(minHeight: 22)
                 .contentShape(Rectangle())
             }
@@ -571,32 +655,39 @@ private struct ProviderDetail: View {
     }
 }
 
-// MARK: - State chip with recovery help
+// MARK: - State label with recovery help
 
-/// The capsule reads as a button, so it must act like one: clicking walks the
-/// user through fixing the state instead of doing nothing.
-private struct ServiceStateChip: View {
+/// The provider's state as coloured text (spec § Principles 2: no chips). When there is
+/// a way out, the label is a button with a chevron, and clicking it walks the user
+/// through fixing the state instead of doing nothing.
+private struct ServiceStateLabel: View {
     let service: ServiceSnapshot
+    let label: OMColoredText
     @State private var showsStateHelp = false
 
     var body: some View {
-        let (text, color): (String, Color) = {
-            switch service.state {
-            case .notSignedIn: return ("Sign in", .orange)
-            case .notRunning: return ("Not running", .secondary)
-            case .error: return ("Error", .red)
-            case .ok: return ("OK", .green)
-            }
-        }()
-        Group {
-            if let help = stateHelp {
-                Button { showsStateHelp.toggle() } label: { OMChip(text: text, tint: color) }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) { stateHelpContent(help) }
-            } else {
-                OMChip(text: text, tint: color)
+        if let help = stateHelp {
+            Button { showsStateHelp.toggle() } label: { text(showsChevron: true) }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) { stateHelpContent(help) }
+        } else {
+            text(showsChevron: false)
+        }
+    }
+
+    private func text(showsChevron: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(label.text)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.om(label.token))
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.om(.secondary))
+                    .accessibilityHidden(true)
             }
         }
+        .fixedSize()
     }
 
     private struct StateHelp {
