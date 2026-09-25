@@ -21,4 +21,22 @@ final class AgentsLayoutTests: XCTestCase {
     func testTheColumnEndsThirtyTwoPointsAboveTheWindowEdge() {
         XCTAssertEqual(AgentsLayout.columnBottom, 32)
     }
+
+    // MARK: Cards and the stats row
+
+    func testACardIsPaddedTwentyPointsTopAndBottomAndTwentyFourAtTheSides() {
+        XCTAssertEqual(AgentsLayout.cardVerticalPadding, 20)
+        XCTAssertEqual(AgentsLayout.cardHorizontalPadding, 24)
+    }
+
+    func testTheStatsColumnsAreTwentyFourPointsApart() {
+        XCTAssertEqual(AgentsLayout.statColumnGap, 24)
+    }
+
+    func testAStatIsA12Point5LabelOverA26PointFigure() {
+        XCTAssertEqual(AgentsLayout.statLabelSize, 12.5)
+        XCTAssertEqual(AgentsLayout.statValueSize, 26)
+        XCTAssertEqual(AgentsLayout.statValueTracking, -0.5)
+        XCTAssertEqual(AgentsLayout.statLabelValueSpacing, 3)
+    }
 }

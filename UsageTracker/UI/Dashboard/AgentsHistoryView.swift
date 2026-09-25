@@ -46,7 +46,7 @@ struct AgentsHistoryView: View {
                 )
 
                 VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
-                    AgentsSummaryStrip(summary: summary)
+                    AgentsStatsCard(tiles: AgentsStatsRules.tiles(summary))
 
                     AgentsSection(
                         sessions: liveSessions,
@@ -99,56 +99,3 @@ struct AgentsHistoryView: View {
         }
     }
 }
-
-/// The number above the Live card. In 3.0 that is only how many sessions finished in
-/// the range (`AgentsStatsRules.tiles`). Agent time and approval requests are 3.1's, and
-/// the busiest project is gone (spec § Decisions, § Removals).
-private struct AgentsSummaryStrip: View {
-    let summary: AgentHistorySummary
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ForEach(AgentsStatsRules.tiles(summary)) { item in
-                tile(label: item.label, value: item.value)
-            }
-        }
-    }
-
-    private func tile(label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs) {
-            Text(label)
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(OMFont.heroNumeral)
-                .monospacedDigit()
-                .lineLimit(1)
-                .truncationMode(.middle)
-        }
-        .dashboardCard(padding: 12)
-        // One stop per tile: "Sessions, 12" rather than two separate elements.
-        .accessibilityElement(children: .combine)
-    }
-}
-
-#if DEBUG
-@MainActor
-private func summaryStripPreview() -> some View {
-    AgentsSummaryStrip(summary: AgentHistorySummary(
-        sessions: 12,
-        agentTime: 41_520,
-        approvalsWaited: 7,
-        busiestProject: (name: "Usage tracker", sessions: 5)
-    ))
-    .padding()
-    .frame(width: 780)
-}
-
-#Preview("Agents summary — light") { summaryStripPreview() }
-#Preview("Agents summary — dark") { summaryStripPreview().preferredColorScheme(.dark) }
-#Preview("Agents summary — empty") {
-    AgentsSummaryStrip(summary: AgentHistorySummary(sessions: 0, agentTime: 0, approvalsWaited: 0, busiestProject: nil))
-        .padding()
-        .frame(width: 780)
-}
-#endif
