@@ -1,7 +1,8 @@
 import SwiftUI
 
-/// Provider-tab header: the hero window as a large ring next to its name,
-/// time to reset, the status phrase, and the burn verdict when there is one.
+/// Provider-tab header (`Popover-Claude.dc.html`): the hero window as a large slim ring
+/// next to its name, time to reset, the status phrase as coloured text ("On track"),
+/// and the burn verdict when there is one.
 struct OMHero: View {
     let hero: UsageBucket
     let mode: PercentDisplay.Mode
@@ -21,43 +22,71 @@ struct OMHero: View {
         "\(hero.label), \(PercentDisplay.spoken(hero.clampedPercent, mode: mode)), \(statusPhrase(hero.clampedPercent))"
     }
 
+    /// The phrase's colour: the gauge tone's text token on the used value — green
+    /// "On track", amber "Running hot", red "Almost at the limit".
+    nonisolated static func statusToken(_ percent: Double) -> OMColorToken {
+        OMGaugeTone.forUsed(percent).text
+    }
+
+    /// A verdict that says the limit will be hit is amber; one that says it won't is quiet.
+    nonisolated static func verdictToken(_ verdict: BurnVerdict) -> OMColorToken {
+        verdict.willHit ? .warning : .secondary
+    }
+
+    // MARK: - Metrics (`Popover-Claude.dc.html`)
+
+    nonisolated static var ringStyle: OMRing.Style { .slim }
+    nonisolated static let ringSpacing: CGFloat = 18
+    nonisolated static let lineSpacing: CGFloat = 3
+    nonisolated static let titleSize: CGFloat = 16
+    nonisolated static let captionSize: CGFloat = 12.5
+    nonisolated static let verdictSize: CGFloat = 11.5
+    nonisolated static let topInset: CGFloat = 10
+    nonisolated static let sideInset: CGFloat = 6
+    nonisolated static let bottomInset: CGFloat = 6
+
     var body: some View {
         let now = Date()
-        return HStack(spacing: 14) {
-            OMRing(used: hero.clampedPercent, mode: mode, size: .hero, pace: hero.elapsedFraction())
-            VStack(alignment: .leading, spacing: 3) {
-                Text(hero.label).font(.system(size: 14, weight: .semibold))
+        return HStack(spacing: Self.ringSpacing) {
+            OMRing(used: hero.clampedPercent, mode: mode, size: .hero, pace: hero.elapsedFraction(), style: Self.ringStyle)
+            VStack(alignment: .leading, spacing: Self.lineSpacing) {
+                Text(hero.label)
+                    .font(.system(size: Self.titleSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
                 if let reset = ResetCopy.both(resetsAt: hero.resetsAt, now: now) {
-                    Text(reset).font(OMFont.caption).foregroundStyle(.secondary)
+                    Text(reset)
+                        .font(.system(size: Self.captionSize))
+                        .foregroundStyle(.om(.secondary))
                         .lineLimit(1)
                         .help(ResetCopy.absolute(resetsAt: hero.resetsAt, now: now).map { "Resets \($0)" } ?? "")
                 }
                 Text(Self.statusPhrase(hero.clampedPercent))
-                    .font(OMFont.caption.weight(.semibold))
-                    .foregroundStyle(usageStatusColor(hero.clampedPercent))
+                    .font(.system(size: Self.captionSize, weight: .semibold))
+                    .foregroundStyle(.om(Self.statusToken(hero.clampedPercent)))
                 if let verdict {
                     HStack(spacing: 5) {
                         Image(systemName: verdict.willHit ? "flame.fill" : "checkmark.circle")
-                            .font(.caption2)
-                            .symbolRenderingMode(.hierarchical)
-                            .foregroundStyle(verdict.willHit ? Color.orange : Color.secondary)
+                            .font(.system(size: Self.verdictSize))
+                            .foregroundStyle(.om(Self.verdictToken(verdict)))
                         Text(verdict.text)
-                            .font(.caption2)
-                            .foregroundStyle(verdict.willHit ? Color.primary : Color.secondary)
+                            .font(.system(size: Self.verdictSize))
+                            .foregroundStyle(.om(verdict.willHit ? .text : .secondary))
                     }
                     .padding(.top, 2)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, OMSpacing.xs)
+        .padding(.top, Self.topInset)
+        .padding(.horizontal, Self.sideInset)
+        .padding(.bottom, Self.bottomInset)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.accessibilityText(for: hero, mode: mode))
     }
 }
 
 #Preview("Hero") {
-    let session = UsageBucket(id: "five_hour", label: "Current session", utilization: 37, resetsAt: Date().addingTimeInterval(8100), kind: .session)
+    let session = UsageBucket(id: "five_hour", label: "Current session", utilization: 53, resetsAt: Date().addingTimeInterval(900), kind: .session)
     return OMHero(hero: session, mode: .used, verdict: BurnVerdict(willHit: true, text: "At this pace, limit in ~1h 40m"))
-        .padding().frame(width: 328)
+        .padding().frame(width: 360)
 }
