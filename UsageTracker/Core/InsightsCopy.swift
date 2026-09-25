@@ -1,5 +1,14 @@
 import Foundation
 
+/// One figure as the Insights tab prints it.
+struct InsightsFigureText: Equatable, Sendable {
+    let title: String
+    let value: String
+    /// Beside the value, in the accent: This week vs last's change.
+    let delta: String?
+    let caption: String?
+}
+
 /// Every string the Insights tab shows (liquid-glass spec § Screens, "Insights"). The
 /// words are `Dashboard-Insights(-Light).dc.html`'s.
 enum InsightsCopy {
@@ -11,6 +20,98 @@ enum InsightsCopy {
     /// footnote says so once.
     static func money(_ dollars: Double, locale: Locale = .current) -> String {
         OMCostTile.money(dollars, locale: locale)
+    }
+
+    // MARK: - Figures
+
+    /// What `figure` says for `summary`. `quotaBuckets` names the busiest quota day's
+    /// window; `calendar` and `locale` print dates and hours.
+    static func text(
+        for figure: InsightsFigure,
+        summary: InsightsSummary,
+        quotaBuckets: [QuotaBucketInfo],
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> InsightsFigureText {
+        switch figure {
+        case .weekOverWeek:
+            let week = summary.weekOverWeek
+            return InsightsFigureText(
+                title: weekOverWeekTitle,
+                value: money(week.thisWeek, locale: locale),
+                delta: nil,
+                caption: lastWeek(week.lastWeek, locale: locale)
+            )
+        case .daysAtLimit:
+            return InsightsFigureText(
+                title: daysAtLimitTitle,
+                value: daysAtLimitValue(summary.daysAtLimit),
+                delta: nil,
+                caption: daysAtLimitCaption
+            )
+        case .dailyAverage:
+            let average = summary.dailyAverage
+            return InsightsFigureText(
+                title: dailyAverageTitle,
+                value: average.average.map { money($0, locale: locale) } ?? noValue,
+                delta: nil,
+                caption: activeDays(average.activeDays)
+            )
+        case .biggestDay:
+            return InsightsFigureText(
+                title: biggestDayTitle,
+                value: summary.biggestDay.map { money($0.cost, locale: locale) } ?? noValue,
+                delta: nil,
+                caption: summary.biggestDay.map { abbreviatedDay($0.day, calendar: calendar, locale: locale) }
+            )
+        case .mostUsedModelToday:
+            return InsightsFigureText(
+                title: mostUsedModelTodayTitle,
+                value: summary.mostUsedModelToday?.model ?? noValue,
+                delta: nil,
+                caption: summary.mostUsedModelToday.map { money($0.cost, locale: locale) + " today" }
+            )
+        case .averageDailyPeak:
+            return InsightsFigureText(
+                title: averageDailyPeakTitle,
+                value: summary.quota.averageDailyPeak.map { percent($0) } ?? noValue,
+                delta: nil,
+                caption: summary.quota.todayPeak.map { soFarToday($0) }
+            )
+        case .quotaPerDay:
+            return InsightsFigureText(
+                title: quotaPerDayTitle,
+                value: summary.quota.averageDailyConsumption.map { percent($0) } ?? noValue,
+                delta: nil,
+                caption: quotaPerDayCaption
+            )
+        case .busiestQuotaDay:
+            let busiest = summary.quota.busiestDay
+            return InsightsFigureText(
+                title: busiestQuotaDayTitle,
+                value: busiest.map { percent($0.peak) } ?? noValue,
+                delta: nil,
+                caption: busiest.map { peak in
+                    "\(abbreviatedDay(peak.day, calendar: calendar, locale: locale)) · "
+                        + InsightsRules.windowLabel(for: peak.peakBucketID, in: quotaBuckets)
+                }
+            )
+        case .busiestHour:
+            return InsightsFigureText(
+                title: busiestHourTitle,
+                value: summary.quota.busiestHour.map { hour($0, calendar: calendar, locale: locale) } ?? noValue,
+                delta: nil,
+                caption: busiestHourCaption
+            )
+        }
+    }
+
+    // MARK: - This week vs last
+
+    static let weekOverWeekTitle = "This week vs last week"
+
+    static func lastWeek(_ dollars: Double, locale: Locale = .current) -> String {
+        "Last week: " + money(dollars, locale: locale)
     }
 
     // MARK: - Days at limit
@@ -31,5 +132,63 @@ enum InsightsCopy {
     /// "days the peak reached 95%", worded from the threshold that decides the count.
     static var daysAtLimitCaption: String {
         String(format: "days the peak reached %.0f%%", QuotaAnalytics.capacityThreshold)
+    }
+
+    // MARK: - Daily average, biggest day, most-used model
+
+    static let dailyAverageTitle = "Daily average (30d)"
+
+    static func activeDays(_ days: Int) -> String {
+        "\(days) active days"
+    }
+
+    static let biggestDayTitle = "Biggest day"
+
+    static let mostUsedModelTodayTitle = "Most-used model"
+
+    // MARK: - Quota figures (a provider without a cost log)
+
+    static let averageDailyPeakTitle = "Average daily peak"
+    static let quotaPerDayTitle = "Quota used per day"
+    static let quotaPerDayCaption = "of a window, resets counted"
+    static let busiestQuotaDayTitle = "Busiest day"
+    static let busiestHourTitle = "Busiest hour"
+    static let busiestHourCaption = "when the quota climbs most"
+
+    /// "72%": a quota figure in whole percent.
+    static func percent(_ value: Double) -> String {
+        String(format: "%.0f%%", value)
+    }
+
+    /// "55% so far today"
+    static func soFarToday(_ peak: Double) -> String {
+        String(format: "%.0f%% so far today", peak)
+    }
+
+    /// An hour of the day on the user's own clock: "14:00", or "2:00 PM" where the user
+    /// reads 12-hour time. Printed from a fixed winter day, so no clock change can
+    /// swallow the hour asked about.
+    static func hour(_ hour: Int, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        guard let date = calendar.date(from: DateComponents(year: 2026, month: 1, day: 15, hour: hour)) else {
+            return String(format: "%02d:00", hour)
+        }
+        // The locale's own short time ("09:00" in en_GB, "9:00 AM" in en_US).
+        // `Date.FormatStyle`'s `.shortened` drops the leading zero on macOS 27 ("9:00").
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    // MARK: - Dates
+
+    /// 2.x's date ("Sep 2, 2026" in en_US).
+    private static func abbreviatedDay(_ date: Date, calendar: Calendar, locale: Locale) -> String {
+        date.formatted(Date.FormatStyle(
+            date: .abbreviated, time: .omitted, locale: locale, calendar: calendar, timeZone: calendar.timeZone
+        ))
     }
 }

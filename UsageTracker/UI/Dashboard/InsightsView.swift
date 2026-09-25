@@ -3,13 +3,10 @@ import SwiftUI
 struct InsightsView: View {
     @ObservedObject var dashboard: DashboardState
 
-    // Rebuilt off the main actor only when the inputs actually change — the
-    // init reduces over every daily summary and the full history array, far
-    // too heavy to re-run on each body evaluation (same pattern as
-    // ActivityGridView's GridCache).
-    @State private var insights = Insights.empty
-    /// The quota half — what a provider with no cost log can still say about itself.
-    @State private var quota = QuotaInsights.empty
+    // Rebuilt off the main actor only when the inputs actually change — the summary
+    // reduces over every daily summary and the full history array, far too heavy to
+    // re-run on each body evaluation (same pattern as ActivityGridView's GridCache).
+    @State private var summary = InsightsSummary.empty
 
     /// Read on every body evaluation, so the day in it follows the clock (see
     /// `InsightsCacheKey`).
@@ -29,20 +26,18 @@ struct InsightsView: View {
         let started = cacheKey
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
-        // Every provider's core windows: "Days at limit" reads the last seven days of any
-        // provider's history.
         let coreBucketIDs = dashboard.quotaCoreBucketIDs
-        // Empty for a provider whose cost log is showing, which short-circuits the quota
-        // pass entirely: Claude has months of history across half a dozen windows, and
-        // walking all of it every poll to fill cards nobody sees is pure waste.
-        let quotaBucketIDs = dashboard.costSource.hasBreakdown ? [] : coreBucketIDs
+        let hasCostLog = dashboard.costSource.hasBreakdown
         let now = Date()
-        // Both halves in one detached pass: they read the same history array, and
-        // copying it across two tasks doubles the cost of the expensive part.
+        // One detached pass: every figure reads the same history array, and copying it
+        // across two tasks doubles the cost of the expensive part.
         let built = await Task.detached(priority: .userInitiated) {
-            (
-                Insights(from: cli, history: history, coreBucketIDs: coreBucketIDs, now: now),
-                QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
+            InsightsRules.summary(
+                cli: cli,
+                history: history,
+                coreBucketIDs: coreBucketIDs,
+                hasCostLog: hasCostLog,
+                now: now
             )
         }.value
         // See `DerivedCacheGate`: a pass for the provider just left must not replace
@@ -50,8 +45,7 @@ struct InsightsView: View {
         guard DerivedCacheGate.canPublish(
             started: started, current: cacheKey, cancelled: Task.isCancelled
         ) else { return }
-        insights = built.0
-        quota = built.1
+        summary = built
     }
 
     var body: some View {
@@ -90,31 +84,9 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("Quota over time")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                card(
-                    title: InsightsCopy.daysAtLimitTitle,
-                    value: InsightsCopy.daysAtLimitValue(insights.daysAtLimit),
-                    sub: InsightsCopy.daysAtLimitCaption
-                )
-                card(
-                    title: "Average daily peak",
-                    value: quota.averageDailyPeak.map { String(format: "%.0f%%", $0) } ?? "—",
-                    sub: quota.todayPeak.map { String(format: "%.0f%% so far today", $0) }
-                )
-                card(
-                    title: "Quota used per day",
-                    value: quota.averageDailyConsumption.map { String(format: "%.0f%%", $0) } ?? "—",
-                    sub: "of a window, resets counted"
-                )
-                card(
-                    title: "Busiest day",
-                    value: quota.busiestDay.map { String(format: "%.0f%%", $0.peak) } ?? "—",
-                    sub: quota.busiestDay.map { busiestDaySubtitle($0) }
-                )
-                card(
-                    title: "Busiest hour",
-                    value: quota.busiestHour.map(formatHour) ?? "—",
-                    sub: "when the quota climbs most"
-                )
+                ForEach([InsightsFigure.daysAtLimit, .averageDailyPeak, .quotaPerDay, .busiestQuotaDay, .busiestHour]) { figure in
+                    figureCard(figure)
+                }
             }
             Text(dashboard.costSource.reason ?? "")
                 .font(OMFont.caption)
@@ -122,22 +94,6 @@ struct InsightsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func busiestDaySubtitle(_ peak: DailyPeak) -> String {
-        let label = dashboard.quotaBuckets.first(where: { $0.id == peak.peakBucketID })?.label
-            ?? QuotaAnalytics.prettifiedLabel(for: peak.peakBucketID)
-        return "\(peak.day.formatted(date: .abbreviated, time: .omitted)) · \(label)"
-    }
-
-    /// Rendered through the user's own clock format — "14:00" is the wrong answer on a
-    /// machine that shows 2 PM everywhere else.
-    private func formatHour(_ hour: Int) -> String {
-        let cal = Calendar.current
-        guard let date = cal.date(bySettingHour: hour, minute: 0, second: 0, of: Date()) else {
-            return String(format: "%02d:00", hour)
-        }
-        return date.formatted(date: .omitted, time: .shortened)
     }
 
     /// Whether the dollars on this page are a bill: the selected provider as the last
@@ -152,27 +108,10 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel(dashboard.costSource.shortName ?? "CLI")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                weekOverWeekCard(insights.weekOverWeek)
-                card(
-                    title: InsightsCopy.daysAtLimitTitle,
-                    value: InsightsCopy.daysAtLimitValue(insights.daysAtLimit),
-                    sub: InsightsCopy.daysAtLimitCaption
-                )
-                card(
-                    title: "Daily average (30d)",
-                    value: insights.avgDailyCost.map { InsightsCopy.money($0) } ?? "—",
-                    sub: insights.activeDays.map { "\($0) active days" }
-                )
-                card(
-                    title: "Biggest day",
-                    value: insights.peakDay.map { InsightsCopy.money($0.cost) } ?? "—",
-                    sub: insights.peakDay.map { $0.day.formatted(date: .abbreviated, time: .omitted) }
-                )
-                card(
-                    title: "Most-used model",
-                    value: insights.topModel?.model ?? "—",
-                    sub: insights.topModel.map { InsightsCopy.money($0.cost) + " today" }
-                )
+                weekOverWeekCard(summary.weekOverWeek)
+                ForEach([InsightsFigure.daysAtLimit, .dailyAverage, .biggestDay, .mostUsedModelToday]) { figure in
+                    figureCard(figure)
+                }
             }
             if let caption = costCaption {
                 Text(caption)
@@ -238,12 +177,13 @@ struct InsightsView: View {
     }
 
     private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("This week vs last week")
+        let text = InsightsCopy.text(for: .weekOverWeek, summary: summary, quotaBuckets: dashboard.quotaBuckets)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(text.title)
                 .font(OMFont.body)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(InsightsCopy.money(wow.thisWeek))
+                Text(text.value)
                     .font(OMFont.heroNumeral)
                     .monospacedDigit()
                 if let delta = wow.deltaPercent, wow.lastWeek > 0 {
@@ -259,8 +199,8 @@ struct InsightsView: View {
                     .foregroundStyle(delta >= 0 ? Color.orange : Color.green)
                 }
             }
-            HStack(spacing: 4) {
-                Text("Last week: " + InsightsCopy.money(wow.lastWeek))
+            if let caption = text.caption {
+                Text(caption)
                     .font(OMFont.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -268,14 +208,29 @@ struct InsightsView: View {
         .dashboardCard()
     }
 
-    private func card(title: String, value: String, sub: String?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title).font(OMFont.body).foregroundStyle(.secondary)
-            Text(value)
-                .font(OMFont.heroNumeral)
-                .lineLimit(2)
-                .truncationMode(.tail)
-            if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
+    /// One figure on the 2.x card: title, value with This week vs last's change beside
+    /// it, caption.
+    private func figureCard(_ figure: InsightsFigure) -> some View {
+        let text = InsightsCopy.text(for: figure, summary: summary, quotaBuckets: dashboard.quotaBuckets)
+        return VStack(alignment: .leading, spacing: 6) {
+            Text(text.title).font(OMFont.body).foregroundStyle(.secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(text.value)
+                    .font(OMFont.heroNumeral)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                if let delta = text.delta {
+                    // A direction, not a verdict: more spend than last week is not the
+                    // same thing as being close to a limit.
+                    Text(delta)
+                        .font(OMFont.bodyStrong)
+                        .monospacedDigit()
+                        .foregroundStyle(.om(.accentText))
+                }
+            }
+            if let caption = text.caption {
+                Text(caption).font(OMFont.caption).foregroundStyle(.tertiary)
+            }
         }
         .dashboardCard()
     }
@@ -316,7 +271,7 @@ struct InsightsView: View {
     }
 }
 
-struct WeekOverWeek {
+struct WeekOverWeek: Equatable, Sendable {
     let thisWeek: Double
     let lastWeek: Double
     let deltaPercent: Double?
@@ -359,39 +314,5 @@ extension InsightsView {
             peak.totalCost > 0
         else { return nil }
         return (peak.day, peak.totalCost)
-    }
-}
-
-private struct Insights: Sendable {
-    static let empty = Insights(from: nil, history: [], coreBucketIDs: [], now: .distantPast)
-
-    let avgDailyCost: Double?
-    let activeDays: Int?
-    let peakDay: (day: Date, cost: Double)?
-    let topModel: (model: String, cost: Double)?
-    let weekOverWeek: WeekOverWeek
-    /// "Days at limit, 7 days", from the provider's own quota history.
-    let daysAtLimit: QuotaDaysAtCapacity
-
-    init(from cli: CLIBreakdown?, history: [HistoryRecord], coreBucketIDs: [String], now: Date) {
-        self.daysAtLimit = InsightsRules.daysAtLimit(records: history, bucketIDs: coreBucketIDs, now: now)
-        let dailies = cli?.daily ?? []
-        let last30 = dailies.filter { $0.day >= Date().addingTimeInterval(-30 * 24 * 3600) }
-        let active = last30.filter { $0.totalCost > 0 }
-        self.activeDays = active.count
-        self.avgDailyCost = active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count)
-        self.peakDay = InsightsView.peakDay(in: dailies)
-        if let top = cli?.byModelToday.first {
-            self.topModel = (top.model, top.cost)
-        } else {
-            self.topModel = nil
-        }
-        // Week-over-week (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
-        let now = Date()
-        let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
-        let last14Cutoff = now.addingTimeInterval(-14 * 24 * 3600)
-        let thisWeek = dailies.filter { $0.day >= last7Cutoff }.map(\.totalCost).reduce(0, +)
-        let lastWeek = dailies.filter { $0.day >= last14Cutoff && $0.day < last7Cutoff }.map(\.totalCost).reduce(0, +)
-        self.weekOverWeek = WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek)
     }
 }

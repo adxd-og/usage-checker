@@ -1,5 +1,53 @@
 import Foundation
 
+/// A day and what was spent on it.
+struct InsightsDayCost: Equatable, Sendable {
+    let day: Date
+    let cost: Double
+}
+
+/// A model and its dollars.
+struct InsightsModelCost: Equatable, Sendable {
+    let model: String
+    let cost: Double
+}
+
+/// The mean spend of the days that had any, and how many there were.
+struct InsightsDailyAverage: Equatable, Sendable {
+    /// nil when not one day had spend.
+    let average: Double?
+    let activeDays: Int
+}
+
+/// Every figure the Insights tab can show.
+enum InsightsFigure: String, CaseIterable, Identifiable, Sendable {
+    case weekOverWeek, daysAtLimit, dailyAverage, biggestDay, mostUsedModelToday
+    case averageDailyPeak, quotaPerDay, busiestQuotaDay, busiestHour
+
+    var id: String { rawValue }
+}
+
+/// What every figure is computed from, built in one pass off the main actor: it reduces
+/// over the daily rows and the whole quota history, far too heavy for a view's body.
+struct InsightsSummary: Equatable, Sendable {
+    let weekOverWeek: WeekOverWeek
+    let dailyAverage: InsightsDailyAverage
+    let biggestDay: InsightsDayCost?
+    let mostUsedModelToday: InsightsModelCost?
+    let daysAtLimit: QuotaDaysAtCapacity
+    /// `.empty` for a provider with a cost log: nothing on its page reads it.
+    let quota: QuotaInsights
+
+    static let empty = InsightsSummary(
+        weekOverWeek: .empty,
+        dailyAverage: InsightsDailyAverage(average: nil, activeDays: 0),
+        biggestDay: nil,
+        mostUsedModelToday: nil,
+        daysAtLimit: QuotaDaysAtCapacity(atCapacity: 0, observed: 0, span: InsightsRules.daysAtLimitSpan),
+        quota: .empty
+    )
+}
+
 /// What the Insights pass is computed from, as `.task(id:)` sees it: a new value is a
 /// new pass. The local day is part of it (review F1), so "Days at limit" and every
 /// "today" figure move on at midnight even when nothing else changed. The view reads it
@@ -58,5 +106,49 @@ enum InsightsRules {
             quotaBucketIDs: quotaBucketIDs,
             day: calendar.startOfDay(for: now)
         )
+    }
+
+    /// Every figure's inputs for one provider: its cost log's summary (nil without one),
+    /// its quota history and core windows, and whether it has a cost log at all.
+    static func summary(
+        cli: CLIBreakdown?,
+        history: [HistoryRecord],
+        coreBucketIDs: [String],
+        hasCostLog: Bool,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> InsightsSummary {
+        let dailies = cli?.daily ?? []
+        // 2.x's thirty days: a rolling cut from `now`.
+        let last30 = dailies.filter { $0.day >= now.addingTimeInterval(-30 * 24 * 3600) }
+        let active = last30.filter { $0.totalCost > 0 }
+        // 2.x's weeks (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
+        let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
+        let last14Cutoff = now.addingTimeInterval(-14 * 24 * 3600)
+        let thisWeek = dailies.filter { $0.day >= last7Cutoff }.map(\.totalCost).reduce(0, +)
+        let lastWeek = dailies.filter { $0.day >= last14Cutoff && $0.day < last7Cutoff }.map(\.totalCost).reduce(0, +)
+        return InsightsSummary(
+            weekOverWeek: WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek),
+            dailyAverage: InsightsDailyAverage(
+                average: active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count),
+                activeDays: active.count
+            ),
+            biggestDay: InsightsView.peakDay(in: dailies, now: now, calendar: calendar)
+                .map { InsightsDayCost(day: $0.day, cost: $0.cost) },
+            mostUsedModelToday: cli?.byModelToday.first.map { InsightsModelCost(model: $0.model, cost: $0.cost) },
+            daysAtLimit: daysAtLimit(records: history, bucketIDs: coreBucketIDs, now: now, calendar: calendar),
+            // Only a provider without a cost log shows these. Claude has months of
+            // history across half a dozen windows, and walking all of it every poll to
+            // fill cards nobody sees is pure waste.
+            quota: hasCostLog
+                ? .empty
+                : QuotaAnalytics.insights(records: history, bucketIDs: coreBucketIDs, calendar: calendar, now: now)
+        )
+    }
+
+    /// A window's name: the live snapshot's label, or one inferred from its id when the
+    /// provider has stopped reporting it.
+    static func windowLabel(for bucketID: String, in buckets: [QuotaBucketInfo]) -> String {
+        buckets.first(where: { $0.id == bucketID })?.label ?? QuotaAnalytics.prettifiedLabel(for: bucketID)
     }
 }
