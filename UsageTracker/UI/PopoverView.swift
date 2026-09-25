@@ -164,7 +164,7 @@ struct PopoverView: View {
                 // Only the relative "Updated Xs ago" text needs a clock tick —
                 // keep the periodic timeline off the rest of the header.
                 TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                    Text(metaLine(now: ctx.date))
+                    Text(PopoverCopy.metaLine(service: selectedService, fetchedAt: state.snapshot.fetchedAt, now: ctx.date))
                 }
                 .font(OMFont.caption)
                 .foregroundStyle(.secondary)
@@ -175,22 +175,6 @@ struct PopoverView: View {
             }
         }
         .accessibilityElement(children: .combine)
-    }
-
-    private func metaLine(now: Date) -> String {
-        let updated = updatedText(now: now)
-        if let plan = selectedService?.plan { return "\(plan) · \(updated)" }
-        return updated
-    }
-
-    private func updatedText(now: Date) -> String {
-        let t = state.snapshot.fetchedAt.timeIntervalSince1970
-        if t < 1 { return "Never updated" }
-        let delta = max(0, now.timeIntervalSince(state.snapshot.fetchedAt))
-        if delta < 5 { return "Just updated" }
-        if delta < 60 { return "Updated \(Int(delta))s ago" }
-        if delta < 3600 { return "Updated \(Int(delta / 60))m ago" }
-        return "Updated \(Int(delta / 3600))h ago"
     }
 
     // MARK: - Content
