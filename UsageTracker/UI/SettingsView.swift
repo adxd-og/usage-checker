@@ -14,6 +14,9 @@ struct SettingsView: View {
             SettingsSidebar(selection: $selectedTab)
                 .padding([.top, .bottom, .leading], SettingsWindowLayout.windowInset)
             page
+                // A tab switch cross-fades, the new page sliding in from its side of the
+                // sidebar (`OMTransitionRules`).
+                .omTabTransition(selection: selectedTab, order: SettingsTab.allCases, axis: .vertical)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding([.top, .bottom, .trailing], SettingsWindowLayout.windowInset)
         }
