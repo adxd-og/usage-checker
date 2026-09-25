@@ -17,9 +17,13 @@ final class RemainingModeSettingsTests: XCTestCase {
     override func setUp() {
         super.setUp()
         savedDomain = UserDefaults.standard.persistentDomain(forName: domainName)
+        // Keeps `resetToDefaults()` off the shortcut the user recorded, which lives in
+        // this same domain.
+        MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = {} }
     }
 
     override func tearDown() {
+        MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = SettingsStore.resetRecordedShortcuts }
         bag.removeAll()
         UserDefaults.standard.setPersistentDomain(savedDomain ?? [:], forName: domainName)
         super.tearDown()
