@@ -147,3 +147,68 @@ enum OverviewRingsRules {
         return "\(head), \(subline)"
     }
 }
+
+// MARK: - Emphasis (spec § Components, "Overview rings": hover or focus)
+
+extension OverviewRingsRules {
+    /// A ring or legend row that is not the emphasised one while one is.
+    static let dimmedOpacity: Double = 0.22
+    /// The mockup's `transition: opacity 0.2s ease`.
+    static let emphasisAnimation: Double = 0.2
+    /// Each ring answers the pointer across its stroke and half the gap to its
+    /// neighbour: 10.5 pt either side of its centre line.
+    static var hitHalfWidth: CGFloat { (radii[0] - radii[1]) / 2 }
+
+    /// The window emphasised: the one under the pointer, else the legend row holding
+    /// keyboard focus, and that only while the user moves with the keyboard, so a click
+    /// never leaves a window stuck in front.
+    static func emphasised(hovered: Int?, focused: Int?, keyboardNavigation: Bool) -> Int? {
+        hovered ?? (keyboardNavigation ? focused : nil)
+    }
+
+    /// One opacity per window, for its ring and its legend row: all 1 at rest; while one
+    /// is emphasised it stays 1 and the rest drop to 22 %. An index that no longer exists
+    /// (the windows changed under the pointer) is at rest.
+    static func emphasis(hovered: Int?, count: Int) -> [Double] {
+        let count = max(0, count)
+        guard let hovered, (0..<count).contains(hovered) else { return Array(repeating: 1, count: count) }
+        return (0..<count).map { $0 == hovered ? 1 : dimmedOpacity }
+    }
+
+    /// The ring under `point`, in the rings' own 232 pt frame, among the first `count`
+    /// windows; nil in the middle, outside, or on a ring that is not drawn.
+    static func ring(at point: CGPoint, count: Int) -> Int? {
+        let middle = diameter / 2
+        let distance = hypot(point.x - middle, point.y - middle)
+        for index in 0..<min(max(0, count), radii.count) where abs(distance - radii[index]) <= hitHalfWidth {
+            return index
+        }
+        return nil
+    }
+
+    /// The hovered window after the pointer enters or leaves legend row `row`. Leaving
+    /// clears only that row's hover, so a late exit from one row cannot wipe the next.
+    static func hover(inside: Bool, row: Int, current: Int?) -> Int? {
+        if inside { return row }
+        return current == row ? nil : current
+    }
+
+    /// A legend row's tooltip: the window, its reset on the clock and what the dot on its
+    /// ring marks. The rings carry no "dot = time elapsed" caption (spec § Removals), so
+    /// the pointer is where the dot is explained.
+    static func help(
+        for bucket: UsageBucket,
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        var parts = [bucket.label]
+        if let absolute = ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale) {
+            parts.append("resets \(absolute)")
+        }
+        if let elapsed = bucket.elapsedFraction(now: now), OMRing.paceMarkerVisible(elapsed) {
+            parts.append("dot: \(Int((elapsed * 100).rounded()))% of the window elapsed")
+        }
+        return parts.joined(separator: " · ")
+    }
+}

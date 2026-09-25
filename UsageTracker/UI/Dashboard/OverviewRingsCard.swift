@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Three concentric rings, one per window (the first three), with a window's figure and
 /// short name in the middle (liquid-glass spec § Components, "Overview rings"). Draws what
@@ -73,6 +74,10 @@ struct OverviewRings: View {
 /// The Overview's first card (spec § Screens, "Overview"): the rings beside a legend that
 /// names each window, when it resets and how full it is (the rows the 2.x Overview listed
 /// under its hero), titled with the worst limit's verdict and closed by the burn rate.
+///
+/// Hovering a ring or a legend row, or moving keyboard focus onto a row, dims the other
+/// windows to 22 % and puts that window's figure and name in the middle. The hover and the
+/// focus are this view's state and are never stored.
 struct OverviewRingsCard: View {
     let service: ServiceSnapshot
     let mode: PercentDisplay.Mode
@@ -81,28 +86,50 @@ struct OverviewRingsCard: View {
     /// Last-known numbers: when they were true and why they stopped (`RetainedCopy`).
     let retainedCaption: String?
 
+    /// The window under the pointer, on a ring or a legend row.
+    @State private var hovered: Int? = nil
+    /// The legend row holding keyboard focus.
+    @FocusState private var focusedRow: Int?
+    /// Whether the user is moving through the rows with the keyboard: on with Tab or an
+    /// arrow key, or when a key press moved focus in; off with a click.
+    @State private var keyboardNavigation = false
+
     var body: some View {
         let now = Date()
         let windows = OverviewRingsRules.windows(for: service)
+        let emphasised = OverviewRingsRules.emphasised(
+            hovered: hovered, focused: focusedRow, keyboardNavigation: keyboardNavigation
+        )
+        let opacities = OverviewRingsRules.emphasis(hovered: emphasised, count: windows.count)
         HStack(alignment: .center, spacing: OverviewRingsRules.ringLegendSpacing) {
             OverviewRings(
                 windows: windows,
                 mode: mode,
                 retained: service.isRetained,
-                opacities: windows.map { _ in 1 },
-                centre: OverviewRingsRules.centre(windows: windows, emphasised: nil, mode: mode),
+                opacities: opacities,
+                centre: OverviewRingsRules.centre(windows: windows, emphasised: emphasised, mode: mode),
                 now: now
             )
             .opacity(service.isRetained ? OverviewRingsRules.retainedOpacity : 1)
-            legend(windows, now: now)
+            .contentShape(Circle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let location):
+                    hovered = OverviewRingsRules.ring(at: location, count: windows.count)
+                case .ended:
+                    hovered = nil
+                }
+            }
+            legend(windows, opacities: opacities, now: now)
         }
+        .animation(.easeInOut(duration: OverviewRingsRules.emphasisAnimation), value: opacities)
         .padding(.vertical, OverviewRingsRules.cardVerticalPadding)
         .padding(.horizontal, OverviewRingsRules.cardHorizontalPadding)
         .frame(maxHeight: .infinity, alignment: .center)
         .dashboardCard(padding: 0)
     }
 
-    private func legend(_ windows: [OverviewRingWindow], now: Date) -> some View {
+    private func legend(_ windows: [OverviewRingWindow], opacities: [Double], now: Date) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(OverviewCopy.legendTitle)
@@ -123,10 +150,25 @@ struct OverviewRingsCard: View {
                             .fill(.om(.hairline))
                             .frame(height: 1)
                     }
-                    row(window, now: now)
+                    row(window, index: index, now: now)
+                        .opacity(index < opacities.count ? opacities[index] : 1)
                 }
             }
             .opacity(service.isRetained ? OverviewRingsRules.retainedOpacity : 1)
+            // The ring follows the input, as on the segmented control and the sidebar: Tab
+            // or an arrow turns it on (ignored, so the system still moves focus), focus a
+            // key press moved in turns it on, a click turns it off.
+            .onKeyPress(keys: OMFocusRing.navigationKeys) { _ in
+                keyboardNavigation = true
+                return .ignored
+            }
+            .onChange(of: focusedRow) { _, focused in
+                keyboardNavigation = OMFocusRing.keyboardNavigation(
+                    afterFocusMovedTo: focused != nil,
+                    byKeyPress: NSApp.currentEvent?.type == .keyDown
+                )
+            }
+            .simultaneousGesture(TapGesture().onEnded { keyboardNavigation = false })
             Text(footer.text)
                 .font(.system(size: OverviewRingsRules.footerSize))
                 .foregroundStyle(.om(footer.token))
@@ -142,7 +184,7 @@ struct OverviewRingsCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func row(_ window: OverviewRingWindow, now: Date) -> some View {
+    private func row(_ window: OverviewRingWindow, index: Int, now: Date) -> some View {
         let subline = OverviewRingsRules.subline(for: window.bucket, service: service, now: now)
         return HStack(alignment: .center, spacing: OverviewRingsRules.rowSpacing) {
             Circle()
@@ -168,6 +210,23 @@ struct OverviewRingsCard: View {
             )
         }
         .padding(.vertical, OverviewRingsRules.rowVerticalPadding)
+        .contentShape(Rectangle())
+        .onHover { inside in
+            hovered = OverviewRingsRules.hover(inside: inside, row: index, current: hovered)
+        }
+        .focusable()
+        // The system's ring is an accent rectangle; the yolk ring below replaces it.
+        .focusEffectDisabled()
+        .focused($focusedRow, equals: index)
+        .overlay {
+            if OMFocusRing.isVisible(isFocused: focusedRow == index, keyboardNavigation: keyboardNavigation) {
+                RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous)
+                    .strokeBorder(.om(.focusRing), lineWidth: OMFocusRing.width)
+                    .padding(-OMFocusRing.width)
+                    .allowsHitTesting(false)
+            }
+        }
+        .help(OverviewRingsRules.help(for: window.bucket, now: now))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(OverviewRingsRules.accessibilityLabel(for: window.bucket, subline: subline, mode: mode))
     }
