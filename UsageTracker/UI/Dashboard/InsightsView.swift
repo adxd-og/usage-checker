@@ -42,7 +42,7 @@ struct InsightsView: View {
         // copying it across two tasks doubles the cost of the expensive part.
         let built = await Task.detached(priority: .userInitiated) {
             (
-                Insights(from: cli, history: history),
+                Insights(from: cli),
                 QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
             )
         }.value
@@ -65,9 +65,6 @@ struct InsightsView: View {
                         .padding(.horizontal, 24)
                 }
 
-                usageBlock
-                    .padding(.horizontal, 24)
-
                 // Cost, projects and models come from the selected provider's own CLI
                 // log. A provider without one gets the reason, not another provider's
                 // spend under its name.
@@ -89,21 +86,6 @@ struct InsightsView: View {
         }
         .task(id: cacheKey) {
             await rebuildInsights()
-        }
-    }
-
-    /// The half that follows the provider picker: everything here is derived from
-    /// the selected provider's own usage snapshots.
-    private var usageBlock: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            sectionLabel(dashboard.displayName(for: dashboard.selectedService) + " · usage history")
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                card(
-                    title: "Snapshots recorded",
-                    value: "\(insights.snapshotCount)",
-                    sub: insights.firstSnapshotAgo
-                )
-            }
         }
     }
 
@@ -399,18 +381,16 @@ extension InsightsView {
 }
 
 private struct Insights: Sendable {
-    static let empty = Insights(from: nil, history: [])
+    static let empty = Insights(from: nil)
 
     let avgDailyCost: Double?
     let activeDays: Int?
     let peakDay: (day: Date, cost: Double)?
     let topModel: (model: String, cost: Double)?
     let topProjectWeek: ProjectSummary?
-    let snapshotCount: Int
-    let firstSnapshotAgo: String?
     let weekOverWeek: WeekOverWeek
 
-    init(from cli: CLIBreakdown?, history: [HistoryRecord]) {
+    init(from cli: CLIBreakdown?) {
         let dailies = cli?.daily ?? []
         let last30 = dailies.filter { $0.day >= Date().addingTimeInterval(-30 * 24 * 3600) }
         let active = last30.filter { $0.totalCost > 0 }
@@ -423,16 +403,6 @@ private struct Insights: Sendable {
             self.topModel = nil
         }
         self.topProjectWeek = cli?.projectsWeek.first
-        self.snapshotCount = history.count
-        if let first = history.first {
-            let delta = Date().timeIntervalSince(first.timestamp)
-            let days = Int(delta / (24 * 3600))
-            if days >= 1 { self.firstSnapshotAgo = "since \(days)d ago" }
-            else { self.firstSnapshotAgo = "since today" }
-        } else {
-            self.firstSnapshotAgo = nil
-        }
-
         // Week-over-week (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
         let now = Date()
         let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
