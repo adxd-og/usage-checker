@@ -25,16 +25,37 @@ struct PopoverView: View {
     /// stored value stays put until the user picks again.
     @AppStorage("selectedProviderTab") private var selectedProviderTab: String = WindowRanking.allTab
 
+    // MARK: - Metrics (`Main.dc.html`)
+
+    nonisolated static let width: CGFloat = 360
+    nonisolated static let padding: CGFloat = 14
+    nonisolated static let spacing: CGFloat = 12
+    nonisolated static let bodyCorner: OMCornerContext = .popover
+    nonisolated static let bodyGlass: OMGlassKind = .chrome
+    nonisolated static let appIconSize: CGFloat = 30
+    nonisolated static let appIconSpacing: CGFloat = 10
+    nonisolated static let titleSize: CGFloat = 14
+    nonisolated static let metaSize: CGFloat = 11.5
+    nonisolated static var staleNoticeToken: OMColorToken { .warning }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
+        VStack(alignment: .leading, spacing: Self.spacing) {
             header
             if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
             if showsSegments { segments }
             content
             footer
         }
-        .padding(OMSpacing.l)
-        .frame(width: 360)
+        .padding(Self.padding)
+        .frame(width: Self.width)
+        // The 3.0 body: chrome glass in the popover's 24 pt corner, over the window
+        // backdrop it refracts (spec § Tokens: the window background is the popover
+        // body's too). NSPopover draws its own frame and arrow around it.
+        .omGlass(Self.bodyGlass, in: OMCornerShape(Self.bodyCorner))
+        .background {
+            OMWindowBackground()
+                .clipShape(OMCornerShape(Self.bodyCorner))
+        }
         // Same as the dashboard: a percentage or a reset time can be selected and
         // copied straight out of the popover.
         .textSelection(.enabled)
@@ -188,23 +209,24 @@ struct PopoverView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Self.appIconSpacing) {
             // The real app icon, not a drawn stand-in — matches the welcome
             // tour and tracks icon updates for free.
             Image(nsImage: NSApp.applicationIconImage)
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 26, height: 26)
+                .frame(width: Self.appIconSize, height: Self.appIconSize)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Omelette")
-                    .font(OMFont.title)
+                    .font(.system(size: Self.titleSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
                 // Only the relative "Updated Xs ago" text needs a clock tick —
                 // keep the periodic timeline off the rest of the header.
                 TimelineView(.periodic(from: .now, by: 5)) { ctx in
                     Text(PopoverCopy.metaLine(service: selectedService, fetchedAt: state.snapshot.fetchedAt, now: ctx.date))
                 }
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: Self.metaSize))
+                .foregroundStyle(.om(.secondary))
             }
             Spacer()
             if state.isLoading {
@@ -222,8 +244,8 @@ struct PopoverView: View {
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading…")
-                    .font(OMFont.body)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(.om(.secondary))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, OMSpacing.xs)
@@ -290,21 +312,20 @@ struct PopoverView: View {
     /// Last-good data stays on screen; this row says why it isn't moving.
     private var staleNotice: some View {
         noticeRow(
-            icon: "wifi.exclamationmark", tint: .orange,
+            icon: "wifi.exclamationmark", token: Self.staleNoticeToken,
             text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
         )
         .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
     }
 
-    private func noticeRow(icon: String, tint: Color, text: String) -> some View {
+    private func noticeRow(icon: String, token: OMColorToken, text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: icon)
-                .font(.caption)
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(tint)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.om(token))
             Text(text)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.system(size: 11.5))
+                .foregroundStyle(.om(.secondary))
             Spacer()
         }
         .padding(.horizontal, 4)
