@@ -343,7 +343,7 @@ enum OMGlassKind: CaseIterable, Sendable {
     /// glass; the mockups draw it on the chrome body as a faint overlay, so it has its
     /// own values rather than a second chrome layer.
     case controlTrack
-    /// The selected segment or nav item, raised on its track or pane.
+    /// The selected segment or nav item, raised on its control track or on the sidebar's chrome glass.
     case raisedPill
 }
 

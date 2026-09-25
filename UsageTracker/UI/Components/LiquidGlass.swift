@@ -106,7 +106,7 @@ extension View {
         omGlass(.controlTrack, in: shape)
     }
 
-    /// The selected segment or nav item, raised on its track or pane.
+    /// The selected segment or nav item, raised on its control track or on the sidebar's chrome glass.
     func raisedPill<S: InsettableShape>(in shape: S) -> some View {
         omGlass(.raisedPill, in: shape)
     }
