@@ -30,10 +30,16 @@ struct DashboardWindow: View {
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            // Usage history is per provider, and so is cost now — but only for the
-            // providers whose CLI writes a local log. Say which of the two this tab is
-            // showing instead of letting the reader assume either way.
-            .safeAreaInset(edge: .bottom) { sourceFooter }
+            // How fresh the numbers are (spec § Removals: it replaces the data-source
+            // line). Its text changes while the window is hidden, so it is rebuilt
+            // with the detail column when the window comes back (`DetailRebuildRule`).
+            .safeAreaInset(edge: .bottom) {
+                UpdatedFootnote(snapshot: appState.snapshot)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, UpdatedFootnoteRules.horizontalPadding)
+                    .padding(.vertical, 8)
+                    .id(detailGeneration)
+            }
         } detail: {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -65,28 +71,6 @@ struct DashboardWindow: View {
             guard rebuildRule.snapshotArrived() else { return }
             dashboard.refreshAll()
         }
-    }
-
-    private var sourceFooter: some View {
-        let name = dashboard.displayName(for: dashboard.selectedService)
-        let source = dashboard.costSource
-        return VStack(alignment: .leading, spacing: 4) {
-            Label(
-                source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
-                systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
-            )
-            .help(source.longName.map { "Charts are built from \(name) usage history and \($0)." }
-                  ?? "Usage windows come from this provider. " + (source.reason ?? ""))
-            // The version belongs where the app is being used, not three clicks away
-            // in Settings — and it is the way to the project page.
-            Link(AppVersion.current, destination: AppVersion.githubURL)
-                .help("Open the GitHub page")
-        }
-        .font(OMFont.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     @ViewBuilder
