@@ -143,7 +143,8 @@ struct PopoverView: View {
             selection: Binding(
                 get: { currentTab },
                 set: { selectedProviderTab = $0 }
-            )
+            ),
+            metrics: .popover
         )
     }
 
