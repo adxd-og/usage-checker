@@ -19,7 +19,7 @@ final class RemainingModeRepublishTests: XCTestCase {
     }
 
     override func tearDown() {
-        UserDefaults.standard.setPersistentDomain(savedDomain ?? [:], forName: domainName)
+        AppDomainRestore.restore(savedDomain, domainName: domainName)
         super.tearDown()
     }
 

@@ -211,7 +211,7 @@ final class SettingsStore: ObservableObject {
         // whichever tab, and the recorded hotkey kept firing.
         DashboardState.shared.resetSelection()
         UserDefaults.standard.removeObject(forKey: Self.popoverTabKey)
-        KeyboardShortcuts.reset(.peekUsage)
+        resetShortcuts()
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
         // the new ones should be able to speak.
         UsageNotifier.shared.forgetFiredState()
@@ -219,6 +219,17 @@ final class SettingsStore: ObservableObject {
 
     /// PopoverView's persisted tab. Owned by the view, reset here.
     private static let popoverTabKey = "selectedProviderTab"
+
+    /// How `resetToDefaults()` forgets the recorded popover shortcut. KeyboardShortcuts
+    /// keeps it in the app's own defaults domain, which the test host shares with the
+    /// running app, so a test replaces this with a no-op and the suite never deletes the
+    /// shortcut the user recorded.
+    var resetShortcuts: () -> Void = SettingsStore.resetRecordedShortcuts
+
+    /// The real reset: the recorded shortcut is removed and its hotkey unregistered.
+    nonisolated static func resetRecordedShortcuts() {
+        KeyboardShortcuts.reset(.peekUsage)
+    }
 
     var menuBarHiddenServices: Set<String> {
         get { Set(menuBarHiddenServicesRaw.split(separator: ",").map(String.init)) }

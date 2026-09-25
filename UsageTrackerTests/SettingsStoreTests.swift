@@ -15,10 +15,14 @@ final class SettingsStoreTests: XCTestCase {
     override func setUp() {
         super.setUp()
         savedDomain = UserDefaults.standard.persistentDomain(forName: domainName)
+        // Keeps `resetToDefaults()` off the shortcut the user recorded, which lives in
+        // this same domain.
+        MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = {} }
     }
 
     override func tearDown() {
-        UserDefaults.standard.setPersistentDomain(savedDomain ?? [:], forName: domainName)
+        MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = SettingsStore.resetRecordedShortcuts }
+        AppDomainRestore.restore(savedDomain, domainName: domainName)
         super.tearDown()
     }
 
