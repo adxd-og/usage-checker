@@ -196,4 +196,39 @@ final class InsightsCopyTests: XCTestCase {
             InsightsFigureText(title: "Busiest day", value: "97%", delta: nil, caption: "2 Sep 2026 · Gemini Pro")
         )
     }
+
+    // MARK: - Session window
+
+    func testTheSessionWindowReadsAsTheMockup() {
+        XCTAssertEqual(InsightsCopy.sessionWindowTitle, "Current session window")
+        // 2026-09-06 10:30 UTC.
+        XCTAssertEqual(
+            InsightsCopy.since(Date(timeIntervalSince1970: 1_788_690_600), calendar: utc, locale: gb),
+            "since 10:30"
+        )
+        XCTAssertEqual(InsightsCopy.byProject, "By project")
+    }
+
+    func testTurnsAreGroupedAndCounted() {
+        XCTAssertEqual(InsightsCopy.turns(1_742, locale: us), "1,742 turns")
+        XCTAssertEqual(InsightsCopy.turns(1, locale: us), "1 turn")
+        XCTAssertEqual(InsightsCopy.turns(0, locale: us), "0 turns")
+    }
+
+    /// A window with no CLI turns names the provider's own tools: Codex's empty window
+    /// is not about "Claude Code" or "the Claude apps".
+    func testTheEmptyWindowNamesTheProvidersOwnTools() {
+        XCTAssertEqual(
+            InsightsCopy.emptySession(providerID: "claude"),
+            "No Claude Code activity in this window. Whatever the session limit is showing came from somewhere else — the Claude apps, or another machine on this account."
+        )
+        XCTAssertEqual(
+            InsightsCopy.emptySession(providerID: "codex"),
+            "No Codex activity in this window. Whatever the session limit is showing came from somewhere else — another Codex client, or another machine on this account."
+        )
+        XCTAssertEqual(
+            InsightsCopy.emptySession(providerID: "grok"),
+            "No activity from the CLI in this window. Whatever the session limit is showing came from somewhere else — another app, or another machine on this account."
+        )
+    }
 }

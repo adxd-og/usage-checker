@@ -236,4 +236,41 @@ final class InsightsRulesTests: XCTestCase {
 
         XCTAssertEqual(average, InsightsDailyAverage(average: 10, activeDays: 1))
     }
+
+    // MARK: - Session window: by project
+
+    func testProjectBarsAreMeasuredAgainstTheDearestProject() {
+        let rows = InsightsRules.projectRows([
+            project("scratchpad", cost: 53.45, turns: 101),
+            project("subagents", cost: 164.31, turns: 1_523),
+            project("test / blender test", cost: 0.98, turns: 6),
+            project("Usage tracker", cost: 34.24, turns: 112)
+        ])
+
+        XCTAssertEqual(rows.map(\.name), ["subagents", "scratchpad", "Usage tracker", "test / blender test"])
+        guard rows.count == 4 else { return XCTFail("four rows expected") }
+        // Dashboard-Insights.dc.html: 100 %, 32.5 %, 20.8 %, and 1.0 % for 98 cents.
+        XCTAssertEqual(rows[0].fraction, 1, accuracy: 1e-9)
+        XCTAssertEqual(rows[1].fraction, 0.325, accuracy: 0.0005)
+        XCTAssertEqual(rows[2].fraction, 0.208, accuracy: 0.0005)
+        XCTAssertEqual(rows[3].fraction, 0.01, accuracy: 1e-9)
+        XCTAssertEqual(rows[0].turns, 1_523)
+        XCTAssertEqual(rows[0].id, "slug-subagents")
+    }
+
+    func testTheListStopsAtFiveProjects() {
+        let rows = InsightsRules.projectRows([
+            project("a", cost: 6), project("b", cost: 5), project("c", cost: 4),
+            project("d", cost: 3), project("e", cost: 2), project("f", cost: 1)
+        ])
+
+        XCTAssertEqual(InsightsRules.projectRowLimit, 5)
+        XCTAssertEqual(rows.map(\.name), ["a", "b", "c", "d", "e"])
+    }
+
+    func testWithoutSpendNoBarIsDrawn() {
+        let rows = InsightsRules.projectRows([project("a", cost: 0), project("b", cost: 0)])
+
+        XCTAssertEqual(rows.map(\.fraction), [0, 0])
+    }
 }

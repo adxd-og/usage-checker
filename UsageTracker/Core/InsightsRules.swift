@@ -19,6 +19,18 @@ struct InsightsDailyAverage: Equatable, Sendable {
     let activeDays: Int
 }
 
+/// One row of the session window's "By project" list.
+struct InsightsProjectRow: Equatable, Sendable, Identifiable {
+    /// The project's slug, which is also the row's tooltip.
+    let id: String
+    let name: String
+    let cost: Double
+    let turns: Int
+    /// The bar's length against the dearest project shown, from
+    /// `InsightsRules.minimumProjectBarFraction` to 1; 0 when none had spend.
+    let fraction: Double
+}
+
 /// Every figure the Insights tab can show.
 enum InsightsFigure: String, CaseIterable, Identifiable, Sendable {
     case weekOverWeek, daysAtLimit, dailyAverage, biggestDay, mostUsedModelToday
@@ -181,6 +193,31 @@ enum InsightsRules {
         byModelToday
             .min { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
             .map { InsightsModelCost(model: $0.model, cost: $0.cost) }
+    }
+
+    /// The session window lists this many projects.
+    static let projectRowLimit = 5
+
+    /// The shortest bar: the mockup draws $0.98 of $164.31 at 1 %, so a project that
+    /// cost cents still shows it ran.
+    static let minimumProjectBarFraction = 0.01
+
+    /// The session window's dearest projects, each with its bar against the dearest.
+    /// Ties go alphabetically, so the order holds between polls.
+    static func projectRows(_ projects: [ProjectSummary], limit: Int = projectRowLimit) -> [InsightsProjectRow] {
+        let shown = projects
+            .sorted { $0.totalCost != $1.totalCost ? $0.totalCost > $1.totalCost : $0.displayName < $1.displayName }
+            .prefix(limit)
+        let dearest = shown.first?.totalCost ?? 0
+        return shown.map { project in
+            InsightsProjectRow(
+                id: project.slug,
+                name: project.displayName,
+                cost: project.totalCost,
+                turns: project.turns,
+                fraction: dearest > 0 ? max(minimumProjectBarFraction, project.totalCost / dearest) : 0
+            )
+        }
     }
 
     /// A window's name: the live snapshot's label, or one inferred from its id when the

@@ -132,12 +132,12 @@ struct InsightsView: View {
     private func sessionWindowBlock(_ window: WindowUsage) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             OMSectionHeader(
-                title: "Current session window",
-                trailing: "since \(window.start.formatted(date: .omitted, time: .shortened))"
+                title: InsightsCopy.sessionWindowTitle,
+                trailing: InsightsCopy.since(window.start)
             )
 
             if window.isEmpty {
-                Text("No Claude Code activity in this window. Whatever the session limit is showing came from somewhere else — the Claude apps, or another machine on this account.")
+                Text(InsightsCopy.emptySession(providerID: dashboard.selectedService))
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -146,7 +146,7 @@ struct InsightsView: View {
                     Text(InsightsCopy.money(window.cost))
                         .font(OMFont.heroNumeral)
                         .monospacedDigit()
-                    Text("\(window.turns) turns")
+                    Text(InsightsCopy.turns(window.turns))
                         .font(OMFont.caption)
                         .foregroundStyle(.tertiary)
                 }
@@ -159,9 +159,14 @@ struct InsightsView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                let maxCost = window.projects.first?.totalCost ?? 1
-                ForEach(window.projects.prefix(5)) { project in
-                    projectRow(project, maxCost: maxCost)
+                let rows = InsightsRules.projectRows(window.projects)
+                if !rows.isEmpty {
+                    Text(InsightsCopy.byProject)
+                        .font(OMFont.bodyStrong)
+                        .foregroundStyle(.secondary)
+                    ForEach(rows) { row in
+                        projectRow(row)
+                    }
                 }
 
                 if let caption = costCaption {
@@ -202,15 +207,15 @@ struct InsightsView: View {
         .dashboardCard()
     }
 
-    private func projectRow(_ p: ProjectSummary, maxCost: Double) -> some View {
+    private func projectRow(_ row: InsightsProjectRow) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(p.displayName)
+                Text(row.name)
                     .font(OMFont.bodyStrong)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
-                Text(InsightsCopy.money(p.totalCost))
+                Text(InsightsCopy.money(row.cost))
                     .font(OMFont.numeral)
                     .monospacedDigit()
             }
@@ -223,18 +228,18 @@ struct InsightsView: View {
                         // battery ramp — a big spend is not a warning.
                         Capsule(style: .continuous)
                             .fill(Color.accentColor)
-                            .frame(width: geo.size.width * CGFloat(p.totalCost / max(maxCost, 0.01)))
+                            .frame(width: geo.size.width * CGFloat(row.fraction))
                     }
                 }
                 .frame(height: 6)
 
-                Text("\(p.turns) turn\(p.turns == 1 ? "" : "s")")
+                Text(InsightsCopy.turns(row.turns))
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: 70, alignment: .trailing)
             }
         }
-        .help(p.slug)
+        .help(row.id)
     }
 }
 

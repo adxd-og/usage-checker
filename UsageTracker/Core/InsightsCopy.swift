@@ -195,6 +195,40 @@ enum InsightsCopy {
         return formatter.string(from: date)
     }
 
+    // MARK: - Session window
+
+    static let sessionWindowTitle = "Current session window"
+
+    /// "since 10:30": when the open window began, on the user's own clock.
+    static func since(_ start: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let style = Date.FormatStyle(
+            date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone
+        )
+        return "since \(start.formatted(style))"
+    }
+
+    /// A window with no CLI turns in it: the percentage came from somewhere the logs
+    /// cannot see, and the card says so rather than implying nothing happened. Named
+    /// after the provider's own tools; only Claude and Codex have a session window and a
+    /// cost log today, and anything else gets the neutral sentence.
+    static func emptySession(providerID: String) -> String {
+        switch providerID {
+        case "claude":
+            return "No Claude Code activity in this window. Whatever the session limit is showing came from somewhere else — the Claude apps, or another machine on this account."
+        case "codex":
+            return "No Codex activity in this window. Whatever the session limit is showing came from somewhere else — another Codex client, or another machine on this account."
+        default:
+            return "No activity from the CLI in this window. Whatever the session limit is showing came from somewhere else — another app, or another machine on this account."
+        }
+    }
+
+    static let byProject = "By project"
+
+    /// "1,742 turns" / "1 turn", grouped in the viewer's locale.
+    static func turns(_ count: Int, locale: Locale = .current) -> String {
+        count == 1 ? "1 turn" : "\(count.formatted(.number.locale(locale))) turns"
+    }
+
     // MARK: - Dates
 
     /// "2 Sep 2026": the mockup's date. Pinned to `en_US_POSIX` and the calendar's own
