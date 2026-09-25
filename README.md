@@ -2,7 +2,7 @@
 
 ![Omelette: AI usage at a glance](docs/banner.png)
 
-Omelette is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity/Gemini and Grok limits, local CLI cost accounting, and the agent sessions that need you.
+Omelette is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
 This README is a map. Each section says what it covers and points to the next one.
 
 > **Why "Omelette"?** While reverse-engineering the usage API we found that
@@ -95,7 +95,7 @@ Next: [What it shows](#what-it-shows).
 
 ## What it shows
 
-If you use Claude Code, Codex, Gemini CLI, Antigravity or Grok, this is the
+If you use Claude Code, Codex, Antigravity or Grok, this is the
 one place that shows where you stand across all of them, so a rate limit
 never catches you mid-task.
 
@@ -103,7 +103,7 @@ never catches you mid-task.
 |---|---|
 | **Claude** | 5-hour session and weekly limits per model, decoded dynamically so a new model appears without an update; extra usage credits; Enterprise spend limits |
 | **Codex (OpenAI)** | session and weekly limits from the local Codex CLI; local dollar cost accounting from its session logs, now including compaction calls and sessions moved to `~/.codex/archived_sessions` |
-| **Gemini CLI / Antigravity** | Gemini CLI's daily model quotas using its Google sign-in, or Antigravity's model-pool quotas, the path for personal Google accounts |
+| **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts |
 | **Grok (xAI)** | billing-period credit usage from the local Grok CLI, falling back to grok.com web billing when the CLI is unavailable |
 
 - Costs come from local logs at models.dev list prices, never invented
@@ -306,8 +306,8 @@ Reads the OAuth token that **Claude Code** stores in your macOS Keychain
 Claude Code itself uses for its `/usage` command and status line. Omelette
 never refreshes that token itself; Claude Code owns its own refresh cycle.
 Other providers are read the same reuse-what's-already-there way: the local
-Codex CLI's RPC server, a running Antigravity's local language server, the
-Gemini CLI's Google sign-in, or the local Grok CLI (with a grok.com fallback).
+Codex CLI's RPC server, a running Antigravity's local language server, or the
+local Grok CLI (with a grok.com fallback).
 
 Cost and Activity are read from the CLIs' own logs, so they reach back as far
 as those logs do — up to a year. Claude Code deletes its local transcripts
@@ -324,7 +324,7 @@ to keep a year of them:
   It never asks you to log in anywhere
 - Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost
   reports if you add an Admin API key), `models.dev` (public pricing data),
-  `cloudcode-pa.googleapis.com` (Gemini quota, only if enabled),
+  `cloudcode-pa.googleapis.com` (Antigravity's quota while it isn't running, only if enabled),
   `grok.com` (Grok web-billing fallback, only if enabled), `github.com` and
   `adxd-og.github.io` (Sparkle update feed and DMG download), and local RPC
   to the Codex CLI or Antigravity's language server
@@ -354,8 +354,8 @@ Next: [Requirements](#requirements).
   signed in (`claude login`)
 - Works with Pro / Max / Team / Enterprise subscriptions **and**
   pay-as-you-go Enterprise accounts
-- Optional: Codex CLI (ChatGPT sign-in), Gemini CLI or Antigravity (Google
-  sign-in), and/or Grok CLI (xAI sign-in) for their providers
+- Optional: Codex CLI (ChatGPT sign-in), Antigravity (Google sign-in), and/or
+  Grok CLI (xAI sign-in) for their providers
 - No extra setup for the terminal: Terminal, iTerm2, tmux, cmux and every
   other supported host work out of the box
 
