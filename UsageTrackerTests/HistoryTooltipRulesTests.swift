@@ -23,7 +23,7 @@ final class HistoryTooltipRulesTests: XCTestCase {
             HistoryTooltip(title: "Wed, 2 Sep", headline: nil, rows: [
                 HistoryTooltipRow(label: "Cost", value: "$1,352.28"),
                 HistoryTooltipRow(label: "Turns", value: "6,889"),
-                HistoryTooltipRow(label: "Tokens", value: "1871.3M"),
+                HistoryTooltipRow(label: "Tokens", value: "1.9B"),
             ])
         )
     }
@@ -37,9 +37,9 @@ final class HistoryTooltipRulesTests: XCTestCase {
             calendar: calendar, locale: locale
         )
         XCTAssertEqual(tooltip.title, "Wed, 2 Sep")
-        XCTAssertEqual(tooltip.headline, "1871.3M")
+        XCTAssertEqual(tooltip.headline, "1.9B")
         XCTAssertEqual(tooltip.rows, [
-            HistoryTooltipRow(label: "Cache read", value: "1828.1M", token: .tokenCacheRead),
+            HistoryTooltipRow(label: "Cache read", value: "1.8B", token: .tokenCacheRead),
             HistoryTooltipRow(label: "Cache write", value: "39.6M", token: .tokenCacheWrite),
             HistoryTooltipRow(label: "Output", value: "3.4M", token: .tokenOutput),
             HistoryTooltipRow(label: "Input", value: "216.0k", token: .tokenInput),
