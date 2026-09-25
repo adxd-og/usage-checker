@@ -189,10 +189,51 @@ enum OMSidebarPillRules {
     }
 }
 
+/// The size of a sidebar item. The dashboard's is the default; the Settings sidebar opts
+/// into its mockup's smaller items (`Settings-General(-Light).dc.html`).
+struct OMSidebarPillMetrics: Equatable, Sendable {
+    let height: CGFloat
+    let horizontalPadding: CGFloat
+    let cornerRadius: CGFloat
+
+    /// `Dashboard-Overview(-Light).dc.html`: 34 pt rows, 12 pt in, the nav item's 11 pt corner.
+    static let dashboard = OMSidebarPillMetrics(
+        height: OMSidebarPillRules.height,
+        horizontalPadding: OMSidebarPillRules.horizontalPadding,
+        cornerRadius: OMRadius.navItem
+    )
+    /// `Settings-General(-Light).dc.html`: 32 pt rows, 10 pt in, a 10 pt corner.
+    static let settings = OMSidebarPillMetrics(height: 32, horizontalPadding: 10, cornerRadius: 10)
+}
+
+/// The pill at a metrics' radius: `OMCornerShape`'s continuous rounded rectangle, whose
+/// inset shrinks the radius by the same amount. At 11 pt it draws exactly
+/// `OMCornerShape(.navItem)`.
+struct OMSidebarPillShape: InsettableShape {
+    let radius: CGFloat
+    let insetAmount: CGFloat
+
+    nonisolated init(radius: CGFloat, insetAmount: CGFloat = 0) {
+        self.radius = radius
+        self.insetAmount = insetAmount
+    }
+
+    nonisolated func path(in rect: CGRect) -> Path {
+        let inner = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        return Path(roundedRect: inner, cornerRadius: max(0, radius - insetAmount), style: .continuous)
+    }
+
+    nonisolated func inset(by amount: CGFloat) -> OMSidebarPillShape {
+        OMSidebarPillShape(radius: radius, insetAmount: insetAmount + amount)
+    }
+}
+
 /// A sidebar item: `Button { … } label: { Label("Overview", systemImage: "square.grid.2x2") }`
-/// `.buttonStyle(.omSidebarPill(isSelected: selection == .overview))`.
+/// `.buttonStyle(.omSidebarPill(isSelected: selection == .overview))`. The dashboard's size
+/// unless `metrics` says otherwise.
 struct OMSidebarPillButtonStyle: ButtonStyle {
     let isSelected: Bool
+    var metrics: OMSidebarPillMetrics = .dashboard
 
     func makeBody(configuration: Configuration) -> some View {
         let look = OMSidebarPillRules.appearance(isSelected: isSelected)
@@ -200,19 +241,19 @@ struct OMSidebarPillButtonStyle: ButtonStyle {
             .foregroundStyle(.om(look.title))
             .labelStyle(OMSidebarPillLabelStyle(appearance: look))
             .font(.system(size: OMSidebarPillRules.fontSize, weight: look.weight))
-            .padding(.horizontal, OMSidebarPillRules.horizontalPadding)
-            .frame(height: OMSidebarPillRules.height)
+            .padding(.horizontal, metrics.horizontalPadding)
+            .frame(height: metrics.height)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(OMCornerShape(.navItem))
-            .modifier(OMSidebarPillBackground(showsPill: look.showsPill))
+            .contentShape(OMSidebarPillShape(radius: metrics.cornerRadius))
+            .modifier(OMSidebarPillBackground(showsPill: look.showsPill, radius: metrics.cornerRadius))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
 extension ButtonStyle where Self == OMSidebarPillButtonStyle {
-    static func omSidebarPill(isSelected: Bool) -> OMSidebarPillButtonStyle {
-        OMSidebarPillButtonStyle(isSelected: isSelected)
+    static func omSidebarPill(isSelected: Bool, metrics: OMSidebarPillMetrics = .dashboard) -> OMSidebarPillButtonStyle {
+        OMSidebarPillButtonStyle(isSelected: isSelected, metrics: metrics)
     }
 }
 
@@ -232,10 +273,11 @@ private struct OMSidebarPillLabelStyle: LabelStyle {
 
 private struct OMSidebarPillBackground: ViewModifier {
     let showsPill: Bool
+    let radius: CGFloat
 
     func body(content: Content) -> some View {
         if showsPill {
-            content.raisedPill(in: OMCornerShape(.navItem))
+            content.raisedPill(in: OMSidebarPillShape(radius: radius))
         } else {
             content
         }
