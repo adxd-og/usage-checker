@@ -206,7 +206,7 @@ struct OMSegmentedControl: View {
             .frame(maxWidth: metrics.fillsWidth ? .infinity : nil)
             .contentShape(Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(OMSegmentButtonStyle(isSelected: isSelected))
         // The system's ring is a rectangle around a capsule; the ring below replaces it.
         .focusEffectDisabled()
         .focused($focusedItemID, equals: item.id)
@@ -236,6 +236,25 @@ enum SegmentChrome: Equatable, Sendable {
 
     var showsGlass: Bool { self == .glass || self == .glassAndRing }
     var showsFocusRing: Bool { self == .focusRing || self == .glassAndRing }
+}
+
+/// A segment's button. No chrome of its own: the raised pill behind the selected segment
+/// is `SelectedPill`'s, drawn outside the button, so the hover state layer here lies above
+/// it. The layer is a capsule at the segment's frame, lit only while the segment is
+/// unselected (`OMButtonRules.showsHoverWhenSelectable`); a press dims the label as the
+/// other OM buttons do.
+struct OMSegmentButtonStyle: ButtonStyle {
+    var isSelected = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(
+                shape: Capsule(style: .continuous),
+                isPressed: configuration.isPressed,
+                isActive: OMButtonRules.showsHoverWhenSelectable(isSelected: isSelected)
+            ))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
 }
 
 /// The raised pill behind the selected segment, nothing behind the others. A change
