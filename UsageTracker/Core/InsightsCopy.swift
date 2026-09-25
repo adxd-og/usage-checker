@@ -62,7 +62,7 @@ enum InsightsCopy {
                 title: biggestDayTitle,
                 value: summary.biggestDay.map { money($0.cost, locale: locale) } ?? noValue,
                 delta: nil,
-                caption: summary.biggestDay.map { abbreviatedDay($0.day, calendar: calendar, locale: locale) }
+                caption: summary.biggestDay.map { day($0.day, calendar: calendar) }
             )
         case .mostUsedModelToday:
             return InsightsFigureText(
@@ -92,7 +92,7 @@ enum InsightsCopy {
                 value: busiest.map { percent($0.peak) } ?? noValue,
                 delta: nil,
                 caption: busiest.map { peak in
-                    "\(abbreviatedDay(peak.day, calendar: calendar, locale: locale)) · "
+                    "\(day(peak.day, calendar: calendar)) · "
                         + InsightsRules.windowLabel(for: peak.peakBucketID, in: quotaBuckets)
                 }
             )
@@ -197,10 +197,17 @@ enum InsightsCopy {
 
     // MARK: - Dates
 
-    /// 2.x's date ("Sep 2, 2026" in en_US).
-    private static func abbreviatedDay(_ date: Date, calendar: Calendar, locale: Locale) -> String {
-        date.formatted(Date.FormatStyle(
-            date: .abbreviated, time: .omitted, locale: locale, calendar: calendar, timeZone: calendar.timeZone
-        ))
+    /// "2 Sep 2026": the mockup's date. Pinned to `en_US_POSIX` and the calendar's own
+    /// zone, as `AgentHistorySummary.dayTitle` is: the app's words are English, and the
+    /// date has to name the day the figure was binned into.
+    static func day(_ date: Date, calendar: Calendar = .current) -> String {
+        // Built per call: a card asks once per render, and a shared mutable formatter
+        // would need a lock (this is nonisolated).
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "d MMM yyyy"
+        return formatter.string(from: date)
     }
 }

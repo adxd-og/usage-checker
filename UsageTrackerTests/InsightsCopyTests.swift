@@ -162,4 +162,38 @@ final class InsightsCopyTests: XCTestCase {
         XCTAssertEqual(InsightsCopy.activeDays(1), "1 active day")
         XCTAssertEqual(InsightsCopy.activeDays(0), "0 active days")
     }
+
+    // MARK: - Dates
+
+    func testADayReadsLikeTheMockup() {
+        // 2026-09-02 00:00 UTC, and 21:00 UTC on the 1st, which is the 2nd at UTC+3.
+        let sep2 = Date(timeIntervalSince1970: 1_788_307_200)
+        let lateSep1 = Date(timeIntervalSince1970: 1_788_296_400)
+        var plus3 = utc
+        plus3.timeZone = TimeZone(secondsFromGMT: 3 * 3600)!
+
+        XCTAssertEqual(InsightsCopy.day(sep2, calendar: utc), "2 Sep 2026")
+        XCTAssertEqual(InsightsCopy.day(lateSep1, calendar: plus3), "2 Sep 2026")
+        XCTAssertEqual(InsightsCopy.day(lateSep1, calendar: utc), "1 Sep 2026")
+    }
+
+    func testBiggestDayAndBusiestDayCarryTheSameDate() {
+        let sep2 = Date(timeIntervalSince1970: 1_788_307_200)
+        let quota = QuotaInsights(
+            daysAtCapacity: 1, daysObserved: 1, averageDailyPeak: 97,
+            busiestDay: DailyPeak(day: sep2, peak: 97, peakBucketID: "gemini_pro"),
+            todayPeak: nil, averageDailyConsumption: nil, busiestHour: nil
+        )
+        let s = summary(biggestDay: InsightsDayCost(day: sep2, cost: 1_352.28), quota: quota)
+        let buckets = [QuotaBucketInfo(id: "gemini_pro", label: "Gemini Pro", isCore: true, isLive: true)]
+
+        XCTAssertEqual(
+            text(.biggestDay, s),
+            InsightsFigureText(title: "Biggest day", value: "$1,352.28", delta: nil, caption: "2 Sep 2026")
+        )
+        XCTAssertEqual(
+            text(.busiestQuotaDay, s, buckets: buckets),
+            InsightsFigureText(title: "Busiest day", value: "97%", delta: nil, caption: "2 Sep 2026 · Gemini Pro")
+        )
+    }
 }
