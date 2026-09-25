@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The dashboard's Agents tab: what is running right now, and what has finished
-/// inside the selected range. Live rows come from `AgentSessionStore`; the history
-/// comes from `agent-sessions.jsonl` via `DashboardState.agentRecords`.
+/// The dashboard's Agents tab: how many sessions finished inside the selected range,
+/// and what is running right now. Live rows come from `AgentSessionStore`; the count
+/// comes from `agent-sessions.jsonl` via `DashboardState.agentRecords`. The finished
+/// sessions themselves are listed in History (liquid-glass spec § Removals).
 struct AgentsHistoryView: View {
     @ObservedObject var dashboard: DashboardState
     @ObservedObject private var agents = AgentSessionStore.shared
@@ -10,11 +11,6 @@ struct AgentsHistoryView: View {
     nonisolated static let sourceKey = "agentsHistorySource"
 
     @AppStorage(AgentsHistoryView.sourceKey) private var storedSource: String = "all"
-
-    /// Only used for one caption in the empty state, so it is read once per
-    /// appearance off the main thread (same pattern as `PopoverView`). Starts `true`
-    /// so the caption never flashes before the read lands.
-    @State private var claudeHooksInstalled = true
 
     /// nil = every source. An unknown stored value (a provider that never shipped, a
     /// hand-edited plist) reads as All rather than filtering everything away.
@@ -30,7 +26,6 @@ struct AgentsHistoryView: View {
     }
 
     private var source: AgentSource? { Self.selectedSource(storedSource) }
-    private var calendar: Calendar { Calendar.current }
 
     private var liveSessions: [AgentSession] {
         guard let source else { return agents.sessions }
@@ -38,15 +33,8 @@ struct AgentsHistoryView: View {
     }
 
     var body: some View {
-        // One clock for the whole pass: the tiles and the day titles must agree on
-        // where "today" ends.
-        let now = Date()
         let summary = AgentHistorySummary.make(
-            records: dashboard.agentRecords, source: source, range: dashboard.range, now: now
-        )
-        let days = AgentHistorySummary.days(
-            records: dashboard.agentRecords, source: source,
-            range: dashboard.range, now: now, calendar: calendar
+            records: dashboard.agentRecords, source: source, range: dashboard.range, now: Date()
         )
 
         return ScrollView {
@@ -73,18 +61,14 @@ struct AgentsHistoryView: View {
                 )
                 .padding(.horizontal, 24)
 
-                history(days: days, now: now)
-                    .padding(.horizontal, 24)
-
                 Spacer(minLength: 24)
             }
         }
         // A session ending is what appends to the log, so the live store changing is
-        // the cheapest signal that the history is stale. Also runs on first appearance.
+        // the cheapest signal that the count is stale. Also runs on first appearance.
         .task(id: Self.historyReloadKey(sessions: agents.sessions.count, lastEventAt: agents.lastEventAt)) {
             await dashboard.refreshAgentHistory()
         }
-        .task { await refreshHookStatus() }
     }
 
     /// All, then one segment per agent source; the ids are what `selectedSource` reads.
@@ -110,61 +94,6 @@ struct AgentsHistoryView: View {
             .fixedSize()
             RangePicker(range: $dashboard.range)
         }
-    }
-
-    @ViewBuilder
-    private func history(days: [(day: Date, records: [AgentSessionRecord])], now: Date) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            OMSectionHeader(
-                title: "History",
-                trailing: days.isEmpty ? nil : AgentsSection.sessionsCaption(days.reduce(0) { $0 + $1.records.count })
-            )
-            if days.isEmpty {
-                emptyHistory
-            } else {
-                ForEach(days, id: \.day) { group in
-                    Text(AgentHistorySummary.dayTitle(group.day, now: now, calendar: calendar))
-                        .font(OMFont.micro)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, OMSpacing.xs)
-                        .accessibilityAddTraits(.isHeader)
-                    // Keyed on position, not `record.id`: a session archived by
-                    // `pruneStale` and archived again after `claude --resume` writes
-                    // the same id twice, and duplicate ForEach ids drop rows.
-                    ForEach(Array(group.records.enumerated()), id: \.offset) { _, record in
-                        OMAgentHistoryRow(record: record)
-                    }
-                }
-            }
-        }
-    }
-
-    private var emptyHistory: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs) {
-            Text("No finished sessions in this range")
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
-            if !claudeHooksInstalled {
-                Text("Hooks give exact durations")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
-    }
-
-    private func refreshHookStatus() async {
-        let settingsURL = AgentPaths.claudeSettingsURL
-        let helperPath = AgentPaths.helperSymlinkURL.path
-        let status = await Task.detached(priority: .utility) {
-            AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helperPath)
-        }.value
-        claudeHooksInstalled = status == .installed
     }
 }
 
