@@ -86,7 +86,8 @@ enum OMFont {
     static let body = Font.system(size: 12)
     static let bodyStrong = Font.system(size: 12, weight: .semibold)
     static let caption = Font.system(size: 11)
-    /// Section labels: apply `.textCase(.uppercase)` and `.tracking(0.6)` at the use site (OMSectionHeader does).
+    /// The 2.x uppercase label (`.textCase(.uppercase)`, `.tracking(0.6)` at the use site).
+    /// 3.0 section titles are sentence case (`OMSectionHeader`).
     static let micro = Font.system(size: 10, weight: .semibold)
     /// Dashboard screen titles. The popover's `title` (13 pt) is far too small for a
     /// 920 pt window, and `.title2` is a dynamic role the rest of the kit doesn't use.
