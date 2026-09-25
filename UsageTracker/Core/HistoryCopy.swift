@@ -96,3 +96,62 @@ extension HistoryCopy {
             .joined(separator: " · ")
     }
 }
+
+// MARK: - Chart card
+
+extension HistoryCopy {
+    static func chartTitle(mode: HistoryChartMode) -> String {
+        mode == .tokens ? "Tokens per day" : "Cost per day"
+    }
+
+    static func dayCount(_ n: Int) -> String {
+        n == 1 ? "1 day" : "\(count(n)) days"
+    }
+
+    /// The Cost card's header: the range's days and their total, "7 days · $3,245.60".
+    static func chartSummary(_ summary: HistoryRangeSummary) -> String {
+        "\(dayCount(summary.dayCount)) · \(dollars(summary.cost))"
+    }
+
+    /// "$1,352.28".
+    static func dollars(_ value: Double) -> String {
+        "$" + value.formatted(.number.precision(.fractionLength(2)).locale(numberLocale))
+    }
+
+    /// The cost axis: "$1,500", or cents when a tick falls between dollars.
+    static func costAxisLabel(_ value: Double) -> String {
+        guard value == value.rounded() else { return dollars(value) }
+        return "$" + value.formatted(.number.precision(.fractionLength(0)).locale(numberLocale))
+    }
+
+    /// The tokens axis: "500M", "1,000M", "1.5M", "250k".
+    static func tokenAxisLabel(_ value: Double) -> String {
+        func compact(_ v: Double) -> String {
+            v.formatted(.number.precision(.fractionLength(0...1)).locale(numberLocale))
+        }
+        if abs(value) >= 1_000_000 { return compact(value / 1_000_000) + "M" }
+        if abs(value) >= 1_000 { return compact(value / 1_000) + "k" }
+        return compact(value)
+    }
+
+    /// A cost bar's figure: whole dollars from $10 ("$1,352"), cents below.
+    static func costBarLabel(_ value: Double) -> String {
+        guard value >= 10 else { return dollars(value) }
+        return "$" + value.rounded().formatted(.number.precision(.fractionLength(0)).locale(numberLocale))
+    }
+
+    static func tokenBarLabel(_ tokens: Int) -> String {
+        TokenFormat.formatTokens(tokens)
+    }
+
+    /// A date under the bars, in the chat list's own spelling ("30 Aug", "Aug 30").
+    static func axisDay(_ date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        SessionCopy.dayText(date, calendar: calendar, locale: locale)
+    }
+
+    static let emptyChartTitle = "No CLI usage in this range"
+
+    static func emptyChartHint(command: String) -> String {
+        "Run a `\(command)` session to start collecting data"
+    }
+}

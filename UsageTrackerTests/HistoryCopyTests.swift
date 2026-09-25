@@ -140,3 +140,60 @@ final class HistoryCopyOpenChatTests: XCTestCase {
         XCTAssertEqual(HistoryCopy.agentCaption(main), "282 turns · 80.9M")
     }
 }
+
+/// The chart card's words and figures (`Dashboard-History-Cost`, `-Tokens`).
+final class HistoryCopyChartTests: XCTestCase {
+    func testTheCardIsNamedForItsUnit() {
+        XCTAssertEqual(HistoryCopy.chartTitle(mode: .cost), "Cost per day")
+        XCTAssertEqual(HistoryCopy.chartTitle(mode: .tokens), "Tokens per day")
+    }
+
+    func testTheCostCardsHeaderIsTheDayCountAndTheRangesTotal() {
+        XCTAssertEqual(HistoryCopy.chartSummary(HistoryRangeSummary(dayCount: 7, cost: 3_245.6, activeDays: 7)), "7 days · $3,245.60")
+        XCTAssertEqual(HistoryCopy.chartSummary(HistoryRangeSummary(dayCount: 1, cost: 0, activeDays: 0)), "1 day · $0.00")
+        XCTAssertEqual(HistoryCopy.chartSummary(HistoryRangeSummary(dayCount: 365, cost: 12_884.93, activeDays: 49)), "365 days · $12,884.93")
+    }
+
+    func testDollarsAreGroupedWithTwoDecimals() {
+        XCTAssertEqual(HistoryCopy.dollars(1_352.28), "$1,352.28")
+        XCTAssertEqual(HistoryCopy.dollars(0.07), "$0.07")
+    }
+
+    func testTheCostAxisPrintsWholeDollarsWhereItCan() {
+        XCTAssertEqual(HistoryCopy.costAxisLabel(0), "$0")
+        XCTAssertEqual(HistoryCopy.costAxisLabel(1_500), "$1,500")
+        XCTAssertEqual(HistoryCopy.costAxisLabel(0.5), "$0.50")
+    }
+
+    func testTheTokenAxisPrintsMillionsWithoutAFractionWhereItCan() {
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(0), "0")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(500_000_000), "500M")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(1_000_000_000), "1,000M")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(1_500_000), "1.5M")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(250_000), "250k")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(800), "800")
+    }
+
+    func testABarsFigureIsWholeDollarsFromTen() {
+        XCTAssertEqual(HistoryCopy.costBarLabel(518.2), "$518")
+        XCTAssertEqual(HistoryCopy.costBarLabel(1_352.28), "$1,352")
+        XCTAssertEqual(HistoryCopy.costBarLabel(9.99), "$9.99")
+        XCTAssertEqual(HistoryCopy.costBarLabel(4.734), "$4.73")
+    }
+
+    func testATokenBarsFigureIsTheTokenFormat() {
+        XCTAssertEqual(HistoryCopy.tokenBarLabel(505_500_000), "505.5M")
+        XCTAssertEqual(HistoryCopy.tokenBarLabel(4_800_000), "4.8M")
+    }
+
+    func testTheAxisNamesADayTheWayTheChatListDoes() {
+        // 2026-08-30 00:00 UTC.
+        let day = Date(timeIntervalSince1970: 1_788_048_000)
+        XCTAssertEqual(HistoryCopy.axisDay(day, calendar: SessionFixture.calendar, locale: SessionFixture.locale), "30 Aug")
+    }
+
+    func testAnEmptyChartSaysSoAndAsksForARun() {
+        XCTAssertEqual(HistoryCopy.emptyChartTitle, "No CLI usage in this range")
+        XCTAssertEqual(HistoryCopy.emptyChartHint(command: "codex"), "Run a `codex` session to start collecting data")
+    }
+}

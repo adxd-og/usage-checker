@@ -75,20 +75,6 @@ struct SessionHistoryView: View {
         quota = built
     }
 
-    private var data: [DailyPoint] {
-        let daily = dashboard.cliBreakdown?.daily ?? []
-        let cal = Calendar.current
-        let cutoff = cal.startOfDay(for: Date().addingTimeInterval(-range.seconds))
-        return daily
-            .filter { $0.day >= cutoff }
-            .map {
-                DailyPoint(
-                    day: $0.day, cost: $0.totalCost, tokens: $0.totalTokens,
-                    turns: $0.turns, breakdown: $0.tokens
-                )
-            }
-    }
-
     var body: some View {
         // Measured here, once, off the width the tab is given: the chat list's column
         // header and every one of its rows then draw to the same decision.
@@ -98,7 +84,10 @@ struct SessionHistoryView: View {
     }
 
     private func scrollBody(isWide: Bool) -> some View {
-        ScrollView {
+        // One clock per pass: the chart's days, its total and today's bar agree on
+        // where today ends.
+        let now = Date()
+        return ScrollView {
             VStack(alignment: .leading, spacing: HistoryLayout.sectionSpacing) {
                 VStack(alignment: .leading, spacing: 0) {
                     DashboardHeader(
@@ -116,13 +105,16 @@ struct SessionHistoryView: View {
                     if showsQuota {
                         quotaContent
                     } else {
-                        if data.isEmpty {
-                            placeholder
-                        } else if mode == .tokens {
-                            tokensChart
-                        } else {
-                            chart
-                        }
+                        HistoryChartCard(
+                            days: HistoryRules.days(
+                                daily: dashboard.cliBreakdown?.daily ?? [],
+                                range: range, now: now, calendar: .current
+                            ),
+                            mode: mode,
+                            range: range,
+                            now: now,
+                            command: DashboardState.cliCommandName(for: dashboard.selectedService)
+                        )
                         // The chat list sits under the chart in both units (spec
                         // § Screens, "History · Chart").
                         if hasSessionLog {
@@ -269,97 +261,6 @@ struct SessionHistoryView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 220)
     }
-
-    // MARK: - Cost
-
-    private var chart: some View {
-        Chart(data) { point in
-            BarMark(
-                x: .value("Day", point.day, unit: .day),
-                y: .value("Cost ($)", point.cost)
-            )
-            .foregroundStyle(barGradient)
-            .cornerRadius(4)
-        }
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day, count: max(1, data.count / 8))) { mark in
-                AxisGridLine()
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { _ in
-                AxisGridLine()
-                AxisValueLabel()
-            }
-        }
-        .frame(minHeight: 260)
-    }
-
-    private var barGradient: LinearGradient {
-        LinearGradient(
-            colors: [Color.accentColor, Color.accentColor.opacity(0.4)],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-    }
-
-    // MARK: - Tokens
-
-    /// One bar per day, split by what the tokens were. `TokenCategory.allCases` is
-    /// both the stacking order and the legend's order, and the scale below pins
-    /// each label to its colour — left alone, Charts picks its own palette and the
-    /// bar stops matching the Overview card.
-    private var tokensChart: some View {
-        Chart {
-            ForEach(data) { point in
-                ForEach(TokenCategory.allCases) { category in
-                    BarMark(
-                        x: .value("Day", point.day, unit: .day),
-                        y: .value("Tokens", category.tokens(in: point.breakdown))
-                    )
-                    .foregroundStyle(by: .value("Type", category.label))
-                }
-            }
-        }
-        .chartForegroundStyleScale(
-            domain: TokenCategory.allCases.map(\.label),
-            range: TokenCategory.allCases.map(\.color)
-        )
-        .chartXAxis {
-            AxisMarks(values: .stride(by: .day, count: max(1, data.count / 8))) { _ in
-                AxisGridLine()
-                AxisValueLabel(format: .dateTime.month(.abbreviated).day())
-            }
-        }
-        .chartYAxis {
-            AxisMarks(position: .leading) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    // A million-token day is the norm; raw digits would be a wall.
-                    if let tokens = value.as(Int.self) {
-                        Text(TokenFormat.formatTokens(tokens))
-                    } else if let tokens = value.as(Double.self) {
-                        Text(TokenFormat.formatTokens(Int(tokens)))
-                    }
-                }
-            }
-        }
-        .chartLegend(position: .bottom, alignment: .leading)
-        .frame(minHeight: 260)
-    }
-
-    private var placeholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.bar.xaxis").font(.largeTitle).foregroundStyle(.tertiary)
-            Text("No CLI usage recorded yet")
-                .foregroundStyle(.secondary)
-            Text("Run a `\(DashboardState.cliCommandName(for: dashboard.selectedService))` session to start collecting data")
-                .font(OMFont.body)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxWidth: .infinity, minHeight: 220)
-    }
 }
 
 /// Which unit the history tab charts. Persisted (`@AppStorage`), so the tab
@@ -378,18 +279,6 @@ enum HistoryChartMode: String, CaseIterable, Identifiable {
         case .sessions: return "Sessions"
         }
     }
-}
-
-private struct DailyPoint: Identifiable {
-    let day: Date
-    let cost: Double
-    let tokens: Int
-    let turns: Int
-    /// The same day's tokens split by what they were. `tokens` stays the headline
-    /// figure: for Grok the CLI's own total is authoritative and may differ from
-    /// the sum of the parts.
-    let breakdown: TokenBreakdown
-    var id: Date { day }
 }
 
 // MARK: - Quota cache (computed off the main thread, then cached in @State)

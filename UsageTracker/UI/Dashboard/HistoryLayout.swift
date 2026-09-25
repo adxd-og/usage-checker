@@ -96,3 +96,20 @@ extension HistoryLayout {
     static let shareBarHeight: CGFloat = 4
     static let panelRowVerticalPadding: CGFloat = 7
 }
+
+// MARK: - Chart card
+
+extension HistoryLayout {
+    /// The chart cards: `padding: 20px 24px 14px; gap: 10px`; a 210 pt plot.
+    static var chartCardPadding: EdgeInsets { EdgeInsets(top: 20, leading: 24, bottom: 14, trailing: 24) }
+    static let chartCardSpacing: CGFloat = 10
+    static let chartHeight: CGFloat = 210
+    /// A bar is half its day's slot (54.4 of 108.7 pt).
+    static let barWidthRatio: Double = 0.5
+    /// Axis figures 11 px; dates and bar figures 11.5 px.
+    static let axisLabelSize: CGFloat = 11
+    static let barLabelSize: CGFloat = 11.5
+    /// The Tokens legend: 8 pt dots, 16 pt apart.
+    static let legendDotSize: CGFloat = 8
+    static let legendSpacing: CGFloat = 16
+}
