@@ -126,3 +126,14 @@ extension HistoryLayout {
     /// How far under the plot's top the bubble sits (`y="40"` over a plot from 24).
     static let tooltipTopInset: CGFloat = 16
 }
+
+// MARK: - Quota chart
+
+extension HistoryLayout {
+    /// `Dashboard-Quota-History`: the legend over a 380 pt plot (`gap: 12px`), legend
+    /// items wrapping `gap: 8px 18px`, 2 pt lines.
+    static let quotaChartHeight: CGFloat = 380
+    static let quotaCardSpacing: CGFloat = 12
+    static let quotaLegendItemWidth: CGFloat = 150
+    static let quotaLineWidth: CGFloat = 2
+}

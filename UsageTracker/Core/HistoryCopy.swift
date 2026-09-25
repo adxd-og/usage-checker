@@ -181,3 +181,36 @@ extension HistoryCopy {
         ))
     }
 }
+
+// MARK: - Quota chart
+
+extension HistoryCopy {
+    /// "29%".
+    static func percent(_ value: Double) -> String {
+        "\(Int(value.rounded()))%"
+    }
+
+    /// The quota chart's time axis: the hour for a day, the month for a year, the day
+    /// between.
+    static func quotaAxisLabel(
+        _ date: Date, range: TimeRange, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        switch range {
+        case .fiveHours, .oneDay:
+            return time(date, calendar: calendar, locale: locale)
+        case .oneYear:
+            return date.formatted(
+                Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
+                    .month(.abbreviated)
+            )
+        case .sevenDays, .thirtyDays, .ninetyDays:
+            return SessionCopy.dayText(date, calendar: calendar, locale: locale)
+        }
+    }
+
+    static func noQuotaTitle(provider: String) -> String {
+        "No quota recorded yet for \(provider)"
+    }
+
+    static let noQuotaHint = "Windows are recorded on every successful poll — this fills in as the app runs."
+}

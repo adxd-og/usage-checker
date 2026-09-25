@@ -197,3 +197,38 @@ final class HistoryCopyChartTests: XCTestCase {
         XCTAssertEqual(HistoryCopy.emptyChartHint(command: "codex"), "Run a `codex` session to start collecting data")
     }
 }
+
+/// The quota chart's figures and its empty state.
+final class HistoryCopyQuotaTests: XCTestCase {
+    /// Sunday 6 September 2026, 12:00 UTC.
+    private let noon = Date(timeIntervalSince1970: 1_788_696_000)
+
+    func testPercentagesAreWhole() {
+        XCTAssertEqual(HistoryCopy.percent(28.6), "29%")
+        XCTAssertEqual(HistoryCopy.percent(0), "0%")
+        XCTAssertEqual(HistoryCopy.percent(100), "100%")
+    }
+
+    func testTheTimeAxisNamesHoursDaysOrMonths() {
+        XCTAssertEqual(
+            HistoryCopy.quotaAxisLabel(noon, range: .oneDay, calendar: SessionFixture.calendar, locale: SessionFixture.locale),
+            "12:00"
+        )
+        XCTAssertEqual(
+            HistoryCopy.quotaAxisLabel(noon, range: .sevenDays, calendar: SessionFixture.calendar, locale: SessionFixture.locale),
+            "6 Sep"
+        )
+        XCTAssertEqual(
+            HistoryCopy.quotaAxisLabel(noon, range: .oneYear, calendar: SessionFixture.calendar, locale: Locale(identifier: "en_US")),
+            "Sep"
+        )
+    }
+
+    func testAnEmptyQuotaChartSaysWhoseAndWhen() {
+        XCTAssertEqual(HistoryCopy.noQuotaTitle(provider: "Antigravity"), "No quota recorded yet for Antigravity")
+        XCTAssertEqual(
+            HistoryCopy.noQuotaHint,
+            "Windows are recorded on every successful poll — this fills in as the app runs."
+        )
+    }
+}

@@ -160,3 +160,88 @@ final class HistoryRulesChartLookTests: XCTestCase {
         XCTAssertEqual(HistoryRules.barCornerRadius(dayCount: 90), 2)
     }
 }
+
+/// Liquid-glass spec § Screens, "History · quota-only provider" (`Dashboard-Quota-History`):
+/// one coloured line per window on a fixed 0–100 % axis.
+final class HistoryRulesQuotaTests: XCTestCase {
+    func testTheLinesTakeTheMockupsColoursInTheProvidersOrder() {
+        XCTAssertEqual(
+            HistoryRules.quotaSeriesTokens,
+            [.tokenCacheRead, .seriesSession, .seriesQuota, .seriesAllModels, .seriesPerModel, .tokenOutput]
+        )
+        XCTAssertEqual((0..<6).map(HistoryRules.quotaSeriesToken(index:)), HistoryRules.quotaSeriesTokens)
+    }
+
+    func testASeventhWindowStartsTheColoursAgain() {
+        XCTAssertEqual(HistoryRules.quotaSeriesToken(index: 6), .tokenCacheRead)
+        XCTAssertEqual(HistoryRules.quotaSeriesToken(index: 8), .seriesQuota)
+    }
+
+    func testTheAxisIsAFixedZeroToAHundredInQuarters() {
+        XCTAssertEqual(HistoryRules.quotaAxisValues, [0, 25, 50, 75, 100])
+    }
+
+    func testTheTimeAxisMarksHoursDaysOrMonths() {
+        XCTAssertEqual(HistoryRules.quotaAxisStride(range: .oneDay), HistoryAxisStride(component: .hour, count: 4))
+        XCTAssertEqual(HistoryRules.quotaAxisStride(range: .sevenDays), HistoryAxisStride(component: .day, count: 1))
+        XCTAssertEqual(HistoryRules.quotaAxisStride(range: .thirtyDays), HistoryAxisStride(component: .day, count: 4))
+        XCTAssertEqual(HistoryRules.quotaAxisStride(range: .ninetyDays), HistoryAxisStride(component: .day, count: 12))
+        XCTAssertEqual(HistoryRules.quotaAxisStride(range: .oneYear), HistoryAxisStride(component: .month, count: 1))
+    }
+
+    // Review finding F1: the quota chart covers the cost chart's days (ruling S1).
+
+    /// 2026-09-06 12:00 UTC, a Sunday.
+    private let now = Date(timeIntervalSince1970: 1_788_696_000)
+    /// 2026-08-31 00:00 UTC, the first of the seven days ending 6 September.
+    private let august31 = Date(timeIntervalSince1970: 1_788_134_400)
+
+    private var utc: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }
+
+    private let buckets = [QuotaBucketInfo(id: "session", label: "Session", isCore: true, isLive: true)]
+
+    func testSevenDaysOfQuotaAreTheCostChartsSevenCalendarDays() {
+        let records = Fixture.quotaHistory(points: [
+            (at: august31.addingTimeInterval(-4 * 3_600), percents: ["session": 70]),  // 30 Aug, 20:00
+            (at: august31, percents: ["session": 20]),
+        ])
+        let series = HistoryRules.quotaSeries(records: records, buckets: buckets, range: .sevenDays, now: now, calendar: utc)
+        XCTAssertEqual(series.first?.points.map(\.time), [august31], "30 August's evening is outside, 31 August's midnight inside")
+        XCTAssertEqual(HistoryRules.quotaDomain(range: .sevenDays, now: now, calendar: utc), august31...now)
+    }
+
+    func testADayOfQuotaIsTheRolling24Hours() {
+        XCTAssertEqual(
+            HistoryRules.quotaDomain(range: .oneDay, now: now, calendar: utc),
+            now.addingTimeInterval(-24 * 3_600)...now
+        )
+    }
+
+    func testAWindowWithNoReadingInTheRangeDrawsNoLine() {
+        let records = Fixture.quotaHistory(points: [(at: august31.addingTimeInterval(-3_600), percents: ["session": 70])])
+        XCTAssertEqual(HistoryRules.quotaSeries(records: records, buckets: buckets, range: .sevenDays, now: now, calendar: utc), [])
+    }
+
+    /// The lines and the axis come from one `now`: the page caches this value and the
+    /// card draws its domain, so the cutoff and the x extent cannot drift apart.
+    func testTheLinesAndTheAxisShareOneDomain() {
+        let records = Fixture.quotaHistory(points: [
+            (at: august31, percents: ["session": 20]),
+            (at: now.addingTimeInterval(-3_600), percents: ["session": 40]),
+        ])
+        for range in HistoryRules.ranges {
+            let chart = HistoryRules.quotaChart(records: records, buckets: buckets, range: range, now: now, calendar: utc)
+            XCTAssertEqual(chart.domain, HistoryRules.quotaDomain(range: range, now: now, calendar: utc), "\(range)")
+            XCTAssertEqual(
+                chart.series,
+                HistoryRules.quotaSeries(records: records, buckets: buckets, range: range, now: now, calendar: utc),
+                "\(range)"
+            )
+            XCTAssertTrue(chart.series.flatMap(\.points).allSatisfy { chart.domain.contains($0.time) }, "\(range)")
+        }
+    }
+}

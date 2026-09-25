@@ -1,5 +1,4 @@
 import SwiftUI
-import Charts
 
 /// Dashboard → History (liquid-glass spec § Screens, the History rows): the title and
 /// its one sentence, a controls row, the selected provider's days and, for a provider
@@ -63,9 +62,13 @@ struct SessionHistoryView: View {
         let started = cacheKey
         let records = dashboard.history
         let buckets = dashboard.quotaBuckets
-        let span = range.seconds
-        let built = await Task.detached(priority: .userInitiated) {
-            QuotaHistoryCache.build(records: records, buckets: buckets, span: span)
+        let range = self.range
+        let built = await Task.detached(priority: .userInitiated) { () -> QuotaHistoryCache in
+            // One clock for the lines and the axis (`HistoryRules.quotaChart`).
+            let chart = HistoryRules.quotaChart(
+                records: records, buckets: buckets, range: range, now: Date(), calendar: .current
+            )
+            return QuotaHistoryCache(series: chart.series, domain: chart.domain)
         }.value
         // See `DerivedCacheGate`: a pass for the provider or range just left must not
         // land after the new one's.
@@ -200,42 +203,13 @@ struct SessionHistoryView: View {
 
     @ViewBuilder
     private var quotaContent: some View {
-        if quota.series.isEmpty {
-            noQuotaPlaceholder
-        } else {
-            quotaChart
-            costFootnote
-        }
-    }
-
-    /// One line per window, all on a fixed 0–100% axis. The scale is deliberately
-    /// absolute rather than fitted to the data: half of the point is seeing how much
-    /// headroom was left, which a rescaled axis hides.
-    private var quotaChart: some View {
-        Chart {
-            ForEach(quota.series) { series in
-                ForEach(series.points) { point in
-                    LineMark(
-                        x: .value("Time", point.time),
-                        y: .value("Used", point.percent)
-                    )
-                    .foregroundStyle(by: .value("Window", series.bucket.label))
-                }
-            }
-        }
-        .chartYScale(domain: 0...100)
-        .chartYAxis {
-            AxisMarks(position: .leading, values: [0.0, 25, 50, 75, 100]) { value in
-                AxisGridLine()
-                AxisValueLabel {
-                    if let percent = value.as(Double.self) {
-                        Text("\(Int(percent))%")
-                    }
-                }
-            }
-        }
-        .chartLegend(position: .bottom, alignment: .leading)
-        .frame(minHeight: 260)
+        HistoryQuotaCard(
+            series: quota.series,
+            domain: quota.domain,
+            range: range,
+            providerName: dashboard.displayName(for: dashboard.selectedService)
+        )
+        costFootnote
     }
 
     /// The quota chart answers "how much did I use", not "what did it cost" — say
@@ -245,21 +219,6 @@ struct SessionHistoryView: View {
             .font(OMFont.caption)
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var noQuotaPlaceholder: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "chart.line.uptrend.xyaxis").font(.largeTitle).foregroundStyle(.tertiary)
-            Text("No quota recorded yet for \(dashboard.displayName(for: dashboard.selectedService))")
-                .foregroundStyle(.secondary)
-            Text("Windows are recorded on every successful poll — this fills in as the app runs.")
-                .font(OMFont.body)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: 420)
-        }
-        .frame(maxWidth: .infinity, minHeight: 220)
     }
 }
 
@@ -283,26 +242,11 @@ enum HistoryChartMode: String, CaseIterable, Identifiable {
 
 // MARK: - Quota cache (computed off the main thread, then cached in @State)
 
-private struct QuotaSeries: Identifiable, Sendable {
-    let bucket: QuotaBucketInfo
-    let points: [QuotaPoint]
-    var id: String { bucket.id }
-}
-
+/// The quota chart's lines and the domain they were built for, off the main actor by
+/// `HistoryRules.quotaChart`; the card draws this domain, not one of its own.
 private struct QuotaHistoryCache: Sendable {
-    let series: [QuotaSeries]
+    let series: [HistoryQuotaSeries]
+    let domain: ClosedRange<Date>
 
-    static let empty = QuotaHistoryCache(series: [])
-
-    static func build(records: [HistoryRecord], buckets: [QuotaBucketInfo], span: TimeInterval) -> QuotaHistoryCache {
-        let to = Date()
-        let from = to.addingTimeInterval(-span)
-        // Every window gets a line, core or not: a promotional pool is still quota the
-        // user can watch drain.
-        let series = buckets.compactMap { bucket -> QuotaSeries? in
-            let points = QuotaAnalytics.series(records: records, bucketID: bucket.id, from: from, to: to)
-            return points.isEmpty ? nil : QuotaSeries(bucket: bucket, points: points)
-        }
-        return QuotaHistoryCache(series: series)
-    }
+    static let empty = QuotaHistoryCache(series: [], domain: Date.distantPast...Date.distantPast)
 }

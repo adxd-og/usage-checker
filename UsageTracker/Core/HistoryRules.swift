@@ -163,3 +163,92 @@ extension HistoryRules {
         return days.first { $0.day == start }
     }
 }
+
+// MARK: - Quota-only provider
+
+/// One window's line on the quota chart: its name from the live snapshot, its readings
+/// binned by `QuotaAnalytics.series`.
+struct HistoryQuotaSeries: Equatable, Sendable, Identifiable {
+    let bucket: QuotaBucketInfo
+    let points: [QuotaPoint]
+
+    var id: String { bucket.id }
+}
+
+/// The quota chart as one value: its x extent and the lines over it, computed with
+/// one `now` (`HistoryRules.quotaChart`), so the page's cache and the card's axis
+/// cannot disagree about the range.
+struct HistoryQuotaChart: Equatable, Sendable {
+    let domain: ClosedRange<Date>
+    let series: [HistoryQuotaSeries]
+}
+
+/// How often a mark sits on the quota chart's time axis.
+struct HistoryAxisStride: Equatable, Sendable {
+    let component: Calendar.Component
+    let count: Int
+}
+
+extension HistoryRules {
+    /// The lines' colours in the provider's window order (`Dashboard-Quota-History`).
+    static let quotaSeriesTokens: [OMColorToken] = [
+        .tokenCacheRead, .seriesSession, .seriesQuota, .seriesAllModels, .seriesPerModel, .tokenOutput,
+    ]
+
+    /// A seventh window starts the colours again.
+    static func quotaSeriesToken(index: Int) -> OMColorToken {
+        let count = quotaSeriesTokens.count
+        return quotaSeriesTokens[((index % count) + count) % count]
+    }
+
+    /// A fixed 0–100 % axis in quarters: half the point is the headroom left, which a
+    /// fitted axis hides.
+    static let quotaAxisValues: [Double] = [0, 25, 50, 75, 100]
+
+    /// Hours for a day, days for a week or a month, months for a year.
+    static func quotaAxisStride(range: TimeRange) -> HistoryAxisStride {
+        switch range {
+        case .fiveHours: return HistoryAxisStride(component: .hour, count: 1)
+        case .oneDay: return HistoryAxisStride(component: .hour, count: 4)
+        case .sevenDays: return HistoryAxisStride(component: .day, count: 1)
+        case .thirtyDays: return HistoryAxisStride(component: .day, count: 4)
+        case .ninetyDays: return HistoryAxisStride(component: .day, count: 12)
+        case .oneYear: return HistoryAxisStride(component: .month, count: 1)
+        }
+    }
+
+    /// The quota chart's extent (review finding F1): the cost chart's days for 7d, 30d,
+    /// 90d and 1y (`windowStart`, ruling S1) through now, so Chart and Calendar agree on
+    /// what a range covers; 24h is the rolling 24 hours.
+    static func quotaDomain(range: TimeRange, now: Date, calendar: Calendar) -> ClosedRange<Date> {
+        guard calendarDays(range) != nil else { return now.addingTimeInterval(-range.seconds)...now }
+        return windowStart(range: range, now: now, calendar: calendar)...now
+    }
+
+    /// One line per window over `quotaDomain`, core or not: a promotional pool is still
+    /// quota the user can watch drain. A window with no reading in the range has no line.
+    static func quotaSeries(
+        records: [HistoryRecord], buckets: [QuotaBucketInfo],
+        range: TimeRange, now: Date, calendar: Calendar
+    ) -> [HistoryQuotaSeries] {
+        let domain = quotaDomain(range: range, now: now, calendar: calendar)
+        return buckets.compactMap { bucket in
+            let points = QuotaAnalytics.series(
+                records: records, bucketID: bucket.id, from: domain.lowerBound, to: domain.upperBound
+            )
+            return points.isEmpty ? nil : HistoryQuotaSeries(bucket: bucket, points: points)
+        }
+    }
+
+    /// The domain and the lines together, from the same `now`: what the page caches and
+    /// the card draws.
+    static func quotaChart(
+        records: [HistoryRecord], buckets: [QuotaBucketInfo],
+        range: TimeRange, now: Date, calendar: Calendar
+    ) -> HistoryQuotaChart {
+        HistoryQuotaChart(
+            domain: quotaDomain(range: range, now: now, calendar: calendar),
+            series: quotaSeries(records: records, buckets: buckets, range: range, now: now, calendar: calendar)
+        )
+    }
+}
