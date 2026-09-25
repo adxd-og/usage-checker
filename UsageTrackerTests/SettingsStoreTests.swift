@@ -34,7 +34,6 @@ final class SettingsStoreTests: XCTestCase {
         s.anthropicBetaHeader = "oauth-1999-01-01"
         s.preferAdminWhenAvailable = !SettingsStore.Defaults.preferAdminWhenAvailable
         s.codexProviderEnabled = !SettingsStore.Defaults.codexProviderEnabled
-        s.geminiProviderEnabled = !SettingsStore.Defaults.geminiProviderEnabled
         s.antigravityProviderEnabled = !SettingsStore.Defaults.antigravityProviderEnabled
         s.grokProviderEnabled = !SettingsStore.Defaults.grokProviderEnabled
         s.claudeWeeklyBudgetUSD = 250
@@ -80,7 +79,6 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.anthropicBetaHeader, SettingsStore.Defaults.anthropicBetaHeader, message)
         XCTAssertEqual(s.preferAdminWhenAvailable, SettingsStore.Defaults.preferAdminWhenAvailable, message)
         XCTAssertEqual(s.codexProviderEnabled, SettingsStore.Defaults.codexProviderEnabled, message)
-        XCTAssertEqual(s.geminiProviderEnabled, SettingsStore.Defaults.geminiProviderEnabled, message)
         XCTAssertEqual(s.antigravityProviderEnabled, SettingsStore.Defaults.antigravityProviderEnabled, message)
         XCTAssertEqual(s.grokProviderEnabled, SettingsStore.Defaults.grokProviderEnabled, message)
         XCTAssertEqual(s.claudeWeeklyBudgetUSD, SettingsStore.Defaults.claudeWeeklyBudgetUSD, message)
@@ -212,5 +210,20 @@ final class SettingsStoreTests: XCTestCase {
 
         XCTAssertFalse(settings.agentsHooksPromptDismissed)
         XCTAssertFalse(settings.agentsHooksPromptNotified, "the launch notification may speak once more")
+    }
+
+    /// Liquid-glass spec § Packages P8: the Gemini CLI provider and its switch are gone.
+    /// A reset no longer writes `geminiProviderEnabled`, and a value an earlier build
+    /// stored is left where it is (session ruling R1: nothing migrates or deletes).
+    @MainActor
+    func testAResetNoLongerWritesTheRemovedGeminiSwitch() {
+        let key = "geminiProviderEnabled"
+        UserDefaults.standard.removeObject(forKey: key)
+        SettingsStore.shared.resetToDefaults()
+        XCTAssertNil(UserDefaults.standard.object(forKey: key), "the reset wrote the removed switch back")
+
+        UserDefaults.standard.set(true, forKey: key)
+        SettingsStore.shared.resetToDefaults()
+        XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Bool, true, "a stored value is left in place")
     }
 }

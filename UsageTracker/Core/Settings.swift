@@ -75,7 +75,6 @@ final class SettingsStore: ObservableObject {
         // re-detect what's installed now rather than pin what was found at first
         // launch. `@AppStorage` keeps re-evaluating these until the user decides.
         static var codexProviderEnabled: Bool { CodexProvider.isCodexInstalled }
-        static var geminiProviderEnabled: Bool { GeminiProvider.isGeminiSignedIn }
         static var antigravityProviderEnabled: Bool { AntigravityProvider.isAntigravityInstalled }
         static var grokProviderEnabled: Bool { GrokProvider.isGrokInstalled }
     }
@@ -88,8 +87,6 @@ final class SettingsStore: ObservableObject {
     @AppStorage("preferAdminWhenAvailable") var preferAdminWhenAvailable: Bool = Defaults.preferAdminWhenAvailable
     // Defaults to on when the Codex CLI has been signed into on this machine.
     @AppStorage("codexProviderEnabled") var codexProviderEnabled: Bool = Defaults.codexProviderEnabled
-    // Defaults to on once the Gemini CLI has OAuth credentials on this machine.
-    @AppStorage("geminiProviderEnabled") var geminiProviderEnabled: Bool = Defaults.geminiProviderEnabled
     // Defaults to on when Antigravity (app or CLI) is installed on this machine.
     @AppStorage("antigravityProviderEnabled") var antigravityProviderEnabled: Bool = Defaults.antigravityProviderEnabled
     // Defaults to on once the Grok CLI has been signed into on this machine.
@@ -177,7 +174,6 @@ final class SettingsStore: ObservableObject {
         anthropicBetaHeader = Defaults.anthropicBetaHeader
         preferAdminWhenAvailable = Defaults.preferAdminWhenAvailable
         codexProviderEnabled = Defaults.codexProviderEnabled
-        geminiProviderEnabled = Defaults.geminiProviderEnabled
         antigravityProviderEnabled = Defaults.antigravityProviderEnabled
         grokProviderEnabled = Defaults.grokProviderEnabled
         claudeWeeklyBudgetUSD = Defaults.claudeWeeklyBudgetUSD
