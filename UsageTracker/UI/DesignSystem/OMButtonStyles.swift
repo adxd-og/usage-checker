@@ -182,6 +182,16 @@ struct OMCircleButtonStyle: ButtonStyle {
     }
 }
 
+/// An icon with no chrome of its own, sized by its label (the agent row's 16 pt disclosure
+/// chevron): lit under the pointer in a circle at that frame. `.buttonStyle(.omBareIcon)`.
+struct OMBareIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(shape: Circle(), isPressed: configuration.isPressed))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
 private struct OMButtonLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: OMButtonRules.iconSpacing) {
@@ -202,6 +212,10 @@ extension ButtonStyle where Self == OMCapsuleButtonStyle {
 
 extension ButtonStyle where Self == OMCircleButtonStyle {
     static var omCircle: OMCircleButtonStyle { OMCircleButtonStyle() }
+}
+
+extension ButtonStyle where Self == OMBareIconButtonStyle {
+    static var omBareIcon: OMBareIconButtonStyle { OMBareIconButtonStyle() }
 }
 
 #Preview("Buttons") {
