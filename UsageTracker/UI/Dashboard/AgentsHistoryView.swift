@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// The dashboard's Agents tab: what is running right now, and what has finished
-/// inside the selected range. Live rows come from `AgentSessionStore`; the history
-/// comes from `agent-sessions.jsonl` via `DashboardState.agentRecords`.
+/// The dashboard's Agents tab: how many sessions finished inside the selected range,
+/// and what is running right now. Live rows come from `AgentSessionStore`; the count
+/// comes from `agent-sessions.jsonl` via `DashboardState.agentRecords`. The finished
+/// sessions themselves are listed in History (liquid-glass spec § Removals).
 struct AgentsHistoryView: View {
     @ObservedObject var dashboard: DashboardState
     @ObservedObject private var agents = AgentSessionStore.shared
@@ -10,11 +11,8 @@ struct AgentsHistoryView: View {
     nonisolated static let sourceKey = "agentsHistorySource"
 
     @AppStorage(AgentsHistoryView.sourceKey) private var storedSource: String = "all"
-
-    /// Only used for one caption in the empty state, so it is read once per
-    /// appearance off the main thread (same pattern as `PopoverView`). Starts `true`
-    /// so the caption never flashes before the read lands.
-    @State private var claudeHooksInstalled = true
+    /// The window's tab. Writing it is how any view switches tabs; the window follows.
+    @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
 
     /// nil = every source. An unknown stored value (a provider that never shipped, a
     /// hand-edited plist) reads as All rather than filtering everything away.
@@ -30,7 +28,6 @@ struct AgentsHistoryView: View {
     }
 
     private var source: AgentSource? { Self.selectedSource(storedSource) }
-    private var calendar: Calendar { Calendar.current }
 
     private var liveSessions: [AgentSession] {
         guard let source else { return agents.sessions }
@@ -38,181 +35,72 @@ struct AgentsHistoryView: View {
     }
 
     var body: some View {
-        // One clock for the whole pass: the tiles and the day titles must agree on
-        // where "today" ends.
-        let now = Date()
         let summary = AgentHistorySummary.make(
-            records: dashboard.agentRecords, source: source, range: dashboard.range, now: now
-        )
-        let days = AgentHistorySummary.days(
-            records: dashboard.agentRecords, source: source,
-            range: dashboard.range, now: now, calendar: calendar
+            records: dashboard.agentRecords, source: source, range: dashboard.range, now: Date()
         )
 
         return ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 0) {
                 DashboardHeader(
-                    title: "Agents",
-                    trailing: AnyView(RangePicker(range: $dashboard.range)),
+                    title: AgentsCopy.title,
+                    trailing: AnyView(headerControls),
                     showsServicePicker: false
                 )
 
-                OMSegmentedControl(items: Self.sourceItems, selection: $storedSource)
-                    .frame(width: 260)
-                    .padding(.horizontal, 24)
+                VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
+                    AgentsStatsCard(tiles: AgentsStatsRules.tiles(summary))
 
-                AgentsSummaryStrip(summary: summary)
-                    .padding(.horizontal, 24)
-
-                AgentsSection(
-                    sessions: liveSessions,
-                    grouped: true,
-                    // The dashboard never nags about hooks — Settings → Agents owns that.
-                    hooksInstalled: true,
-                    title: "Live",
-                    // The page is already a ScrollView; a second one inside it would
-                    // eat the wheel and hide rows behind a cap the window doesn't need.
-                    maxListHeight: .infinity,
-                    onEnable: {}
-                )
-                .padding(.horizontal, 24)
-
-                history(days: days, now: now)
-                    .padding(.horizontal, 24)
-
-                Spacer(minLength: 24)
+                    AgentsLiveCard(sessions: liveSessions, onShowHistory: { showHistory() })
+                }
+                // The mockup's column, whose side gutters the header already sits on.
+                .padding(.top, AgentsLayout.headerGap)
+                .padding(.leading, DashboardShellLayout.columnLeading)
+                .padding(.trailing, DashboardShellLayout.columnTrailing)
+                .padding(.bottom, AgentsLayout.columnBottom)
             }
         }
         // A session ending is what appends to the log, so the live store changing is
-        // the cheapest signal that the history is stale. Also runs on first appearance.
+        // the cheapest signal that the count is stale. Also runs on first appearance.
         .task(id: Self.historyReloadKey(sessions: agents.sessions.count, lastEventAt: agents.lastEventAt)) {
             await dashboard.refreshAgentHistory()
         }
-        .task { await refreshHookStatus() }
     }
 
-    private static let sourceItems = [
+    /// All, then one segment per agent source; the ids are what `selectedSource` reads.
+    nonisolated static let sourceItems = [
         OMSegmentItem(id: "all", title: "All"),
         OMSegmentItem(id: "claude", title: "Claude", serviceID: "claude"),
         OMSegmentItem(id: "codex", title: "Codex", serviceID: "codex", sfFallback: "terminal"),
     ]
 
-    @ViewBuilder
-    private func history(days: [(day: Date, records: [AgentSessionRecord])], now: Date) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            OMSectionHeader(
-                title: "History",
-                trailing: days.isEmpty ? nil : AgentsSection.sessionsCaption(days.reduce(0) { $0 + $1.records.count })
+    /// The mockup's title row: the source filter, then the range, 12 pt apart, in the
+    /// header's trailing slot (its provider row stays hidden: this tab is not about one
+    /// provider). The filter keeps ⌘1–⌘3 (All / Claude / Codex), as in 2.7; the range
+    /// picker has no number keys.
+    private var headerControls: some View {
+        HStack(spacing: AgentsLayout.headerControlsSpacing) {
+            OMSegmentedControl(
+                items: Self.sourceItems,
+                selection: $storedSource,
+                accessibilityLabel: AgentsCopy.sourcePickerName
             )
-            if days.isEmpty {
-                emptyHistory
-            } else {
-                ForEach(days, id: \.day) { group in
-                    Text(AgentHistorySummary.dayTitle(group.day, now: now, calendar: calendar))
-                        .font(OMFont.micro)
-                        .textCase(.uppercase)
-                        .tracking(0.5)
-                        .foregroundStyle(.secondary)
-                        .padding(.top, OMSpacing.xs)
-                        .accessibilityAddTraits(.isHeader)
-                    // Keyed on position, not `record.id`: a session archived by
-                    // `pruneStale` and archived again after `claude --resume` writes
-                    // the same id twice, and duplicate ForEach ids drop rows.
-                    ForEach(Array(group.records.enumerated()), id: \.offset) { _, record in
-                        OMAgentHistoryRow(record: record)
-                    }
-                }
-            }
+            // The header is a flexible HStack; without this the capsule would stretch
+            // across whatever the title leaves free.
+            .fixedSize()
+            RangePicker(range: $dashboard.range)
         }
     }
 
-    private var emptyHistory: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs) {
-            Text("No finished sessions in this range")
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
-            if !claudeHooksInstalled {
-                Text("Hooks give exact durations")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
-            }
+    /// "All sessions in History ›": History, on the provider the source filter names
+    /// (`AgentsLinkRules`); All leaves the provider as it is. The provider goes through
+    /// `selectedService`, which stores it under `DashboardState.selectionKey` and also
+    /// clears and reloads the provider's numbers. A bare write to that key would leave the
+    /// old provider's figures on screen under the new name.
+    private func showHistory() {
+        let target = AgentsLinkRules.target(source: source)
+        if let serviceID = target.serviceID {
+            dashboard.selectedService = serviceID
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: OMRadius.row, style: .continuous).fill(OMSurface.row))
-    }
-
-    private func refreshHookStatus() async {
-        let settingsURL = AgentPaths.claudeSettingsURL
-        let helperPath = AgentPaths.helperSymlinkURL.path
-        let status = await Task.detached(priority: .utility) {
-            AgentHooksInstaller.claudeStatus(settingsURL: settingsURL, helperPath: helperPath)
-        }.value
-        claudeHooksInstalled = status == .installed
+        storedTab = target.tab.rawValue
     }
 }
-
-/// The four numbers above the lists: how many sessions, how long they ran in total,
-/// how often they stopped to ask, and where the work happened.
-private struct AgentsSummaryStrip: View {
-    let summary: AgentHistorySummary
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            tile(label: "Sessions", value: "\(summary.sessions)", sub: nil)
-            tile(label: "Agent time", value: AgentHistorySummary.duration(summary.agentTime), sub: nil)
-            tile(label: "Approval requests", value: "\(summary.approvalsWaited)", sub: nil)
-            tile(
-                label: "Busiest project",
-                value: summary.busiestProject?.name ?? "—",
-                sub: summary.busiestProject.map { AgentsSection.sessionsCaption($0.sessions) }
-            )
-        }
-    }
-
-    private func tile(label: String, value: String, sub: String?) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.xs) {
-            Text(label)
-                .font(OMFont.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(OMFont.heroNumeral)
-                .monospacedDigit()
-                .lineLimit(1)
-                .truncationMode(.middle)
-            // A blank line that only keeps the four tiles the same height — there is
-            // nothing here to read out.
-            Text(sub ?? " ")
-                .font(OMFont.caption)
-                .foregroundStyle(.tertiary)
-                .opacity(sub == nil ? 0 : 1)
-                .accessibilityHidden(sub == nil)
-        }
-        .dashboardCard(padding: 12)
-        // One stop per tile: "Sessions, 12" rather than three separate elements.
-        .accessibilityElement(children: .combine)
-    }
-}
-
-#if DEBUG
-@MainActor
-private func summaryStripPreview() -> some View {
-    AgentsSummaryStrip(summary: AgentHistorySummary(
-        sessions: 12,
-        agentTime: 41_520,
-        approvalsWaited: 7,
-        busiestProject: (name: "Usage tracker", sessions: 5)
-    ))
-    .padding()
-    .frame(width: 780)
-}
-
-#Preview("Agents summary — light") { summaryStripPreview() }
-#Preview("Agents summary — dark") { summaryStripPreview().preferredColorScheme(.dark) }
-#Preview("Agents summary — empty") {
-    AgentsSummaryStrip(summary: AgentHistorySummary(sessions: 0, agentTime: 0, approvalsWaited: 0, busiestProject: nil))
-        .padding()
-        .frame(width: 780)
-}
-#endif

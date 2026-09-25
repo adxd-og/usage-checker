@@ -1,10 +1,11 @@
 import Foundation
 
-/// What the dashboard's Agents tab says about finished sessions: the four summary
-/// tiles, the day grouping under them, and the strings both use.
+/// What the dashboard's Agents tab says about finished sessions: the summary figures
+/// for a range and a source, and the duration string they read in. The sessions
+/// themselves are listed in History (liquid-glass spec § Removals).
 ///
 /// Pure and static on purpose — the screen is a renderer, and every rule here
-/// ("which day did this end on", "does a tie go to alpha or beta") is a decision
+/// ("did this end inside the range", "does a tie go to alpha or beta") is a decision
 /// that deserves a test rather than a preview.
 struct AgentHistorySummary: Equatable {
     let sessions: Int
@@ -72,49 +73,6 @@ struct AgentHistorySummary: Equatable {
             approvalsWaited: approvals,
             busiestProject: busiest
         )
-    }
-
-    /// The history list: one entry per day that has records, newest day first, and the
-    /// newest session first inside each day. Grouped by the day the session *ended*, so
-    /// an overnight run appears once, on the morning it finished.
-    static func days(
-        records: [AgentSessionRecord],
-        source: AgentSource?,
-        range: TimeRange,
-        now: Date,
-        calendar: Calendar
-    ) -> [(day: Date, records: [AgentSessionRecord])] {
-        let scoped = inRange(records, source: source, range: range, now: now)
-            .sorted { $0.endedAt > $1.endedAt }
-        var days: [(day: Date, records: [AgentSessionRecord])] = []
-        for record in scoped {
-            let day = calendar.startOfDay(for: record.endedAt)
-            if let index = days.firstIndex(where: { $0.day == day }) {
-                days[index].records.append(record)
-            } else {
-                days.append((day: day, records: [record]))
-            }
-        }
-        return days
-    }
-
-    /// "Today" / "Yesterday" / "Mon 1 Sep". The weekday form is pinned to
-    /// `en_US_POSIX` and to the calendar's own zone: the app's strings are English,
-    /// and a title has to name the same day the grouping used.
-    static func dayTitle(_ day: Date, now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(day, inSameDayAs: now) { return "Today" }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(day, inSameDayAs: yesterday) {
-            return "Yesterday"
-        }
-        // Built per call rather than cached: a section header asks once per day shown,
-        // and a shared mutable formatter would have to be locked (this is nonisolated).
-        let formatter = DateFormatter()
-        formatter.calendar = calendar
-        formatter.timeZone = calendar.timeZone
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "EEE d MMM"
-        return formatter.string(from: day)
     }
 
     /// "21d 8h" / "3h 12m" / "45m" / "<1m". Minutes are zero-padded inside an hours
