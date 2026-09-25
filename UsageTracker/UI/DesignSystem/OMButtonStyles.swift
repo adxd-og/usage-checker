@@ -40,6 +40,62 @@ enum OMButtonRules {
         case (.regular, false): 14
         }
     }
+
+    // MARK: Hover
+
+    /// The state layer over a button under the pointer, as macOS 26's own controls light
+    /// up: white in dark, black in light, stronger while pressed. nil at rest and on a
+    /// disabled button, which the pointer cannot use.
+    static func hoverOverlay(isHovered: Bool, isPressed: Bool, isEnabled: Bool, scheme: ColorScheme) -> OMRGBA? {
+        guard isEnabled, isHovered || isPressed else { return nil }
+        if scheme == .dark {
+            return .white(isPressed ? 0.14 : 0.08)
+        }
+        return .black(isPressed ? 0.10 : 0.05)
+    }
+
+    /// How long the highlight fades in and out; nil under Reduce Motion, where it switches.
+    static func hoverFade(reduceMotion: Bool) -> Double? {
+        reduceMotion ? nil : 0.12
+    }
+
+    /// A link has no chrome: its highlight is a capsule this much past its words on each
+    /// side, drawn over them so they do not move.
+    static let linkHoverOutset = CGSize(width: 6, height: 3)
+}
+
+/// The hover state layer (`OMButtonRules.hoverOverlay`) in `shape` over a button, `outset`
+/// past its frame. Reads the pointer, the button's enabled state, the scheme and Reduce
+/// Motion itself, so every style applies it with one line.
+struct OMHoverHighlight<S: Shape>: ViewModifier {
+    let shape: S
+    let isPressed: Bool
+    var outset: CGSize = .zero
+
+    @State private var isHovered = false
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        let overlay = OMButtonRules.hoverOverlay(
+            isHovered: isHovered, isPressed: isPressed, isEnabled: isEnabled, scheme: colorScheme
+        )
+        content
+            .overlay {
+                shape
+                    .fill(overlay?.color ?? .clear)
+                    .padding(.horizontal, -outset.width)
+                    .padding(.vertical, -outset.height)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .animation(
+                        OMButtonRules.hoverFade(reduceMotion: reduceMotion).map { .easeOut(duration: $0) },
+                        value: overlay
+                    )
+            }
+            .onHover { isHovered = $0 }
+    }
 }
 
 /// Allow: `Button("Allow") { … }.buttonStyle(.omAccent(.small))`.
@@ -73,6 +129,7 @@ struct OMAccentButtonStyle: ButtonStyle {
                     .allowsHitTesting(false)
             }
             .contentShape(Capsule(style: .continuous))
+            .modifier(OMHoverHighlight(shape: Capsule(style: .continuous), isPressed: configuration.isPressed))
             .opacity(configuration.isPressed ? 0.8 : 1)
     }
 }
@@ -93,6 +150,7 @@ struct OMCapsuleButtonStyle: ButtonStyle {
             .frame(height: OMButtonRules.height(size))
             .omGlass(OMButtonRules.capsuleSurface, in: Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
+            .modifier(OMHoverHighlight(shape: Capsule(style: .continuous), isPressed: configuration.isPressed))
             .opacity(configuration.isPressed ? 0.8 : 1)
     }
 }
@@ -108,6 +166,7 @@ struct OMCircleButtonStyle: ButtonStyle {
             .frame(width: OMButtonRules.height(.regular), height: OMButtonRules.height(.regular))
             .omGlass(OMButtonRules.capsuleSurface, in: Circle())
             .contentShape(Circle())
+            .modifier(OMHoverHighlight(shape: Circle(), isPressed: configuration.isPressed))
             .opacity(configuration.isPressed ? 0.8 : 1)
     }
 }

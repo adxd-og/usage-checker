@@ -7,7 +7,27 @@ enum GeneralSettingsCopy {
     static let launchAtLoginTitle = "Launch at login"
     static let shortcutTitle = "Open the popover"
     static let shortcutCaption = "Works from any app. Unset by default."
+    /// While the recorder listens: the way out the library offers but does not show
+    /// (Esc ends recording, Delete clears the shortcut).
+    static let shortcutRecordingCaption = "Press the keys. Esc cancels, Delete clears."
     static let shortcutWidth: CGFloat = 160
+
+    /// Posted on the default centre by KeyboardShortcuts 2.x's recorder when it starts and
+    /// stops recording, with `isActive` in its user info (`RecorderCocoa`,
+    /// `recorderActiveStatusDidChange`). The library keeps the constant internal, so the
+    /// row names it. Should a later version rename it, the caption stays the resting one.
+    static let recorderActivityNotification = Notification.Name("KeyboardShortcuts_recorderActiveStatusDidChange")
+
+    /// Whether an announcement from the recorder means it is recording. Anything but a
+    /// `true` flag means it is not, so the caption never outlives the recording.
+    static func isRecording(_ userInfo: [AnyHashable: Any]?) -> Bool {
+        userInfo?["isActive"] as? Bool ?? false
+    }
+
+    /// The shortcut row's caption: the mockup's at rest, how to get out while recording.
+    static func shortcutRowCaption(isRecording: Bool) -> String {
+        isRecording ? shortcutRecordingCaption : shortcutCaption
+    }
     static let refreshHeader = "Refresh"
     static let refreshTitle = "Update every"
     static let refreshFooter = "Faster is closer to real time but can hit rate limits."
@@ -41,6 +61,8 @@ struct GeneralSettingsView: View {
     /// OS state (`SMAppService`), not a preference: read when the page is built, so a
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    /// The recorder is listening for keys: the row says how to get out.
+    @State private var isRecordingShortcut = false
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -71,10 +93,16 @@ struct GeneralSettingsView: View {
                     }
                 )
             )
-            SettingsRow(title: GeneralSettingsCopy.shortcutTitle, caption: GeneralSettingsCopy.shortcutCaption) {
+            SettingsRow(
+                title: GeneralSettingsCopy.shortcutTitle,
+                caption: GeneralSettingsCopy.shortcutRowCaption(isRecording: isRecordingShortcut)
+            ) {
                 KeyboardShortcuts.Recorder(for: .peekUsage)
                     .frame(width: GeneralSettingsCopy.shortcutWidth)
                     .accessibilityLabel(GeneralSettingsCopy.shortcutTitle)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: GeneralSettingsCopy.recorderActivityNotification)) { note in
+                isRecordingShortcut = GeneralSettingsCopy.isRecording(note.userInfo)
             }
         }
     }

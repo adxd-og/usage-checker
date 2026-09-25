@@ -43,7 +43,14 @@ struct PopoverView: View {
             header
             if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
             if showsSegments { segments }
+            // A tab switch cross-fades, the new page sliding in from its side of the
+            // segmented control (`OMTransitionRules`).
             content
+                .omTabTransition(
+                    selection: currentTab,
+                    order: [WindowRanking.allTab] + displayedServices.map(\.id),
+                    axis: .horizontal
+                )
             footer
         }
         .padding(Self.padding)
