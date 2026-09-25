@@ -123,6 +123,9 @@ struct DashboardHeader: View {
 
     @ObservedObject private var dashboard = DashboardState.shared
 
+    /// The subtitle's size, the mockups' 12.5 pt (`Dashboard-Overview(-Light).dc.html`).
+    nonisolated static let subtitleFont = OMFont.dashboardSubtitle
+
     var body: some View {
         // The header has to fit whatever width the window has, never the other way
         // round: a provider row plus a chart-mode switch plus a range picker is wider
@@ -152,7 +155,7 @@ struct DashboardHeader: View {
                 .fixedSize(horizontal: true, vertical: false)
             if let subtitle {
                 Text(subtitle)
-                    .font(OMFont.body)
+                    .font(Self.subtitleFont)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
