@@ -163,13 +163,6 @@ struct SettingsView: View {
                 Text("Reads session and weekly limits from the local Codex CLI. Requires being signed in (`codex login`).")
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)
-                Toggle("Show Gemini usage", isOn: $settings.geminiProviderEnabled)
-                    .onChange(of: settings.geminiProviderEnabled) { _, _ in
-                        AppState.shared.refreshNow()
-                    }
-                Text("Reads daily model quotas using the Gemini CLI's Google sign-in. API-key and Vertex AI auth don't expose quotas.")
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
                 Toggle("Show Antigravity usage", isOn: $settings.antigravityProviderEnabled)
                     .onChange(of: settings.antigravityProviderEnabled) { _, _ in
                         AppState.shared.refreshNow()
