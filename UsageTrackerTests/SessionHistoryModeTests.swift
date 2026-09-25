@@ -20,21 +20,6 @@ final class SessionHistoryModeTests: XCTestCase {
         XCTAssertFalse(DashboardState.hasSessionLog(for: "antigravity"))
     }
 
-    func testTheModeIsOfferedLastAndOnlyWhereItWorks() {
-        XCTAssertEqual(SessionHistoryView.modes(hasSessionLog: true), [.cost, .tokens, .sessions])
-        XCTAssertEqual(SessionHistoryView.modes(hasSessionLog: false), [.cost, .tokens])
-    }
-
-    // MARK: - A remembered choice that no longer applies
-
-    func testASessionsChoiceFallsBackToCostUnderAProviderWithNoChats() {
-        // historyChartMode is one persisted value across every provider. Landing on
-        // Grok's tab must show a chart, not an empty list.
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .sessions, hasSessionLog: false), .cost)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .sessions, hasSessionLog: true), .sessions)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .tokens, hasSessionLog: false), .tokens)
-    }
-
     // MARK: - The subtitle
 
     func testTheSessionsSubtitleNamesTheLogAndTheKindOfDollars() {

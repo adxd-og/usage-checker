@@ -37,20 +37,4 @@ final class SessionHistoryModeVerificationTests: XCTestCase {
             XCTAssertFalse(DashboardState.hasSessionLog(for: id), id)
         }
     }
-
-    // MARK: - The gate only ever touches a stored .sessions choice
-
-    func testEffectiveModeLeavesCostAndTokensAloneRegardlessOfTheSessionLogGate() {
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .cost, hasSessionLog: false), .cost)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .cost, hasSessionLog: true), .cost)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .tokens, hasSessionLog: false), .tokens)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .tokens, hasSessionLog: true), .tokens)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .sessions, hasSessionLog: true), .sessions)
-        XCTAssertEqual(SessionHistoryView.effectiveMode(stored: .sessions, hasSessionLog: false), .cost)
-    }
-
-    func testModesNeverOffersSessionsWithoutALogAndAlwaysPutsItLast() {
-        XCTAssertEqual(SessionHistoryView.modes(hasSessionLog: false), [.cost, .tokens])
-        XCTAssertEqual(SessionHistoryView.modes(hasSessionLog: true), [.cost, .tokens, .sessions])
-    }
 }

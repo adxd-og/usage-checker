@@ -30,9 +30,9 @@ struct SessionHistoryView: View {
         DashboardState.hasSessionLog(for: dashboard.selectedService)
     }
 
-    /// `chartMode` corrected for the provider on screen — see `effectiveMode`.
+    /// `chartMode` as 3.0 reads it — see `HistoryRules.effectiveMode`.
     private var mode: HistoryChartMode {
-        Self.effectiveMode(stored: chartMode, hasSessionLog: hasSessionLog)
+        HistoryRules.effectiveMode(stored: chartMode)
     }
 
     // Built off the main actor: a 90-day range is six figures' worth of history
@@ -136,14 +136,20 @@ struct SessionHistoryView: View {
 
                 if showsQuota {
                     quotaContent
-                } else if mode == .sessions {
-                    sessionsContent(isWide: isWide)
-                } else if data.isEmpty {
-                    placeholder
-                } else if mode == .tokens {
-                    tokensChart
                 } else {
-                    chart
+                    if data.isEmpty {
+                        placeholder
+                    } else if mode == .tokens {
+                        tokensChart
+                    } else {
+                        chart
+                    }
+                    // The chat list sits under the chart in both units (spec § Screens,
+                    // "History · Chart"), for the providers whose logs name a chat.
+                    if hasSessionLog {
+                        Divider().padding(.horizontal, 24)
+                        sessionsContent(isWide: isWide)
+                    }
                 }
 
                 Spacer(minLength: 24)
@@ -159,24 +165,23 @@ struct SessionHistoryView: View {
             expandedSessionIDs = []
         }
         .task(id: sessionsKey) {
-            guard mode == .sessions else { return }
+            guard hasSessionLog else { return }
             await dashboard.refreshSessions()
         }
     }
 
     /// Bound through `mode`, not through `chartMode` directly: a segmented control whose
     /// selection is not among its own tags shows nothing selected, and `chartMode` can
-    /// hold `.sessions` under a provider that is not offered it.
+    /// still hold 2.x's `.sessions`.
     private var modePicker: some View {
-        let offered = Self.modes(hasSessionLog: hasSessionLog)
-        return Picker("", selection: Binding(get: { mode }, set: { chartMode = $0 })) {
-            ForEach(offered) { option in
+        Picker("", selection: Binding(get: { mode }, set: { chartMode = $0 })) {
+            ForEach(HistoryRules.chartModes) { option in
                 Text(option.displayName).tag(option)
             }
         }
         .pickerStyle(.segmented)
         .labelsHidden()
-        .frame(width: offered.count > 2 ? 210 : 140)
+        .frame(width: 140)
     }
 
     private var subtitle: (line: String, caption: String?) {
@@ -239,22 +244,6 @@ struct SessionHistoryView: View {
             ?? "Chats, tokens and \(dollars)"
         guard range == .fiveHours else { return head }
         return head + " · today, not the last 5 hours"
-    }
-
-    /// The mode actually in force. `historyChartMode` is one persisted value across
-    /// every provider, and Grok writes a per-turn cost log but nothing that names a
-    /// chat — landing on its tab with Sessions remembered must show the cost chart.
-    /// The stored choice is deliberately left alone, so switching back to Claude
-    /// restores it.
-    nonisolated static func effectiveMode(
-        stored: HistoryChartMode, hasSessionLog: Bool
-    ) -> HistoryChartMode {
-        stored == .sessions && !hasSessionLog ? .cost : stored
-    }
-
-    /// The segments the picker offers for this provider.
-    nonisolated static func modes(hasSessionLog: Bool) -> [HistoryChartMode] {
-        HistoryChartMode.allCases.filter { $0 != .sessions || hasSessionLog }
     }
 
     // MARK: - Quota
@@ -425,7 +414,6 @@ struct SessionHistoryView: View {
     private struct SessionsKey: Hashable {
         let service: String
         let range: TimeRange
-        let isSessions: Bool
         let updatedAt: Date
     }
 
@@ -440,7 +428,6 @@ struct SessionHistoryView: View {
         SessionsKey(
             service: dashboard.selectedService,
             range: dashboard.range,
-            isSessions: mode == .sessions,
             updatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast
         )
     }
@@ -451,14 +438,8 @@ struct SessionHistoryView: View {
             : SessionListRule.pick(sessions: dashboard.sessions)
     }
 
-    /// The chart above the list is the cost chart, unchanged: the list answers "which
-    /// chat", and the bars are the context that makes the answer mean something.
     @ViewBuilder
     private func sessionsContent(isWide: Bool) -> some View {
-        if !data.isEmpty {
-            chart
-            Divider().padding(.horizontal, 24)
-        }
         if dashboard.sessions.isEmpty {
             sessionsPlaceholder
         } else {
@@ -576,6 +557,8 @@ struct SessionHistoryView: View {
 /// Which unit the history tab charts. Persisted (`@AppStorage`), so the tab
 /// reopens on whichever question the user was last asking. Internal rather than
 /// private: the raw values are a storage contract and are asserted in tests.
+/// `sessions` is 2.x's third mode, kept so a stored value still decodes; 3.0 never
+/// offers it (`HistoryRules.chartModes`).
 enum HistoryChartMode: String, CaseIterable, Identifiable {
     case cost, tokens, sessions
     var id: String { rawValue }
