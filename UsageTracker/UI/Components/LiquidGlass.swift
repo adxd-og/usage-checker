@@ -313,6 +313,11 @@ struct OMLinkButtonStyle: ButtonStyle {
         .lineLimit(1)
         .fixedSize()
         .contentShape(Rectangle())
+        .modifier(OMHoverHighlight(
+            shape: Capsule(style: .continuous),
+            isPressed: configuration.isPressed,
+            outset: OMButtonRules.linkHoverOutset
+        ))
         .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
