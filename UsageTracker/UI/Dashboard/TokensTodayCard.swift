@@ -78,17 +78,6 @@ struct TokensTodayCard: View {
         return "\(Int((share * 100).rounded()))% of context came from cache"
     }
 
-    /// The spec's token colours (§ Tokens): input blue, output orange, cache read teal,
-    /// cache write violet.
-    nonisolated static func colorToken(_ category: TokenCategory) -> OMColorToken {
-        switch category {
-        case .input: return .tokenInput
-        case .output: return .tokenOutput
-        case .cacheRead: return .tokenCacheRead
-        case .cacheWrite: return .tokenCacheWrite
-        }
-    }
-
     /// The Tokens bar: each kind's count, in `TokenCategory` order, empty kinds dropped.
     nonisolated static func tokenShares(_ breakdown: TokenBreakdown) -> [OverviewTokenShare] {
         TokenCategory.allCases.compactMap { category -> OverviewTokenShare? in
@@ -260,7 +249,7 @@ struct TokensTodayCard: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(OMColor(Self.colorToken(item.category)))
+                    .fill(OMColor(item.category.token))
                     .frame(width: Self.legendDot, height: Self.legendDot)
                 legendLabel(item.category)
             }
@@ -308,7 +297,7 @@ private struct OverviewTokenBar: View {
             HStack(spacing: TokensTodayCard.segmentGap) {
                 ForEach(TokensTodayCard.segments(shares, in: geometry.size.width), id: \.category) { segment in
                     Rectangle()
-                        .fill(OMColor(TokensTodayCard.colorToken(segment.category)))
+                        .fill(OMColor(segment.category.token))
                         .frame(width: segment.width)
                 }
             }

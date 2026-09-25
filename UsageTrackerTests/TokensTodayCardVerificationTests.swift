@@ -86,13 +86,6 @@ final class TokensTodayCardVerificationTests: XCTestCase {
 
     // MARK: - Colour tokens match the spec's four token colours
 
-    func testColorTokenMapsEachCategoryToItsSpecToken() {
-        XCTAssertEqual(TokensTodayCard.colorToken(.input), .tokenInput)
-        XCTAssertEqual(TokensTodayCard.colorToken(.output), .tokenOutput)
-        XCTAssertEqual(TokensTodayCard.colorToken(.cacheRead), .tokenCacheRead)
-        XCTAssertEqual(TokensTodayCard.colorToken(.cacheWrite), .tokenCacheWrite)
-    }
-
     func testTheFourTokenColoursMatchTheSpecsHexValues() {
         // liquid-glass spec § Tokens, "tokens": input #7AA2FF/#4C7EF3, output
         // #F59E6B/#EE7B3A, cache read #5CC8C8/#26A8A8, cache write #C79BFF/#9A66EE.

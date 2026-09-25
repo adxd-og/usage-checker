@@ -18,7 +18,8 @@ extension TokenCategory {
     }
 
     /// The 3.0 colour role of each type (liquid-glass spec § Tokens, "tokens"): what
-    /// History's stacked bars, legend and open-chat bar draw with, through `.om(_:)`.
+    /// History's stacked bars, legend and open-chat bar and Overview's Tokens today card
+    /// draw with.
     /// `color` above stays the 2.x system set until its own surfaces move.
     var token: OMColorToken {
         switch self {
