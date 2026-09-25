@@ -69,4 +69,81 @@ final class RemovedProviderRecordsTests: XCTestCase {
         XCTAssertEqual(reread["gemini"]?.buckets.map(\.id), ["gemini_pro"])
         XCTAssertEqual(reread["claude"]?.buckets.first?.utilization, 70)
     }
+
+    // MARK: - history.jsonl
+
+    /// Two lines in the shape the app writes them. The Claude line is a record from this
+    /// Mac's log, scrubbed. The other is what the Gemini CLI provider left: its bucket
+    /// ids and plan, as that provider named them before 3.0. Both are recent, so the
+    /// 90-day rotation keeps them. That age rotation applies to gemini records as to any
+    /// other provider's; P8 adds no deletion of its own.
+    func testAGeminiHistoryRecordStaysOnDiskAndIsNeverOffered() async throws {
+        let now = Date()
+        let iso = ISO8601DateFormatter()
+        let geminiAt = iso.string(from: now.addingTimeInterval(-3600))
+        let claudeAt = iso.string(from: now.addingTimeInterval(-1800))
+        let lines = [
+            #"{"timestamp":"\#(geminiAt)","id":"0B5E9C1A-6D1F-4C3E-9A7B-2F4D8E6C1A01","plan":"Gemini Pro","bucketPercents":{"gemini_pro":91,"gemini_flash":12,"gemini_flash_lite":0},"serviceID":"gemini"}"#,
+            #"{"plan":"Claude Max 20x","id":"E86A654B-8745-4C50-A815-E6BCA3EAE937","bucketPercents":{"five_hour":63,"seven_day":17},"fiveHourPercent":63,"extraCreditsUsed":0,"serviceID":"claude","timestamp":"\#(claudeAt)","sevenDayPercent":17}"#,
+        ]
+        let log = directory.appendingPathComponent("history.jsonl")
+        try (lines.joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+
+        let store = HistoryStore(directory: directory)
+        let recorded = await store.recordedServices()
+        XCTAssertEqual(recorded, ["claude", "gemini"], "both lines decode")
+        let claude = await store.all(service: "claude")
+        XCTAssertEqual(claude.first?.percent(for: "five_hour"), 63)
+
+        let offered = DashboardState.availableServices(
+            recorded: recorded,
+            snapshot: UsageSnapshot(
+                services: [Fixture.snapshot(id: "claude", state: .notSignedIn)],
+                fetchedAt: now, isStale: false, lastError: nil
+            ),
+            disabled: []
+        )
+        XCTAssertEqual(offered, ["claude"], "a provider this build no longer polls is not offered")
+
+        let onDisk = try String(contentsOf: log, encoding: .utf8)
+        XCTAssertTrue(onDisk.contains(#""serviceID":"gemini""#), "the record stays on disk")
+    }
+
+    // MARK: - the dashboard's stored selection
+
+    /// The dashboard's stored provider is "gemini" and nothing is on offer yet: a fresh
+    /// launch whose Claude fetch failed. Standing still would let `refreshHistory` load
+    /// that id's leftover records onto the tab, so the selection goes to Claude, which is
+    /// always polled. A provider this build still polls keeps standing still, as before.
+    func testAStoredGeminiSelectionWithNothingOnOfferHealsToClaude() {
+        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: []), "claude")
+        XCTAssertEqual(
+            DashboardState.healedSelection(stored: "codex", available: []), "codex",
+            "a polled provider still stands still when there is nothing to heal to"
+        )
+    }
+
+    func testTheCoordinatorNamesEveryProviderItPollsAndSettingsListsTheSame() {
+        XCTAssertEqual(ProviderCoordinator.serviceIDs, ["claude", "anthropic-admin", "codex", "antigravity", "grok"])
+        XCTAssertTrue(ProviderCoordinator.serviceIDs.isSuperset(of: [
+            ClaudeOAuthProvider.serviceID,
+            CodexProvider.serviceID,
+            AntigravityProvider.shared.serviceID,
+            GrokProvider.shared.serviceID,
+        ]))
+        XCTAssertEqual(
+            ProviderCoordinator.serviceIDs,
+            Set(ProvidersSettingsCopy.listed.map(\.id)).union([ProvidersSettingsCopy.adminID]),
+            "Settings › Providers lists every provider the coordinator polls"
+        )
+    }
+
+    func testTheHealTakesThePolledSetAsItsInput() {
+        XCTAssertEqual(DashboardState.healedSelection(stored: "x", available: [], polled: ["x"]), "x")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "codex", available: [], polled: ["claude"]), "claude")
+        XCTAssertEqual(
+            DashboardState.healedSelection(stored: "gemini", available: ["grok"], polled: ["claude"]), "grok",
+            "with options on offer the first one wins, whatever the set"
+        )
+    }
 }

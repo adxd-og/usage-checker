@@ -1,6 +1,12 @@
 import Foundation
 
 actor ProviderCoordinator {
+    /// Every service id `snapshot(...)` can return, one per provider it polls. History
+    /// outlives its provider: records from one this build no longer polls stay on disk,
+    /// and the dashboard's picker asks this set before offering an id. A provider added
+    /// to `snapshot(...)` is added here, and to Settings › Providers, in the same commit.
+    static let serviceIDs: Set<String> = ["claude", "anthropic-admin", "codex", "antigravity", "grok"]
+
     func snapshot(
         adminKey: String?,
         betaHeader: String,
