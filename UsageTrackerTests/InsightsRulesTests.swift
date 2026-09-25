@@ -211,4 +211,29 @@ final class InsightsRulesTests: XCTestCase {
         XCTAssertEqual(week.thisWeek, 3, accuracy: 1e-9)
         XCTAssertEqual(week.lastWeek, 99, accuracy: 1e-9)
     }
+
+    // MARK: - Daily average, 30 days
+
+    func testTheDailyAverageCountsOnlyDaysWithSpend() {
+        let average = InsightsRules.dailyAverage(
+            dailies: [
+                daily(day(0), cost: 30), daily(day(-1), cost: 0),
+                daily(day(-29), cost: 10), daily(day(-30), cost: 1_000)
+            ],
+            now: now, calendar: utc
+        )
+
+        XCTAssertEqual(average, InsightsDailyAverage(average: 20, activeDays: 2))
+    }
+
+    /// 30 × 86 400 s back from 00:30 on 1 April lands at 23:30 on 1 March, which would
+    /// count 2 March, the thirty-first day.
+    func testTheThirtyDaysAreCalendarDaysAcrossTheClockChange() {
+        let average = InsightsRules.dailyAverage(
+            dailies: [daily(berlinDay(-30), cost: 1_000), daily(berlinDay(0), cost: 10)],
+            now: berlinNow, calendar: berlin
+        )
+
+        XCTAssertEqual(average, InsightsDailyAverage(average: 10, activeDays: 1))
+    }
 }

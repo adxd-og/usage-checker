@@ -147,10 +147,11 @@ enum InsightsCopy {
 
     // MARK: - Daily average, biggest day, most-used model
 
-    static let dailyAverageTitle = "Daily average (30d)"
+    static let dailyAverageTitle = "Daily average, 30 days"
 
+    /// "29 active days" / "1 active day"
     static func activeDays(_ days: Int) -> String {
-        "\(days) active days"
+        days == 1 ? "1 active day" : "\(days) active days"
     }
 
     static let biggestDayTitle = "Biggest day"

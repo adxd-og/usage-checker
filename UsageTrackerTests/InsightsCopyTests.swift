@@ -146,4 +146,20 @@ final class InsightsCopyTests: XCTestCase {
         // A change on a week without spend is no percentage.
         XCTAssertNil(InsightsCopy.weekDelta(WeekOverWeek(thisWeek: 10, lastWeek: 0)))
     }
+
+    // MARK: - Daily average, 30 days
+
+    func testTheDailyAverageReadsAsTheMockup() {
+        let s = summary(dailyAverage: InsightsDailyAverage(average: 291.76, activeDays: 29))
+
+        XCTAssertEqual(
+            text(.dailyAverage, s),
+            InsightsFigureText(title: "Daily average, 30 days", value: "$291.76", delta: nil, caption: "29 active days")
+        )
+    }
+
+    func testOneActiveDayIsSingular() {
+        XCTAssertEqual(InsightsCopy.activeDays(1), "1 active day")
+        XCTAssertEqual(InsightsCopy.activeDays(0), "0 active days")
+    }
 }

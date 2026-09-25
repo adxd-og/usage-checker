@@ -122,15 +122,9 @@ enum InsightsRules {
         calendar: Calendar = .current
     ) -> InsightsSummary {
         let dailies = cli?.daily ?? []
-        // 2.x's thirty days: a rolling cut from `now`.
-        let last30 = dailies.filter { $0.day >= now.addingTimeInterval(-30 * 24 * 3600) }
-        let active = last30.filter { $0.totalCost > 0 }
         return InsightsSummary(
             weekOverWeek: weekOverWeek(dailies: dailies, now: now, calendar: calendar),
-            dailyAverage: InsightsDailyAverage(
-                average: active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count),
-                activeDays: active.count
-            ),
+            dailyAverage: dailyAverage(dailies: dailies, now: now, calendar: calendar),
             biggestDay: InsightsView.peakDay(in: dailies, now: now, calendar: calendar)
                 .map { InsightsDayCost(day: $0.day, cost: $0.cost) },
             mostUsedModelToday: mostUsedModelToday(cli?.byModelToday ?? []),
@@ -141,6 +135,19 @@ enum InsightsRules {
             quota: hasCostLog
                 ? .empty
                 : QuotaAnalytics.insights(records: history, bucketIDs: coreBucketIDs, calendar: calendar, now: now)
+        )
+    }
+
+    /// "Daily average, 30 days": the mean over the days that had spend, among the thirty
+    /// calendar days ending today. The cutoff is `ActivityCardRule`'s 30-day one, so this
+    /// and the Activity figures can never cover different days.
+    static func dailyAverage(dailies: [CLIDailySummary], now: Date, calendar: Calendar = .current) -> InsightsDailyAverage {
+        let cutoff = ActivityCardRule.cutoffs(now: now, calendar: calendar).thirty
+        let active = dailies.filter { $0.day >= cutoff && $0.totalCost > 0 }
+        let total = active.reduce(0) { $0 + $1.totalCost }
+        return InsightsDailyAverage(
+            average: active.isEmpty ? nil : total / Double(active.count),
+            activeDays: active.count
         )
     }
 
