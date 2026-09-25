@@ -329,6 +329,25 @@ enum OMPalette {
 /// Keyboard focus: a `focusRing` band this wide just outside the focused shape.
 enum OMFocusRing {
     static let width: CGFloat = 3
+
+    /// The macOS convention: the ring shows only while the user navigates with the
+    /// keyboard. Focus a click gave or left behind draws nothing.
+    static func isVisible(isFocused: Bool, keyboardNavigation: Bool) -> Bool {
+        isFocused && keyboardNavigation
+    }
+
+    /// Keys that move focus or selection through a control; pressing one inside it
+    /// turns keyboard navigation on. Computed: `KeyEquivalent` is not a stored static.
+    static var navigationKeys: Set<KeyEquivalent> {
+        [.tab, .leftArrow, .rightArrow, .upArrow, .downArrow]
+    }
+
+    /// Whether keyboard navigation holds after focus moved: Tab into a control from
+    /// outside reaches it only as its focus arriving, so a key press that moved focus in
+    /// counts; a click that moved it, or focus leaving, does not.
+    static func keyboardNavigation(afterFocusMovedTo isFocused: Bool, byKeyPress: Bool) -> Bool {
+        isFocused && byKeyPress
+    }
 }
 
 /// A colour token as a `ShapeStyle` that takes its value from the environment's
