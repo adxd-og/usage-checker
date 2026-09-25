@@ -65,9 +65,12 @@ struct OMSegmentedControl: View {
     /// the segments choose (the dashboard's range picker: "Time range").
     let containerLabel: String
 
-    /// Which segment keyboard focus is on. nil unless the user is moving through the
-    /// control with Tab (Keyboard navigation on); a click does not set it.
+    /// Which segment holds focus. Usually nil; with Keyboard navigation on it can also
+    /// be left on a segment by a click, so it alone does not decide the ring.
     @FocusState private var focusedItemID: String?
+    /// Whether the user is moving through the control with the keyboard: on with Tab or
+    /// an arrow key, or when a key press moved focus in; off with a click.
+    @State private var keyboardNavigation = false
 
     init(
         items: [OMSegmentItem],
@@ -113,6 +116,12 @@ struct OMSegmentedControl: View {
     /// Keyboard focus: the yolk focus ring, not the system accent colour.
     nonisolated static var focusRingToken: OMColorToken { .focusRing }
 
+    /// Whether the segment `itemID` wears the focus ring: it holds focus and the user is
+    /// navigating with the keyboard (`OMFocusRing.isVisible`). A mouse click leaves no ring.
+    nonisolated static func focusRingVisible(on itemID: String, focusedItemID: String?, keyboardNavigation: Bool) -> Bool {
+        OMFocusRing.isVisible(isFocused: focusedItemID == itemID, keyboardNavigation: keyboardNavigation)
+    }
+
     /// The selected label reads in the text colour, the others in secondary.
     nonisolated static func labelToken(isSelected: Bool) -> OMColorToken {
         isSelected ? .text : .secondary
@@ -141,6 +150,20 @@ struct OMSegmentedControl: View {
         }
         .padding(3)
         .omGlass(Self.trackSurface, in: Capsule(style: .continuous))
+        // The ring follows the input: Tab or an arrow turns it on (ignored, so the
+        // system still moves focus), focus a key press moved in turns it on, a click
+        // turns it off.
+        .onKeyPress(keys: OMFocusRing.navigationKeys) { _ in
+            keyboardNavigation = true
+            return .ignored
+        }
+        .onChange(of: focusedItemID) { _, focused in
+            keyboardNavigation = OMFocusRing.keyboardNavigation(
+                afterFocusMovedTo: focused != nil,
+                byKeyPress: NSApp.currentEvent?.type == .keyDown
+            )
+        }
+        .simultaneousGesture(TapGesture().onEnded { keyboardNavigation = false })
         .accessibilityElement(children: .contain)
         .accessibilityLabel(containerLabel)
     }
@@ -148,7 +171,10 @@ struct OMSegmentedControl: View {
     @ViewBuilder
     private func segment(_ item: OMSegmentItem, index: Int) -> some View {
         let isSelected = item.id == selection
-        let chrome = Self.segmentChrome(isSelected: isSelected, isFocused: focusedItemID == item.id)
+        let chrome = Self.segmentChrome(
+            isSelected: isSelected,
+            isFocused: Self.focusRingVisible(on: item.id, focusedItemID: focusedItemID, keyboardNavigation: keyboardNavigation)
+        )
         let hasIcon = item.serviceID != nil
         Button {
             withAnimation(.smooth(duration: 0.2)) { selection = item.id }
