@@ -115,7 +115,7 @@ struct AgentsSection: View {
     /// A row can outlive the request it was drawn for — the hold expires, or you
     /// switched back to the terminal — so the id is re-read at click time and the
     /// broker ignores an id it has already answered.
-    private static func answer(_ session: AgentSession, _ decision: PermissionDecision) {
+    static func answer(_ session: AgentSession, _ decision: PermissionDecision) {
         guard let id = session.pendingPermissionID else { return }
         PermissionBroker.shared.answer(id: id, decision)
     }
