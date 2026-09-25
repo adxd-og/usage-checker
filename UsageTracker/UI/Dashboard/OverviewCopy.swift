@@ -21,3 +21,22 @@ enum OverviewCopy {
         return OverviewLine(text: burnLine(burn: burn, retained: retained), token: .secondary)
     }
 }
+
+// MARK: - Header
+
+extension OverviewCopy {
+    /// The line under the provider's name: its plan and how fresh its numbers are,
+    /// "Max 20x · updated 7s ago" (`UpdatedCopy`'s words, lower case after the plan). A live
+    /// provider's age is the poll's, the sidebar footnote's source (the two may lag by one
+    /// 5 s tick); last-known numbers are as old as their own reading. nil when the provider
+    /// is not in the snapshot.
+    static func subtitle(service: ServiceSnapshot?, snapshotFetchedAt: Date, now: Date) -> String? {
+        guard let service else { return nil }
+        let fetchedAt = service.isRetained ? service.fetchedAt : snapshotFetchedAt
+        let updated = UpdatedCopy.text(fetchedAt: fetchedAt, now: now)
+        guard let plan = PopoverCopy.planLine(plan: service.plan, displayName: service.displayName) else {
+            return updated
+        }
+        return "\(plan) · \(updated.prefix(1).lowercased())\(updated.dropFirst())"
+    }
+}

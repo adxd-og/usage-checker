@@ -14,10 +14,17 @@ struct OverviewView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                DashboardHeader(
-                    title: service?.displayName ?? dashboard.displayName(for: dashboard.selectedService),
-                    subtitle: service?.plan
-                )
+                // The age ticks every five seconds, as the sidebar footnote's does.
+                TimelineView(.periodic(from: .now, by: 5)) { context in
+                    DashboardHeader(
+                        title: service?.displayName ?? dashboard.displayName(for: dashboard.selectedService),
+                        subtitle: OverviewCopy.subtitle(
+                            service: service,
+                            snapshotFetchedAt: appState.snapshot.fetchedAt,
+                            now: context.date
+                        )
+                    )
+                }
 
                 HStack(alignment: .top, spacing: 16) {
                     heroCard
