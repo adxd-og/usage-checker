@@ -11,21 +11,16 @@ struct InsightsView: View {
     /// The quota half — what a provider with no cost log can still say about itself.
     @State private var quota = QuotaInsights.empty
 
-    private struct CacheKey: Hashable {
-        let service: String
-        let cliUpdatedAt: Date
-        let historyCount: Int
-        let lastHistoryAt: Date
-        let quotaBucketIDs: [String]
-    }
-
-    private var cacheKey: CacheKey {
-        CacheKey(
+    /// Read on every body evaluation, so the day in it follows the clock (see
+    /// `InsightsCacheKey`).
+    private var cacheKey: InsightsCacheKey {
+        InsightsRules.cacheKey(
             service: dashboard.selectedService,
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            quotaBucketIDs: dashboard.quotaCoreBucketIDs
+            quotaBucketIDs: dashboard.quotaCoreBucketIDs,
+            now: Date()
         )
     }
 
@@ -34,15 +29,19 @@ struct InsightsView: View {
         let started = cacheKey
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
+        // Every provider's core windows: "Days at limit" reads the last seven days of any
+        // provider's history.
+        let coreBucketIDs = dashboard.quotaCoreBucketIDs
         // Empty for a provider whose cost log is showing, which short-circuits the quota
         // pass entirely: Claude has months of history across half a dozen windows, and
         // walking all of it every poll to fill cards nobody sees is pure waste.
-        let quotaBucketIDs = dashboard.costSource.hasBreakdown ? [] : dashboard.quotaCoreBucketIDs
+        let quotaBucketIDs = dashboard.costSource.hasBreakdown ? [] : coreBucketIDs
+        let now = Date()
         // Both halves in one detached pass: they read the same history array, and
         // copying it across two tasks doubles the cost of the expensive part.
         let built = await Task.detached(priority: .userInitiated) {
             (
-                Insights(from: cli),
+                Insights(from: cli, history: history, coreBucketIDs: coreBucketIDs, now: now),
                 QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
             )
         }.value
@@ -92,9 +91,9 @@ struct InsightsView: View {
             sectionLabel("Quota over time")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                 card(
-                    title: "Days at capacity",
-                    value: "\(quota.daysAtCapacity)",
-                    sub: "of \(quota.daysObserved) days recorded"
+                    title: InsightsCopy.daysAtLimitTitle,
+                    value: InsightsCopy.daysAtLimitValue(insights.daysAtLimit),
+                    sub: InsightsCopy.daysAtLimitCaption
                 )
                 card(
                     title: "Average daily peak",
@@ -154,6 +153,11 @@ struct InsightsView: View {
             sectionLabel(dashboard.costSource.shortName ?? "CLI")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
                 weekOverWeekCard(insights.weekOverWeek)
+                card(
+                    title: InsightsCopy.daysAtLimitTitle,
+                    value: InsightsCopy.daysAtLimitValue(insights.daysAtLimit),
+                    sub: InsightsCopy.daysAtLimitCaption
+                )
                 card(
                     title: "Daily average (30d)",
                     value: insights.avgDailyCost.map { String(format: "$%.2f", $0) } ?? "—",
@@ -359,15 +363,18 @@ extension InsightsView {
 }
 
 private struct Insights: Sendable {
-    static let empty = Insights(from: nil)
+    static let empty = Insights(from: nil, history: [], coreBucketIDs: [], now: .distantPast)
 
     let avgDailyCost: Double?
     let activeDays: Int?
     let peakDay: (day: Date, cost: Double)?
     let topModel: (model: String, cost: Double)?
     let weekOverWeek: WeekOverWeek
+    /// "Days at limit, 7 days", from the provider's own quota history.
+    let daysAtLimit: QuotaDaysAtCapacity
 
-    init(from cli: CLIBreakdown?) {
+    init(from cli: CLIBreakdown?, history: [HistoryRecord], coreBucketIDs: [String], now: Date) {
+        self.daysAtLimit = InsightsRules.daysAtLimit(records: history, bucketIDs: coreBucketIDs, now: now)
         let dailies = cli?.daily ?? []
         let last30 = dailies.filter { $0.day >= Date().addingTimeInterval(-30 * 24 * 3600) }
         let active = last30.filter { $0.totalCost > 0 }
