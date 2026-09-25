@@ -285,3 +285,48 @@ struct OMColor: ShapeStyle {
 extension ShapeStyle where Self == OMColor {
     static func om(_ token: OMColorToken) -> OMColor { OMColor(token) }
 }
+
+// MARK: - 3.0 window backdrop (spec § Tokens, "window background")
+
+/// One soft colour pool of the window backdrop: the mockups' CSS
+/// `radial-gradient(<radiusX> <radiusY> at <x> <y>, <color>, transparent <fadeStop>)`.
+/// `x` and `y` are fractions of the window; the radii are points, as the CSS writes them.
+struct OMBackdropPool: Equatable, Sendable {
+    let x: CGFloat
+    let y: CGFloat
+    let radiusX: CGFloat
+    let radiusY: CGFloat
+    let color: OMRGBA
+    /// Fraction of the radius where the colour has faded to transparent.
+    let fadeStop: CGFloat
+}
+
+/// A flat base and the colour pools over it.
+struct OMWindowBackdrop: Equatable, Sendable {
+    let base: OMRGBA
+    /// In CSS declaration order: the first pool is the top layer.
+    let pools: [OMBackdropPool]
+
+    /// The pools in the order to paint them, bottom first and topmost last. CSS draws
+    /// its first background layer on top, so this is `pools` reversed.
+    var paintOrder: [OMBackdropPool] { pools.reversed() }
+}
+
+extension OMPalette {
+    /// `Main.dc.html`'s backdrop in dark, `Popover-All-Light.dc.html`'s in light.
+    static func windowBackdrop(scheme: ColorScheme) -> OMWindowBackdrop {
+        let base = rgba(.windowBase, scheme: scheme)
+        if scheme == .dark {
+            return OMWindowBackdrop(base: base, pools: [
+                OMBackdropPool(x: 0.12, y: 0.08, radiusX: 560, radiusY: 420, color: OMRGBA(hex: 0xF2B544, opacity: 0.55), fadeStop: 0.62),
+                OMBackdropPool(x: 0.92, y: 0.62, radiusX: 560, radiusY: 520, color: OMRGBA(hex: 0x5C70FF, opacity: 0.5), fadeStop: 0.64),
+                OMBackdropPool(x: 0.60, y: 1.00, radiusX: 420, radiusY: 320, color: OMRGBA(hex: 0xFF6E78, opacity: 0.3), fadeStop: 0.62),
+            ])
+        }
+        return OMWindowBackdrop(base: base, pools: [
+            OMBackdropPool(x: 0.10, y: 0.06, radiusX: 560, radiusY: 420, color: OMRGBA(hex: 0xFFC478, opacity: 0.75), fadeStop: 0.62),
+            OMBackdropPool(x: 0.94, y: 0.60, radiusX: 560, radiusY: 520, color: OMRGBA(hex: 0x8CAAFF, opacity: 0.7), fadeStop: 0.64),
+            OMBackdropPool(x: 0.55, y: 1.00, radiusX: 420, radiusY: 320, color: OMRGBA(hex: 0xFFA0B4, opacity: 0.5), fadeStop: 0.62),
+        ])
+    }
+}
