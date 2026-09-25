@@ -13,6 +13,72 @@ enum OMSpacing {
 enum OMRadius {
     static let tile: CGFloat = 16
     static let row: CGFloat = 12
+
+    // 3.0 surfaces (liquid-glass spec § Design → Tokens, "Radii").
+    static let popover: CGFloat = 24
+    static let popoverGroup: CGFloat = 16
+    static let popoverTile: CGFloat = 18
+    static let dashboardCard: CGFloat = 22
+    static let window: CGFloat = 26
+    static let sidebar: CGFloat = 18
+    static let navItem: CGFloat = 11
+
+    /// The corner a 3.0 surface wears. Controls are capsules at any height.
+    static func corner(for context: OMCornerContext) -> OMCorner {
+        switch context {
+        case .popover: return .rounded(popover)
+        case .popoverGroup: return .rounded(popoverGroup)
+        case .popoverTile: return .rounded(popoverTile)
+        case .dashboardCard: return .rounded(dashboardCard)
+        case .window: return .rounded(window)
+        case .sidebar: return .rounded(sidebar)
+        case .navItem: return .rounded(navItem)
+        case .control: return .capsule
+        }
+    }
+}
+
+/// The 3.0 surfaces that own a corner.
+enum OMCornerContext: CaseIterable, Sendable {
+    case popover, popoverGroup, popoverTile, dashboardCard, window, sidebar, navItem, control
+}
+
+/// A continuous rounded rectangle of a fixed radius, or a capsule.
+enum OMCorner: Equatable, Sendable {
+    case rounded(CGFloat)
+    case capsule
+}
+
+/// The shape of a 3.0 surface: `OMCornerShape(.dashboardCard)`. Insettable, so a
+/// `strokeBorder` stays inside it; an inset shrinks the radius by the same amount,
+/// as `RoundedRectangle`'s does. Paths are built directly, never through a view
+/// initializer, so the shape stays usable off the main actor.
+struct OMCornerShape: InsettableShape {
+    let corner: OMCorner
+    let insetAmount: CGFloat
+
+    nonisolated init(_ context: OMCornerContext) {
+        self.init(corner: OMRadius.corner(for: context), insetAmount: 0)
+    }
+
+    private nonisolated init(corner: OMCorner, insetAmount: CGFloat) {
+        self.corner = corner
+        self.insetAmount = insetAmount
+    }
+
+    nonisolated func path(in rect: CGRect) -> Path {
+        let inner = rect.insetBy(dx: insetAmount, dy: insetAmount)
+        switch corner {
+        case .capsule:
+            return Path(roundedRect: inner, cornerRadius: min(inner.width, inner.height) / 2, style: .continuous)
+        case .rounded(let radius):
+            return Path(roundedRect: inner, cornerRadius: max(0, radius - insetAmount), style: .continuous)
+        }
+    }
+
+    nonisolated func inset(by amount: CGFloat) -> OMCornerShape {
+        OMCornerShape(corner: corner, insetAmount: insetAmount + amount)
+    }
 }
 
 enum OMFont {
