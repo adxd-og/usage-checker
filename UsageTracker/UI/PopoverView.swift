@@ -128,6 +128,14 @@ struct PopoverView: View {
         displayedServices.first { $0.id == currentTab }
     }
 
+    /// The All tab's rows: two tiles each, the last one alone when the count is odd.
+    nonisolated static func tileRows(_ services: [ServiceSnapshot]) -> [[ServiceSnapshot]] {
+        stride(from: 0, to: services.count, by: 2).map { Array(services[$0..<min($0 + 2, services.count)]) }
+    }
+
+    /// `Main.dc.html`'s grid gap.
+    nonisolated static let tileSpacing: CGFloat = 10
+
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
@@ -212,20 +220,24 @@ struct PopoverView: View {
         }
     }
 
-    /// Every provider at a glance; tapping a tile is the same as picking its tab.
+    /// Every provider at a glance; tapping a tile is the same as picking its tab. Two
+    /// tiles a row, each row as tall as its taller tile (the mockup's grid): a row
+    /// sized to its ideal height, with tiles that fill it.
     private var allTab: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            LazyVGrid(
-                columns: [
-                    GridItem(.flexible(), spacing: OMSpacing.s),
-                    GridItem(.flexible(), spacing: OMSpacing.s),
-                ],
-                spacing: OMSpacing.s
-            ) {
-                ForEach(displayedServices) { service in
-                    OMProviderTile(service: service, mode: settings.percentMode) {
-                        withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
+            VStack(spacing: Self.tileSpacing) {
+                ForEach(Array(Self.tileRows(displayedServices).enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .top, spacing: Self.tileSpacing) {
+                        ForEach(row) { service in
+                            OMProviderTile(service: service, mode: settings.percentMode) {
+                                withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
+                            }
+                        }
+                        if row.count == 1 {
+                            Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+                        }
                     }
+                    .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if OMCostTile.total(displayedServices) > 0 {
