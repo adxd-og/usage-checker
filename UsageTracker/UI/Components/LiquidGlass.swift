@@ -44,3 +44,121 @@ extension View {
         buttonStyle(.glassProminent)
     }
 }
+
+// MARK: - 3.0 glass surfaces (liquid-glass spec § Design → Tokens and Components)
+
+/// One stop of a surface's 1 px inner edge light.
+struct OMEdgeStop: Equatable, Sendable {
+    let color: OMRGBA
+    let location: CGFloat
+}
+
+/// The rules the glass surfaces render by; `OMGlassSurface` only applies them.
+enum OMGlassRules {
+    /// Chrome, pane and control track are the system's glass, tinted with the
+    /// recipe's fill. The raised pill is a plain fill with a shadow: it always sits
+    /// on a glass track or pane, and two glass layers merge or muddy each other.
+    static func usesSystemGlass(_ kind: OMGlassKind) -> Bool {
+        kind != .raisedPill
+    }
+
+    /// CSS `box-shadow` blur → SwiftUI shadow radius, a Gaussian radius of about half.
+    static func shadowRadius(cssBlur: CGFloat) -> CGFloat {
+        cssBlur / 2
+    }
+
+    /// The 1 px inner edge light, top to bottom: the top highlight fading out by
+    /// mid-height, the bottom one fading in from there, each in its own colour so the
+    /// fade never passes through grey. Empty when the recipe has neither.
+    static func edgeHighlightStops(_ recipe: OMGlassRecipe) -> [OMEdgeStop] {
+        var stops: [OMEdgeStop] = []
+        if let top = recipe.topHighlight {
+            stops.append(OMEdgeStop(color: top, location: 0))
+            stops.append(OMEdgeStop(color: top.withOpacity(0), location: 0.5))
+        }
+        if let bottom = recipe.bottomHighlight {
+            stops.append(OMEdgeStop(color: bottom.withOpacity(0), location: 0.5))
+            stops.append(OMEdgeStop(color: bottom, location: 1))
+        }
+        return stops
+    }
+}
+
+extension View {
+    /// The glass surface `kind` in `shape`. A control whose rule names its surface (an
+    /// `OMGlassKind` static) renders through this, so changing the rule changes the view.
+    func omGlass<S: InsettableShape>(_ kind: OMGlassKind, in shape: S) -> some View {
+        modifier(OMGlassSurface(kind: kind, shape: shape))
+    }
+
+    /// Popover body and window chrome.
+    func chromeGlass<S: InsettableShape>(in shape: S) -> some View {
+        omGlass(.chrome, in: shape)
+    }
+
+    /// Glass over the content fill: sidebar and dashboard cards.
+    func paneGlass<S: InsettableShape>(in shape: S) -> some View {
+        omGlass(.pane, in: shape)
+    }
+
+    /// The capsule track under a segmented control.
+    func controlTrackGlass<S: InsettableShape>(in shape: S) -> some View {
+        omGlass(.controlTrack, in: shape)
+    }
+
+    /// The selected segment or nav item, raised on its track or pane.
+    func raisedPill<S: InsettableShape>(in shape: S) -> some View {
+        omGlass(.raisedPill, in: shape)
+    }
+}
+
+/// Draws one glass surface from its recipe for the current appearance: system glass
+/// tinted with the fill (or, for the raised pill, the fill and its shadow), a 1 px
+/// border and the inner edge light.
+private struct OMGlassSurface<S: InsettableShape>: ViewModifier {
+    let kind: OMGlassKind
+    let shape: S
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let recipe = OMGlass.recipe(kind, scheme: colorScheme)
+        let stops = OMGlassRules.edgeHighlightStops(recipe)
+        surface(content, recipe: recipe)
+            .overlay {
+                if let border = recipe.border {
+                    shape.strokeBorder(border.color, lineWidth: 1)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if !stops.isEmpty {
+                    shape.strokeBorder(
+                        LinearGradient(
+                            stops: stops.map { Gradient.Stop(color: $0.color.color, location: $0.location) },
+                            startPoint: .top,
+                            endPoint: .bottom
+                        ),
+                        lineWidth: 1
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+    }
+
+    @ViewBuilder
+    private func surface(_ content: Content, recipe: OMGlassRecipe) -> some View {
+        if OMGlassRules.usesSystemGlass(kind) {
+            content.glassEffect(.regular.tint(recipe.fill.color), in: shape)
+        } else {
+            content.background {
+                shape.fill(recipe.fill.color)
+                    .shadow(
+                        color: recipe.shadow?.color.color ?? .clear,
+                        radius: OMGlassRules.shadowRadius(cssBlur: recipe.shadow?.blur ?? 0),
+                        x: 0,
+                        y: recipe.shadow?.y ?? 0
+                    )
+            }
+        }
+    }
+}
