@@ -147,8 +147,8 @@ final class DashboardState: ObservableObject {
 
     /// Every provider either writes a local per-turn cost log or has a specific reason
     /// it can't be costed. Claude Code, the Codex CLI and the Grok CLI all write one;
-    /// Gemini and Antigravity keep no per-turn token log at all, and saying so is more
-    /// use than telling their users to switch to Claude.
+    /// Antigravity keeps no per-turn token log at all, and saying so is more use than
+    /// telling its users to switch to Claude.
     nonisolated static func costSource(for serviceID: String) -> CostSource {
         switch serviceID {
         case "claude":
@@ -159,8 +159,6 @@ final class DashboardState: ObservableObject {
             return .log(shortName: "Codex CLI", longName: "the Codex CLI's session logs")
         case "antigravity":
             return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
-        case "gemini":
-            return .unavailable(reason: "Cost accounting for the Gemini CLI isn't supported yet. Quota over time is charted instead.")
         default:
             return .unavailable(reason: "This provider keeps no local cost log, so costs can't be computed. Quota over time is charted instead.")
         }
