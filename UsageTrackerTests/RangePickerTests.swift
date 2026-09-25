@@ -28,4 +28,14 @@ final class RangePickerTests: XCTestCase {
     func testVoiceOverCallsItTheTimeRange() {
         XCTAssertEqual(RangePicker.accessibilityName, "Time range")
     }
+
+    func testAYearIsTheLastRangeAndTitledOneY() {
+        XCTAssertEqual(TimeRange.allCases.last, .oneYear)
+        XCTAssertEqual(RangePicker.items(for: [.oneYear]), [OMSegmentItem(id: "1y", title: "1y")])
+        XCTAssertEqual(RangePicker.timeRange(forSegment: "1y", current: .sevenDays), .oneYear)
+    }
+
+    func testAYearIs365Days() {
+        XCTAssertEqual(TimeRange.oneYear.seconds, 365 * 24 * 3600)
+    }
 }

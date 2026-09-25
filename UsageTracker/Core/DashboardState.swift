@@ -7,6 +7,7 @@ enum TimeRange: String, CaseIterable, Identifiable {
     case sevenDays = "7d"
     case thirtyDays = "30d"
     case ninetyDays = "90d"
+    case oneYear = "1y"
 
     var id: String { rawValue }
     var displayName: String { rawValue }
@@ -18,6 +19,7 @@ enum TimeRange: String, CaseIterable, Identifiable {
         case .sevenDays: return 7 * 24 * 3600
         case .thirtyDays: return 30 * 24 * 3600
         case .ninetyDays: return 90 * 24 * 3600
+        case .oneYear: return 365 * 24 * 3600
         }
     }
 }
@@ -348,17 +350,24 @@ final class DashboardState: ObservableObject {
             if canPublish(pass), self.range == range { sessions = cached }
             return
         }
-        let end = Date()
-        // Anything shorter than a day is widened to that day by the aggregators (§ 1);
-        // the subtitle says so, and nothing here needs to know about it.
-        let start = end.addingTimeInterval(-range.seconds)
-        let loaded = await aggregator.sessions(from: start, to: end)
+        // The days History's chart draws, so the list holds no chat from a day the chart
+        // leaves out (`sessionsWindow`).
+        let window = Self.sessionsWindow(range: range, now: Date(), calendar: .current)
+        let loaded = await aggregator.sessions(from: window.lowerBound, to: window.upperBound)
         guard canPublish(pass), self.range == range else { return }
         // One provider and one ingest stamp at a time: a refresh has moved every
         // range's numbers, and a provider switch already threw its published list away.
         sessionCache = sessionCache.filter { $0.key.service == pass.service && $0.key.updatedAt == stamp }
         sessionCache[key] = loaded
         sessions = loaded
+    }
+
+    /// The span History's chat list asks the aggregators for: the days its chart draws
+    /// (`HistoryRules.windowStart`) through now. For 7d, 30d, 90d and 1y that is that
+    /// many calendar days ending today; 24h and 5h stay the local day `range` ago, the
+    /// day the aggregators widened `now − range` to before.
+    nonisolated static func sessionsWindow(range: TimeRange, now: Date, calendar: Calendar) -> ClosedRange<Date> {
+        HistoryRules.windowStart(range: range, now: now, calendar: calendar)...now
     }
 
     func refreshDerived() async {

@@ -1,72 +1,54 @@
 import SwiftUI
 
+/// History → Calendar (liquid-glass spec § Screens, "History · Calendar"): the
+/// GitHub-style heatmap over the page's range, today ringed, one total for the range.
+/// Cost squares climb the yolk ramp in four steps (`HistoryCalendarRules`); a quota-only
+/// provider's squares are its daily peak over the core windows, in the gauge colours,
+/// as the Activity tab drew them. Cost only: the Tokens unit never reaches here (spec
+/// § Decisions, "Calendar in Tokens mode").
 struct ActivityGridView: View {
     @ObservedObject var dashboard: DashboardState
+    /// The page's range, one History offers (`HistoryRules.offeredRange`).
+    let range: TimeRange
 
-    @State private var weeks: Int = 52
     @State private var cache: GridCache?
+    @State private var quotaSummary: HistoryCalendarQuotaSummary?
+    @Environment(\.colorScheme) private var colorScheme
 
-    private let cellSize: CGFloat = 12
-    private let spacing: CGFloat = 3
+    private let cellSize = HistoryLayout.calendarCellSize
+    private let spacing = HistoryLayout.calendarCellSpacing
 
     /// Providers with no local cost log get a grid of daily *quota* peaks instead of a
     /// dead end — for a subscription that is the same story in the only unit available.
     private var showsQuota: Bool { !dashboard.costSource.hasBreakdown }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                DashboardHeader(
-                    title: "Activity",
-                    subtitle: subtitle,
-                    trailing: AnyView(rangePicker)
-                )
-
-                if showsQuota, cache?.hasData == false {
-                    noQuotaPlaceholder
-                } else if let cache {
-                    statCards(cache)
-                        .padding(.horizontal, 24)
-                    // The cache's own kind, like the tooltips: the cards' figures came from it.
-                    if let caption = Self.statsCaption(isQuota: cache.usesStatusColor, caption: costCaption) {
-                        Text(caption)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 24)
-                    }
-                    if let note = Self.retentionNote(
-                        provider: dashboard.selectedService, showsQuota: showsQuota
-                    ) {
-                        Text(note)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 24)
-                    }
-                    gridBlock(cache)
-                        .padding(.horizontal, 24)
-                    if showsQuota { costFootnote }
-                } else {
-                    placeholder
+        VStack(alignment: .leading, spacing: HistoryLayout.calendarCardSpacing) {
+            if showsQuota, cache?.hasData == false {
+                noQuotaPlaceholder
+            } else if let cache {
+                header(cache)
+                gridBlock(cache)
+                if let note = Self.retentionNote(provider: dashboard.selectedService, showsQuota: showsQuota) {
+                    Text(note)
+                        .font(.system(size: HistoryLayout.noteSize))
+                        .foregroundStyle(.om(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-
-                Spacer(minLength: 24)
+            } else {
+                placeholder
             }
         }
+        .padding(HistoryLayout.calendarCardPadding)
+        .dashboardCard(padding: 0)
         .task(id: taskKey) {
             await rebuildCache()
         }
     }
 
-    private var subtitle: String {
-        if showsQuota { return "Daily peak quota use" }
-        return dashboard.costSource.shortName.map { "Daily cost (\($0))" } ?? "Daily cost"
-    }
-
     private var taskKey: TaskKey {
         TaskKey(
-            weeks: weeks,
+            range: range,
             service: dashboard.selectedService,
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
@@ -78,20 +60,40 @@ struct ActivityGridView: View {
     @MainActor
     private func rebuildCache() async {
         let started = taskKey
-        let weeksCopy = weeks
+        let range = self.range
+        let now = Date()
+        let calendar = Calendar.current
+        let windowStart = HistoryRules.windowStart(range: range, now: now, calendar: calendar)
+        let weeks = HistoryCalendarRules.weeks(from: windowStart, now: now, calendar: calendar)
         // Heavy work off the main actor, whichever metric the grid is showing.
         let built: GridCache
+        let summary: HistoryCalendarQuotaSummary?
         if showsQuota {
             let records = dashboard.history
             let buckets = dashboard.quotaBuckets
-            built = await Task.detached(priority: .userInitiated) {
-                GridCache.build(records: records, buckets: buckets, weeks: weeksCopy)
+            let result = await Task.detached(priority: .userInitiated) { () -> (GridCache, HistoryCalendarQuotaSummary) in
+                let grid = GridCache.build(
+                    records: HistoryCalendarRules.quotaRecords(records, range: range, now: now, calendar: calendar),
+                    buckets: buckets, weeks: weeks,
+                    now: now, calendar: calendar, notBefore: windowStart
+                )
+                let summary = HistoryCalendarRules.quotaSummary(
+                    records: records, buckets: buckets, range: range, now: now, calendar: calendar
+                )
+                return (grid, summary)
             }.value
+            built = result.0
+            summary = result.1
         } else {
-            let dailies = dashboard.cliBreakdown?.daily ?? []
+            // The range's rows only (`HistoryCalendarRules.costRows`), so the ramp's top
+            // step is the range's busiest day.
+            let dailies = HistoryCalendarRules.costRows(
+                dashboard.cliBreakdown?.daily ?? [], range: range, now: now, calendar: calendar
+            )
             built = await Task.detached(priority: .userInitiated) {
-                GridCache.build(from: dailies, weeks: weeksCopy)
+                GridCache.build(from: dailies, weeks: weeks, now: now, calendar: calendar, notBefore: windowStart)
             }.value
+            summary = nil
         }
         // See `DerivedCacheGate`: the await does not stop when `.task(id:)` cancels this
         // pass, and a slow pass for the provider or range just left would land last.
@@ -99,85 +101,84 @@ struct ActivityGridView: View {
             started: started, current: taskKey, cancelled: Task.isCancelled
         ) else { return }
         cache = built
+        quotaSummary = summary
     }
 
-    private var rangePicker: some View {
-        Picker("", selection: $weeks) {
-            Text("13w").tag(13)
-            Text("26w").tag(26)
-            Text("52w").tag(52)
+    /// The same days and the same sum as the Chart card's header (`HistoryRules`).
+    private var costSummary: HistoryRangeSummary {
+        let now = Date()
+        let days = HistoryRules.days(
+            daily: dashboard.cliBreakdown?.daily ?? [], range: range, now: now, calendar: .current
+        )
+        return HistoryRules.summary(days, range: range, now: now, calendar: .current)
+    }
+
+    /// Title, the range's one figure, and the legend on the right.
+    private func header(_ c: GridCache) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(HistoryCopy.calendarTitle(range: range, showsQuota: showsQuota))
+                .font(.system(size: HistoryLayout.cardTitleSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+            if showsQuota {
+                if let summary = quotaSummary,
+                   let text = HistoryCopy.daysAtLimit(summary.daysAtLimit, of: summary.daysObserved) {
+                    Text(text)
+                        .font(.system(size: HistoryLayout.cardCaptionSize))
+                        .foregroundStyle(.om(.secondary))
+                }
+            } else {
+                let summary = costSummary
+                Text(HistoryCopy.dollars(summary.cost))
+                    .font(OMFont.numerals(size: HistoryLayout.calendarTotalSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                Text(HistoryCopy.activeDays(summary.activeDays))
+                    .font(.system(size: HistoryLayout.cardCaptionSize))
+                    .foregroundStyle(.om(.secondary))
+            }
+            Spacer(minLength: 12)
+            legend(c)
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 180)
     }
 
     private var placeholder: some View {
         VStack(spacing: 10) {
             ProgressView().controlSize(.small)
-            Text("Loading activity…")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Text(HistoryCopy.calendarLoading)
+                .font(OMFont.caption)
+                .foregroundStyle(.om(.secondary))
         }
-        .frame(maxWidth: .infinity, minHeight: 200)
+        .frame(maxWidth: .infinity, minHeight: 160)
     }
 
     /// Quota history only starts when the app first polls this provider successfully,
     /// so a fresh provider has an honest reason for an empty grid.
     private var noQuotaPlaceholder: some View {
         VStack(spacing: 8) {
-            Image(systemName: "square.grid.3x3").font(.largeTitle).foregroundStyle(.tertiary)
-            Text("No quota recorded yet for \(dashboard.displayName(for: dashboard.selectedService))")
-                .foregroundStyle(.secondary)
-            Text("Each successful poll records this provider's windows; the grid fills in from there.")
+            Image(systemName: "square.grid.3x3")
+                .font(.largeTitle)
+                .foregroundStyle(.om(.muted))
+            Text(HistoryCopy.noQuotaTitle(provider: dashboard.displayName(for: dashboard.selectedService)))
+                .foregroundStyle(.om(.secondary))
+            Text(HistoryCopy.noQuotaHint)
                 .font(OMFont.body)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.om(.secondary))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 420)
         }
-        .frame(maxWidth: .infinity, minHeight: 200)
+        .frame(maxWidth: .infinity, minHeight: 160)
     }
 
-    /// Squares here are percentages, not dollars. Say so, so their absence doesn't
-    /// read as a bug.
-    private var costFootnote: some View {
-        Text(dashboard.costSource.reason ?? "")
-            .font(OMFont.caption)
-            .foregroundStyle(.tertiary)
-            .fixedSize(horizontal: false, vertical: true)
-            .padding(.horizontal, 24)
-    }
-
-    private func statCards(_ c: GridCache) -> some View {
-        HStack(spacing: 12) {
-            ForEach(c.stats) { stat in
-                statCard(stat)
-            }
-        }
-    }
-
-    private func statCard(_ stat: GridStat) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(stat.label).font(OMFont.caption).foregroundStyle(.secondary)
-            Text(stat.value)
-                .font(OMFont.heroNumeral)
-                .monospacedDigit()
-            if let sub = stat.sub {
-                Text(sub).font(OMFont.caption).foregroundStyle(.tertiary)
-            }
-        }
-        .dashboardCard(padding: 12)
-    }
-
+    /// The grid scrolls sideways when the column is narrower than its weeks, and opens
+    /// on this week.
     private func gridBlock(_ c: GridCache) -> some View {
-        let gridWidth = CGFloat(c.weeksMatrix.count) * (cellSize + spacing) + 32
-        return VStack(alignment: .leading, spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 8) {
-                    monthLabels(c, width: gridWidth)
+        let column = cellSize + spacing
+        return ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: HistoryLayout.calendarWeekdayGap) {
+                weekdayLabels
+                VStack(alignment: .leading, spacing: HistoryLayout.calendarMonthGap) {
+                    monthLabels(c, column: column)
                     HStack(alignment: .top, spacing: spacing) {
-                        weekdayLabels
                         ForEach(0..<c.weeksMatrix.count, id: \.self) { w in
                             VStack(spacing: spacing) {
                                 ForEach(0..<7, id: \.self) { d in
@@ -188,38 +189,38 @@ struct ActivityGridView: View {
                     }
                 }
             }
-            legend(c).padding(.top, 8)
         }
-        .dashboardCard(padding: 14)
+        .defaultScrollAnchor(.trailing)
     }
 
-    private func monthLabels(_ c: GridCache, width: CGFloat) -> some View {
-        HStack(spacing: 0) {
-            Color.clear.frame(width: 28)
-            ZStack(alignment: .leading) {
-                ForEach(c.monthMarkers, id: \.weekIndex) { marker in
-                    Text(marker.label)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.secondary)
-                        .offset(x: CGFloat(marker.weekIndex) * (cellSize + spacing))
-                }
+    private func monthLabels(_ c: GridCache, column: CGFloat) -> some View {
+        ZStack(alignment: .leading) {
+            ForEach(c.monthMarkers, id: \.weekIndex) { marker in
+                Text(marker.label)
+                    .font(.system(size: HistoryLayout.calendarMonthSize))
+                    .foregroundStyle(.om(.secondary))
+                    .fixedSize()
+                    .offset(x: CGFloat(marker.weekIndex) * column)
             }
-            .frame(width: width - 28, alignment: .leading)
-            .frame(height: 12)
         }
+        .frame(
+            width: CGFloat(c.weeksMatrix.count) * column,
+            height: HistoryLayout.calendarMonthRowHeight,
+            alignment: .leading
+        )
     }
 
     private var weekdayLabels: some View {
-        VStack(alignment: .leading, spacing: spacing) {
+        let labels = GridCache.weekdayLabels(calendar: .current)
+        return VStack(alignment: .leading, spacing: spacing) {
             ForEach(0..<7, id: \.self) { d in
-                let labels = ["", "Mon", "", "Wed", "", "Fri", ""]
                 Text(labels[d])
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                    .frame(width: 24, height: cellSize, alignment: .trailing)
-                    .padding(.trailing, 4)
+                    .font(.system(size: HistoryLayout.calendarWeekdaySize))
+                    .foregroundStyle(.om(.secondary))
+                    .frame(width: HistoryLayout.calendarWeekdayWidth, height: cellSize, alignment: .leading)
             }
         }
+        .padding(.top, HistoryLayout.calendarMonthRowHeight + HistoryLayout.calendarMonthGap)
     }
 
     private func cell(_ day: Day, cache: GridCache) -> some View {
@@ -227,14 +228,60 @@ struct ActivityGridView: View {
         // A day the app never observed is not a day of no usage. Only the quota grid
         // can tell the two apart, so only it draws the difference.
         let unobserved = cache.dimsUnrecordedDays && !day.hasReading
-        return RoundedRectangle(cornerRadius: 3)
-            .fill(day.isFuture
-                  ? Color.clear
-                  : Self.cellBase(intensity: intensity, usesStatusColor: cache.usesStatusColor, unobserved: unobserved)
-                      .opacity(Self.cellOpacity(intensity: intensity, unobserved: unobserved)))
-            .frame(width: cellSize, height: cellSize)
-            // The cache's own kind, not the picker's: the tooltip text came from it.
+        let fill: Color
+        if day.isBlank {
+            fill = .clear
+        } else if cache.usesStatusColor {
+            fill = Self.cellBase(intensity: intensity, usesStatusColor: true, unobserved: unobserved)
+                .opacity(Self.cellOpacity(intensity: intensity, unobserved: unobserved))
+        } else {
+            fill = costFill(level: HistoryCalendarRules.costLevel(intensity: intensity))
+        }
+        return square(fill)
+            .overlay {
+                if day.date == cache.today {
+                    RoundedRectangle(
+                        cornerRadius: HistoryLayout.calendarCellRadius + HistoryLayout.todayRingWidth / 2,
+                        style: .continuous
+                    )
+                    .stroke(.om(.text), lineWidth: HistoryLayout.todayRingWidth)
+                    .padding(-HistoryLayout.todayRingWidth / 2)
+                }
+            }
+            // The cache's own kind: the tooltip text came from it.
             .help(Self.cellTooltip(day.tooltip, hasReading: day.hasReading, isQuota: cache.usesStatusColor, caption: costCaption))
+    }
+
+    private func square(_ fill: Color) -> some View {
+        RoundedRectangle(cornerRadius: HistoryLayout.calendarCellRadius, style: .continuous)
+            .fill(fill)
+            .frame(width: cellSize, height: cellSize)
+    }
+
+    /// A cost square: the empty wash at step 0, then yolk at the step's strength.
+    private func costFill(level: Int) -> Color {
+        guard level > 0 else { return OMPalette.rgba(.calendarEmpty, scheme: colorScheme).color }
+        return OMPalette.rgba(.accent, scheme: colorScheme).color
+            .opacity(HistoryCalendarRules.levelOpacity(level))
+    }
+
+    private func legend(_ c: GridCache) -> some View {
+        HStack(spacing: 6) {
+            Text(c.legendLow)
+            ForEach(HistoryCalendarRules.legendLevels, id: \.self) { level in
+                square(legendFill(level: level, cache: c))
+            }
+            Text(c.legendHigh)
+        }
+        .font(.system(size: HistoryLayout.calendarLegendSize))
+        .foregroundStyle(.om(.secondary))
+    }
+
+    private func legendFill(level: Int, cache c: GridCache) -> Color {
+        guard c.usesStatusColor else { return costFill(level: level) }
+        let intensity = Double(level) / 4
+        return Self.cellBase(intensity: intensity, usesStatusColor: true, unobserved: false)
+            .opacity(Self.cellOpacity(intensity: intensity, unobserved: false))
     }
 
     /// The colour a square is built from. Dollars have no "too much" level, so cost
@@ -256,9 +303,9 @@ struct ActivityGridView: View {
         return 0.20 + clamped * 0.80
     }
 
-    /// The caption under the stats row, or nil. Quota squares are percentages out of
-    /// our own history, which no transcript cleanup can shorten, so the note belongs
-    /// to the cost grid alone.
+    /// The caption under the grid, or nil. Quota squares are percentages out of our own
+    /// history, which no transcript cleanup can shorten, so the note belongs to the
+    /// cost grid alone.
     nonisolated static func retentionNote(provider: String, showsQuota: Bool) -> String? {
         showsQuota ? nil : ActivityCopy.retentionNote(provider: provider)
     }
@@ -271,16 +318,16 @@ struct ActivityGridView: View {
         )
     }
 
-    /// The line under the 30/90/365-day cards: the API-equivalent caption when they
-    /// are dollars on a subscription. The quota grid's cards are percentages, and a
-    /// pay-as-you-go account's dollars are the bill (nil caption); both get no line.
+    /// The line the 2.x stat cards carried: the API-equivalent caption when they were
+    /// dollars on a subscription. History's header sentence says it now; the rule
+    /// stays, pinned by its tests.
     nonisolated static func statsCaption(isQuota: Bool, caption: String?) -> String? {
         isQuota ? nil : caption
     }
 
     /// A square's tooltip. The tooltip is the one place the cost grid names a day's
     /// dollars, so a day with dollars gets the API-equivalent caption on a second line.
-    /// A quota square, a day with nothing on it, a future square (no tooltip at all)
+    /// A quota square, a day with nothing on it, a blank square (no tooltip at all)
     /// and a pay-as-you-go account (no caption) keep the tooltip as built.
     nonisolated static func cellTooltip(
         _ tooltip: String, hasReading: Bool, isQuota: Bool, caption: String?
@@ -288,26 +335,12 @@ struct ActivityGridView: View {
         guard !isQuota, hasReading, !tooltip.isEmpty, let caption else { return tooltip }
         return "\(tooltip)\n\(caption)"
     }
-
-    private func legend(_ c: GridCache) -> some View {
-        HStack(spacing: 6) {
-            Text(c.legendLow).font(OMFont.caption).foregroundStyle(.secondary)
-            ForEach(0..<5, id: \.self) { i in
-                let intensity = Double(i) / 4.0
-                RoundedRectangle(cornerRadius: 3)
-                    .fill(Self.cellBase(intensity: intensity, usesStatusColor: c.usesStatusColor, unobserved: false)
-                        .opacity(Self.cellOpacity(intensity: intensity, unobserved: false)))
-                    .frame(width: cellSize, height: cellSize)
-            }
-            Text(c.legendHigh).font(OMFont.caption).foregroundStyle(.secondary)
-        }
-    }
 }
 
 // MARK: - Cache (computed off main thread, then cached in @State)
 
 private struct TaskKey: Hashable {
-    let weeks: Int
+    let range: TimeRange
     let service: String
     let cliUpdatedAt: Date
     let historyCount: Int
@@ -320,7 +353,9 @@ private struct Day: Sendable {
     let value: Double
     /// Whether the source had anything to say about this day at all.
     let hasReading: Bool
-    let isFuture: Bool
+    /// A square the grid draws empty and without a tooltip: after now, or before the
+    /// range the grid covers began.
+    let isBlank: Bool
     let tooltip: String
 }
 
@@ -356,6 +391,8 @@ struct GridCache: Sendable {
     /// Whether the squares are a utilisation (battery colours) or dollars (accent ramp).
     let usesStatusColor: Bool
     let hasData: Bool
+    /// The square to ring: the start of today in the calendar the cache was built with.
+    let today: Date
 
     // MARK: Cost
 
@@ -363,7 +400,8 @@ struct GridCache: Sendable {
         from dailies: [CLIDailySummary],
         weeks: Int,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        notBefore: Date? = nil
     ) -> GridCache {
         let dailies = Self.dailiesByDay(dailies, calendar: calendar)
         let formatters = Formatters()
@@ -390,7 +428,7 @@ struct GridCache: Sendable {
 
         let layout = Layout(
             values: values, weeks: weeks, emptyTooltip: "no usage",
-            formatters: formatters, now: now, calendar: calendar
+            formatters: formatters, now: now, calendar: calendar, notBefore: notBefore
         )
         return GridCache(
             weeksMatrix: layout.matrix,
@@ -405,7 +443,8 @@ struct GridCache: Sendable {
             legendHigh: "More",
             dimsUnrecordedDays: false,
             usesStatusColor: false,
-            hasData: !dailies.isEmpty
+            hasData: !dailies.isEmpty,
+            today: calendar.startOfDay(for: now)
         )
     }
 
@@ -451,11 +490,18 @@ struct GridCache: Sendable {
 
     // MARK: Quota
 
-    static func build(records: [HistoryRecord], buckets: [QuotaBucketInfo], weeks: Int) -> GridCache {
+    static func build(
+        records: [HistoryRecord],
+        buckets: [QuotaBucketInfo],
+        weeks: Int,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        notBefore: Date? = nil
+    ) -> GridCache {
         let formatters = Formatters()
         let coreIDs = buckets.filter(\.isCore).map(\.id)
         let labels = Dictionary(buckets.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
-        let peaks = QuotaAnalytics.dailyPeaks(records: records, bucketIDs: coreIDs)
+        let peaks = QuotaAnalytics.dailyPeaks(records: records, bucketIDs: coreIDs, calendar: calendar)
 
         var values: [Date: DayValue] = [:]
         for peak in peaks {
@@ -469,7 +515,7 @@ struct GridCache: Sendable {
             values[peak.day] = DayValue(value: peak.peak, tooltip: tooltip)
         }
 
-        let insights = QuotaAnalytics.insights(records: records, bucketIDs: coreIDs)
+        let insights = QuotaAnalytics.insights(records: records, bucketIDs: coreIDs, calendar: calendar, now: now)
         let busiestSub = insights.busiestDay.map { day -> String in
             let label = labels[day.peakBucketID] ?? QuotaAnalytics.prettifiedLabel(for: day.peakBucketID)
             return "\(formatters.date.string(from: day.day)) · \(label)"
@@ -477,7 +523,7 @@ struct GridCache: Sendable {
 
         let layout = Layout(
             values: values, weeks: weeks, emptyTooltip: "not recorded",
-            formatters: formatters, now: Date(), calendar: .current
+            formatters: formatters, now: now, calendar: calendar, notBefore: notBefore
         )
         return GridCache(
             weeksMatrix: layout.matrix,
@@ -504,7 +550,8 @@ struct GridCache: Sendable {
             legendHigh: "100%",
             dimsUnrecordedDays: true,
             usesStatusColor: true,
-            hasData: !peaks.isEmpty
+            hasData: !peaks.isEmpty,
+            today: calendar.startOfDay(for: now)
         )
     }
 
@@ -537,11 +584,11 @@ struct GridCache: Sendable {
             emptyTooltip: String,
             formatters: Formatters,
             now: Date,
-            calendar cal: Calendar
+            calendar cal: Calendar,
+            notBefore: Date?
         ) {
             let today = cal.startOfDay(for: now)
-            let weekday = cal.component(.weekday, from: today) - 1
-            let startOfThisWeek = cal.date(byAdding: .day, value: -weekday, to: today) ?? today
+            let startOfThisWeek = GridCache.weekStart(of: today, calendar: cal)
 
             var matrix: [[Day]] = []
             matrix.reserveCapacity(weeks)
@@ -554,10 +601,10 @@ struct GridCache: Sendable {
                 for d in 0..<7 {
                     let offset = -(weeks - 1 - w) * 7 + d
                     let date = cal.date(byAdding: .day, value: offset, to: startOfThisWeek) ?? today
-                    let entry = values[date]
-                    let isFuture = date > now
+                    let isBlank = date > now || notBefore.map { date < $0 } == true
+                    let entry = isBlank ? nil : values[date]
                     let tooltip: String
-                    if isFuture {
+                    if isBlank {
                         tooltip = ""
                     } else if let entry {
                         tooltip = entry.tooltip
@@ -568,7 +615,7 @@ struct GridCache: Sendable {
                         date: date,
                         value: entry?.value ?? 0,
                         hasReading: entry != nil,
-                        isFuture: isFuture,
+                        isBlank: isBlank,
                         tooltip: tooltip
                     ))
                 }
@@ -585,6 +632,29 @@ struct GridCache: Sendable {
 
             self.matrix = matrix
             self.markers = markers
+        }
+    }
+}
+
+// MARK: - Weeks
+
+extension GridCache {
+    /// The first day of the week `date` falls in, weeks starting on the calendar's own
+    /// first weekday (Monday in most of Europe, Sunday in the US): the column the grid
+    /// puts that day in.
+    static func weekStart(of date: Date, calendar: Calendar) -> Date {
+        let day = calendar.startOfDay(for: date)
+        let offset = (calendar.component(.weekday, from: day) - calendar.firstWeekday + 7) % 7
+        return calendar.date(byAdding: .day, value: -offset, to: day) ?? day
+    }
+
+    /// The row names, top to bottom in the order the calendar's week runs: Monday,
+    /// Wednesday and Friday named in its language, the other rows blank.
+    static func weekdayLabels(calendar: Calendar) -> [String] {
+        let symbols = calendar.shortWeekdaySymbols
+        return (0..<7).map { row in
+            let weekday = (calendar.firstWeekday - 1 + row) % 7 + 1
+            return [2, 4, 6].contains(weekday) ? symbols[weekday - 1] : ""
         }
     }
 }
