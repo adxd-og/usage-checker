@@ -71,11 +71,6 @@ struct InsightsView: View {
                 if dashboard.costSource.hasBreakdown {
                     cliBlock
                         .padding(.horizontal, 24)
-
-                    if let projects = dashboard.cliBreakdown?.projectsMonth, !projects.isEmpty {
-                        projectsBlock(projects: projects)
-                            .padding(.horizontal, 24)
-                    }
                 } else {
                     quotaBlock
                         .padding(.horizontal, 24)
@@ -277,18 +272,6 @@ struct InsightsView: View {
                 .lineLimit(2)
                 .truncationMode(.tail)
             if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
-        }
-        .dashboardCard()
-    }
-
-    private func projectsBlock(projects: [ProjectSummary]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            OMSectionHeader(title: "Projects · last 30 days", trailing: "\(projects.count) total")
-
-            let maxCost = projects.first?.totalCost ?? 1
-            ForEach(projects.prefix(10)) { p in
-                projectRow(p, maxCost: maxCost)
-            }
         }
         .dashboardCard()
     }
