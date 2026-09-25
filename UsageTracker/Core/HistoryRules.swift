@@ -153,3 +153,13 @@ extension HistoryRules {
         dayCount <= 31 ? 7 : 2
     }
 }
+
+// MARK: - Hover
+
+extension HistoryRules {
+    /// The day under the pointer: the row whose local day holds `date`, if it has one.
+    static func day(containing date: Date, in days: [HistoryDay], calendar: Calendar) -> HistoryDay? {
+        let start = calendar.startOfDay(for: date)
+        return days.first { $0.day == start }
+    }
+}

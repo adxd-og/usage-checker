@@ -155,3 +155,29 @@ extension HistoryCopy {
         "Run a `\(command)` session to start collecting data"
     }
 }
+
+// MARK: - Tooltip
+
+extension HistoryCopy {
+    /// "Wed, 2 Sep" (en_GB) or "Wed, Sep 2" (en_US): the weekday, then the day the chat
+    /// list's own way. `withTime` adds " · 14:05" for a chart of hours.
+    static func tooltipTitle(
+        _ date: Date, withTime: Bool = false,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        let weekday = date.formatted(
+            Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone)
+                .weekday(.abbreviated)
+        )
+        let day = "\(weekday), \(SessionCopy.dayText(date, calendar: calendar, locale: locale))"
+        return withTime ? "\(day) · \(time(date, calendar: calendar, locale: locale))" : day
+    }
+
+    /// "14:05" / "2:05 PM", the user's clock.
+    static func time(_ date: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        date.formatted(Date.FormatStyle(
+            date: .omitted, time: .shortened,
+            locale: locale, calendar: calendar, timeZone: calendar.timeZone
+        ))
+    }
+}

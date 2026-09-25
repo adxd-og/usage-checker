@@ -113,3 +113,16 @@ extension HistoryLayout {
     static let legendDotSize: CGFloat = 8
     static let legendSpacing: CGFloat = 16
 }
+
+// MARK: - Tooltip
+
+extension HistoryLayout {
+    /// The bubble: `rx="12"`, text 14 pt in from its edges, rows 18 pt apart at 12 px.
+    static let tooltipRadius: CGFloat = 12
+    static var tooltipPadding: EdgeInsets { EdgeInsets(top: 10, leading: 14, bottom: 12, trailing: 14) }
+    static let tooltipRowSpacing: CGFloat = 4
+    /// A token row's leading dot, as in the open chat's cells.
+    static let tooltipDotSize: CGFloat = 7
+    /// How far under the plot's top the bubble sits (`y="40"` over a plot from 24).
+    static let tooltipTopInset: CGFloat = 16
+}

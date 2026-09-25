@@ -18,6 +18,8 @@ struct HistoryChartCard: View {
 
     @Environment(\.colorScheme) private var colorScheme
     private let calendar = Calendar.current
+    /// The day under the pointer, while the pointer is over the plot.
+    @State private var hoveredDay: Date?
 
     private var dayCount: Int {
         HistoryRules.dayCount(range: range, now: now, calendar: calendar)
@@ -141,6 +143,51 @@ struct HistoryChartCard: View {
             }
         }
         .chartLegend(.hidden)
+        .chartOverlay { proxy in
+            hoverLayer(proxy, dayCount: dayCount)
+        }
+    }
+
+    /// The pointer picks the day under it; its tooltip sits beside that day's bar, on
+    /// the side where it fits (`HistoryTooltipRules.leadingX`).
+    private func hoverLayer(_ proxy: ChartProxy, dayCount: Int) -> some View {
+        GeometryReader { geometry in
+            let plot = proxy.plotFrame.map { geometry[$0] } ?? .zero
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let date: Date? = proxy.value(atX: location.x - plot.minX)
+                            hoveredDay = date
+                                .flatMap { HistoryRules.day(containing: $0, in: days, calendar: calendar) }?
+                                .day
+                        case .ended:
+                            hoveredDay = nil
+                        }
+                    }
+                if let day = days.first(where: { $0.day == hoveredDay }),
+                   let center = proxy.position(forX: day.day.addingTimeInterval(12 * 3600)) {
+                    let slot = plot.width / CGFloat(max(1, dayCount))
+                    HistoryTooltipView(
+                        tooltip: HistoryTooltipRules.text(for: day, mode: mode, calendar: calendar),
+                        width: HistoryTooltipRules.chartWidth
+                    )
+                    .offset(
+                        x: plot.minX + HistoryTooltipRules.leadingX(
+                            anchorX: center,
+                            clearance: slot * CGFloat(HistoryLayout.barWidthRatio) / 2 + HistoryTooltipRules.gap,
+                            width: HistoryTooltipRules.chartWidth,
+                            plotWidth: plot.width
+                        ),
+                        y: plot.minY + HistoryLayout.tooltipTopInset
+                    )
+                    .allowsHitTesting(false)
+                }
+            }
+        }
     }
 
     private func yLabel(_ value: AxisValue) -> String? {
