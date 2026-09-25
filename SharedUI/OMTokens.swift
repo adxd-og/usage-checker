@@ -94,6 +94,12 @@ enum OMFont {
     static let heroNumeral = Font.system(size: 21, weight: .bold, design: .rounded)
     static let numeral = Font.system(size: 13, weight: .bold, design: .rounded)
     static let menuNumeral = Font.system(size: 11, weight: .semibold, design: .rounded)
+
+    /// Every 3.0 figure: SF Pro Rounded with tabular digits (spec § Tokens, "Numerals").
+    /// The roles above stay proportional until their screens move to 3.0.
+    static func numerals(size: CGFloat, weight: Font.Weight) -> Font {
+        .system(size: size, weight: weight, design: .rounded).monospacedDigit()
+    }
 }
 
 /// Content surfaces use quiet system fills; Liquid Glass is reserved for controls
