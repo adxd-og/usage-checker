@@ -1,8 +1,8 @@
 import XCTest
 @testable import Omelette
 
-/// A segment has two independent looks: the glass capsule for the selected one and an
-/// accent ring for the one keyboard focus is on. In the dashboard ⌘1…⌘9 belong to the
+/// A segment has two independent looks: the selected look for the chosen one and a
+/// focus ring for the one keyboard focus is on. In the dashboard ⌘1…⌘9 belong to the
 /// sidebar, so Tab is the only way through the provider row, and with
 /// `.focusEffectDisabled()` that focus was invisible. Spec:
 /// docs/superpowers/specs/2026-09-24-2.7.0-hardening.md § Design (session rulings),

@@ -4,8 +4,8 @@ import XCTest
 /// Independent verification of `OMSegmentedControl.segmentChrome(isSelected:isFocused:)`,
 /// from the spec rather than from the executor's own `OMSegmentedControlFocusTests`.
 /// Spec: docs/superpowers/specs/2026-09-24-2.7.0-hardening.md § Design (session
-/// rulings), UI — "`OMSegmentedControl` draws a `strokeBorder(Color.accentColor)`
-/// capsule for the focused item (`segmentChrome(isSelected:isFocused:)` rule)";
+/// rulings), UI — `OMSegmentedControl` draws a focus-ring capsule around the focused
+/// item (`segmentChrome(isSelected:isFocused:)` rule; its colour is a design token);
 /// report D § 4. Claim under test: all four focus/selection combinations produce
 /// distinct chrome and only the focused ones carry a ring.
 final class OMSegmentedControlChromeVerificationTests: XCTestCase {

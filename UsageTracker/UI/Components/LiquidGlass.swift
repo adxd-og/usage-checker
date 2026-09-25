@@ -1,33 +1,13 @@
 import SwiftUI
 
 extension View {
-    /// Applies Liquid Glass on macOS 26+, falls back to ultra-thin material on macOS 14+.
-    /// Reserve for chrome / navigation surfaces — not for content rows.
-    @ViewBuilder
+    /// Liquid Glass in `shape`, optionally tinted. Reserve for chrome and controls,
+    /// never for content rows.
     func liquidGlass<S: Shape>(in shape: S, tint: Color? = nil) -> some View {
-        if #available(macOS 26.0, *) {
-            self.modifier(LiquidGlassModifier(shape: shape, tint: tint))
-        } else {
-            self
-                .background(shape.fill(.ultraThinMaterial))
-                .overlay(
-                    shape.stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.18),
-                                .white.opacity(0.04),
-                            ],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        ),
-                        lineWidth: 0.8
-                    )
-                )
-        }
+        modifier(LiquidGlassModifier(shape: shape, tint: tint))
     }
 }
 
-@available(macOS 26.0, *)
 private struct LiquidGlassModifier<S: Shape>: ViewModifier {
     let shape: S
     let tint: Color?
@@ -47,33 +27,20 @@ struct GlassGroup<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: spacing) {
-                content()
-            }
-        } else {
-            HStack(spacing: spacing) { content() }
+        GlassEffectContainer(spacing: spacing) {
+            content()
         }
     }
 }
 
 extension View {
-    /// `.buttonStyle(.glass)` on macOS 26+, `.bordered` fallback.
-    @ViewBuilder
+    /// `.buttonStyle(.glass)`: the secondary button everywhere.
     func glassButtonStyle() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glass)
-        } else {
-            self.buttonStyle(.bordered)
-        }
+        buttonStyle(.glass)
     }
 
-    @ViewBuilder
+    /// `.buttonStyle(.glassProminent)`: the one primary action on a surface.
     func glassProminentButtonStyle() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glassProminent)
-        } else {
-            self.buttonStyle(.borderedProminent)
-        }
+        buttonStyle(.glassProminent)
     }
 }

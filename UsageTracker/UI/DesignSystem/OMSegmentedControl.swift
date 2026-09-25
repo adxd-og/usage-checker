@@ -9,11 +9,11 @@ struct OMSegmentItem: Identifiable, Equatable {
 }
 
 /// Capsule segmented control ("All · Claude · Codex …"). The selected item is a
-/// glass capsule inside a GlassGroup (a cross-fade between items on macOS 26);
-/// on 14+ it is a quiet material capsule. With more than four items the
-/// provider names no longer fit 360 pt, so those segments go icon-only — the
-/// name stays in the tooltip and the accessibility label. `alwaysShowsTitles`
-/// opts a wider surface out of that, and `keyboardShortcuts` out of ⌘1…⌘9.
+/// glass capsule inside a GlassGroup, which carries it between items. With more
+/// than four items the provider names no longer fit 360 pt, so those segments go
+/// icon-only — the name stays in the tooltip and the accessibility label.
+/// `alwaysShowsTitles` opts a wider surface out of that, and `keyboardShortcuts`
+/// out of ⌘1…⌘9.
 struct OMSegmentedControl: View {
     let items: [OMSegmentItem]
     @Binding var selection: String

@@ -127,11 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func focusExistingWindow() {
-        if #available(macOS 14.0, *) {
-            NSApp.activate()
-        } else {
-            NSApp.activate(ignoringOtherApps: true)
-        }
+        NSApp.activate()
         for window in NSApp.windows where window.canBecomeMain && !window.isMiniaturized {
             window.makeKeyAndOrderFront(nil)
             return
