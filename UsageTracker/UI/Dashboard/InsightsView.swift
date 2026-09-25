@@ -174,11 +174,6 @@ struct InsightsView: View {
                     value: insights.topModel?.model ?? "—",
                     sub: insights.topModel.map { String(format: "$%.2f today", $0.cost) }
                 )
-                card(
-                    title: "Top project this week",
-                    value: insights.topProjectWeek?.displayName ?? "—",
-                    sub: insights.topProjectWeek.map { String(format: "$%.2f · %d turns", $0.totalCost, $0.turns) }
-                )
             }
             if let caption = costCaption {
                 Text(caption)
@@ -387,7 +382,6 @@ private struct Insights: Sendable {
     let activeDays: Int?
     let peakDay: (day: Date, cost: Double)?
     let topModel: (model: String, cost: Double)?
-    let topProjectWeek: ProjectSummary?
     let weekOverWeek: WeekOverWeek
 
     init(from cli: CLIBreakdown?) {
@@ -402,7 +396,6 @@ private struct Insights: Sendable {
         } else {
             self.topModel = nil
         }
-        self.topProjectWeek = cli?.projectsWeek.first
         // Week-over-week (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
         let now = Date()
         let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
