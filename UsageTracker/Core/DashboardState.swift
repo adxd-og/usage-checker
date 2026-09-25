@@ -78,7 +78,7 @@ final class DashboardState: ObservableObject {
     /// of borrowing the selected one's verdict.
     @Published private(set) var burnByService: [String: BurnRatePrediction] = [:]
     /// Which bucket `sessionBurn` is about — providers name their session window
-    /// differently ("five_hour", "codex_session", "gemini_pro").
+    /// differently ("five_hour", "codex_session").
     @Published private(set) var burnBucket: UsageBucket?
     /// What ran during the session window that's open right now.
     @Published private(set) var sessionWindow: WindowUsage?
@@ -479,8 +479,8 @@ final class DashboardState: ObservableObject {
     }
 
     /// The window worth predicting: the session one when the provider has it,
-    /// otherwise whichever non-promo window is furthest along — Gemini expresses
-    /// every limit as a daily per-model quota and has no session window at all.
+    /// otherwise whichever non-promo window is furthest along — a provider whose
+    /// every limit is a per-model quota has no session window at all.
     private static func burnBucket(of serviceID: String) -> UsageBucket? {
         guard let service = AppState.shared.snapshot.services.first(where: { $0.id == serviceID })
         else { return nil }

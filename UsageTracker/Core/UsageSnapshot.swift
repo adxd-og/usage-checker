@@ -31,8 +31,8 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     /// Total length of this rate-limit window. The provider's own figure wins;
     /// the id/kind inference is a fallback for Anthropic's windows, which the
     /// usage API never states a length for. Inferring alone made every
-    /// model-scoped window a week — wrong for Gemini, whose per-model quotas
-    /// are daily, so its pace indicator read as barely-started all day.
+    /// model-scoped window a week — wrong for a daily per-model quota, whose
+    /// pace indicator then read as barely-started all day.
     /// nil when the length is neither reported nor inferable.
     var windowDuration: TimeInterval? {
         if let windowLength, windowLength > 0 { return windowLength }

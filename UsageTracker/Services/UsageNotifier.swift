@@ -157,7 +157,7 @@ final class UsageNotifier: NSObject {
     /// Promo pools don't alert — running a free bonus dry costs nothing — and
     /// model-scoped caps ("Fable only") don't page the user either, because the
     /// all-models weekly is "the" limit. Unless scoping is all a provider has:
-    /// Gemini's Pro/Flash daily quotas ARE its limits, so they alert, the same
+    /// then its per-model quotas ARE its limits, so they alert, the same
     /// fallback `headlinePercent` makes. An Enterprise spend limit is a real
     /// limit and joins the list.
     ///
