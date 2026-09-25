@@ -25,7 +25,7 @@ final class RemainingModeSettingsTests: XCTestCase {
     override func tearDown() {
         MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = SettingsStore.resetRecordedShortcuts }
         bag.removeAll()
-        UserDefaults.standard.setPersistentDomain(savedDomain ?? [:], forName: domainName)
+        AppDomainRestore.restore(savedDomain, domainName: domainName)
         super.tearDown()
     }
 

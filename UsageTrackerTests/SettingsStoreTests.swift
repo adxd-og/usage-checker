@@ -22,7 +22,7 @@ final class SettingsStoreTests: XCTestCase {
 
     override func tearDown() {
         MainActor.assumeIsolated { SettingsStore.shared.resetShortcuts = SettingsStore.resetRecordedShortcuts }
-        UserDefaults.standard.setPersistentDomain(savedDomain ?? [:], forName: domainName)
+        AppDomainRestore.restore(savedDomain, domainName: domainName)
         super.tearDown()
     }
 
