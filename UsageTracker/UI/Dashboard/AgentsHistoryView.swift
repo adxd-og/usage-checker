@@ -52,14 +52,10 @@ struct AgentsHistoryView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
-                    title: "Agents",
-                    trailing: AnyView(RangePicker(range: $dashboard.range)),
+                    title: AgentsCopy.title,
+                    trailing: AnyView(headerControls),
                     showsServicePicker: false
                 )
-
-                OMSegmentedControl(items: Self.sourceItems, selection: $storedSource)
-                    .frame(width: 260)
-                    .padding(.horizontal, 24)
 
                 AgentsSummaryStrip(summary: summary)
                     .padding(.horizontal, 24)
@@ -91,11 +87,30 @@ struct AgentsHistoryView: View {
         .task { await refreshHookStatus() }
     }
 
-    private static let sourceItems = [
+    /// All, then one segment per agent source; the ids are what `selectedSource` reads.
+    nonisolated static let sourceItems = [
         OMSegmentItem(id: "all", title: "All"),
         OMSegmentItem(id: "claude", title: "Claude", serviceID: "claude"),
         OMSegmentItem(id: "codex", title: "Codex", serviceID: "codex", sfFallback: "terminal"),
     ]
+
+    /// The mockup's title row: the source filter, then the range, 12 pt apart, in the
+    /// header's trailing slot (its provider row stays hidden: this tab is not about one
+    /// provider). The filter keeps ⌘1–⌘3 (All / Claude / Codex), as in 2.7; the range
+    /// picker has no number keys.
+    private var headerControls: some View {
+        HStack(spacing: AgentsLayout.headerControlsSpacing) {
+            OMSegmentedControl(
+                items: Self.sourceItems,
+                selection: $storedSource,
+                accessibilityLabel: AgentsCopy.sourcePickerName
+            )
+            // The header is a flexible HStack; without this the capsule would stretch
+            // across whatever the title leaves free.
+            .fixedSize()
+            RangePicker(range: $dashboard.range)
+        }
+    }
 
     @ViewBuilder
     private func history(days: [(day: Date, records: [AgentSessionRecord])], now: Date) -> some View {

@@ -55,6 +55,18 @@ final class AgentsHistorySourceTests: XCTestCase {
     func testTheStoredKeyIsTheOneTheSpecFixed() {
         XCTAssertEqual(AgentsHistoryView.sourceKey, "agentsHistorySource")
     }
+
+    func testTheFilterOffersAllClaudeAndCodexInThatOrder() {
+        XCTAssertEqual(AgentsHistoryView.sourceItems.map(\.title), ["All", "Claude", "Codex"])
+    }
+
+    func testEverySegmentIsAValueTheFilterUnderstands() {
+        XCTAssertNil(AgentsHistoryView.selectedSource(AgentsHistoryView.sourceItems[0].id))
+        XCTAssertEqual(
+            AgentsHistoryView.sourceItems.dropFirst().map { AgentsHistoryView.selectedSource($0.id) },
+            [.claude, .codex]
+        )
+    }
 }
 
 /// What makes the Agents tab reload its history. The live session count alone misses
