@@ -457,7 +457,7 @@ private struct ProviderDetail: View {
                             Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
                         }
                         Spacer()
-                        ServiceStateChip(service: service)
+                        ServiceStateLabel(service: service)
                     }
                     if let caption = RetainedCopy.caption(for: service) {
                         Text(caption)
@@ -635,7 +635,7 @@ private struct ProviderDetail: View {
 
 /// The capsule reads as a button, so it must act like one: clicking walks the
 /// user through fixing the state instead of doing nothing.
-private struct ServiceStateChip: View {
+private struct ServiceStateLabel: View {
     let service: ServiceSnapshot
     @State private var showsStateHelp = false
 
