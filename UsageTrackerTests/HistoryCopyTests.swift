@@ -165,10 +165,11 @@ final class HistoryCopyChartTests: XCTestCase {
         XCTAssertEqual(HistoryCopy.costAxisLabel(0.5), "$0.50")
     }
 
-    func testTheTokenAxisPrintsMillionsWithoutAFractionWhereItCan() {
+    func testTheTokenAxisPrintsBillionsAndMillionsWithoutAFractionWhereItCan() {
         XCTAssertEqual(HistoryCopy.tokenAxisLabel(0), "0")
         XCTAssertEqual(HistoryCopy.tokenAxisLabel(500_000_000), "500M")
-        XCTAssertEqual(HistoryCopy.tokenAxisLabel(1_000_000_000), "1,000M")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(1_000_000_000), "1B")
+        XCTAssertEqual(HistoryCopy.tokenAxisLabel(2_500_000_000), "2.5B")
         XCTAssertEqual(HistoryCopy.tokenAxisLabel(1_500_000), "1.5M")
         XCTAssertEqual(HistoryCopy.tokenAxisLabel(250_000), "250k")
         XCTAssertEqual(HistoryCopy.tokenAxisLabel(800), "800")

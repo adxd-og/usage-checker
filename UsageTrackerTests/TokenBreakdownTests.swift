@@ -168,6 +168,8 @@ final class TokenBreakdownTests: XCTestCase {
         XCTAssertEqual(TokenFormat.formatTokens(1_000), "1.0k")
         XCTAssertEqual(TokenFormat.formatTokens(12_345), "12.3k")
         XCTAssertEqual(TokenFormat.formatTokens(1_500_000), "1.5M")
+        XCTAssertEqual(TokenFormat.formatTokens(999_999_999), "1000.0M")
+        XCTAssertEqual(TokenFormat.formatTokens(2_500_000_000), "2.5B")
     }
 
     func testABreakdownSurvivesACodableRoundTrip() {

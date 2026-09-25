@@ -124,11 +124,12 @@ extension HistoryCopy {
         return "$" + value.formatted(.number.precision(.fractionLength(0)).locale(numberLocale))
     }
 
-    /// The tokens axis: "500M", "1,000M", "1.5M", "250k".
+    /// The tokens axis: "2.5B", "500M", "1.5M", "250k".
     static func tokenAxisLabel(_ value: Double) -> String {
         func compact(_ v: Double) -> String {
             v.formatted(.number.precision(.fractionLength(0...1)).locale(numberLocale))
         }
+        if abs(value) >= 1_000_000_000 { return compact(value / 1_000_000_000) + "B" }
         if abs(value) >= 1_000_000 { return compact(value / 1_000_000) + "M" }
         if abs(value) >= 1_000 { return compact(value / 1_000) + "k" }
         return compact(value)
