@@ -224,6 +224,10 @@ enum InsightsCopy {
 
     static let byProject = "By project"
 
+    /// The split's third slice when more than three models have dollars: every model
+    /// past the top two.
+    static let otherModels = "Other"
+
     /// "1,742 turns" / "1 turn", grouped in the viewer's locale.
     static func turns(_ count: Int, locale: Locale = .current) -> String {
         count == 1 ? "1 turn" : "\(count.formatted(.number.locale(locale))) turns"

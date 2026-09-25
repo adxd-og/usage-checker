@@ -231,4 +231,8 @@ final class InsightsCopyTests: XCTestCase {
             "No activity from the CLI in this window. Whatever the session limit is showing came from somewhere else — another app, or another machine on this account."
         )
     }
+
+    func testTheModelsPastTheTopTwoAreOther() {
+        XCTAssertEqual(InsightsCopy.otherModels, "Other")
+    }
 }

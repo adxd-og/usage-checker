@@ -31,6 +31,19 @@ struct InsightsProjectRow: Equatable, Sendable, Identifiable {
     let fraction: Double
 }
 
+/// One slice of the session window's split bar: a model, or "Other".
+struct InsightsModelShare: Equatable, Sendable, Identifiable {
+    /// The model's name, or `InsightsCopy.otherModels` for the summed slice.
+    let model: String
+    let cost: Double
+    /// Its share of the window's cost, 0…1; the slices sum to 1.
+    let fraction: Double
+    /// The slice that sums every model past the top two.
+    let isOther: Bool
+
+    var id: String { isOther ? "other-models" : model }
+}
+
 /// Every figure the Insights tab can show.
 enum InsightsFigure: String, CaseIterable, Identifiable, Sendable {
     case weekOverWeek, daysAtLimit, dailyAverage, biggestDay, mostUsedModelToday
@@ -193,6 +206,33 @@ enum InsightsRules {
         byModelToday
             .min { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
             .map { InsightsModelCost(model: $0.model, cost: $0.cost) }
+    }
+
+    /// The session window's split shows at most this many slices (the mockup's three).
+    static let modelSplitLimit = 3
+
+    /// The window's dollars by model, as at most three slices whose fractions sum to 1.
+    /// Up to three models with dollars get a slice each (the mockup's 58.1 + 35.8 + 6.1).
+    /// Past three, the two dearest keep theirs and every other model is summed into a
+    /// third "Other" slice (session ruling 5). The slices add up to the window's cost,
+    /// the headline: every non-synthetic model has a display name, and the aggregator
+    /// drops synthetic turns at ingestion (review F3). A model with no dollars has
+    /// nothing to draw; ties go alphabetically.
+    static func modelSplit(_ models: [ModelEntry]) -> [InsightsModelShare] {
+        let ranked = models
+            .filter { $0.cost > 0 }
+            .sorted { $0.cost != $1.cost ? $0.cost > $1.cost : $0.model < $1.model }
+        let total = ranked.reduce(0) { $0 + $1.cost }
+        guard total > 0 else { return [] }
+        func slice(_ model: String, _ cost: Double, isOther: Bool = false) -> InsightsModelShare {
+            InsightsModelShare(model: model, cost: cost, fraction: cost / total, isOther: isOther)
+        }
+        guard ranked.count > modelSplitLimit else {
+            return ranked.map { slice($0.model, $0.cost) }
+        }
+        let named = ranked.prefix(modelSplitLimit - 1).map { slice($0.model, $0.cost) }
+        let rest = ranked.dropFirst(modelSplitLimit - 1).reduce(0) { $0 + $1.cost }
+        return named + [slice(InsightsCopy.otherModels, rest, isOther: true)]
     }
 
     /// The session window lists this many projects.

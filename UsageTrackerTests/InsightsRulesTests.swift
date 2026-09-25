@@ -71,6 +71,32 @@ final class InsightsRulesTests: XCTestCase {
         )
     }
 
+    private var logRoot: URL!
+
+    override func setUpWithError() throws {
+        logRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("InsightsRulesTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: logRoot, withIntermediateDirectories: true)
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: logRoot)
+    }
+
+    /// One assistant turn as Claude Code writes it to `~/.claude/projects/<slug>/<uuid>.jsonl`,
+    /// `minutesAgo` before the wall clock: the aggregator keeps a month of turns counted
+    /// from the real now.
+    private func claudeLogLine(id: String, model: String, input: Int, minutesAgo: Double) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let timestamp = formatter.string(from: Date().addingTimeInterval(-minutesAgo * 60))
+        return """
+        {"type":"assistant","timestamp":"\(timestamp)","message":{"id":"\(id)","model":"\(model)",\
+        "usage":{"input_tokens":\(input),"output_tokens":0,"cache_read_input_tokens":0,\
+        "cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0}}}}
+        """
+    }
+
     // MARK: - Days at limit
 
     func testDaysAtLimitCoversTodayAndTheSixDaysBefore() {
@@ -272,5 +298,91 @@ final class InsightsRulesTests: XCTestCase {
         let rows = InsightsRules.projectRows([project("a", cost: 0), project("b", cost: 0)])
 
         XCTAssertEqual(rows.map(\.fraction), [0, 0])
+    }
+
+    // MARK: - Session window: split by model
+
+    func testTwoModelsSplitTheBarBetweenThem() {
+        let split = InsightsRules.modelSplit([model("Sonnet 5", 25), model("Opus 5", 75)])
+
+        XCTAssertEqual(split, [
+            InsightsModelShare(model: "Opus 5", cost: 75, fraction: 0.75, isOther: false),
+            InsightsModelShare(model: "Sonnet 5", cost: 25, fraction: 0.25, isOther: false)
+        ])
+    }
+
+    /// Three models with dollars keep a slice each: the mockup's split.
+    func testTheMockupsThreeModelsKeepTheirOwnSlices() {
+        let split = InsightsRules.modelSplit([model("Sonnet 5", 15.37), model("Opus 5", 145.70), model("Fable 5.1", 89.79)])
+
+        XCTAssertEqual(split.map(\.model), ["Opus 5", "Fable 5.1", "Sonnet 5"])
+        XCTAssertFalse(split.contains(where: \.isOther))
+        guard split.count == 3 else { return XCTFail("three shares expected") }
+        // Dashboard-Insights.dc.html: 58.1 %, 35.8 %, 6.1 %.
+        XCTAssertEqual(split[0].fraction, 0.581, accuracy: 0.0005)
+        XCTAssertEqual(split[1].fraction, 0.358, accuracy: 0.0005)
+        XCTAssertEqual(split[2].fraction, 0.061, accuracy: 0.0005)
+        XCTAssertEqual(split.map(\.fraction).reduce(0, +), 1, accuracy: 1e-9)
+        XCTAssertEqual(split[0].cost, 145.70, accuracy: 1e-9)
+    }
+
+    /// Five models with dollars: the two dearest keep their slices and the other three
+    /// are summed into "Other", so the bar and the legend add up to the headline.
+    /// A model with no dollars has nothing to draw.
+    func testPastThreeModelsTheThirdSliceIsOther() {
+        let split = InsightsRules.modelSplit([
+            model("C", 2), model("A", 4), model("Free", 0), model("D", 1), model("B", 3), model("E", 0.5)
+        ])
+
+        XCTAssertEqual(InsightsRules.modelSplitLimit, 3)
+        XCTAssertEqual(split.map(\.model), ["A", "B", "Other"])
+        XCTAssertEqual(split.map(\.isOther), [false, false, true])
+        guard split.count == 3 else { return XCTFail("three slices expected") }
+        XCTAssertEqual(split[2].cost, 3.5, accuracy: 1e-9)
+        XCTAssertEqual(split.map(\.cost).reduce(0, +), 10.5, accuracy: 1e-9)
+        XCTAssertEqual(split[0].fraction, 4.0 / 10.5, accuracy: 1e-9)
+        XCTAssertEqual(split.map(\.fraction).reduce(0, +), 1, accuracy: 1e-9)
+        XCTAssertTrue(InsightsRules.modelSplit([model("Free", 0)]).isEmpty)
+    }
+
+    /// Review F3: the complete split holds the window's whole cost, the headline, before
+    /// any display rounding. The window comes from the real aggregator over Claude Code
+    /// log lines: five priced models (the dearest two plus "Other"), a response logged
+    /// twice under one `message.id`, and a `<synthetic>` turn the aggregator drops.
+    ///
+    /// The one exception to the fixed-clock rule, by session ruling: the log lines and the
+    /// window's end are minutes before the wall clock. `JSONLAggregator` folds turns older
+    /// than its recent window by the real clock (`ingest` at JSONLAggregator.swift:1234,
+    /// `pruneAndFold` at :1428), so a fixed 2026 epoch would fold every fixture turn out of
+    /// `usage(from:to:)`; `JSONLAggregatorTests` writes its fixtures the same way. Nothing
+    /// asserted depends on the wall-clock day: the split and the sum are the same at any
+    /// time. The calendar is pinned anyway: the aggregator is built with `utc`.
+    func testTheCompleteSplitAddsUpToTheWindowsCost() async throws {
+        let end = Date()
+        let lines = [
+            claudeLogLine(id: "msg_1", model: "claude-opus-4-5", input: 1_000_000, minutesAgo: 50),
+            claudeLogLine(id: "msg_1", model: "claude-opus-4-5", input: 1_000_000, minutesAgo: 50),
+            claudeLogLine(id: "msg_2", model: "claude-sonnet-4-5", input: 1_000_000, minutesAgo: 40),
+            claudeLogLine(id: "msg_3", model: "claude-haiku-4-5", input: 1_000_000, minutesAgo: 30),
+            claudeLogLine(id: "msg_4", model: "claude-fable-5-1", input: 100_000, minutesAgo: 20),
+            claudeLogLine(id: "msg_5", model: "claude-opus-4-1", input: 100_000, minutesAgo: 10),
+            claudeLogLine(id: "msg_6", model: "<synthetic>", input: 0, minutesAgo: 5)
+        ]
+        let project = logRoot.appendingPathComponent("slug-alpha", isDirectory: true)
+        try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+        try (lines.joined(separator: "\n") + "\n").write(
+            to: project.appendingPathComponent("session.jsonl"), atomically: true, encoding: .utf8
+        )
+        let aggregator = JSONLAggregator(rootURL: logRoot, cacheURL: nil, calendar: utc)
+        await aggregator.refresh()
+        let usage = await aggregator.usage(from: end.addingTimeInterval(-2 * 3600), to: end)
+
+        let split = InsightsRules.modelSplit(usage.models)
+
+        // $5 + $3 + $1 + $1 + $1.50 at the static table's input rates.
+        XCTAssertEqual(usage.cost, 11.5, accuracy: 1e-9)
+        XCTAssertEqual(usage.models.count, 5)
+        XCTAssertEqual(split.map(\.isOther), [false, false, true])
+        XCTAssertEqual(split.map(\.cost).reduce(0, +), usage.cost, accuracy: 1e-9)
     }
 }

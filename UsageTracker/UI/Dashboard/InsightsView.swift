@@ -151,12 +151,10 @@ struct InsightsView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                if !window.models.isEmpty {
-                    Text(window.models.prefix(3)
-                        .map { "\($0.model) " + InsightsCopy.money($0.cost) }
-                        .joined(separator: "  ·  "))
-                        .font(OMFont.caption)
-                        .foregroundStyle(.secondary)
+                let shares = InsightsRules.modelSplit(window.models)
+                if !shares.isEmpty {
+                    modelSplitBar(shares)
+                    modelLegend(shares)
                 }
 
                 let rows = InsightsRules.projectRows(window.projects)
@@ -178,6 +176,58 @@ struct InsightsView: View {
             }
         }
         .dashboardCard()
+    }
+
+    /// The window's dollars by model: one segment per model, `splitBarGap` apart, in a
+    /// bar with rounded ends.
+    private func modelSplitBar(_ shares: [InsightsModelShare]) -> some View {
+        GeometryReader { geo in
+            let gaps = InsightsMetrics.splitBarGap * CGFloat(max(shares.count - 1, 0))
+            let available = max(geo.size.width - gaps, 0)
+            HStack(spacing: InsightsMetrics.splitBarGap) {
+                ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+                    Rectangle()
+                        .fill(.om(InsightsMetrics.splitToken(for: share, at: index)))
+                        .frame(width: available * share.fraction)
+                }
+            }
+        }
+        .frame(height: InsightsMetrics.splitBarHeight)
+        .clipShape(RoundedRectangle(cornerRadius: InsightsMetrics.splitBarRadius, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    /// Dot, name and dollars per model, on one line where they fit and stacked where
+    /// the card is too narrow.
+    private func modelLegend(_ shares: [InsightsModelShare]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: InsightsMetrics.legendSpacing) {
+                legendItems(shares)
+            }
+            VStack(alignment: .leading, spacing: InsightsMetrics.legendItemSpacing) {
+                legendItems(shares)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func legendItems(_ shares: [InsightsModelShare]) -> some View {
+        ForEach(Array(shares.enumerated()), id: \.element.id) { index, share in
+            HStack(spacing: InsightsMetrics.legendItemSpacing) {
+                Circle()
+                    .fill(.om(InsightsMetrics.splitToken(for: share, at: index)))
+                    .frame(width: InsightsMetrics.legendDotSize, height: InsightsMetrics.legendDotSize)
+                Text(share.model)
+                    .font(.system(size: InsightsMetrics.legendTextSize))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(1)
+                Text(InsightsCopy.money(share.cost))
+                    .font(OMFont.numerals(size: InsightsMetrics.legendTextSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     /// One figure on the 2.x card: title, value with This week vs last's change beside
