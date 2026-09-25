@@ -78,6 +78,9 @@ struct DashboardWindow: View {
                 dashboard.refreshAll()
             }
         })
+        // The traffic lights inside the sidebar panel, as the mockups draw them; the
+        // hidden title bar alone leaves them straddling its top edge.
+        .background(WindowButtonsPlacement())
         // The poll path no longer pushes the full history into DashboardState —
         // while the window is on screen, each snapshot triggers the reload here.
         .onReceive(NotificationCenter.default.publisher(for: .snapshotUpdated)) { _ in
