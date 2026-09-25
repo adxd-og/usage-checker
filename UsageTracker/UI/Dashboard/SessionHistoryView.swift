@@ -110,29 +110,18 @@ struct SessionHistoryView: View {
     private func scrollBody(isWide: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                // The caption belongs to the header, so it sits under the header's own
-                // bottom padding rather than a whole section gap below it.
-                VStack(alignment: .leading, spacing: 0) {
-                    DashboardHeader(
-                        title: showsQuota ? "Quota history" : "Session history",
-                        subtitle: subtitle.line,
-                        // A provider with no cost log has one unit to chart, so it is
-                        // shown a range control and nothing to toggle.
-                        trailing: AnyView(
-                            HStack(spacing: 12) {
-                                if !showsQuota { modePicker }
-                                RangePicker(range: $dashboard.range)
-                            }
-                        )
+                DashboardHeader(
+                    title: HistoryCopy.title,
+                    subtitle: subtitle,
+                    // A provider with no cost log has one unit to chart, so it is
+                    // shown a range control and nothing to toggle.
+                    trailing: AnyView(
+                        HStack(spacing: 12) {
+                            if !showsQuota { modePicker }
+                            RangePicker(range: $dashboard.range)
+                        }
                     )
-                    if let caption = subtitle.caption {
-                        Text(caption)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 24)
-                    }
-                }
+                )
 
                 if showsQuota {
                     quotaContent
@@ -184,66 +173,17 @@ struct SessionHistoryView: View {
         .frame(width: 140)
     }
 
-    private var subtitle: (line: String, caption: String?) {
-        Self.subtitle(
+    /// The header's sentence — see `HistoryCopy.subtitle`. Whether the dollars are a
+    /// bill comes from the live snapshot, the rule Overview and Insights use.
+    private var subtitle: String {
+        HistoryCopy.subtitle(
             showsQuota: showsQuota,
             providerName: dashboard.displayName(for: dashboard.selectedService),
-            longName: dashboard.costSource.longName,
-            mode: mode,
+            sourceName: dashboard.costSource.longName,
             isPayAsYouGo: appState.snapshot.services
                 .first { $0.id == dashboard.selectedService }
-                .map(CostCopy.isPayAsYouGo) ?? false,
-            range: dashboard.range
+                .map(CostCopy.isPayAsYouGo) ?? false
         )
-    }
-
-    /// The header line under "Session history", and the caption drawn under the header
-    /// on a line of its own. Pure so both rules are testable: the line names the unit on
-    /// the chart (there are no dollars on the Tokens chart to call a daily cost), and only
-    /// the cost chart explains what its dollars are.
-    ///
-    /// The caption is separate because it is a sentence of its own. Riding on the line,
-    /// it made the Cost header 666 pt wide, wider than the detail column at the
-    /// dashboard's 820 pt minimum, and it was the part that got cut off.
-    nonisolated static func subtitle(
-        showsQuota: Bool,
-        providerName: String,
-        longName: String?,
-        mode: HistoryChartMode,
-        isPayAsYouGo: Bool,
-        range: TimeRange = .sevenDays
-    ) -> (line: String, caption: String?) {
-        if showsQuota { return ("How full \(providerName)'s usage windows ran", nil) }
-        if mode == .sessions {
-            return (sessionsSubtitle(source: longName, range: range, isPayAsYouGo: isPayAsYouGo), nil)
-        }
-        let line = costSubtitle(mode: mode, source: longName)
-        guard mode == .cost else { return (line, nil) }
-        return (line, CostCopy.apiEquivalentCaption(isPayAsYouGo: isPayAsYouGo))
-    }
-
-    /// "Daily cost from …" or "Daily tokens by type from …".
-    nonisolated static func costSubtitle(mode: HistoryChartMode, source: String?) -> String {
-        let unit = mode == .tokens ? "Daily tokens by type" : "Daily cost"
-        return source.map { "\(unit) from \($0)" } ?? unit
-    }
-
-    /// The Sessions header line. The dollars are qualified inside the sentence rather
-    /// than by the long `CostCopy` caption the Cost mode draws under the header: this
-    /// subtitle already names what the dollars are, and a second sentence saying it
-    /// again would be noise.
-    ///
-    /// The five-hour range is the one control that does not mean what it says — the
-    /// aggregators widen anything shorter than a day to the local day it falls in — so
-    /// this is where that is said out loud.
-    nonisolated static func sessionsSubtitle(
-        source: String?, range: TimeRange, isPayAsYouGo: Bool
-    ) -> String {
-        let dollars = isPayAsYouGo ? "cost" : "API-equivalent cost"
-        let head = source.map { "Chats from \($0), tokens and \(dollars)" }
-            ?? "Chats, tokens and \(dollars)"
-        guard range == .fiveHours else { return head }
-        return head + " · today, not the last 5 hours"
     }
 
     // MARK: - Quota

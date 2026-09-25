@@ -1,66 +1,10 @@
 import XCTest
 @testable import Omelette
 
-/// Where the "API-equivalent" sentence lands, as pure rules: the History subtitle and
-/// the daily summary body. The popover and the Overview compose the same
-/// `CostCopy.apiEquivalentCaption` directly and are covered by the build.
+/// Where the "API-equivalent" sentence lands, as a pure rule: the daily summary body.
+/// History's header says it in its own sentence (`HistoryCopySubtitleTests`); the
+/// popover and the Overview compose `CostCopy.apiEquivalentCaption` directly.
 final class ApiEquivalentCaptionTests: XCTestCase {
-    // MARK: - SessionHistoryView.subtitle
-
-    func testTheCostSubtitleHandsTheCaptionBackAsItsOwnLine() {
-        let header = SessionHistoryView.subtitle(
-            showsQuota: false, providerName: "Claude", longName: "Claude Code logs",
-            mode: .cost, isPayAsYouGo: false
-        )
-        XCTAssertEqual(header.line, "Daily cost from Claude Code logs")
-        XCTAssertEqual(
-            header.caption,
-            "API-equivalent cost of your CLI usage — not what your subscription bills."
-        )
-    }
-
-    func testPayAsYouGoKeepsThePlainSubtitle() {
-        let header = SessionHistoryView.subtitle(
-            showsQuota: false, providerName: "Claude", longName: "Claude Code logs",
-            mode: .cost, isPayAsYouGo: true
-        )
-        XCTAssertEqual(header.line, "Daily cost from Claude Code logs")
-        XCTAssertNil(header.caption)
-    }
-
-    func testTheTokensModeSaysNothingAboutDollars() {
-        let header = SessionHistoryView.subtitle(
-            showsQuota: false, providerName: "Claude", longName: "Claude Code logs",
-            mode: .tokens, isPayAsYouGo: false
-        )
-        XCTAssertEqual(header.line, "Daily tokens by type from Claude Code logs")
-        XCTAssertNil(
-            header.caption,
-            "the tokens chart shows no dollars, so a caption about dollars would be noise"
-        )
-    }
-
-    func testAProviderWithoutACostLogKeepsTheQuotaSubtitle() {
-        let header = SessionHistoryView.subtitle(
-            showsQuota: true, providerName: "Antigravity", longName: nil,
-            mode: .cost, isPayAsYouGo: false
-        )
-        XCTAssertEqual(header.line, "How full Antigravity's usage windows ran")
-        XCTAssertNil(header.caption)
-    }
-
-    func testAProviderWithACostLogButNoLongNameStillReadsAsASentence() {
-        let header = SessionHistoryView.subtitle(
-            showsQuota: false, providerName: "Grok", longName: nil,
-            mode: .cost, isPayAsYouGo: false
-        )
-        XCTAssertEqual(header.line, "Daily cost")
-        XCTAssertEqual(
-            header.caption,
-            "API-equivalent cost of your CLI usage — not what your subscription bills."
-        )
-    }
-
     // MARK: - UsageNotifier.dailySummaryBody
 
     func testTheDailySummarySaysWhatKindOfDollarsThoseAre() {
