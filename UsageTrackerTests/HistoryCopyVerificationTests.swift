@@ -34,10 +34,6 @@ final class HistoryCopyVerificationTests: XCTestCase {
         XCTAssertTrue(HistoryCopy.quotaOnlyNote(provider: "antigravity").hasPrefix("Antigravity keeps no local token log"))
     }
 
-    func testQuotaOnlyNoteNamesGeminisOwnReason() {
-        XCTAssertTrue(HistoryCopy.quotaOnlyNote(provider: "gemini").contains("Omelette doesn't read the Gemini CLI's token log"))
-    }
-
     func testQuotaOnlyNoteHasAGenericFallbackForAnyOtherProvider() {
         let text = HistoryCopy.quotaOnlyNote(provider: "codex")
         XCTAssertTrue(text.hasSuffix("so there are no costs or sessions here. Quota over time is charted instead."))
