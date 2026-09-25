@@ -18,6 +18,8 @@ enum OverviewCLIRules {
     static let figureLabelSize: CGFloat = 12
     static let figureSize: CGFloat = 18
     static let captionSize: CGFloat = 11
+    /// Between the "By model" title and its rows, and between rows.
+    static let modelRowSpacing: CGFloat = 3
 
     /// The calendar days "Last 7 days" and "Last 30 days" cover, today included.
     static let weekDays = 7
@@ -98,6 +100,7 @@ struct OverviewCLICard: View {
                         OverviewCLIRules.cost(daily: cli.daily, lastDays: OverviewCLIRules.monthDays, now: now, calendar: .current)
                     )
                 }
+                byModel(OverviewCLIRules.modelRows(cli.byModelToday))
                 if let caption {
                     Text(caption)
                         .font(.system(size: OverviewCLIRules.captionSize))
@@ -118,6 +121,27 @@ struct OverviewCLICard: View {
         .padding(.bottom, OverviewCLIRules.bottomPadding)
         .frame(maxHeight: .infinity, alignment: .top)
         .dashboardCard(padding: 0)
+    }
+
+    /// Today's models by cost, under the figures (spec § Decisions, "Overview by-model
+    /// rows"). Nothing at all on a day with no spend.
+    @ViewBuilder
+    private func byModel(_ rows: [OverviewCLIRules.ModelRow]) -> some View {
+        if !rows.isEmpty {
+            VStack(alignment: .leading, spacing: OverviewCLIRules.modelRowSpacing) {
+                Text(OverviewCopy.byModelTitle)
+                    .font(.system(size: OverviewCLIRules.figureLabelSize))
+                    .foregroundStyle(.om(.secondary))
+                ForEach(rows) { row in
+                    Text(OverviewCopy.modelLine(row))
+                        .font(.system(size: OverviewCLIRules.captionSize))
+                        .foregroundStyle(.om(.secondary))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private func figure(_ label: String, _ dollars: Double) -> some View {
