@@ -48,6 +48,16 @@ struct QuotaInsights: Equatable, Sendable {
     )
 }
 
+/// Of the last `span` local days, how many hit the limit and how many were seen at all.
+struct QuotaDaysAtCapacity: Equatable, Sendable {
+    /// Days whose peak reached `QuotaAnalytics.capacityThreshold`.
+    let atCapacity: Int
+    /// Days with at least one reading for the windows asked about.
+    let observed: Int
+    /// Days the count covers, today included.
+    let span: Int
+}
+
 /// A window the quota views can chart: its key in history plus how to name it today.
 struct QuotaBucketInfo: Equatable, Sendable, Identifiable {
     let id: String
@@ -224,6 +234,34 @@ enum QuotaAnalytics {
             todayPeak: todayPeak,
             averageDailyConsumption: mostConsumed > 0 ? mostConsumed / Double(peaks.count) : nil,
             busiestHour: busiestHour
+        )
+    }
+
+    // MARK: - Recent days at capacity
+
+    /// How many of the last `lastDays` local days, today included, peaked at or over
+    /// `capacityThreshold` on any of `bucketIDs`, and how many had a reading at all.
+    /// The days are `calendar`'s, the ones `dailyPeaks` bins by. Records outside them
+    /// are dropped before the peaks are taken, so ninety days of history cost a filter,
+    /// not a second full pass.
+    static func daysAtCapacity(
+        records: [HistoryRecord],
+        bucketIDs: [String],
+        lastDays: Int,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> QuotaDaysAtCapacity {
+        let today = calendar.startOfDay(for: now)
+        guard lastDays > 0,
+              let first = calendar.date(byAdding: .day, value: -(lastDays - 1), to: today),
+              let end = calendar.date(byAdding: .day, value: 1, to: today)
+        else { return QuotaDaysAtCapacity(atCapacity: 0, observed: 0, span: max(lastDays, 0)) }
+        let recent = records.filter { $0.timestamp >= first && $0.timestamp < end }
+        let peaks = dailyPeaks(records: recent, bucketIDs: bucketIDs, calendar: calendar)
+        return QuotaDaysAtCapacity(
+            atCapacity: peaks.filter { $0.peak >= capacityThreshold }.count,
+            observed: peaks.count,
+            span: lastDays
         )
     }
 
