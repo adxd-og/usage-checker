@@ -126,6 +126,37 @@ func usageStatusColor(_ percent: Double) -> Color {
     return .green
 }
 
+/// The band a gauge is in, decided on the used value: `usageStatusColor`'s three
+/// bands (under 70, 70–89, 90 and over) as 3.0 tokens. The 2.x gauges and the widget
+/// keep `usageStatusColor`.
+enum OMGaugeTone: CaseIterable, Sendable {
+    case ok, warning, critical
+
+    static func forUsed(_ percent: Double) -> OMGaugeTone {
+        if percent >= 90 { return .critical }
+        if percent >= 70 { return .warning }
+        return .ok
+    }
+
+    /// Arcs and bar fills.
+    var fill: OMColorToken {
+        switch self {
+        case .ok: .ok
+        case .warning: .warning
+        case .critical: .critical
+        }
+    }
+
+    /// Text in the band's colour ("On track", "Running hot").
+    var text: OMColorToken {
+        switch self {
+        case .ok: .okText
+        case .warning: .warning
+        case .critical: .critical
+        }
+    }
+}
+
 // MARK: - 3.0 colour roles (liquid-glass spec § Design → Tokens)
 
 /// One colour as sRGB components and an opacity. A plain value, so the token table
