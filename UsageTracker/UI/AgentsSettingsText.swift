@@ -13,15 +13,6 @@ enum AgentsSettingsText {
         }
     }
 
-    static func hookStatusTint(_ status: HookInstallStatus) -> Color {
-        switch status {
-        case .installed: return .green
-        case .outdated: return .orange
-        case .notInstalled: return .secondary
-        case .conflict: return .red
-        }
-    }
-
     /// The same four states as 3.0 colour roles, for the dot beside the status (spec
     /// § Settings: "status is a dot + text"): green installed, amber older than this
     /// build, muted absent, red when something else owns the entry.

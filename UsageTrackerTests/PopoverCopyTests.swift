@@ -1,9 +1,10 @@
 import XCTest
 @testable import Omelette
 
-/// The header of `Main.dc.html` ("Updated just now") and `Popover-Claude.dc.html`
-/// ("Claude Max 20x · Updated 7s ago"), and the tile's plan line: the plan on its own
-/// line without the provider's name said twice.
+/// The header of `Main.dc.html` and `Popover-Claude.dc.html` ("Claude Max 20x · Updated
+/// 7s ago"), and the tile's plan line: the plan on its own line without the provider's
+/// name said twice. The age is `UpdatedCopy`'s, so the popover and the dashboard sidebar
+/// spell it one way ("Just updated", session ruling over the mockup's "Updated just now").
 final class PopoverCopyTests: XCTestCase {
     private let fetchedAt = Date(timeIntervalSince1970: 1_790_000_000)
     private func after(_ seconds: TimeInterval) -> Date { fetchedAt.addingTimeInterval(seconds) }
@@ -17,18 +18,18 @@ final class PopoverCopyTests: XCTestCase {
         XCTAssertNil(PopoverCopy.planLine(plan: "  ", displayName: "Claude"))
     }
 
-    func testTheUpdateTimeReadsUpdatedJustNowThenCounts() {
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: Date(timeIntervalSince1970: 0), now: fetchedAt), "Never updated")
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: fetchedAt, now: after(3)), "Updated just now")
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: fetchedAt, now: after(7)), "Updated 7s ago")
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: fetchedAt, now: after(125)), "Updated 2m ago")
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: fetchedAt, now: after(7300)), "Updated 2h ago")
-        XCTAssertEqual(PopoverCopy.updatedText(fetchedAt: fetchedAt, now: after(-30)), "Updated just now",
-                       "a clock that stepped back is not a reading from the future")
+    func testTheAllTabSaysOnlyWhenItUpdated() {
+        XCTAssertEqual(PopoverCopy.metaLine(service: nil, fetchedAt: fetchedAt, now: after(0)), "Just updated")
     }
 
-    func testTheAllTabSaysOnlyWhenItUpdated() {
-        XCTAssertEqual(PopoverCopy.metaLine(service: nil, fetchedAt: fetchedAt, now: after(0)), "Updated just now")
+    func testThePopoverSaysItsAgeInTheDashboardSidebarsWords() {
+        let never = Date(timeIntervalSince1970: 0)
+        XCTAssertEqual(PopoverCopy.metaLine(service: nil, fetchedAt: never, now: fetchedAt),
+                       UpdatedCopy.text(fetchedAt: never, now: fetchedAt))
+        for seconds: TimeInterval in [-30, 3, 7, 125, 7300] {
+            XCTAssertEqual(PopoverCopy.metaLine(service: nil, fetchedAt: fetchedAt, now: after(seconds)),
+                           UpdatedCopy.text(fetchedAt: fetchedAt, now: after(seconds)), "\(seconds)s")
+        }
     }
 
     func testAProviderTabNamesTheProviderAndItsPlanFirst() {

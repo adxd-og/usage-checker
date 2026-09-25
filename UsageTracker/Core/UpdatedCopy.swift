@@ -20,8 +20,8 @@ enum UpdatedDot: Equatable, Sendable {
 }
 
 /// "Updated 7s ago" and its status dot: the dashboard sidebar's footnote (liquid-glass
-/// spec § Removals), in the words of the popover header (`PopoverView.updatedText`) so
-/// the two surfaces can share one rule.
+/// spec § Removals) and the age in the popover header's meta line
+/// (`PopoverCopy.metaLine`), one rule for both surfaces.
 enum UpdatedCopy {
     /// The age of `fetchedAt` at `now`. A clock that runs behind the reading counts as
     /// no age at all.

@@ -9,16 +9,11 @@ final class AgentsSettingsTextTests: XCTestCase {
         untrusted: ["PermissionRequest", "PreToolUse"]
     )
 
-    func testEveryStatusHasALabelAndATint() {
+    func testEveryStatusHasALabel() {
         XCTAssertEqual(AgentsSettingsText.hookStatusLabel(.installed), "Installed")
         XCTAssertEqual(AgentsSettingsText.hookStatusLabel(.outdated), "Installed — older than this build")
         XCTAssertEqual(AgentsSettingsText.hookStatusLabel(.notInstalled), "Not installed")
         XCTAssertEqual(AgentsSettingsText.hookStatusLabel(.conflict("x")), "Can't write — something else owns this")
-
-        XCTAssertEqual(AgentsSettingsText.hookStatusTint(.installed), .green)
-        XCTAssertEqual(AgentsSettingsText.hookStatusTint(.outdated), .orange)
-        XCTAssertEqual(AgentsSettingsText.hookStatusTint(.notInstalled), .secondary)
-        XCTAssertEqual(AgentsSettingsText.hookStatusTint(.conflict("x")), .red)
     }
 
     func testTheTrustLineSaysWhatIsStillMissing() {

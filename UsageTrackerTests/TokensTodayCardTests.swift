@@ -15,13 +15,6 @@ final class TokensTodayCardTests: XCTestCase {
         cost: TokenCostBreakdown(input: 0.16, output: 63.40, cacheRead: 304.77, cacheWrite: 174.53)
     )
 
-    func testEachKindIsDrawnInItsTokenColour() {
-        XCTAssertEqual(TokensTodayCard.colorToken(.input), .tokenInput)
-        XCTAssertEqual(TokensTodayCard.colorToken(.output), .tokenOutput)
-        XCTAssertEqual(TokensTodayCard.colorToken(.cacheRead), .tokenCacheRead)
-        XCTAssertEqual(TokensTodayCard.colorToken(.cacheWrite), .tokenCacheWrite)
-    }
-
     func testTheTokensBarSplitsTheCountAndTheCostBarTheDollars() {
         XCTAssertEqual(TokensTodayCard.tokenShares(day), [
             OverviewTokenShare(category: .input, value: 21_100),

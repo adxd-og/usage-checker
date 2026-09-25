@@ -96,17 +96,6 @@ enum SessionCopy {
     /// when it ran.
     static let topSpendChip = "top spend"
 
-    /// "15 of 34 chats" while the list is cut, "4 chats" when it is all of them.
-    static func listHeader(shown: Int, total: Int) -> String {
-        let noun = total == 1 ? "chat" : "chats"
-        return shown < total ? "\(shown) of \(total) \(noun)" : "\(total) \(noun)"
-    }
-
-    /// The chat list's column titles, in the order the wide row draws them: the chat
-    /// itself, then the four values to its right. Three unlabelled figures on a row
-    /// are digits nobody can read; these are the same titles the by-day tables carry.
-    static let listColumns = ["Chat", "Last active", "Turns", "Tokens", "Cost"]
-
     static func showAll(count: Int, expanded: Bool) -> String {
         expanded ? "Show fewer" : "Show all \(count)"
     }
