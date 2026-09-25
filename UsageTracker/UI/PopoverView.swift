@@ -157,6 +157,14 @@ struct PopoverView: View {
         return hasHero && (service.weekCost ?? 0) > 0
     }
 
+    /// A provider tab's state line: its word in its colour ("Not running" in secondary,
+    /// "Sign in" amber, "Error" red); nil while the provider is live.
+    nonisolated static func stateLabel(for service: ServiceSnapshot) -> OMColoredText? {
+        guard service.state != .ok else { return nil }
+        return OMColoredText(text: RetainedCopy.chipText(for: service.state),
+                             token: OMProviderTile.stateToken(for: service.state))
+    }
+
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
@@ -448,21 +456,24 @@ private struct ProviderDetail: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
-            if service.state != .ok {
+            if let stateLabel = PopoverView.stateLabel(for: service) {
                 VStack(alignment: .leading, spacing: 4) {
-                    HStack {
+                    HStack(alignment: .firstTextBaseline) {
                         // A retained provider's caption already carries the message;
                         // saying it twice, two lines apart, reads as a bug.
                         if !service.isRetained, let msg = service.stateMessage, !msg.isEmpty {
-                            Text(msg).font(OMFont.caption).foregroundStyle(.secondary).lineLimit(3)
+                            Text(msg)
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.om(.secondary))
+                                .lineLimit(3)
                         }
                         Spacer()
-                        ServiceStateLabel(service: service)
+                        ServiceStateLabel(service: service, label: stateLabel)
                     }
                     if let caption = RetainedCopy.caption(for: service) {
                         Text(caption)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.om(.secondary))
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -631,32 +642,39 @@ private struct ProviderDetail: View {
     }
 }
 
-// MARK: - State chip with recovery help
+// MARK: - State label with recovery help
 
-/// The capsule reads as a button, so it must act like one: clicking walks the
-/// user through fixing the state instead of doing nothing.
+/// The provider's state as coloured text (spec § Principles 2: no chips). When there is
+/// a way out, the label is a button with a chevron, and clicking it walks the user
+/// through fixing the state instead of doing nothing.
 private struct ServiceStateLabel: View {
     let service: ServiceSnapshot
+    let label: OMColoredText
     @State private var showsStateHelp = false
 
     var body: some View {
-        let (text, color): (String, Color) = {
-            switch service.state {
-            case .notSignedIn: return ("Sign in", .orange)
-            case .notRunning: return ("Not running", .secondary)
-            case .error: return ("Error", .red)
-            case .ok: return ("OK", .green)
-            }
-        }()
-        Group {
-            if let help = stateHelp {
-                Button { showsStateHelp.toggle() } label: { OMChip(text: text, tint: color) }
-                    .buttonStyle(.plain)
-                    .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) { stateHelpContent(help) }
-            } else {
-                OMChip(text: text, tint: color)
+        if let help = stateHelp {
+            Button { showsStateHelp.toggle() } label: { text(showsChevron: true) }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showsStateHelp, arrowEdge: .bottom) { stateHelpContent(help) }
+        } else {
+            text(showsChevron: false)
+        }
+    }
+
+    private func text(showsChevron: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(label.text)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.om(label.token))
+            if showsChevron {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.om(.secondary))
+                    .accessibilityHidden(true)
             }
         }
+        .fixedSize()
     }
 
     private struct StateHelp {
