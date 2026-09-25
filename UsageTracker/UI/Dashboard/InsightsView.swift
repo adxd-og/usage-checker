@@ -61,10 +61,7 @@ struct InsightsView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                DashboardHeader(
-                    title: "Insights",
-                    subtitle: "Patterns from your usage data"
-                )
+                DashboardHeader(title: "Insights")
 
                 if let window = dashboard.sessionWindow {
                     sessionWindowBlock(window)
