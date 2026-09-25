@@ -114,3 +114,29 @@ final class HistoryCopySessionsTests: XCTestCase {
         XCTAssertEqual(HistoryCopy.sortPickerLabel, "Sort")
     }
 }
+
+/// An open chat's words (`Dashboard-History-Chats`).
+final class HistoryCopyOpenChatTests: XCTestCase {
+    func testThePanelsWordsAreTheMockups() {
+        XCTAssertEqual(HistoryCopy.moneyTitle(hasCost: true), "Where the money went")
+        XCTAssertEqual(HistoryCopy.moneyTitle(hasCost: false), "Tokens by type")
+        XCTAssertEqual(HistoryCopy.thinkingLabel, "Thinking")
+        XCTAssertEqual(HistoryCopy.thinkingNote, "in output")
+        XCTAssertEqual(HistoryCopy.subAgentsTitle, "Sub-agents")
+        XCTAssertEqual(HistoryCopy.agentColumns, ["Agent", "Model", "Effort", "Turns", "Tokens", "Cost"])
+        XCTAssertEqual(HistoryCopy.dayColumns, ["Day", "Turns", "Tokens", "Cost"])
+    }
+
+    func testANarrowAgentRowFoldsItsColumnsIntoACaption() {
+        let agent = HistoryAgentRow(
+            id: "x", name: "planner", model: "Opus 5.5", effort: "xhigh",
+            turns: "87", tokens: "31.9M", cost: "$15.37", isMain: false
+        )
+        XCTAssertEqual(HistoryCopy.agentCaption(agent), "Opus 5.5 · xhigh · 87 turns · 31.9M")
+        let main = HistoryAgentRow(
+            id: "main", name: "Main thread", model: "", effort: "",
+            turns: "282", tokens: "80.9M", cost: "$65.89", isMain: true
+        )
+        XCTAssertEqual(HistoryCopy.agentCaption(main), "282 turns · 80.9M")
+    }
+}

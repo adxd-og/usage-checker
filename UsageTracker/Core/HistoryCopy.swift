@@ -72,3 +72,27 @@ extension HistoryCopy {
     /// What VoiceOver calls the Recent/Cost switch of the whole list.
     static let sortPickerLabel = "Sort"
 }
+
+// MARK: - An open chat
+
+extension HistoryCopy {
+    /// Unpriced chats (a provider that prices a turn as a whole) still show their token
+    /// split, under a title that does not promise dollars.
+    static func moneyTitle(hasCost: Bool) -> String {
+        hasCost ? "Where the money went" : "Tokens by type"
+    }
+
+    static let thinkingLabel = "Thinking"
+    /// Thinking is part of output, so its cell says so instead of pricing it twice.
+    static let thinkingNote = "in output"
+    static let subAgentsTitle = "Sub-agents"
+    static let agentColumns = ["Agent", "Model", "Effort", "Turns", "Tokens", "Cost"]
+    static let dayColumns = ["Day", "Turns", "Tokens", "Cost"]
+
+    /// A sub-agent row in a narrow list: the columns after the name, blanks dropped.
+    static func agentCaption(_ row: HistoryAgentRow) -> String {
+        [row.model, row.effort, "\(row.turns) turns", row.tokens]
+            .filter { !$0.isEmpty }
+            .joined(separator: " · ")
+    }
+}

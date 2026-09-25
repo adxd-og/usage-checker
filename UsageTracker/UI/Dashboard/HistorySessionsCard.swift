@@ -194,7 +194,7 @@ private struct HistorySessionRow: View {
 
     private var session: SessionSummary { row.session }
 
-    @State private var detail = SessionDetail.empty
+    @State private var detail = HistorySessionDetail.empty
     @State private var showsAllAgents = false
     @State private var showsAllDays = false
     @State private var showsAllModels = false
@@ -236,9 +236,11 @@ private struct HistorySessionRow: View {
             let allAgents = showsAllAgents
             let allDays = showsAllDays
             let allModels = showsAllModels
+            let now = self.now
             let built = await Task.detached(priority: .userInitiated) {
-                SessionDetail.build(
-                    session: session, allAgents: allAgents, allDays: allDays, allModels: allModels
+                HistorySessionDetail.build(
+                    session: session, allAgents: allAgents, allDays: allDays,
+                    allModels: allModels, now: now
                 )
             }.value
             // See `DerivedCacheGate`: a collapse, a lifted cap or a newer summary of the
@@ -349,185 +351,347 @@ private struct HistorySessionRow: View {
 
     // MARK: Expanded chat
 
-    @ViewBuilder
+    /// The open chat (`Dashboard-History-Chats`): where the money went, By model and By
+    /// day side by side (stacked when the column is too narrow for both), then the
+    /// sub-agents.
     private var detailBlock: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            if !detail.split.isEmpty {
-                Text(detail.split)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !detail.modelRows.isEmpty { modelTable }
-            if !detail.agentRows.isEmpty { agentTable }
-            if !detail.dayRows.isEmpty { dayTable }
-        }
-        .padding(.leading, HistoryLayout.chevronWidth + HistoryLayout.columnGap)
-        .padding(.bottom, HistoryLayout.rowVerticalPadding)
-    }
-
-    /// Which models the chat ran on, most expensive first. The header row is the one
-    /// the by-day tables in this tab carry, at this table's own widths; the effort sits
-    /// beside the model name as a secondary label, so a chat whose log named none draws
-    /// no empty column.
-    private var modelTable: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            OMSectionHeader(title: SessionCopy.byModelTitle)
-            // The header names four columns, so it is drawn only where four columns are
-            // drawn — the same one decision the chat rows above obey.
-            if isWide { modelColumnHeader }
-            ForEach(detail.modelRows) { columns in
-                modelRow(columns)
-            }
-            if detail.hiddenModels > 0 || showsAllModels {
-                Button(SessionCopy.showAllModels(count: detail.totalModels, expanded: showsAllModels)) {
-                    showsAllModels.toggle()
-                }
-                .buttonStyle(.link)
-                .font(OMFont.caption)
-                .padding(.top, 2)
-            }
-        }
-    }
-
-    private var modelColumnHeader: some View {
-        HStack(spacing: OMSpacing.s) {
-            Text(modelColumnTitle(0)).frame(minWidth: 120, alignment: .leading)
-            Spacer(minLength: OMSpacing.xs)
-            Text(modelColumnTitle(1)).frame(width: 48, alignment: .trailing)
-            Text(modelColumnTitle(2)).frame(width: 76, alignment: .trailing)
-            Text(modelColumnTitle(3)).frame(width: 72, alignment: .trailing)
-        }
-        .font(OMFont.body)
-        .foregroundStyle(.secondary)
-        .padding(.bottom, 6)
-    }
-
-    private func modelColumnTitle(_ index: Int) -> String {
-        let titles = SessionCopy.modelColumnTitles
-        return titles.indices.contains(index) ? titles[index] : ""
-    }
-
-    private func modelRow(_ columns: SessionModelColumns) -> some View {
-        Group {
-            if isWide {
-                HStack(spacing: OMSpacing.s) {
-                    modelName(columns).frame(minWidth: 120, alignment: .leading)
-                    Spacer(minLength: OMSpacing.xs)
-                    Text(columns.turns).font(OMFont.body).monospacedDigit()
-                        .frame(width: 48, alignment: .trailing)
-                    Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 76, alignment: .trailing)
-                    Text(columns.cost).font(OMFont.body).monospacedDigit()
-                        .frame(width: 72, alignment: .trailing)
-                }
-            } else {
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack {
-                        modelName(columns)
-                        Spacer()
-                        Text(columns.cost).font(OMFont.body).monospacedDigit()
+        VStack(alignment: .leading, spacing: HistoryLayout.panelSectionSpacing) {
+            moneySection
+            if !detail.modelRows.isEmpty || !detail.dayRows.isEmpty {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: HistoryLayout.panelTablesGap) {
+                        modelSection
+                        daySection
                     }
-                    Text("\(columns.turns) turns · \(columns.tokens)")
-                        .font(OMFont.caption)
-                        .foregroundStyle(.tertiary)
+                    VStack(alignment: .leading, spacing: HistoryLayout.panelSectionSpacing) {
+                        modelSection
+                        daySection
+                    }
+                }
+            }
+            if !detail.agentRows.isEmpty { agentSection }
+        }
+        .padding(HistoryLayout.panelPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: HistoryLayout.panelRadius, style: .continuous)
+                .fill(.om(.insetFill))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: HistoryLayout.panelRadius, style: .continuous)
+                .strokeBorder(.om(.contentBorder), lineWidth: 1)
+        )
+        .padding(.leading, HistoryLayout.panelLeadingInset)
+        .padding(.bottom, HistoryLayout.panelBottomInset)
+    }
+
+    private func sectionTitle(_ title: String, count: String?) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: HistoryLayout.cardCaptionSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+            if let count {
+                Text(count)
+                    .font(.system(size: HistoryLayout.cardCaptionSize, weight: .medium))
+                    .foregroundStyle(.om(.secondary))
+            }
+        }
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var moneySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionTitle(detail.money.title, count: detail.money.total)
+            if detail.money.total != nil { moneyBar }
+            LazyVGrid(
+                columns: Array(
+                    repeating: GridItem(.flexible(), spacing: HistoryLayout.panelColumnGap, alignment: .leading),
+                    count: 5
+                ),
+                alignment: .leading,
+                spacing: HistoryLayout.panelColumnGap
+            ) {
+                ForEach(detail.money.segments) { segment in
+                    moneyCell(label: segment.category.label, token: segment.category.token,
+                              tokens: segment.tokens, note: segment.cost, noteIsFigure: true)
+                }
+                if let thinking = detail.money.thinking {
+                    moneyCell(label: HistoryCopy.thinkingLabel, token: .muted,
+                              tokens: thinking, note: HistoryCopy.thinkingNote, noteIsFigure: false)
                 }
             }
         }
-        .padding(.vertical, 2)
+    }
+
+    private var moneyBar: some View {
+        GeometryReader { proxy in
+            let segments = detail.money.segments
+            let widths = HistoryMoneySplit.widths(
+                shares: segments.map(\.share), in: proxy.size.width,
+                minimum: HistoryLayout.moneyBarMinimum, gap: HistoryLayout.moneyBarGap
+            )
+            HStack(spacing: HistoryLayout.moneyBarGap) {
+                ForEach(Array(segments.enumerated()), id: \.element.id) { index, segment in
+                    Rectangle()
+                        .fill(.om(segment.category.token))
+                        .frame(width: widths[index])
+                }
+            }
+        }
+        .frame(height: HistoryLayout.moneyBarHeight)
+        .clipShape(RoundedRectangle(cornerRadius: HistoryLayout.moneyBarHeight / 2, style: .continuous))
+        .accessibilityHidden(true)
+    }
+
+    private func moneyCell(label: String, token: OMColorToken, tokens: String, note: String?, noteIsFigure: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
+                Circle().fill(.om(token)).frame(width: 7, height: 7)
+                Text(label)
+                    .font(.system(size: HistoryLayout.rowSubtitleSize))
+                    .foregroundStyle(.om(.secondary))
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(tokens)
+                    .font(OMFont.numerals(size: 17, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                if let note {
+                    Text(note)
+                        .font(noteIsFigure
+                              ? OMFont.numerals(size: HistoryLayout.cardCaptionSize, weight: .semibold)
+                              : .system(size: HistoryLayout.rowSubtitleSize))
+                        .foregroundStyle(.om(.secondary))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var modelSection: some View {
+        if !detail.modelRows.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(SessionCopy.byModelTitle, count: nil)
+                VStack(alignment: .leading, spacing: 0) {
+                    tableHeader(SessionCopy.modelColumnTitles)
+                    ForEach(detail.modelRows) { columns in
+                        shareRow(
+                            name: modelName(columns),
+                            share: detail.modelShares[columns.id] ?? 0,
+                            turns: columns.turns, tokens: columns.tokens, cost: columns.cost,
+                            isLast: columns.id == detail.modelRows.last?.id
+                        )
+                    }
+                }
+                if detail.hiddenModels > 0 || showsAllModels {
+                    moreButton(SessionCopy.showAllModels(count: detail.totalModels, expanded: showsAllModels)) {
+                        showsAllModels.toggle()
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var daySection: some View {
+        if !detail.dayRows.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionTitle(SessionCopy.byDayTitle, count: nil)
+                VStack(alignment: .leading, spacing: 0) {
+                    tableHeader(HistoryCopy.dayColumns)
+                    ForEach(detail.dayRows) { columns in
+                        shareRow(
+                            name: Text(columns.day)
+                                .font(.system(size: 13, weight: columns.id == detail.todayDayID ? .bold : .semibold))
+                                .foregroundStyle(.om(.text)),
+                            share: detail.dayShares[columns.id] ?? 0,
+                            turns: columns.turns, tokens: columns.tokens, cost: columns.cost,
+                            isLast: columns.id == detail.dayRows.last?.id
+                        )
+                    }
+                }
+                if detail.hiddenDays > 0 || showsAllDays {
+                    moreButton(SessionCopy.showAllDays(count: detail.totalDays, expanded: showsAllDays)) {
+                        showsAllDays.toggle()
+                    }
+                }
+            }
+        }
     }
 
     private func modelName(_ columns: SessionModelColumns) -> some View {
         HStack(spacing: 4) {
-            Text(columns.model).font(OMFont.body).lineLimit(1)
+            Text(columns.model)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
             if let effort = columns.effort {
-                Text(effort).font(OMFont.caption).foregroundStyle(.tertiary).lineLimit(1)
+                Text(effort)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(1)
             }
         }
     }
 
-    /// The header counts every sub-agent; the table draws the eight most expensive plus
-    /// the Main thread row, because one chat here launched 1,235 of them.
-    private var agentTable: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            OMSectionHeader(title: detail.agentsTitle)
-            ForEach(detail.agentRows) { columns in
-                columnsRow(columns, strong: columns.id == "main")
+    private func title(_ titles: [String], _ index: Int) -> String {
+        titles.indices.contains(index) ? titles[index] : ""
+    }
+
+    private func tableHeader(_ titles: [String]) -> some View {
+        HStack(spacing: HistoryLayout.panelColumnGap) {
+            Text(title(titles, 0))
+                .frame(minWidth: HistoryLayout.panelNameMinWidth, maxWidth: .infinity, alignment: .leading)
+            Text(title(titles, 1)).frame(width: HistoryLayout.panelTurnsWidth, alignment: .trailing)
+            Text(title(titles, 2)).frame(width: HistoryLayout.panelTokensWidth, alignment: .trailing)
+            Text(title(titles, 3)).frame(width: HistoryLayout.panelCostWidth, alignment: .trailing)
+        }
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(.om(.secondary))
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) { panelHairline }
+    }
+
+    /// A By model or By day row: the name over a bar of its share of the table's most
+    /// expensive row, then the three figures.
+    private func shareRow<Name: View>(
+        name: Name, share: Double, turns: String, tokens: String, cost: String, isLast: Bool
+    ) -> some View {
+        HStack(spacing: HistoryLayout.panelColumnGap) {
+            VStack(alignment: .leading, spacing: 5) {
+                name
+                shareBar(share)
+            }
+            .frame(minWidth: HistoryLayout.panelNameMinWidth, maxWidth: .infinity, alignment: .leading)
+            Text(turns)
+                .font(OMFont.numerals(size: 13, weight: .medium))
+                .foregroundStyle(.om(.secondary))
+                .frame(width: HistoryLayout.panelTurnsWidth, alignment: .trailing)
+            Text(tokens)
+                .font(OMFont.numerals(size: 13, weight: .medium))
+                .foregroundStyle(.om(.secondary))
+                .frame(width: HistoryLayout.panelTokensWidth, alignment: .trailing)
+            Text(cost)
+                .font(OMFont.numerals(size: 13, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .frame(width: HistoryLayout.panelCostWidth, alignment: .trailing)
+        }
+        .padding(.vertical, HistoryLayout.panelRowVerticalPadding)
+        .overlay(alignment: .bottom) { if !isLast { panelHairline } }
+    }
+
+    private func shareBar(_ share: Double) -> some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Capsule().fill(.om(.track))
+                Capsule().fill(.om(.accent)).frame(width: proxy.size.width * CGFloat(share))
+            }
+        }
+        .frame(height: HistoryLayout.shareBarHeight)
+        .accessibilityHidden(true)
+    }
+
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle(HistoryCopy.subAgentsTitle, count: HistoryCopy.count(detail.totalAgents))
+            VStack(alignment: .leading, spacing: 0) {
+                if isWide { agentHeader }
+                ForEach(detail.agentRows) { agent in
+                    agentRow(agent, isLast: agent.id == detail.agentRows.last?.id)
+                }
             }
             if detail.hiddenAgents > 0 || showsAllAgents {
-                Button(SessionCopy.showAllAgents(count: detail.totalAgents, expanded: showsAllAgents)) {
+                moreButton(SessionCopy.showAllAgents(count: detail.totalAgents, expanded: showsAllAgents)) {
                     showsAllAgents.toggle()
                 }
-                .buttonStyle(.link)
-                .font(OMFont.caption)
-                .padding(.top, 2)
             }
         }
     }
 
-    private func columnsRow(_ columns: SessionColumns, strong: Bool) -> some View {
+    private var agentHeader: some View {
+        let titles = HistoryCopy.agentColumns
+        return HStack(spacing: HistoryLayout.panelColumnGap) {
+            Text(title(titles, 0))
+                .frame(minWidth: HistoryLayout.panelNameMinWidth, maxWidth: .infinity, alignment: .leading)
+            Text(title(titles, 1)).frame(width: HistoryLayout.agentModelWidth, alignment: .trailing)
+            Text(title(titles, 2)).frame(width: HistoryLayout.agentEffortWidth, alignment: .trailing)
+            Text(title(titles, 3)).frame(width: HistoryLayout.agentTurnsWidth, alignment: .trailing)
+            Text(title(titles, 4)).frame(width: HistoryLayout.agentTokensWidth, alignment: .trailing)
+            Text(title(titles, 5)).frame(width: HistoryLayout.agentCostWidth, alignment: .trailing)
+        }
+        .font(.system(size: 11.5, weight: .semibold))
+        .foregroundStyle(.om(.secondary))
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) { panelHairline }
+    }
+
+    private func agentRow(_ agent: HistoryAgentRow, isLast: Bool) -> some View {
         Group {
             if isWide {
-                HStack(spacing: OMSpacing.s) {
-                    Text(columns.name)
-                        .font(strong ? OMFont.bodyStrong : OMFont.body)
+                HStack(spacing: HistoryLayout.panelColumnGap) {
+                    Text(agent.name)
+                        .font(.system(size: 13, weight: agent.isMain ? .semibold : .medium))
+                        .foregroundStyle(.om(.text))
                         .lineLimit(1)
-                        .frame(minWidth: 120, alignment: .leading)
-                    Spacer(minLength: OMSpacing.xs)
-                    Text(columns.model).font(OMFont.body).foregroundStyle(.secondary)
-                        .lineLimit(1).frame(width: 96, alignment: .trailing)
-                    Text(columns.effort).font(OMFont.body).foregroundStyle(.secondary)
-                        .lineLimit(1).frame(width: 64, alignment: .trailing)
-                    Text(columns.turns).font(OMFont.body).monospacedDigit()
-                        .frame(width: 48, alignment: .trailing)
-                    Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 76, alignment: .trailing)
-                    Text(columns.cost).font(OMFont.body).monospacedDigit()
-                        .frame(width: 72, alignment: .trailing)
+                        .frame(minWidth: HistoryLayout.panelNameMinWidth, maxWidth: .infinity, alignment: .leading)
+                    Text(agent.model)
+                        .font(.system(size: HistoryLayout.cardCaptionSize))
+                        .foregroundStyle(.om(.secondary))
+                        .lineLimit(1)
+                        .frame(width: HistoryLayout.agentModelWidth, alignment: .trailing)
+                    Text(agent.effort)
+                        .font(.system(size: HistoryLayout.cardCaptionSize))
+                        .foregroundStyle(.om(.secondary))
+                        .lineLimit(1)
+                        .frame(width: HistoryLayout.agentEffortWidth, alignment: .trailing)
+                    Text(agent.turns)
+                        .font(OMFont.numerals(size: 13, weight: .medium))
+                        .foregroundStyle(.om(.secondary))
+                        .frame(width: HistoryLayout.agentTurnsWidth, alignment: .trailing)
+                    Text(agent.tokens)
+                        .font(OMFont.numerals(size: 13, weight: .medium))
+                        .foregroundStyle(.om(.secondary))
+                        .frame(width: HistoryLayout.agentTokensWidth, alignment: .trailing)
+                    Text(agent.cost)
+                        .font(OMFont.numerals(size: 13, weight: .semibold))
+                        .foregroundStyle(.om(.text))
+                        .frame(width: HistoryLayout.agentCostWidth, alignment: .trailing)
                 }
             } else {
                 VStack(alignment: .leading, spacing: 1) {
                     HStack {
-                        Text(columns.name).font(strong ? OMFont.bodyStrong : OMFont.body).lineLimit(1)
+                        Text(agent.name)
+                            .font(.system(size: 13, weight: agent.isMain ? .semibold : .medium))
+                            .foregroundStyle(.om(.text))
+                            .lineLimit(1)
                         Spacer()
-                        Text(columns.cost).font(OMFont.body).monospacedDigit()
+                        Text(agent.cost)
+                            .font(OMFont.numerals(size: 13, weight: .semibold))
+                            .foregroundStyle(.om(.text))
                     }
-                    Text([columns.model, columns.effort, "\(columns.turns) turns", columns.tokens]
-                        .joined(separator: " · "))
-                        .font(OMFont.caption)
-                        .foregroundStyle(.tertiary)
+                    Text(HistoryCopy.agentCaption(agent))
+                        .font(.system(size: HistoryLayout.rowSubtitleSize))
+                        .foregroundStyle(.om(.secondary))
                 }
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, HistoryLayout.panelRowVerticalPadding)
+        .overlay(alignment: .bottom) { if !isLast { panelHairline } }
     }
 
-    private var dayTable: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            OMSectionHeader(title: SessionCopy.byDayTitle)
-            ForEach(detail.dayRows) { columns in
-                HStack(spacing: OMSpacing.s) {
-                    Text(columns.day).font(OMFont.body)
-                        .frame(minWidth: 96, alignment: .leading)
-                    Spacer(minLength: OMSpacing.xs)
-                    Text(columns.turns).font(OMFont.body).monospacedDigit()
-                        .frame(width: 48, alignment: .trailing)
-                    Text(columns.tokens).font(OMFont.body).monospacedDigit().foregroundStyle(.secondary)
-                        .frame(width: 76, alignment: .trailing)
-                    Text(columns.cost).font(OMFont.body).monospacedDigit()
-                        .frame(width: 72, alignment: .trailing)
-                }
-                .padding(.vertical, 2)
-            }
-            if detail.hiddenDays > 0 || showsAllDays {
-                Button(SessionCopy.showAllDays(count: detail.totalDays, expanded: showsAllDays)) {
-                    showsAllDays.toggle()
-                }
-                .buttonStyle(.link)
-                .font(OMFont.caption)
-                .padding(.top, 2)
-            }
-        }
+    /// "Show all 23 sub-agents": accent text with no chevron, as the mockup draws it
+    /// inside a table (the header's "Show all 103 ›" is the link style).
+    private func moreButton(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(title, action: action)
+            .buttonStyle(.plain)
+            .font(.system(size: HistoryLayout.cardCaptionSize, weight: .semibold))
+            .foregroundStyle(.om(.accentText))
+            .padding(.top, 4)
+    }
+
+    private var panelHairline: some View {
+        Rectangle()
+            .fill(.om(.hairline))
+            .frame(height: 1)
     }
 
     // MARK: End of expanded chat

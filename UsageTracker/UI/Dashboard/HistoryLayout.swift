@@ -65,3 +65,34 @@ extension HistoryLayout {
         listWidth(detailWidth: detailWidth) >= minimumWideListWidth
     }
 }
+
+// MARK: - An open chat
+
+extension HistoryLayout {
+    /// `margin: 0 0 12px 42px; padding: 20px 22px; border-radius: 18px; gap: 24px`.
+    static let panelLeadingInset: CGFloat = 42
+    static let panelBottomInset: CGFloat = 12
+    static var panelPadding: EdgeInsets { EdgeInsets(top: 20, leading: 22, bottom: 20, trailing: 22) }
+    static let panelRadius: CGFloat = 18
+    static let panelSectionSpacing: CGFloat = 24
+    /// By model and By day side by side (`gap: 36px`); every table's `column-gap: 16px`.
+    static let panelTablesGap: CGFloat = 36
+    static let panelColumnGap: CGFloat = 16
+    static let panelNameMinWidth: CGFloat = 120
+    // By model, By day: `minmax(0, 1fr) 56px 64px 72px`.
+    static let panelTurnsWidth: CGFloat = 56
+    static let panelTokensWidth: CGFloat = 64
+    static let panelCostWidth: CGFloat = 72
+    // Sub-agents: `minmax(0, 1fr) 110px 70px 64px 80px 80px`.
+    static let agentModelWidth: CGFloat = 110
+    static let agentEffortWidth: CGFloat = 70
+    static let agentTurnsWidth: CGFloat = 64
+    static let agentTokensWidth: CGFloat = 80
+    static let agentCostWidth: CGFloat = 80
+    /// The money bar: 8 pt, 2 pt gaps, 3 pt least; a row's share bar: 4 pt.
+    static let moneyBarHeight: CGFloat = 8
+    static let moneyBarGap: CGFloat = 2
+    static let moneyBarMinimum: CGFloat = 3
+    static let shareBarHeight: CGFloat = 4
+    static let panelRowVerticalPadding: CGFloat = 7
+}
