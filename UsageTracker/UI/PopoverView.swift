@@ -493,7 +493,6 @@ private struct ProviderDetail: View {
                     // The prompt row above is the same offer, said better; the
                     // link would only repeat it.
                     hooksInstalled: hooksInstalled || showsHooksPrompt,
-                    title: "\(service.displayName) agents",
                     onEnable: onEnableAgents
                 )
             }

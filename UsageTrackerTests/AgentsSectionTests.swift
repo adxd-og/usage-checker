@@ -64,22 +64,6 @@ final class AgentsSectionTests: XCTestCase {
         XCTAssertEqual(AgentsSection.sessionsCaption(4), "4 sessions")
     }
 
-    func testGroupTitles() {
-        XCTAssertEqual(AgentsSection.groupTitle(.needsYou), "Needs you")
-        XCTAssertEqual(AgentsSection.groupTitle(.working), "Working")
-        XCTAssertEqual(AgentsSection.groupTitle(.done), "Done")
-        XCTAssertEqual(AgentsSection.groupTitle(.idle), "Idle")
-    }
-
-    /// Only the two live states get a colour; a green "Done" heading shouts as
-    /// loudly as the amber one that actually needs the user.
-    func testGroupColours() {
-        XCTAssertEqual(AgentsSection.groupColor(.needsYou), OMAgentColor.needsYou)
-        XCTAssertEqual(AgentsSection.groupColor(.working), OMAgentColor.working)
-        XCTAssertEqual(AgentsSection.groupColor(.done), Color.secondary)
-        XCTAssertEqual(AgentsSection.groupColor(.idle), Color.secondary)
-    }
-
     func testFinishedRowsDim() {
         XCTAssertEqual(AgentsSection.rowOpacity(.needsYou), 1, accuracy: 0.001)
         XCTAssertEqual(AgentsSection.rowOpacity(.working), 1, accuracy: 0.001)
