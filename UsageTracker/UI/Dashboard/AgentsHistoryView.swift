@@ -38,30 +38,33 @@ struct AgentsHistoryView: View {
         )
 
         return ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 0) {
                 DashboardHeader(
                     title: AgentsCopy.title,
                     trailing: AnyView(headerControls),
                     showsServicePicker: false
                 )
 
-                AgentsSummaryStrip(summary: summary)
-                    .padding(.horizontal, 24)
+                VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
+                    AgentsSummaryStrip(summary: summary)
 
-                AgentsSection(
-                    sessions: liveSessions,
-                    grouped: true,
-                    // The dashboard never nags about hooks — Settings → Agents owns that.
-                    hooksInstalled: true,
-                    title: "Live",
-                    // The page is already a ScrollView; a second one inside it would
-                    // eat the wheel and hide rows behind a cap the window doesn't need.
-                    maxListHeight: .infinity,
-                    onEnable: {}
-                )
-                .padding(.horizontal, 24)
-
-                Spacer(minLength: 24)
+                    AgentsSection(
+                        sessions: liveSessions,
+                        grouped: true,
+                        // The dashboard never nags about hooks — Settings → Agents owns that.
+                        hooksInstalled: true,
+                        title: "Live",
+                        // The page is already a ScrollView; a second one inside it would
+                        // eat the wheel and hide rows behind a cap the window doesn't need.
+                        maxListHeight: .infinity,
+                        onEnable: {}
+                    )
+                }
+                // The mockup's column, whose side gutters the header already sits on.
+                .padding(.top, AgentsLayout.headerGap)
+                .padding(.leading, DashboardShellLayout.columnLeading)
+                .padding(.trailing, DashboardShellLayout.columnTrailing)
+                .padding(.bottom, AgentsLayout.columnBottom)
             }
         }
         // A session ending is what appends to the log, so the live store changing is
