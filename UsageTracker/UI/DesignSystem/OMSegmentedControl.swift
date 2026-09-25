@@ -242,7 +242,8 @@ enum SegmentChrome: Equatable, Sendable {
 /// is `SelectedPill`'s, drawn outside the button, so the hover state layer here lies above
 /// it. The layer is a capsule at the segment's frame, lit only while the segment is
 /// unselected (`OMButtonRules.showsHoverWhenSelectable`); a press dims the label as the
-/// other OM buttons do.
+/// other OM buttons do. The Settings stepper's − and + are segments of a track too, never
+/// selected.
 struct OMSegmentButtonStyle: ButtonStyle {
     var isSelected = false
 
