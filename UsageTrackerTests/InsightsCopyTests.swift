@@ -36,4 +36,13 @@ final class InsightsCopyTests: XCTestCase {
             InsightsCopy.daysAtLimitValue(QuotaDaysAtCapacity(atCapacity: 2, observed: 5, span: 7)), "2 of 7"
         )
     }
+
+    // MARK: - Dollars
+
+    /// The mockup's "$2,727.56": grouped, as the popover's cost tile prints dollars.
+    func testDollarsAreThePopoversFormat() {
+        XCTAssertEqual(InsightsCopy.money(2_727.56, locale: us), "$2,727.56")
+        XCTAssertEqual(InsightsCopy.money(0.98, locale: us), "$0.98")
+        XCTAssertEqual(InsightsCopy.money(1_352.28, locale: us), OMCostTile.money(1_352.28, locale: us))
+    }
 }

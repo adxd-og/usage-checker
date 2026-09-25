@@ -160,18 +160,18 @@ struct InsightsView: View {
                 )
                 card(
                     title: "Daily average (30d)",
-                    value: insights.avgDailyCost.map { String(format: "$%.2f", $0) } ?? "—",
+                    value: insights.avgDailyCost.map { InsightsCopy.money($0) } ?? "—",
                     sub: insights.activeDays.map { "\($0) active days" }
                 )
                 card(
                     title: "Biggest day",
-                    value: insights.peakDay.map { String(format: "$%.2f", $0.cost) } ?? "—",
+                    value: insights.peakDay.map { InsightsCopy.money($0.cost) } ?? "—",
                     sub: insights.peakDay.map { $0.day.formatted(date: .abbreviated, time: .omitted) }
                 )
                 card(
                     title: "Most-used model",
                     value: insights.topModel?.model ?? "—",
-                    sub: insights.topModel.map { String(format: "$%.2f today", $0.cost) }
+                    sub: insights.topModel.map { InsightsCopy.money($0.cost) + " today" }
                 )
             }
             if let caption = costCaption {
@@ -205,7 +205,7 @@ struct InsightsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(String(format: "$%.2f", window.cost))
+                    Text(InsightsCopy.money(window.cost))
                         .font(OMFont.heroNumeral)
                         .monospacedDigit()
                     Text("\(window.turns) turns")
@@ -215,7 +215,7 @@ struct InsightsView: View {
 
                 if !window.models.isEmpty {
                     Text(window.models.prefix(3)
-                        .map { "\($0.model) " + String(format: "$%.2f", $0.cost) }
+                        .map { "\($0.model) " + InsightsCopy.money($0.cost) }
                         .joined(separator: "  ·  "))
                         .font(OMFont.caption)
                         .foregroundStyle(.secondary)
@@ -243,7 +243,7 @@ struct InsightsView: View {
                 .font(OMFont.body)
                 .foregroundStyle(.secondary)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(String(format: "$%.2f", wow.thisWeek))
+                Text(InsightsCopy.money(wow.thisWeek))
                     .font(OMFont.heroNumeral)
                     .monospacedDigit()
                 if let delta = wow.deltaPercent, wow.lastWeek > 0 {
@@ -260,7 +260,7 @@ struct InsightsView: View {
                 }
             }
             HStack(spacing: 4) {
-                Text("Last week: " + String(format: "$%.2f", wow.lastWeek))
+                Text("Last week: " + InsightsCopy.money(wow.lastWeek))
                     .font(OMFont.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -288,7 +288,7 @@ struct InsightsView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer()
-                Text(String(format: "$%.2f", p.totalCost))
+                Text(InsightsCopy.money(p.totalCost))
                     .font(OMFont.numeral)
                     .monospacedDigit()
             }

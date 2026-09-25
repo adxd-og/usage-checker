@@ -6,6 +6,13 @@ enum InsightsCopy {
     /// A figure with nothing to say yet.
     static let noValue = "—"
 
+    /// Dollars as the popover prints them ("$2,727.56"), in the viewer's locale. Every
+    /// dollar on the tab is an API-list-price figure from a local log; the page's
+    /// footnote says so once.
+    static func money(_ dollars: Double, locale: Locale = .current) -> String {
+        OMCostTile.money(dollars, locale: locale)
+    }
+
     // MARK: - Days at limit
 
     static let daysAtLimitTitle = "Days at limit, 7 days"
