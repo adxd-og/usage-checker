@@ -1,5 +1,11 @@
 import SwiftUI
 
+/// The two lines beside a tile's ring, or over its bar.
+struct OMTileCaption: Equatable, Sendable {
+    let title: String
+    let value: String?
+}
+
 /// Control-Center style tile for the All tab: icon · name · plan, the hero window
 /// as a ring with its label and time left, the secondary window as a thin bar.
 ///
@@ -55,20 +61,15 @@ struct OMProviderTile: View {
     private var middle: some View {
         HStack(spacing: 9) {
             if let hero {
+                let caption = Self.heroCaption(for: service, hero: hero)
                 HStack(spacing: 9) {
                     OMRing(used: hero.clampedPercent, mode: mode, size: .medium, pace: hero.elapsedFraction())
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(WindowRanking.shortWindowLabel(hero.label))
+                        Text(caption.title)
                             .font(.system(size: 10)).foregroundStyle(.secondary)
                         // A spend limit or a weekly budget has no reset: no empty line.
-                        if let remaining = WindowRanking.remainingText(until: hero.resetsAt) {
-                            Text(remaining)
-                                .font(OMFont.caption.weight(.semibold))
-                        } else if hero.id == WindowRanking.extraUsageBucketID(for: service),
-                                  let spend = SpendLimitCopy.caption(service.extraUsage, compact: true) {
-                            // The slot the reset would have used: on a spend limit the
-                            // dollars are what the ring's percentage is measuring.
-                            Text(spend)
+                        if let value = caption.value {
+                            Text(value)
                                 .font(OMFont.caption.weight(.semibold))
                                 .monospacedDigit()
                                 .lineLimit(1)
@@ -151,6 +152,31 @@ struct OMProviderTile: View {
         let reading = "\(hero.label) \(PercentDisplay.spoken(hero.clampedPercent, mode: mode))"
         guard service.isRetained else { return "\(service.displayName), \(reading)" }
         return "\(service.displayName), \(reading), last known, \(state)"
+    }
+
+    /// The two lines beside the ring. A live window counts down ("11m left"); a
+    /// spend limit, which never resets, shows the dollars its ring measures. A
+    /// retained service's numbers are old, and once its reset has passed the
+    /// countdown read "resets now" — a closed Antigravity's tile said so for hours —
+    /// so it dates them instead: "Last known 12:50".
+    nonisolated static func heroCaption(
+        for service: ServiceSnapshot,
+        hero: UsageBucket,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> OMTileCaption {
+        if let stamp = RetainedCopy.lastKnownStamp(for: service, now: now, calendar: calendar, locale: locale) {
+            return OMTileCaption(title: RetainedCopy.lastKnownTitle, value: stamp)
+        }
+        let title = WindowRanking.shortWindowLabel(hero.label)
+        if let remaining = WindowRanking.remainingText(until: hero.resetsAt, now: now) {
+            return OMTileCaption(title: title, value: remaining)
+        }
+        if hero.id == WindowRanking.extraUsageBucketID(for: service) {
+            return OMTileCaption(title: title, value: SpendLimitCopy.caption(service.extraUsage, compact: true))
+        }
+        return OMTileCaption(title: title, value: nil)
     }
 }
 
