@@ -228,7 +228,7 @@ struct ActivityGridView: View {
         // can tell the two apart, so only it draws the difference.
         let unobserved = cache.dimsUnrecordedDays && !day.hasReading
         return RoundedRectangle(cornerRadius: 3)
-            .fill(day.isFuture
+            .fill(day.isBlank
                   ? Color.clear
                   : Self.cellBase(intensity: intensity, usesStatusColor: cache.usesStatusColor, unobserved: unobserved)
                       .opacity(Self.cellOpacity(intensity: intensity, unobserved: unobserved)))
@@ -320,7 +320,9 @@ private struct Day: Sendable {
     let value: Double
     /// Whether the source had anything to say about this day at all.
     let hasReading: Bool
-    let isFuture: Bool
+    /// A square the grid draws empty and without a tooltip: after now, or before the
+    /// range the grid covers began.
+    let isBlank: Bool
     let tooltip: String
 }
 
@@ -356,6 +358,8 @@ struct GridCache: Sendable {
     /// Whether the squares are a utilisation (battery colours) or dollars (accent ramp).
     let usesStatusColor: Bool
     let hasData: Bool
+    /// The square to ring: the start of today in the calendar the cache was built with.
+    let today: Date
 
     // MARK: Cost
 
@@ -363,7 +367,8 @@ struct GridCache: Sendable {
         from dailies: [CLIDailySummary],
         weeks: Int,
         now: Date = Date(),
-        calendar: Calendar = .current
+        calendar: Calendar = .current,
+        notBefore: Date? = nil
     ) -> GridCache {
         let dailies = Self.dailiesByDay(dailies, calendar: calendar)
         let formatters = Formatters()
@@ -390,7 +395,7 @@ struct GridCache: Sendable {
 
         let layout = Layout(
             values: values, weeks: weeks, emptyTooltip: "no usage",
-            formatters: formatters, now: now, calendar: calendar
+            formatters: formatters, now: now, calendar: calendar, notBefore: notBefore
         )
         return GridCache(
             weeksMatrix: layout.matrix,
@@ -405,7 +410,8 @@ struct GridCache: Sendable {
             legendHigh: "More",
             dimsUnrecordedDays: false,
             usesStatusColor: false,
-            hasData: !dailies.isEmpty
+            hasData: !dailies.isEmpty,
+            today: calendar.startOfDay(for: now)
         )
     }
 
@@ -451,11 +457,18 @@ struct GridCache: Sendable {
 
     // MARK: Quota
 
-    static func build(records: [HistoryRecord], buckets: [QuotaBucketInfo], weeks: Int) -> GridCache {
+    static func build(
+        records: [HistoryRecord],
+        buckets: [QuotaBucketInfo],
+        weeks: Int,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        notBefore: Date? = nil
+    ) -> GridCache {
         let formatters = Formatters()
         let coreIDs = buckets.filter(\.isCore).map(\.id)
         let labels = Dictionary(buckets.map { ($0.id, $0.label) }, uniquingKeysWith: { first, _ in first })
-        let peaks = QuotaAnalytics.dailyPeaks(records: records, bucketIDs: coreIDs)
+        let peaks = QuotaAnalytics.dailyPeaks(records: records, bucketIDs: coreIDs, calendar: calendar)
 
         var values: [Date: DayValue] = [:]
         for peak in peaks {
@@ -469,7 +482,7 @@ struct GridCache: Sendable {
             values[peak.day] = DayValue(value: peak.peak, tooltip: tooltip)
         }
 
-        let insights = QuotaAnalytics.insights(records: records, bucketIDs: coreIDs)
+        let insights = QuotaAnalytics.insights(records: records, bucketIDs: coreIDs, calendar: calendar, now: now)
         let busiestSub = insights.busiestDay.map { day -> String in
             let label = labels[day.peakBucketID] ?? QuotaAnalytics.prettifiedLabel(for: day.peakBucketID)
             return "\(formatters.date.string(from: day.day)) · \(label)"
@@ -477,7 +490,7 @@ struct GridCache: Sendable {
 
         let layout = Layout(
             values: values, weeks: weeks, emptyTooltip: "not recorded",
-            formatters: formatters, now: Date(), calendar: .current
+            formatters: formatters, now: now, calendar: calendar, notBefore: notBefore
         )
         return GridCache(
             weeksMatrix: layout.matrix,
@@ -504,7 +517,8 @@ struct GridCache: Sendable {
             legendHigh: "100%",
             dimsUnrecordedDays: true,
             usesStatusColor: true,
-            hasData: !peaks.isEmpty
+            hasData: !peaks.isEmpty,
+            today: calendar.startOfDay(for: now)
         )
     }
 
@@ -537,7 +551,8 @@ struct GridCache: Sendable {
             emptyTooltip: String,
             formatters: Formatters,
             now: Date,
-            calendar cal: Calendar
+            calendar cal: Calendar,
+            notBefore: Date?
         ) {
             let today = cal.startOfDay(for: now)
             let startOfThisWeek = GridCache.weekStart(of: today, calendar: cal)
@@ -553,10 +568,10 @@ struct GridCache: Sendable {
                 for d in 0..<7 {
                     let offset = -(weeks - 1 - w) * 7 + d
                     let date = cal.date(byAdding: .day, value: offset, to: startOfThisWeek) ?? today
-                    let entry = values[date]
-                    let isFuture = date > now
+                    let isBlank = date > now || notBefore.map { date < $0 } == true
+                    let entry = isBlank ? nil : values[date]
                     let tooltip: String
-                    if isFuture {
+                    if isBlank {
                         tooltip = ""
                     } else if let entry {
                         tooltip = entry.tooltip
@@ -567,7 +582,7 @@ struct GridCache: Sendable {
                         date: date,
                         value: entry?.value ?? 0,
                         hasReading: entry != nil,
-                        isFuture: isFuture,
+                        isBlank: isBlank,
                         tooltip: tooltip
                     ))
                 }

@@ -60,3 +60,59 @@ final class ActivityGridWeekTests: XCTestCase {
         XCTAssertEqual(GridCache.weekdayLabels(calendar: calendar(firstWeekday: 1)), ["", "Mon", "", "Wed", "", "Fri", ""])
     }
 }
+
+/// The calendar over a range (P5 plan, D4): squares before the range's first day are
+/// blank even when a row exists for them, and the cache knows which square is today.
+final class ActivityGridRangeTests: XCTestCase {
+    /// 2026-09-06 12:00 UTC, a Sunday.
+    private let now = Date(timeIntervalSince1970: 1_788_696_000)
+
+    private var calendar: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        c.locale = Locale(identifier: "en_GB")
+        c.firstWeekday = 2
+        return c
+    }
+
+    private func day(_ offset: Int) -> Date {
+        calendar.date(byAdding: .day, value: offset, to: calendar.startOfDay(for: now))!
+    }
+
+    private func row(_ offset: Int, cost: Double) -> CLIDailySummary {
+        CLIDailySummary(day: day(offset), totalCost: cost, totalTokens: 0, tokens: .zero, turns: 1, byFamily: [:])
+    }
+
+    func testADayBeforeTheRangeIsBlankEvenWithARow() {
+        let cache = GridCache.build(
+            from: [row(-6, cost: 1), row(-2, cost: 2)],
+            weeks: 1, now: now, calendar: calendar, notBefore: day(-4)
+        )
+        XCTAssertNil(cache.value(on: day(-6)), "Monday is in the grid's week but before the range")
+        XCTAssertEqual(cache.value(on: day(-2)), 2)
+    }
+
+    func testWithoutARangeEveryPastDayOfTheWeeksIsDrawn() {
+        let cache = GridCache.build(from: [row(-6, cost: 1)], weeks: 1, now: now, calendar: calendar)
+        XCTAssertEqual(cache.value(on: day(-6)), 1)
+    }
+
+    func testTheCacheKnowsWhichSquareIsToday() {
+        XCTAssertEqual(GridCache.build(from: [], weeks: 1, now: now, calendar: calendar).today, day(0))
+    }
+
+    func testTheQuotaGridTakesTheSameClockCalendarAndRange() {
+        let records = Fixture.quotaHistory(points: [
+            (at: day(-6).addingTimeInterval(3_600), percents: ["session": 40]),
+            (at: day(-2).addingTimeInterval(3_600), percents: ["session": 80]),
+        ])
+        let buckets = [QuotaBucketInfo(id: "session", label: "Session", isCore: true, isLive: true)]
+        let cache = GridCache.build(
+            records: records, buckets: buckets, weeks: 1,
+            now: now, calendar: calendar, notBefore: day(-4)
+        )
+        XCTAssertNil(cache.value(on: day(-6)))
+        XCTAssertEqual(cache.value(on: day(-2)), 80)
+        XCTAssertEqual(cache.today, day(0))
+    }
+}
