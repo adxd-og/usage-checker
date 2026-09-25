@@ -2,7 +2,7 @@ import XCTest
 @testable import Omelette
 
 /// Independent verification of the pure view-rule statics: `OMProviderTile.accessibilityText`
-/// and `OverviewView.burnValue`/`burnLine`. Different fixtures from the executor's own
+/// and `OverviewView.burnValue`. Different fixtures from the executor's own
 /// `OMProviderTileTextTests.swift` / `BurnVerdictTests.swift`, so a copy-paste error in
 /// either wouldn't be caught by re-running the same inputs.
 final class ViewRulesVerificationTests: XCTestCase {
@@ -26,7 +26,7 @@ final class ViewRulesVerificationTests: XCTestCase {
         XCTAssertFalse(text.contains("last known"), "a healthy tile's accessibility text must not say last known: \(text)")
     }
 
-    // MARK: - OverviewView.burnValue / burnLine
+    // MARK: - OverviewView.burnValue
 
     func testBurnValueDefaultsToNotRetained() {
         // The default parameter matters: a call site that forgets `retained:` must
@@ -42,11 +42,5 @@ final class ViewRulesVerificationTests: XCTestCase {
             OverviewView.burnValue(Fixture.prediction(secondsToLimit: nil, percentPerMinute: 0), retained: false),
             "Idle"
         )
-    }
-
-    func testBurnLineNeverSaysPausedForALiveProvider() {
-        let bucket = Fixture.bucket(id: "seven_day", label: "All models", percent: 40, kind: .weekly)
-        let line = OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: 3600), bucket: bucket, retained: false)
-        XCTAssertFalse(line.contains("Paused"), "a live provider's burn line must never say Paused: \(line)")
     }
 }

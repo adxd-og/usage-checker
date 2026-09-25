@@ -159,15 +159,6 @@ struct OverviewView: View {
         return "Hit limit in \(formatDuration(secs))"
     }
 
-    /// The two lines of `burnCard` as one caption, for under the hero.
-    nonisolated static func burnLine(
-        burn: BurnRatePrediction?,
-        bucket: UsageBucket?,
-        retained: Bool = false
-    ) -> String {
-        "\(burnTitle(bucket)) · \(burnValue(burn, retained: retained))"
-    }
-
     nonisolated static func formatDuration(_ secs: TimeInterval) -> String {
         let s = max(0, secs)
         let h = Int(s / 3600)

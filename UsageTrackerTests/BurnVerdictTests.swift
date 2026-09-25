@@ -37,35 +37,32 @@ final class BurnVerdictTests: XCTestCase {
     }
 }
 
-/// The line the Overview hero falls back to when `BurnVerdict.make` returns nil —
-/// stale prediction, no prediction, or growth too flat to extrapolate. Its wording is
-/// the pre-hero burn card's, verbatim, so those states stay visible.
-final class OverviewBurnLineTests: XCTestCase {
-    func testTheLineNamesTheWindowItPredicts() {
-        let bucket = Fixture.bucket(id: "five_hour", label: "5-hour", kind: .session)
-        XCTAssertEqual(
-            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: nil, percentPerMinute: 1), bucket: bucket),
-            "5-hour burn rate · Stable"
-        )
+/// The burn-rate card Overview shows in place of the rings when a provider has no window
+/// to draw: its title names the window the prediction is for, its value says what the
+/// prediction is. The wording is the pre-hero burn card's, verbatim.
+final class OverviewBurnCardTests: XCTestCase {
+    func testTheTitleNamesTheWindowItPredicts() {
+        XCTAssertEqual(OverviewView.burnTitle(Fixture.bucket(id: "five_hour", label: "5-hour", kind: .session)),
+                       "5-hour burn rate")
+        XCTAssertEqual(OverviewView.burnTitle(Fixture.bucket(id: "five_hour", label: "Session", kind: .session)),
+                       "Session burn rate")
+        XCTAssertEqual(OverviewView.burnTitle(nil), "Burn rate")
+    }
+
+    func testGrowthWithNoLimitInSightReadsAsStable() {
+        XCTAssertEqual(OverviewView.burnValue(Fixture.prediction(secondsToLimit: nil, percentPerMinute: 1)), "Stable")
     }
 
     func testFlatGrowthReadsAsIdle() {
-        XCTAssertEqual(
-            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: nil, percentPerMinute: 0), bucket: nil),
-            "Burn rate · Idle"
-        )
+        XCTAssertEqual(OverviewView.burnValue(Fixture.prediction(secondsToLimit: nil, percentPerMinute: 0)), "Idle")
     }
 
     func testNoPredictionAtAllSaysSo() {
-        XCTAssertEqual(OverviewView.burnLine(burn: nil, bucket: nil), "Burn rate · Not enough data")
+        XCTAssertEqual(OverviewView.burnValue(nil), "Not enough data")
     }
 
     func testAPredictedLimitKeepsTheOldWording() {
-        let bucket = Fixture.bucket(id: "five_hour", label: "Session", kind: .session)
-        XCTAssertEqual(
-            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: 2 * 3600 + 15 * 60), bucket: bucket),
-            "Session burn rate · Hit limit in 2h 15m"
-        )
+        XCTAssertEqual(OverviewView.burnValue(Fixture.prediction(secondsToLimit: 2 * 3600 + 15 * 60)), "Hit limit in 2h 15m")
     }
 
     // MARK: - Retained
@@ -84,14 +81,6 @@ final class OverviewBurnLineTests: XCTestCase {
         XCTAssertEqual(
             OverviewView.burnValue(Fixture.prediction(secondsToLimit: 2 * 3600), retained: false),
             "Hit limit in 2h 0m"
-        )
-    }
-
-    func testTheHeroCaptionSaysPausedToo() {
-        let bucket = Fixture.bucket(id: "seven_day", label: "All models", percent: 62, kind: .weekly)
-        XCTAssertEqual(
-            OverviewView.burnLine(burn: Fixture.prediction(secondsToLimit: 2 * 3600), bucket: bucket, retained: true),
-            "All models burn rate · Paused"
         )
     }
 }
