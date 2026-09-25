@@ -131,3 +131,32 @@ final class DashboardRefreshPassTests: XCTestCase {
         ))
     }
 }
+
+/// Liquid-glass spec § Packages P2 and § Removals: the dashboard has four tabs, and a
+/// window last left on 2.x's Activity tab reopens on History, where its heatmap went.
+final class DashboardTabTests: XCTestCase {
+    func testTheDashboardHasFourTabsInSidebarOrder() {
+        XCTAssertEqual(DashboardTab.allCases, [.overview, .agents, .history, .insights])
+        XCTAssertEqual(DashboardTab.allCases.map(\.rawValue), ["Overview", "Agents", "History", "Insights"],
+                       "2.x stored these raw values; an update must read them back")
+    }
+
+    func testAWindowLeftOnActivityReopensOnHistory() {
+        XCTAssertEqual(DashboardTab.route(storedValue: "Activity"), .history)
+    }
+
+    func testEveryTabReopensOnItself() {
+        for tab in DashboardTab.allCases {
+            XCTAssertEqual(DashboardTab.route(storedValue: tab.rawValue), tab)
+        }
+    }
+
+    func testAValueNoTabAnswersToOpensOverview() {
+        XCTAssertEqual(DashboardTab.route(storedValue: ""), .overview)
+        XCTAssertEqual(DashboardTab.route(storedValue: "Sessions"), .overview)
+    }
+
+    func testTheTabIsKeptUnderTheKey2xWrote() {
+        XCTAssertEqual(DashboardTab.storageKey, "dashboardTab")
+    }
+}

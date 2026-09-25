@@ -3,36 +3,29 @@ import SwiftUI
 struct DashboardWindow: View {
     @ObservedObject var appState: AppState
     @StateObject private var dashboard = DashboardState.shared
-    /// Survives a relaunch. `Tab` is `String`-backed, so a raw value that no longer
-    /// exists (a tab removed in a later release) falls back to `.overview` on its own.
-    @AppStorage("dashboardTab") private var selection: Tab = .overview
+    /// Survives a relaunch, under 2.x's key. Read through `DashboardTab.route(storedValue:)`:
+    /// 2.x's Activity tab reopens on History, and a value no tab answers to on Overview.
+    @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
     /// See `DetailRebuildRule`: a text created while this window is hidden comes
     /// back upside down on macOS 27.0, so the column is rebuilt when the window shows.
     @State private var rebuildRule = DetailRebuildRule()
     @State private var detailGeneration = 0
 
-    enum Tab: String, CaseIterable, Identifiable {
-        case overview = "Overview"
-        case agents = "Agents"
-        case activity = "Activity"
-        case history = "History"
-        case insights = "Insights"
-        var id: String { rawValue }
+    typealias Tab = DashboardTab
 
-        var icon: String {
-            switch self {
-            case .overview: return "chart.bar.doc.horizontal"
-            case .agents: return "bolt.horizontal.circle"
-            case .activity: return "square.grid.4x3.fill"
-            case .history: return "clock"
-            case .insights: return "lightbulb"
-            }
-        }
+    private var selection: Tab { Tab.route(storedValue: storedTab) }
+
+    /// The sidebar's selection: routed on the way in, stored by raw value on the way out.
+    private var tabSelection: Binding<Tab> {
+        Binding(
+            get: { Tab.route(storedValue: storedTab) },
+            set: { storedTab = $0.rawValue }
+        )
     }
 
     var body: some View {
         NavigationSplitView {
-            List(Tab.allCases, selection: $selection) { tab in
+            List(Tab.allCases, selection: tabSelection) { tab in
                 Label(tab.rawValue, systemImage: tab.icon).tag(tab)
             }
             .listStyle(.sidebar)
@@ -103,8 +96,6 @@ struct DashboardWindow: View {
             OverviewView(appState: appState, dashboard: dashboard)
         case .agents:
             AgentsHistoryView(dashboard: dashboard)
-        case .activity:
-            ActivityGridView(dashboard: dashboard)
         case .history:
             SessionHistoryView(appState: appState, dashboard: dashboard)
         case .insights:
