@@ -87,6 +87,7 @@ struct OverviewCLICard: View {
                 }
             }
             if let cli {
+                OverviewDayBarsView(bars: OverviewCLIRules.bars(daily: cli.daily, now: now, calendar: .current))
                 HStack(alignment: .top, spacing: OverviewCLIRules.figureSpacing) {
                     figure(
                         OverviewCopy.lastSevenDays,
@@ -129,5 +130,123 @@ struct OverviewCLICard: View {
                 .foregroundStyle(.om(.text))
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - 30-day bars
+
+/// One day on the CLI card's 30-day strip.
+struct OverviewDayBar: Equatable, Identifiable {
+    /// How the bar is painted: the older days quiet, the week "Last 7 days" counts
+    /// brighter, today in yolk.
+    enum Tone: Equatable, Sendable {
+        case older, lastWeek, today
+    }
+
+    let day: Date
+    let cost: Double
+    let turns: Int
+    let tokens: Int
+    let tone: Tone
+
+    var id: Date { day }
+}
+
+extension OverviewCLIRules {
+    static let barCount = 30
+    static let barAreaHeight: CGFloat = 118
+    static let barSpacing: CGFloat = 3
+    static let barCorner: CGFloat = 3
+    /// A day with any spend stays visible next to a big one.
+    static let minimumBarHeight: CGFloat = 2
+    static let axisSize: CGFloat = 11
+    static let axisSpacing: CGFloat = 8
+
+    /// Thirty calendar days ending today, oldest first, one bar each: the log's daily rows
+    /// re-keyed to this calendar's days (a row folded at another zone's midnight lands on
+    /// the day it falls in, and rows on one day add up), zero for a day with none.
+    static func bars(daily: [CLIDailySummary], now: Date, calendar: Calendar) -> [OverviewDayBar] {
+        var byDay: [Date: (cost: Double, turns: Int, tokens: Int)] = [:]
+        for row in daily {
+            let key = calendar.startOfDay(for: row.day)
+            let kept = byDay[key] ?? (cost: 0, turns: 0, tokens: 0)
+            byDay[key] = (
+                cost: kept.cost + row.totalCost,
+                turns: kept.turns + row.turns,
+                tokens: TokenBreakdown.saturating(kept.tokens, row.totalTokens)
+            )
+        }
+        let today = calendar.startOfDay(for: now)
+        return (0..<barCount).compactMap { index -> OverviewDayBar? in
+            let offset = index - (barCount - 1)
+            guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { return nil }
+            let value = byDay[day] ?? (cost: 0, turns: 0, tokens: 0)
+            let tone: OverviewDayBar.Tone = offset == 0 ? .today : (offset > -weekDays ? .lastWeek : .older)
+            return OverviewDayBar(day: day, cost: value.cost, turns: value.turns, tokens: value.tokens, tone: tone)
+        }
+    }
+
+    /// Each bar's height, scaled to the biggest day; a day with any spend is at least
+    /// `minimumBarHeight`, a day with none draws nothing.
+    static func barHeights(_ bars: [OverviewDayBar], maxHeight: CGFloat) -> [CGFloat] {
+        let top = bars.map(\.cost).max() ?? 0
+        guard top > 0 else { return bars.map { _ in 0 } }
+        return bars.map { bar in
+            bar.cost > 0 ? max(minimumBarHeight, maxHeight * CGFloat(bar.cost / top)) : 0
+        }
+    }
+
+    /// The bar's paint: the track, twice the track, yolk.
+    static func token(for tone: OverviewDayBar.Tone) -> OMColorToken {
+        switch tone {
+        case .older: return .track
+        case .lastWeek: return .barRecent
+        case .today: return .accent
+        }
+    }
+
+    /// A bar's tooltip (spec § Components, "Chart tooltip"): its day, dollars, turns and
+    /// tokens, in the words History's rows use; "no usage" for an empty day.
+    static func tooltip(for bar: OverviewDayBar, calendar: Calendar, locale: Locale) -> String {
+        let weekday = bar.day.formatted(
+            Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone).weekday(.abbreviated)
+        )
+        let date = "\(weekday) \(SessionCopy.dayText(bar.day, calendar: calendar, locale: locale))"
+        guard bar.turns > 0 || bar.cost > 0 else { return "\(date) · no usage" }
+        return "\(date) · \(SessionCopy.cost(bar.cost)) · \(SessionCopy.turns(bar.turns)) · \(TokenFormat.formatTokens(bar.tokens)) tokens"
+    }
+}
+
+/// The CLI card's strip: a bar per day for thirty days, scaled to the biggest, the week
+/// "Last 7 days" counts brighter and today in yolk. Hovering a bar names its day and
+/// figures. VoiceOver skips it: the figures under it say the same in words.
+struct OverviewDayBarsView: View {
+    let bars: [OverviewDayBar]
+
+    var body: some View {
+        let heights = OverviewCLIRules.barHeights(bars, maxHeight: OverviewCLIRules.barAreaHeight)
+        VStack(alignment: .leading, spacing: OverviewCLIRules.axisSpacing) {
+            HStack(alignment: .bottom, spacing: OverviewCLIRules.barSpacing) {
+                ForEach(Array(bars.enumerated()), id: \.element.id) { index, bar in
+                    RoundedRectangle(cornerRadius: OverviewCLIRules.barCorner, style: .continuous)
+                        .fill(.om(OverviewCLIRules.token(for: bar.tone)))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: heights[index])
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                        // The whole column answers the pointer, not only a short bar.
+                        .contentShape(Rectangle())
+                        .help(OverviewCLIRules.tooltip(for: bar, calendar: .current, locale: .current))
+                }
+            }
+            .frame(height: OverviewCLIRules.barAreaHeight)
+            HStack {
+                Text(OverviewCopy.axisStart)
+                Spacer(minLength: 8)
+                Text(OverviewCopy.axisEnd)
+            }
+            .font(.system(size: OverviewCLIRules.axisSize))
+            .foregroundStyle(.om(.secondary))
+        }
+        .accessibilityHidden(true)
     }
 }

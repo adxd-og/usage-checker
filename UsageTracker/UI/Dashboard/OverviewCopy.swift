@@ -60,3 +60,11 @@ extension OverviewCopy {
         return "\(count) · \(TokenFormat.formatTokens(tokens)) tokens"
     }
 }
+
+// MARK: - CLI card's bars
+
+extension OverviewCopy {
+    /// The strip's two ends.
+    static let axisStart = "30 days ago"
+    static let axisEnd = "Today"
+}
