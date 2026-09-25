@@ -3,7 +3,8 @@ import SwiftUI
 struct ActivityGridView: View {
     @ObservedObject var dashboard: DashboardState
 
-    @State private var weeks: Int = 52
+    /// The grid's span until History's calendar sets its weeks from the range.
+    private let weeks = 52
     @State private var cache: GridCache?
 
     private let cellSize: CGFloat = 12
@@ -16,25 +17,9 @@ struct ActivityGridView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                DashboardHeader(
-                    title: "Activity",
-                    subtitle: subtitle,
-                    trailing: AnyView(rangePicker)
-                )
-
                 if showsQuota, cache?.hasData == false {
                     noQuotaPlaceholder
                 } else if let cache {
-                    statCards(cache)
-                        .padding(.horizontal, 24)
-                    // The cache's own kind, like the tooltips: the cards' figures came from it.
-                    if let caption = Self.statsCaption(isQuota: cache.usesStatusColor, caption: costCaption) {
-                        Text(caption)
-                            .font(OMFont.caption)
-                            .foregroundStyle(.tertiary)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.horizontal, 24)
-                    }
                     if let note = Self.retentionNote(
                         provider: dashboard.selectedService, showsQuota: showsQuota
                     ) {
@@ -57,11 +42,6 @@ struct ActivityGridView: View {
         .task(id: taskKey) {
             await rebuildCache()
         }
-    }
-
-    private var subtitle: String {
-        if showsQuota { return "Daily peak quota use" }
-        return dashboard.costSource.shortName.map { "Daily cost (\($0))" } ?? "Daily cost"
     }
 
     private var taskKey: TaskKey {
@@ -101,17 +81,6 @@ struct ActivityGridView: View {
         cache = built
     }
 
-    private var rangePicker: some View {
-        Picker("", selection: $weeks) {
-            Text("13w").tag(13)
-            Text("26w").tag(26)
-            Text("52w").tag(52)
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 180)
-    }
-
     private var placeholder: some View {
         VStack(spacing: 10) {
             ProgressView().controlSize(.small)
@@ -147,27 +116,6 @@ struct ActivityGridView: View {
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 24)
-    }
-
-    private func statCards(_ c: GridCache) -> some View {
-        HStack(spacing: 12) {
-            ForEach(c.stats) { stat in
-                statCard(stat)
-            }
-        }
-    }
-
-    private func statCard(_ stat: GridStat) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(stat.label).font(OMFont.caption).foregroundStyle(.secondary)
-            Text(stat.value)
-                .font(OMFont.heroNumeral)
-                .monospacedDigit()
-            if let sub = stat.sub {
-                Text(sub).font(OMFont.caption).foregroundStyle(.tertiary)
-            }
-        }
-        .dashboardCard(padding: 12)
     }
 
     private func gridBlock(_ c: GridCache) -> some View {
