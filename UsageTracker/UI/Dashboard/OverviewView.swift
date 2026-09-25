@@ -32,7 +32,9 @@ struct OverviewView: View {
                             service: service,
                             snapshotFetchedAt: appState.snapshot.fetchedAt,
                             now: context.date
-                        )
+                        ),
+                        leading: OverviewHeaderRules.logo(serviceID: dashboard.selectedService, service: service)
+                            .map { AnyView(OverviewHeaderLogoTile(logo: $0)) }
                     )
                 }
 

@@ -116,6 +116,8 @@ struct DashboardHeader: View {
     /// (History's unit and its API-equivalent note); 3.0 drops the filler ones
     /// (liquid-glass spec § Removals).
     var subtitle: String? = nil
+    /// Drawn before the title block, centred on it: Overview's provider logo tile.
+    var leading: AnyView? = nil
     var trailing: AnyView? = nil
     /// The Agents tab is not about one provider, so it hides the picker rather than
     /// showing a control that changes nothing on screen.
@@ -125,6 +127,8 @@ struct DashboardHeader: View {
 
     /// The subtitle's size, the mockups' 12.5 pt (`Dashboard-Overview(-Light).dc.html`).
     nonisolated static let subtitleFont = OMFont.dashboardSubtitle
+    /// Between `leading` and the title block: the mockup's `gap: 14px`.
+    nonisolated static let leadingSpacing: CGFloat = 14
 
     var body: some View {
         // The header has to fit whatever width the window has, never the other way
@@ -147,18 +151,27 @@ struct DashboardHeader: View {
     /// a sentence and wraps. When the whole block was rigid, the History subtitle was
     /// wider than the detail column at the 820 pt minimum, and the vertical-only scroll
     /// view clipped the rest of the tab instead.
+    ///
+    /// `leading` is centred on the title and subtitle together (the mockup's
+    /// `align-items: center`). It carries no text, so the block's first baseline, which
+    /// the rows align the controls on, stays the title's.
     private var titleBlock: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(OMFont.dashboardTitle)
-                .lineLimit(1)
-                .fixedSize(horizontal: true, vertical: false)
-            if let subtitle {
-                Text(subtitle)
-                    .font(Self.subtitleFont)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+        HStack(alignment: .center, spacing: Self.leadingSpacing) {
+            if let leading {
+                leading
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(OMFont.dashboardTitle)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(Self.subtitleFont)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
