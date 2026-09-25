@@ -85,6 +85,10 @@ struct OverviewRingsCard: View {
     let footer: OverviewLine
     /// Last-known numbers: when they were true and why they stopped (`RetainedCopy`).
     let retainedCaption: String?
+    /// A link at the end of the legend's last line: History's, for a provider with no CLI
+    /// card to carry it (`OverviewLink.onFirstCard`).
+    var link: OverviewLink? = nil
+    var onLink: (OverviewLink) -> Void = { _ in }
 
     /// The window under the pointer, on a ring or a legend row.
     @State private var hovered: Int? = nil
@@ -169,10 +173,17 @@ struct OverviewRingsCard: View {
                 )
             }
             .simultaneousGesture(TapGesture().onEnded { keyboardNavigation = false })
-            Text(footer.text)
-                .font(.system(size: OverviewRingsRules.footerSize))
-                .foregroundStyle(.om(footer.token))
-                .padding(.top, OverviewRingsRules.footerTopPadding)
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text(footer.text)
+                    .font(.system(size: OverviewRingsRules.footerSize))
+                    .foregroundStyle(.om(footer.token))
+                Spacer(minLength: 0)
+                if let link {
+                    Button(link.title) { onLink(link) }
+                        .buttonStyle(.omLink)
+                }
+            }
+            .padding(.top, OverviewRingsRules.footerTopPadding)
             if let retainedCaption {
                 Text(retainedCaption)
                     .font(.system(size: OverviewRingsRules.footerSize))

@@ -40,3 +40,23 @@ extension OverviewCopy {
         return "\(plan) · \(updated.prefix(1).lowercased())\(updated.dropFirst())"
     }
 }
+
+// MARK: - CLI card
+
+extension OverviewCopy {
+    static let lastSevenDays = "Last 7 days"
+    static let lastThirtyDays = "Last 30 days"
+    /// History's own words for a log with nothing in it yet.
+    static let noCLIUsage = "No CLI usage recorded yet"
+
+    /// "Claude Code CLI · today": the log's name (`CostSource.shortName`) and the day.
+    static func cliTitle(shortName: String?) -> String {
+        "\(shortName ?? "CLI") · today"
+    }
+
+    /// "4,221 turns · 824.3M tokens": today's work under the headline.
+    static func todayLine(turns: Int, tokens: Int, locale: Locale = .current) -> String {
+        let count = turns == 1 ? "1 turn" : "\(turns.formatted(.number.locale(locale))) turns"
+        return "\(count) · \(TokenFormat.formatTokens(tokens)) tokens"
+    }
+}

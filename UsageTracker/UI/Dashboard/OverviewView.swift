@@ -1,11 +1,19 @@
 import SwiftUI
 
+/// Dashboard → Overview (liquid-glass spec § Screens, "Overview";
+/// `Dashboard-Overview(-Light).dc.html`): the provider's windows as concentric rings beside
+/// their legend, today's CLI dollars with the last 7 and 30 days, and today's tokens. Each
+/// summary links to History, which owns the detail (Principle 4).
 struct OverviewView: View {
     @ObservedObject var appState: AppState
     /// Observed, so the switch repaints an open dashboard rather than waiting for
     /// the next poll.
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject var dashboard: DashboardState
+    /// The window's tab. Following a link is a write here; the window follows.
+    @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
+    /// History's chart mode, which "Tokens by day" sets before it switches the tab.
+    @AppStorage(OverviewLink.historyChartModeKey) private var historyChartMode: String = HistoryChartMode.cost.rawValue
 
     private var service: ServiceSnapshot? {
         appState.snapshot.services.first(where: { $0.id == dashboard.selectedService })
@@ -30,21 +38,23 @@ struct OverviewView: View {
                     OverviewColumns {
                         heroCard
                         if OverviewLayout.showsCLICard(hasBreakdown: dashboard.costSource.hasBreakdown) {
-                            todayCard
+                            OverviewCLICard(
+                                title: OverviewCopy.cliTitle(shortName: dashboard.costSource.shortName),
+                                cli: dashboard.cliBreakdown,
+                                isLoading: dashboard.isLoadingCLI,
+                                caption: CostCopy.apiEquivalentCaption(for: service),
+                                onHistory: { follow(.history) }
+                            )
                         }
                     }
 
-                    // Under the cards and above the CLI dollars: the same log's data, one
-                    // question earlier ("what did those tokens do?").
+                    // Under the cards: the same log's data, one question further ("what did
+                    // those tokens do?").
                     if OverviewLayout.showsTokensCard(
                         hasBreakdown: dashboard.costSource.hasBreakdown,
                         todayTokens: dashboard.cliBreakdown?.todayTokenBreakdown.total ?? 0
                     ), let cli = dashboard.cliBreakdown {
                         TokensTodayCard(breakdown: cli.todayTokenBreakdown)
-                    }
-
-                    if dashboard.costSource.hasBreakdown, let cli = dashboard.cliBreakdown {
-                        cliBlock(cli: cli)
                     }
                 }
                 .padding(.top, OverviewLayout.contentTop)
@@ -53,6 +63,13 @@ struct OverviewView: View {
                 .padding(.bottom, OverviewLayout.contentBottom)
             }
         }
+    }
+
+    /// Follows a summary's link: History's chart mode first, then the tab, so History
+    /// opens on the right chart rather than switching under the user.
+    private func follow(_ link: OverviewLink) {
+        if let mode = link.chartMode { historyChartMode = mode.rawValue }
+        storedTab = link.tab.rawValue
     }
 
     /// The rings card: one ring per window beside a legend of every window. A provider
@@ -69,7 +86,9 @@ struct OverviewView: View {
                     burn: dashboard.sessionBurn,
                     retained: service.isRetained
                 ),
-                retainedCaption: RetainedCopy.caption(for: service)
+                retainedCaption: RetainedCopy.caption(for: service),
+                link: OverviewLink.onFirstCard(hasBreakdown: dashboard.costSource.hasBreakdown),
+                onLink: { follow($0) }
             )
         } else {
             burnCard
@@ -96,6 +115,12 @@ struct OverviewView: View {
                     .foregroundStyle(.secondary)
                 Text(Self.burnValue(dashboard.sessionBurn, retained: service?.isRetained ?? false))
                     .font(OMFont.bodyStrong)
+                // Standing in for the rings of a provider with no current window: History
+                // still has its readings, and there is no CLI card to carry the link.
+                if let link = OverviewLink.onFirstCard(hasBreakdown: dashboard.costSource.hasBreakdown) {
+                    Button(link.title) { follow(link) }
+                        .buttonStyle(.omLink)
+                }
             }
             Spacer()
             // No ranked window: an empty ring, not a full one. `?? 0` here would draw
@@ -132,74 +157,6 @@ struct OverviewView: View {
         retained: Bool = false
     ) -> String {
         "\(burnTitle(bucket)) · \(burnValue(burn, retained: retained))"
-    }
-
-    private var todayCard: some View {
-        let cli = dashboard.cliBreakdown
-        let cost = cli?.todayCost ?? 0
-        let turns = cli?.todayTurns ?? 0
-        let tokens = cli?.todayTokens ?? 0
-
-        return VStack(alignment: .leading, spacing: 10) {
-            Text("Today's CLI usage")
-                .font(OMFont.body)
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(String(format: "$%.2f", cost))
-                    .font(OMFont.heroNumeral)
-                    .monospacedDigit()
-                Text("·")
-                    .foregroundStyle(.tertiary)
-                Text("\(turns) turn\(turns == 1 ? "" : "s")")
-                    .font(OMFont.body)
-                    .foregroundStyle(.secondary)
-            }
-            Text("\(TokenFormat.formatTokens(tokens)) tokens")
-                .font(OMFont.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .frame(maxHeight: .infinity, alignment: .top)
-        .dashboardCard(padding: 14)
-    }
-
-    private func cliBlock(cli: CLIBreakdown) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
-            HStack {
-                OMSectionHeader(title: dashboard.costSource.shortName ?? "CLI")
-                if dashboard.isLoadingCLI {
-                    ProgressView().controlSize(.small)
-                }
-            }
-            HStack(spacing: 24) {
-                stat(label: "Today", value: String(format: "$%.2f", cli.todayCost), sub: "\(cli.todayTurns) turns")
-                stat(label: "7d", value: String(format: "$%.2f", cli.weekCost), sub: nil)
-                stat(label: "30d", value: String(format: "$%.2f", cli.monthCost), sub: nil)
-            }
-            if !cli.byModelToday.isEmpty {
-                Divider()
-                ForEach(cli.byModelToday.prefix(5), id: \.model) { entry in
-                    OMKeyValueRow(label: entry.model, value: String(format: "$%.2f", entry.cost))
-                }
-            }
-            if let caption = CostCopy.apiEquivalentCaption(
-                isPayAsYouGo: service.map(CostCopy.isPayAsYouGo) ?? false
-            ) {
-                Text(caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .dashboardCard()
-    }
-
-    private func stat(label: String, value: String, sub: String?) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(OMFont.caption).foregroundStyle(.secondary)
-            Text(value).font(OMFont.heroNumeral).monospacedDigit()
-            if let sub { Text(sub).font(OMFont.caption).foregroundStyle(.tertiary) }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     nonisolated static func formatDuration(_ secs: TimeInterval) -> String {
