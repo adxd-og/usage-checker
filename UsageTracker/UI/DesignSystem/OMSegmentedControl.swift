@@ -239,14 +239,17 @@ enum SegmentChrome: Equatable, Sendable {
 }
 
 /// The raised pill behind the selected segment, nothing behind the others. A change
-/// of selection cross-fades it.
+/// of selection cross-fades it. The pill is drawn in a background and never by
+/// branching on the segment itself: an `if` around the content gave the segment's
+/// button a new view identity on every selection change, which tore down the focused
+/// segment and sent keyboard focus to its neighbour.
 private struct SelectedPill: ViewModifier {
     let isSelected: Bool
     func body(content: Content) -> some View {
-        if isSelected {
-            content.omGlass(OMSegmentedControl.selectedSurface, in: Capsule(style: .continuous))
-        } else {
-            content
+        content.background {
+            if isSelected {
+                Color.clear.omGlass(OMSegmentedControl.selectedSurface, in: Capsule(style: .continuous))
+            }
         }
     }
 }
