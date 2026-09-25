@@ -127,4 +127,23 @@ final class InsightsCopyTests: XCTestCase {
             InsightsFigureText(title: "Most-used model today", value: "Opus 5", delta: nil, caption: "$308.95")
         )
     }
+
+    // MARK: - This week vs last
+
+    func testThisWeekVsLastReadsAsTheMockup() {
+        let s = summary(weekOverWeek: WeekOverWeek(thisWeek: 2_727.56, lastWeek: 2_199.10))
+
+        XCTAssertEqual(
+            text(.weekOverWeek, s),
+            InsightsFigureText(title: "This week vs last", value: "$2,727.56", delta: "↑ 24%", caption: "Last week $2,199.10")
+        )
+    }
+
+    func testTheDeltaPointsTheWayTheSpendMoved() {
+        XCTAssertEqual(InsightsCopy.weekDelta(WeekOverWeek(thisWeek: 50, lastWeek: 100)), "↓ 50%")
+        // Under half a percent either way is no direction at all.
+        XCTAssertEqual(InsightsCopy.weekDelta(WeekOverWeek(thisWeek: 100.2, lastWeek: 100)), "0%")
+        // A change on a week without spend is no percentage.
+        XCTAssertNil(InsightsCopy.weekDelta(WeekOverWeek(thisWeek: 10, lastWeek: 0)))
+    }
 }

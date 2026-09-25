@@ -183,4 +183,32 @@ final class InsightsRulesTests: XCTestCase {
     func testNoModelTodayMeansNoMostUsedModel() {
         XCTAssertNil(InsightsRules.mostUsedModelToday([]))
     }
+
+    // MARK: - This week vs last
+
+    func testThisWeekIsTodayAndTheSixDaysBeforeIt() {
+        let week = InsightsRules.weekOverWeek(
+            dailies: [
+                daily(day(0), cost: 10), daily(day(-6), cost: 5), daily(day(-7), cost: 20),
+                daily(day(-13), cost: 1), daily(day(-14), cost: 100)
+            ],
+            now: now, calendar: utc
+        )
+
+        XCTAssertEqual(week.thisWeek, 15, accuracy: 1e-9)
+        XCTAssertEqual(week.lastWeek, 21, accuracy: 1e-9)
+        XCTAssertEqual(week.deltaPercent ?? 0, (15.0 - 21.0) / 21.0 * 100, accuracy: 1e-9)
+    }
+
+    /// 7 × 86 400 s back from 00:30 on 1 April lands at 23:30 on 24 March, so a cut by
+    /// seconds counts 25 March, the eighth day, as this week.
+    func testAWeekAcrossTheSpringClockChangeIsStillSevenDays() {
+        let week = InsightsRules.weekOverWeek(
+            dailies: [daily(berlinDay(-7), cost: 99), daily(berlinDay(-6), cost: 1), daily(berlinDay(0), cost: 2)],
+            now: berlinNow, calendar: berlin
+        )
+
+        XCTAssertEqual(week.thisWeek, 3, accuracy: 1e-9)
+        XCTAssertEqual(week.lastWeek, 99, accuracy: 1e-9)
+    }
 }

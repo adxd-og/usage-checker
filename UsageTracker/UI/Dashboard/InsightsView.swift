@@ -108,8 +108,7 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel(dashboard.costSource.shortName ?? "CLI")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                weekOverWeekCard(summary.weekOverWeek)
-                ForEach([InsightsFigure.daysAtLimit, .dailyAverage, .biggestDay, .mostUsedModelToday]) { figure in
+                ForEach([InsightsFigure.weekOverWeek, .daysAtLimit, .dailyAverage, .biggestDay, .mostUsedModelToday]) { figure in
                     figureCard(figure)
                 }
             }
@@ -171,38 +170,6 @@ struct InsightsView: View {
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-        }
-        .dashboardCard()
-    }
-
-    private func weekOverWeekCard(_ wow: WeekOverWeek) -> some View {
-        let text = InsightsCopy.text(for: .weekOverWeek, summary: summary, quotaBuckets: dashboard.quotaBuckets)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(text.title)
-                .font(OMFont.body)
-                .foregroundStyle(.secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(text.value)
-                    .font(OMFont.heroNumeral)
-                    .monospacedDigit()
-                if let delta = wow.deltaPercent, wow.lastWeek > 0 {
-                    HStack(spacing: 2) {
-                        Image(systemName: delta >= 0 ? "arrow.up.right" : "arrow.down.right")
-                            .font(.system(size: 10, weight: .bold))
-                        Text("\(abs(Int(delta.rounded())))%")
-                            .font(OMFont.bodyStrong)
-                            .monospacedDigit()
-                    }
-                    // A direction, not a utilisation: up is more spend than last week,
-                    // which is not the same thing as being close to a limit.
-                    .foregroundStyle(delta >= 0 ? Color.orange : Color.green)
-                }
-            }
-            if let caption = text.caption {
-                Text(caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
             }
         }
         .dashboardCard()

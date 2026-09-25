@@ -125,13 +125,8 @@ enum InsightsRules {
         // 2.x's thirty days: a rolling cut from `now`.
         let last30 = dailies.filter { $0.day >= now.addingTimeInterval(-30 * 24 * 3600) }
         let active = last30.filter { $0.totalCost > 0 }
-        // 2.x's weeks (rolling 7d): "this week" = last 7 days, "last week" = days [-14..-7).
-        let last7Cutoff = now.addingTimeInterval(-7 * 24 * 3600)
-        let last14Cutoff = now.addingTimeInterval(-14 * 24 * 3600)
-        let thisWeek = dailies.filter { $0.day >= last7Cutoff }.map(\.totalCost).reduce(0, +)
-        let lastWeek = dailies.filter { $0.day >= last14Cutoff && $0.day < last7Cutoff }.map(\.totalCost).reduce(0, +)
         return InsightsSummary(
-            weekOverWeek: WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek),
+            weekOverWeek: weekOverWeek(dailies: dailies, now: now, calendar: calendar),
             dailyAverage: InsightsDailyAverage(
                 average: active.isEmpty ? nil : active.map(\.totalCost).reduce(0, +) / Double(active.count),
                 activeDays: active.count
@@ -147,6 +142,28 @@ enum InsightsRules {
                 ? .empty
                 : QuotaAnalytics.insights(records: history, bucketIDs: coreBucketIDs, calendar: calendar, now: now)
         )
+    }
+
+    /// This week and last as the two latest runs of seven local days: today and the six
+    /// before it, then the seven before those. Calendar days, not 7 × 86 400 s: every
+    /// `CLIDailySummary.day` is a day start, and a cut at the current time of day moves
+    /// a day across the boundary on a clock change (the `ActivityCardRule` lesson).
+    static func weekOverWeek(dailies: [CLIDailySummary], now: Date, calendar: Calendar = .current) -> WeekOverWeek {
+        let today = calendar.startOfDay(for: now)
+        guard let tomorrow = calendar.date(byAdding: .day, value: 1, to: today),
+              let thisWeekStart = calendar.date(byAdding: .day, value: -6, to: today),
+              let lastWeekStart = calendar.date(byAdding: .day, value: -13, to: today)
+        else { return .empty }
+        var thisWeek = 0.0
+        var lastWeek = 0.0
+        for daily in dailies where daily.day < tomorrow {
+            if daily.day >= thisWeekStart {
+                thisWeek += daily.totalCost
+            } else if daily.day >= lastWeekStart {
+                lastWeek += daily.totalCost
+            }
+        }
+        return WeekOverWeek(thisWeek: thisWeek, lastWeek: lastWeek)
     }
 
     /// Today's dearest model. `byModelToday` is today's already: the aggregators cut it

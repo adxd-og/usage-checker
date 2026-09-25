@@ -39,7 +39,7 @@ enum InsightsCopy {
             return InsightsFigureText(
                 title: weekOverWeekTitle,
                 value: money(week.thisWeek, locale: locale),
-                delta: nil,
+                delta: weekDelta(week),
                 caption: lastWeek(week.lastWeek, locale: locale)
             )
         case .daysAtLimit:
@@ -108,10 +108,21 @@ enum InsightsCopy {
 
     // MARK: - This week vs last
 
-    static let weekOverWeekTitle = "This week vs last week"
+    static let weekOverWeekTitle = "This week vs last"
 
+    /// "Last week $2,199.10"
     static func lastWeek(_ dollars: Double, locale: Locale = .current) -> String {
-        "Last week: " + money(dollars, locale: locale)
+        "Last week " + money(dollars, locale: locale)
+    }
+
+    /// "↑ 24%" / "↓ 12%": this week's change on last week in whole percent, "0%" when it
+    /// rounds to nothing. nil when last week had no spend: a change on nothing is no
+    /// percentage.
+    static func weekDelta(_ week: WeekOverWeek) -> String? {
+        guard week.lastWeek > 0, let delta = week.deltaPercent else { return nil }
+        let magnitude = abs(Int(delta.rounded()))
+        guard magnitude > 0 else { return "0%" }
+        return "\(delta > 0 ? "↑" : "↓") \(magnitude)%"
     }
 
     // MARK: - Days at limit
