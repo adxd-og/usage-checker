@@ -284,3 +284,10 @@ final class HistoryCopyCalendarTests: XCTestCase {
         XCTAssertEqual(HistoryCopy.calendarLoading, "Loading…")
     }
 }
+
+/// The Chart/Calendar switch names itself for VoiceOver.
+final class HistoryCopyViewPickerTests: XCTestCase {
+    func testTheViewSwitchIsCalledView() {
+        XCTAssertEqual(HistoryCopy.viewPickerLabel, "View")
+    }
+}

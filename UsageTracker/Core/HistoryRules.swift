@@ -252,3 +252,31 @@ extension HistoryRules {
         )
     }
 }
+
+// MARK: - Chart or Calendar
+
+/// Which of History's two presentations is on screen. Persisted under
+/// `HistoryRules.viewModeKey`, so the raw values are a storage contract.
+enum HistoryViewMode: String, CaseIterable, Identifiable, Sendable {
+    case chart, calendar
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .chart: return "Chart"
+        case .calendar: return "Calendar"
+        }
+    }
+}
+
+extension HistoryRules {
+    static let viewModeKey = "historyView"
+
+    /// Whether Cost/Tokens is drawn: only over a chart of a cost log. The calendar is
+    /// cost only (spec § Decisions, "Calendar in Tokens mode"), and a quota-only
+    /// provider has one unit.
+    static func showsModePicker(view: HistoryViewMode, showsQuota: Bool) -> Bool {
+        view == .chart && !showsQuota
+    }
+}

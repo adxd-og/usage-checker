@@ -11,6 +11,7 @@ struct SessionHistoryView: View {
     @ObservedObject var dashboard: DashboardState
 
     @AppStorage("historyChartMode") private var chartMode: HistoryChartMode = .cost
+    @AppStorage(HistoryRules.viewModeKey) private var viewMode: HistoryViewMode = .chart
 
     /// Providers with no local cost log get their quota charted over the same range
     /// instead of an empty state. On a subscription the quota *is* the consumption,
@@ -105,7 +106,11 @@ struct SessionHistoryView: View {
                 }
 
                 Group {
-                    if showsQuota {
+                    if viewMode == .calendar {
+                        // Cost only, whatever the unit switch says (spec § Decisions,
+                        // "Calendar in Tokens mode").
+                        ActivityGridView(dashboard: dashboard, range: range)
+                    } else if showsQuota {
                         HistoryQuotaCard(
                             series: quota.series,
                             domain: quota.domain,
@@ -127,8 +132,9 @@ struct SessionHistoryView: View {
                     if showsQuota {
                         quotaOnlyNote
                     } else if hasSessionLog {
-                        // The chat list sits under the chart (spec § Screens, "History ·
-                        // Chart"), for the providers whose logs name a chat.
+                        // The chat list sits under the chart or the calendar (spec
+                        // § Screens, "History · Chart"), for the providers whose logs
+                        // name a chat.
                         HistorySessionsCard(dashboard: dashboard, isWide: isWide)
                     }
                 }
@@ -182,12 +188,29 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// A provider with no cost log has one unit to chart: it gets the range and nothing
-    /// to toggle.
+    /// Chart/Calendar for every provider, Cost/Tokens only over a cost chart
+    /// (`HistoryRules.showsModePicker`), then the range.
     @ViewBuilder
     private var pickers: some View {
-        if !showsQuota { modePicker }
+        viewPicker
+        if HistoryRules.showsModePicker(view: viewMode, showsQuota: showsQuota) { modePicker }
         RangePicker(range: $dashboard.range, ranges: HistoryRules.ranges)
+    }
+
+    /// Chart or Calendar. A quota-only provider has it too: its calendar colours days
+    /// by their daily peak (spec § Screens, "History · Calendar").
+    private var viewPicker: some View {
+        OMSegmentedControl(
+            items: HistoryViewMode.allCases.map { OMSegmentItem(id: $0.rawValue, title: $0.displayName) },
+            selection: Binding(
+                get: { viewMode.rawValue },
+                set: { viewMode = HistoryViewMode(rawValue: $0) ?? viewMode }
+            ),
+            alwaysShowsTitles: true,
+            keyboardShortcuts: false,
+            accessibilityLabel: HistoryCopy.viewPickerLabel
+        )
+        .fixedSize()
     }
 
     /// Bound through `mode`, not through `chartMode` directly: the capsule shows the

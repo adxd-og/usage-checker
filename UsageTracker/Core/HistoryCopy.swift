@@ -264,3 +264,10 @@ extension HistoryCopy {
 
     static let calendarLoading = "Loading…"
 }
+
+// MARK: - Chart or Calendar
+
+extension HistoryCopy {
+    /// What VoiceOver calls the Chart/Calendar switch.
+    static let viewPickerLabel = "View"
+}

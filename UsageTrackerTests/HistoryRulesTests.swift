@@ -245,3 +245,27 @@ final class HistoryRulesQuotaTests: XCTestCase {
         }
     }
 }
+
+/// Liquid-glass spec § Screens, "History · Chart" and "History · Calendar"; § Decisions,
+/// "Calendar in Tokens mode": two views, and the unit switch only over a cost chart.
+final class HistoryRulesViewModeTests: XCTestCase {
+    func testTheTwoViewsAreChartThenCalendar() {
+        XCTAssertEqual(HistoryViewMode.allCases, [.chart, .calendar])
+        XCTAssertEqual(HistoryViewMode.chart.displayName, "Chart")
+        XCTAssertEqual(HistoryViewMode.calendar.displayName, "Calendar")
+    }
+
+    func testTheStoredValuesAreAContract() {
+        XCTAssertEqual(HistoryRules.viewModeKey, "historyView")
+        XCTAssertEqual(HistoryViewMode.chart.rawValue, "chart")
+        XCTAssertEqual(HistoryViewMode.calendar.rawValue, "calendar")
+        XCTAssertNil(HistoryViewMode(rawValue: "grid"), "an unknown stored value falls back to the default")
+    }
+
+    func testCostOrTokensIsOfferedOnlyOverACostChart() {
+        XCTAssertTrue(HistoryRules.showsModePicker(view: .chart, showsQuota: false))
+        XCTAssertFalse(HistoryRules.showsModePicker(view: .calendar, showsQuota: false), "the calendar is cost only")
+        XCTAssertFalse(HistoryRules.showsModePicker(view: .chart, showsQuota: true), "a quota-only provider has one unit")
+        XCTAssertFalse(HistoryRules.showsModePicker(view: .calendar, showsQuota: true))
+    }
+}
