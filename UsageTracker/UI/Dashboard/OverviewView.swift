@@ -16,7 +16,7 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 24) {
                 DashboardHeader(
                     title: service?.displayName ?? dashboard.displayName(for: dashboard.selectedService),
-                    subtitle: service?.plan ?? "—"
+                    subtitle: service?.plan
                 )
 
                 HStack(alignment: .top, spacing: 16) {

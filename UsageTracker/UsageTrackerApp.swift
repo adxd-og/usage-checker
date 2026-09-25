@@ -21,6 +21,9 @@ struct UsageTrackerApp: App {
                 DashboardWindow(appState: AppState.shared)
             }
         }
+        // The dashboard draws its own chrome: the sidebar reaches up under the traffic
+        // lights and no title bar shows (liquid-glass spec § Components, "Sidebar").
+        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
         .commands {
             CommandGroup(replacing: .appInfo) {

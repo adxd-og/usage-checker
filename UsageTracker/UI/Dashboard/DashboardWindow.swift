@@ -3,54 +3,66 @@ import SwiftUI
 struct DashboardWindow: View {
     @ObservedObject var appState: AppState
     @StateObject private var dashboard = DashboardState.shared
-    /// Survives a relaunch. `Tab` is `String`-backed, so a raw value that no longer
-    /// exists (a tab removed in a later release) falls back to `.overview` on its own.
-    @AppStorage("dashboardTab") private var selection: Tab = .overview
+    /// Survives a relaunch, under 2.x's key. Read through `DashboardTab.route(storedValue:)`:
+    /// 2.x's Activity tab reopens on History, and a value no tab answers to on Overview.
+    @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
     /// See `DetailRebuildRule`: a text created while this window is hidden comes
     /// back upside down on macOS 27.0, so the column is rebuilt when the window shows.
     @State private var rebuildRule = DetailRebuildRule()
     @State private var detailGeneration = 0
 
-    enum Tab: String, CaseIterable, Identifiable {
-        case overview = "Overview"
-        case agents = "Agents"
-        case activity = "Activity"
-        case history = "History"
-        case insights = "Insights"
-        var id: String { rawValue }
+    typealias Tab = DashboardTab
 
-        var icon: String {
-            switch self {
-            case .overview: return "chart.bar.doc.horizontal"
-            case .agents: return "bolt.horizontal.circle"
-            case .activity: return "square.grid.4x3.fill"
-            case .history: return "clock"
-            case .insights: return "lightbulb"
-            }
-        }
+    private var selection: Tab { Tab.route(storedValue: storedTab) }
+
+    /// The sidebar's selection: routed on the way in, stored by raw value on the way out.
+    private var tabSelection: Binding<Tab> {
+        Binding(
+            get: { Tab.route(storedValue: storedTab) },
+            set: { storedTab = $0.rawValue }
+        )
     }
 
     var body: some View {
-        NavigationSplitView {
-            List(Tab.allCases, selection: $selection) { tab in
-                Label(tab.rawValue, systemImage: tab.icon).tag(tab)
+        HStack(spacing: 0) {
+            DashboardSidebar(selection: tabSelection) {
+                // How fresh the numbers are (spec § Removals: it replaces the data-source
+                // line). Its text changes while the window is hidden, so it is rebuilt
+                // with the detail column when the window comes back (`DetailRebuildRule`).
+                UpdatedFootnote(snapshot: appState.snapshot)
+                    .padding(.horizontal, UpdatedFootnoteRules.horizontalPadding)
+                    .id(detailGeneration)
             }
-            .listStyle(.sidebar)
-            .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 220)
-            // Usage history is per provider, and so is cost now — but only for the
-            // providers whose CLI writes a local log. Say which of the two this tab is
-            // showing instead of letting the reader assume either way.
-            .safeAreaInset(edge: .bottom) { sourceFooter }
-        } detail: {
+            .padding([.top, .bottom, .leading], DashboardShellLayout.windowInset)
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Figures and chat titles are worth copying out of the app. One
                 // modifier on the detail root and every tab inherits it.
                 .textSelection(.enabled)
                 .id(detailGeneration)
+                .padding([.top, .bottom, .trailing], DashboardShellLayout.windowInset)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 820, idealWidth: 920, minHeight: 560, idealHeight: 640)
+        // The sidebar reaches up under the traffic lights, `windowInset` below the
+        // window's top edge. The scene hides the title bar (`.windowStyle(.hiddenTitleBar)`
+        // in `UsageTrackerApp`) and the shell draws into its strip: the backdrop, its
+        // tint and the sidebar's glass are the whole chrome (spec § Components, "Sidebar").
+        .ignoresSafeArea(.container, edges: .top)
+        .background {
+            ZStack {
+                OMWindowBackground()
+                // The window's body over the backdrop (ruling R4, `windowTint`).
+                Rectangle()
+                    .fill(.om(.windowTint))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+            }
+        }
+        .frame(
+            minWidth: DashboardShellLayout.minWidth,
+            idealWidth: DashboardShellLayout.idealWidth,
+            minHeight: DashboardShellLayout.minHeight,
+            idealHeight: DashboardShellLayout.idealHeight
+        )
         .onAppear {
             dashboard.refreshAll()
             Updater.shared.checkInBackgroundIfDue()
@@ -74,28 +86,6 @@ struct DashboardWindow: View {
         }
     }
 
-    private var sourceFooter: some View {
-        let name = dashboard.displayName(for: dashboard.selectedService)
-        let source = dashboard.costSource
-        return VStack(alignment: .leading, spacing: 4) {
-            Label(
-                source.hasBreakdown ? "\(name) usage + CLI costs" : "\(name) usage history only",
-                systemImage: source.hasBreakdown ? "sparkles" : "chart.line.uptrend.xyaxis"
-            )
-            .help(source.longName.map { "Charts are built from \(name) usage history and \($0)." }
-                  ?? "Usage windows come from this provider. " + (source.reason ?? ""))
-            // The version belongs where the app is being used, not three clicks away
-            // in Settings — and it is the way to the project page.
-            Link(AppVersion.current, destination: AppVersion.githubURL)
-                .help("Open the GitHub page")
-        }
-        .font(OMFont.caption)
-        .foregroundStyle(.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-    }
-
     @ViewBuilder
     private var content: some View {
         switch selection {
@@ -103,8 +93,6 @@ struct DashboardWindow: View {
             OverviewView(appState: appState, dashboard: dashboard)
         case .agents:
             AgentsHistoryView(dashboard: dashboard)
-        case .activity:
-            ActivityGridView(dashboard: dashboard)
         case .history:
             SessionHistoryView(appState: appState, dashboard: dashboard)
         case .insights:
@@ -117,7 +105,10 @@ struct DashboardWindow: View {
 
 struct DashboardHeader: View {
     let title: String
-    let subtitle: String?
+    /// A line under the title only where it says something the title does not
+    /// (History's unit and its API-equivalent note); 3.0 drops the filler ones
+    /// (liquid-glass spec § Removals).
+    var subtitle: String? = nil
     var trailing: AnyView? = nil
     /// The Agents tab is not about one provider, so it hides the picker rather than
     /// showing a control that changes nothing on screen.
@@ -136,8 +127,9 @@ struct DashboardHeader: View {
             twoRows
             threeRows
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 24)
+        .padding(.leading, DashboardShellLayout.columnLeading)
+        .padding(.trailing, DashboardShellLayout.columnTrailing)
+        .padding(.top, DashboardShellLayout.columnTop)
         .padding(.bottom, 12)
     }
 
@@ -148,7 +140,7 @@ struct DashboardHeader: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(OMFont.screenTitle)
+                .font(OMFont.dashboardTitle)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             if let subtitle {
@@ -241,17 +233,38 @@ struct ServicePicker: View {
     }
 }
 
+/// The time range History and Agents chart over, on the 3.0 glass capsule (spec
+/// § Components, "Segmented controls"). Short names and no logos; the window's number
+/// keys stay off, as on the provider row.
 struct RangePicker: View {
     @Binding var range: TimeRange
 
+    nonisolated static let accessibilityName = "Time range"
+
     var body: some View {
-        Picker("", selection: $range) {
-            ForEach(TimeRange.allCases) { r in
-                Text(r.displayName).tag(r)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 280)
+        OMSegmentedControl(
+            items: Self.items(for: TimeRange.allCases),
+            selection: Binding(
+                get: { range.rawValue },
+                set: { range = Self.timeRange(forSegment: $0, current: range) }
+            ),
+            alwaysShowsTitles: true,
+            keyboardShortcuts: false
+        )
+        // The header is a flexible HStack; without this the capsule would stretch
+        // across whatever the title leaves free.
+        .fixedSize()
+        // The control names itself "Provider"; this one is not about a provider.
+        .accessibilityLabel(Self.accessibilityName)
+    }
+
+    /// One segment per range, titled with its short name ("7d").
+    nonisolated static func items(for ranges: [TimeRange]) -> [OMSegmentItem] {
+        ranges.map { OMSegmentItem(id: $0.rawValue, title: $0.displayName) }
+    }
+
+    /// The range a segment stands for; an id no range answers to changes nothing.
+    nonisolated static func timeRange(forSegment id: String, current: TimeRange) -> TimeRange {
+        TimeRange(rawValue: id) ?? current
     }
 }
