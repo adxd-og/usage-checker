@@ -30,6 +30,12 @@ enum DashboardSidebarRules {
     static let accessibilityName = "Sidebar"
     /// Keyboard focus on an item: the yolk ring, as on the segmented controls.
     static let focusRingToken: OMColorToken = .focusRing
+
+    /// Whether `tab` wears the focus ring: it holds focus and the user is navigating with
+    /// the keyboard (`OMFocusRing.isVisible`). A click leaves no ring.
+    static func focusRingVisible(on tab: DashboardTab, focusedTab: DashboardTab?, keyboardNavigation: Bool) -> Bool {
+        OMFocusRing.isVisible(isFocused: focusedTab == tab, keyboardNavigation: keyboardNavigation)
+    }
 }
 
 /// The dashboard's floating sidebar: a chrome-glass pane inset in the window, room for
@@ -40,9 +46,12 @@ struct DashboardSidebar<Footer: View>: View {
 
     @Environment(\.colorScheme) private var colorScheme
 
-    /// Which item keyboard focus is on. nil unless the user moves through the window
-    /// with Tab (Keyboard navigation on); a click does not set it.
+    /// Which item holds focus. With Keyboard navigation on a click can leave it on an
+    /// item too, so it alone does not decide the ring.
     @FocusState private var focusedTab: DashboardTab?
+    /// Whether the user is moving through the sidebar with the keyboard: on with ↑ / ↓
+    /// or when a key press (Tab) moved focus in; off with a click.
+    @State private var keyboardNavigation = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: DashboardSidebarRules.itemSpacing) {
@@ -63,6 +72,15 @@ struct DashboardSidebar<Footer: View>: View {
         .frame(maxHeight: .infinity, alignment: .top)
         .omGlass(DashboardSidebarRules.surface, in: OMCornerShape(DashboardSidebarRules.corner))
         .background { shadowCaster }
+        // The ring follows the input: focus a key press moved in turns it on, a click
+        // turns it off (↑ / ↓ turn it on in `move`).
+        .onChange(of: focusedTab) { _, focused in
+            keyboardNavigation = OMFocusRing.keyboardNavigation(
+                afterFocusMovedTo: focused != nil,
+                byKeyPress: NSApp.currentEvent?.type == .keyDown
+            )
+        }
+        .simultaneousGesture(TapGesture().onEnded { keyboardNavigation = false })
         .accessibilityElement(children: .contain)
         .accessibilityLabel(DashboardSidebarRules.accessibilityName)
     }
@@ -81,7 +99,7 @@ struct DashboardSidebar<Footer: View>: View {
         .focusEffectDisabled()
         .focused($focusedTab, equals: tab)
         .overlay {
-            if focusedTab == tab {
+            if DashboardSidebarRules.focusRingVisible(on: tab, focusedTab: focusedTab, keyboardNavigation: keyboardNavigation) {
                 OMCornerShape(.navItem)
                     .strokeBorder(.om(DashboardSidebarRules.focusRingToken), lineWidth: OMFocusRing.width)
                     .padding(-OMFocusRing.width)
@@ -94,6 +112,7 @@ struct DashboardSidebar<Footer: View>: View {
 
     private func move(from tab: DashboardTab, by offset: Int) -> KeyPress.Result {
         let next = DashboardTab.step(from: tab, by: offset)
+        keyboardNavigation = true
         selection = next
         focusedTab = next
         return .handled
