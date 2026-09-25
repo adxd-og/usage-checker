@@ -250,3 +250,35 @@ struct OverviewDayBarsView: View {
         .accessibilityHidden(true)
     }
 }
+
+// MARK: - By model (spec § Decisions, "Overview by-model rows")
+
+extension OverviewCLIRules {
+    /// One model's line in `CLIBreakdown.byModelToday`: today's already, the aggregators
+    /// cut it at the local day's start.
+    typealias ModelEntry = (model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)
+
+    /// One row of the card's "By model" block.
+    struct ModelRow: Equatable, Identifiable {
+        let model: String
+        let tokens: Int
+        let cost: Double
+
+        var id: String { model }
+    }
+
+    /// The block lists at most this many models, as 2.7.1's rows did.
+    static let modelRowLimit = 5
+
+    /// Today's models by what they cost, dearest first, at most `limit`. Ties go to the
+    /// name first in the alphabet: the models arrive from a dictionary, so equal costs
+    /// would otherwise swap places between polls. A model that cost nothing is left out,
+    /// and a day with no spend has no rows, so the card draws no block.
+    static func modelRows(_ byModelToday: [ModelEntry], limit: Int = modelRowLimit) -> [ModelRow] {
+        let rows = byModelToday
+            .filter { $0.cost > 0 }
+            .sorted { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
+            .map { ModelRow(model: $0.model, tokens: $0.tokens, cost: $0.cost) }
+        return Array(rows.prefix(max(0, limit)))
+    }
+}
