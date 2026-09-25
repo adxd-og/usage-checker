@@ -35,6 +35,10 @@ struct DashboardWindow: View {
             }
             .padding([.top, .bottom, .leading], DashboardShellLayout.windowInset)
             content
+                // A tab switch cross-fades, the new page sliding in from its side of the
+                // sidebar (`OMTransitionRules`). Inside the rebuild `.id` below, so a
+                // window coming back still gets a fresh column.
+                .omTabTransition(selection: selection, order: Tab.allCases, axis: .vertical)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 // Figures and chat titles are worth copying out of the app. One
                 // modifier on the detail root and every tab inherits it.
