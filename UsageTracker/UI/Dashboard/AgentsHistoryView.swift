@@ -100,25 +100,21 @@ struct AgentsHistoryView: View {
     }
 }
 
-/// The four numbers above the lists: how many sessions, how long they ran in total,
-/// how often they stopped to ask, and where the work happened.
+/// The number above the Live card. In 3.0 that is only how many sessions finished in
+/// the range (`AgentsStatsRules.tiles`). Agent time and approval requests are 3.1's, and
+/// the busiest project is gone (spec § Decisions, § Removals).
 private struct AgentsSummaryStrip: View {
     let summary: AgentHistorySummary
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            tile(label: "Sessions", value: "\(summary.sessions)", sub: nil)
-            tile(label: "Agent time", value: AgentHistorySummary.duration(summary.agentTime), sub: nil)
-            tile(label: "Approval requests", value: "\(summary.approvalsWaited)", sub: nil)
-            tile(
-                label: "Busiest project",
-                value: summary.busiestProject?.name ?? "—",
-                sub: summary.busiestProject.map { AgentsSection.sessionsCaption($0.sessions) }
-            )
+            ForEach(AgentsStatsRules.tiles(summary)) { item in
+                tile(label: item.label, value: item.value)
+            }
         }
     }
 
-    private func tile(label: String, value: String, sub: String?) -> some View {
+    private func tile(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: OMSpacing.xs) {
             Text(label)
                 .font(OMFont.caption)
@@ -128,16 +124,9 @@ private struct AgentsSummaryStrip: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .truncationMode(.middle)
-            // A blank line that only keeps the four tiles the same height — there is
-            // nothing here to read out.
-            Text(sub ?? " ")
-                .font(OMFont.caption)
-                .foregroundStyle(.tertiary)
-                .opacity(sub == nil ? 0 : 1)
-                .accessibilityHidden(sub == nil)
         }
         .dashboardCard(padding: 12)
-        // One stop per tile: "Sessions, 12" rather than three separate elements.
+        // One stop per tile: "Sessions, 12" rather than two separate elements.
         .accessibilityElement(children: .combine)
     }
 }

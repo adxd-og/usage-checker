@@ -9,4 +9,7 @@ enum AgentsCopy {
     /// What VoiceOver calls the All / Claude / Codex filter. `OMSegmentedControl` would
     /// otherwise call it "Provider", and "All" is not a provider.
     static let sourcePickerName = "Source"
+    /// The one stats tile 3.0 draws: sessions that finished inside the range, from the
+    /// chosen source. Agent time and Approval requests are 3.1's (spec § Decisions).
+    static let sessionsTile = "Sessions"
 }
