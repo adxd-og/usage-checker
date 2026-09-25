@@ -184,8 +184,14 @@ enum InsightsCopy {
         guard let date = calendar.date(from: DateComponents(year: 2026, month: 1, day: 15, hour: hour)) else {
             return String(format: "%02d:00", hour)
         }
-        // The locale's own short time ("09:00" in en_GB, "9:00 AM" in en_US).
-        // `Date.FormatStyle`'s `.shortened` drops the leading zero on macOS 27 ("9:00").
+        return clockTime(date, calendar: calendar, locale: locale)
+    }
+
+    /// A time of day as the page prints every one: the locale's own short time
+    /// ("09:05" in en_GB, "9:05 AM" in en_US), so "since" and the busiest hour never
+    /// disagree. `Date.FormatStyle`'s `.shortened` drops the leading zero on macOS 27
+    /// ("9:05"), which is why this is a `DateFormatter`.
+    private static func clockTime(_ date: Date, calendar: Calendar, locale: Locale) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.calendar = calendar
@@ -201,10 +207,7 @@ enum InsightsCopy {
 
     /// "since 10:30": when the open window began, on the user's own clock.
     static func since(_ start: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
-        let style = Date.FormatStyle(
-            date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone
-        )
-        return "since \(start.formatted(style))"
+        "since \(clockTime(start, calendar: calendar, locale: locale))"
     }
 
     /// A window with no CLI turns in it: the percentage came from somewhere the logs

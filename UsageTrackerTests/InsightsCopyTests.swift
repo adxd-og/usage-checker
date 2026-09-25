@@ -235,4 +235,19 @@ final class InsightsCopyTests: XCTestCase {
     func testTheModelsPastTheTopTwoAreOther() {
         XCTAssertEqual(InsightsCopy.otherModels, "Other")
     }
+
+    // MARK: - One time style
+
+    /// "since" and the busiest hour print a time the same way, so the page never shows
+    /// "since 9:05" beside "09:00". The locale's own short time: zero-padded 24-hour in
+    /// en_GB; 12-hour in en_US, whose AM sits after a narrow no-break space (U+202F).
+    func testSinceAndTheHourShareOneTimeStyle() {
+        // 2026-09-06 09:05 UTC.
+        let nineOhFive = Date(timeIntervalSince1970: 1_788_685_500)
+
+        XCTAssertEqual(InsightsCopy.since(nineOhFive, calendar: utc, locale: gb), "since 09:05")
+        XCTAssertEqual(InsightsCopy.hour(9, calendar: utc, locale: gb), "09:00")
+        XCTAssertEqual(InsightsCopy.since(nineOhFive, calendar: utc, locale: us), "since 9:05\u{202F}AM")
+        XCTAssertEqual(InsightsCopy.hour(9, calendar: utc, locale: us), "9:00\u{202F}AM")
+    }
 }
