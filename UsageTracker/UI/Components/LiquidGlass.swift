@@ -230,7 +230,8 @@ struct OMSidebarPillShape: InsettableShape {
 
 /// A sidebar item: `Button { … } label: { Label("Overview", systemImage: "square.grid.2x2") }`
 /// `.buttonStyle(.omSidebarPill(isSelected: selection == .overview))`. The dashboard's size
-/// unless `metrics` says otherwise.
+/// unless `metrics` says otherwise. An unselected item lights up under the pointer in the
+/// pill's own shape; the selected one stays still.
 struct OMSidebarPillButtonStyle: ButtonStyle {
     let isSelected: Bool
     var metrics: OMSidebarPillMetrics = .dashboard
@@ -246,6 +247,11 @@ struct OMSidebarPillButtonStyle: ButtonStyle {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(OMSidebarPillShape(radius: metrics.cornerRadius))
             .modifier(OMSidebarPillBackground(showsPill: look.showsPill, radius: metrics.cornerRadius))
+            .modifier(OMHoverHighlight(
+                shape: OMSidebarPillShape(radius: metrics.cornerRadius),
+                isPressed: configuration.isPressed,
+                isActive: OMButtonRules.showsHoverWhenSelectable(isSelected: isSelected)
+            ))
             .opacity(configuration.isPressed ? 0.8 : 1)
             .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -324,4 +330,24 @@ struct OMLinkButtonStyle: ButtonStyle {
 
 extension ButtonStyle where Self == OMLinkButtonStyle {
     static var omLink: OMLinkButtonStyle { OMLinkButtonStyle() }
+}
+
+/// Words alone, in the call site's font and colour, with no chevron: the hooks prompt's
+/// "Not now", History's "Show all 23 sub-agents". Lit under the pointer as a link is, a
+/// capsule `OMButtonRules.linkHoverOutset` past the words, and dimmed as a link while pressed.
+/// `Button("Not now") { … }.buttonStyle(.omText)`.
+struct OMTextButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(
+                shape: Capsule(style: .continuous),
+                isPressed: configuration.isPressed,
+                outset: OMButtonRules.linkHoverOutset
+            ))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+extension ButtonStyle where Self == OMTextButtonStyle {
+    static var omText: OMTextButtonStyle { OMTextButtonStyle() }
 }

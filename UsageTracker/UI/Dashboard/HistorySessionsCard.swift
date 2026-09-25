@@ -682,7 +682,7 @@ private struct HistorySessionRow: View {
     /// inside a table (the header's "Show all 103 ›" is the link style).
     private func moreButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button(title, action: action)
-            .buttonStyle(.plain)
+            .buttonStyle(.omText)
             .font(.system(size: HistoryLayout.cardCaptionSize, weight: .semibold))
             .foregroundStyle(.om(.accentText))
             .padding(.top, 4)

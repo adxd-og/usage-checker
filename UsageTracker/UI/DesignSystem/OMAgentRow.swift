@@ -310,7 +310,7 @@ struct OMAgentRow: View {
                 .frame(width: 16, height: 16)
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.omBareIcon)
         .focusEffectDisabled()
         .help(expanded ? "Hide the full text" : "Show the full text")
         .accessibilityLabel(expanded ? "Hide the full text" : "Show the full text")

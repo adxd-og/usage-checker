@@ -67,4 +67,17 @@ final class OMButtonHoverTests: XCTestCase {
     func testALinksHighlightReachesJustPastItsWords() {
         XCTAssertEqual(OMButtonRules.linkHoverOutset, CGSize(width: 6, height: 3))
     }
+
+    /// Sidebar items and segments (owner's check, 2026-09-25: the dashboard's and
+    /// Settings' sidebars and segmented controls drew no hover): an item the pointer can
+    /// still choose lights up like any button.
+    func testAnUnselectedItemLightsUpUnderThePointer() {
+        XCTAssertTrue(OMButtonRules.showsHoverWhenSelectable(isSelected: false))
+    }
+
+    /// The selected item is already the raised pill; the pointer over it has nothing to
+    /// choose, so it stays still.
+    func testTheSelectedItemStaysStill() {
+        XCTAssertFalse(OMButtonRules.showsHoverWhenSelectable(isSelected: true))
+    }
 }

@@ -458,7 +458,9 @@ struct SettingsStepper: View {
                 .frame(width: SettingsStepperRules.buttonWidth, height: SettingsStepperRules.buttonHeight)
                 .contentShape(Capsule(style: .continuous))
         }
-        .buttonStyle(.plain)
+        // A segment of the track, never selected: it lights up under the pointer while it
+        // can still step, and not at the range's ends, where it is disabled.
+        .buttonStyle(OMSegmentButtonStyle())
         .disabled(!enabled)
         .opacity(enabled ? 1 : SettingsRowRules.disabledOpacity)
     }

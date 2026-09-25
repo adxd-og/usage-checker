@@ -62,15 +62,24 @@ enum OMButtonRules {
     /// A link has no chrome: its highlight is a capsule this much past its words on each
     /// side, drawn over them so they do not move.
     static let linkHoverOutset = CGSize(width: 6, height: 3)
+
+    /// A sidebar item or a segment lights up only while the pointer can still choose it:
+    /// the selected one is already the raised pill, and a pointer over it has nothing to do.
+    nonisolated static func showsHoverWhenSelectable(isSelected: Bool) -> Bool {
+        !isSelected
+    }
 }
 
 /// The hover state layer (`OMButtonRules.hoverOverlay`) in `shape` over a button, `outset`
 /// past its frame. Reads the pointer, the button's enabled state, the scheme and Reduce
-/// Motion itself, so every style applies it with one line.
+/// Motion itself, so every style applies it with one line. `isActive` false keeps it off
+/// whatever the pointer does (a selected item, `OMButtonRules.showsHoverWhenSelectable`)
+/// without taking the modifier out, so the control keeps its view identity.
 struct OMHoverHighlight<S: Shape>: ViewModifier {
     let shape: S
     let isPressed: Bool
     var outset: CGSize = .zero
+    var isActive = true
 
     @State private var isHovered = false
     @Environment(\.isEnabled) private var isEnabled
@@ -78,9 +87,11 @@ struct OMHoverHighlight<S: Shape>: ViewModifier {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
-        let overlay = OMButtonRules.hoverOverlay(
-            isHovered: isHovered, isPressed: isPressed, isEnabled: isEnabled, scheme: colorScheme
-        )
+        let overlay = isActive
+            ? OMButtonRules.hoverOverlay(
+                isHovered: isHovered, isPressed: isPressed, isEnabled: isEnabled, scheme: colorScheme
+            )
+            : nil
         content
             .overlay {
                 shape
@@ -171,6 +182,16 @@ struct OMCircleButtonStyle: ButtonStyle {
     }
 }
 
+/// An icon with no chrome of its own, sized by its label (the agent row's 16 pt disclosure
+/// chevron): lit under the pointer in a circle at that frame. `.buttonStyle(.omBareIcon)`.
+struct OMBareIconButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(shape: Circle(), isPressed: configuration.isPressed))
+            .opacity(configuration.isPressed ? 0.8 : 1)
+    }
+}
+
 private struct OMButtonLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: OMButtonRules.iconSpacing) {
@@ -191,6 +212,10 @@ extension ButtonStyle where Self == OMCapsuleButtonStyle {
 
 extension ButtonStyle where Self == OMCircleButtonStyle {
     static var omCircle: OMCircleButtonStyle { OMCircleButtonStyle() }
+}
+
+extension ButtonStyle where Self == OMBareIconButtonStyle {
+    static var omBareIcon: OMBareIconButtonStyle { OMBareIconButtonStyle() }
 }
 
 #Preview("Buttons") {
