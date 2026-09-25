@@ -279,6 +279,9 @@ enum OMColorToken: CaseIterable, Sendable {
     /// Gauges and state text at 90 % used and over, and a provider in error: the
     /// system red.
     case critical
+    /// The Overview CLI card's bars for the seven days "Last 7 days" counts: the track at
+    /// twice its strength (`Dashboard-Overview(-Light).dc.html`).
+    case barRecent
 }
 
 /// The 3.0 colour table (spec § Tokens; hex values are the mockups').
@@ -322,6 +325,7 @@ enum OMPalette {
         case .onAccent: return (OMRGBA(hex: 0x231704), OMRGBA(hex: 0x231704))
         case .warning: return (OMRGBA(hex: 0xFF9F0A), OMRGBA(hex: 0xFF9500))
         case .critical: return (OMRGBA(hex: 0xFF453A), OMRGBA(hex: 0xFF3B30))
+        case .barRecent: return (.white(0.20), .black(0.16))
         }
     }
 }
