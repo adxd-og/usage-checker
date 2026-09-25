@@ -176,7 +176,7 @@ final class ActivityCopyVerificationTests: XCTestCase {
     /// Only the cost grid ever shows the note; quota squares are percentages out of
     /// Omelette's own history, which no transcript cleanup can shorten.
     func testTheGridViewHelperHidesTheNoteInQuotaModeForEveryProvider() {
-        for provider in ["claude", "codex", "grok", "gemini", "antigravity"] {
+        for provider in ["claude", "codex", "grok", "antigravity"] {
             XCTAssertNil(
                 ActivityGridView.retentionNote(provider: provider, showsQuota: true),
                 "\(provider) must show no note while showsQuota is true"

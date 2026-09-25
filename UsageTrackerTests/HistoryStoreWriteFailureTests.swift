@@ -36,15 +36,15 @@ final class HistoryStoreWriteFailureTests: XCTestCase {
         let store = HistoryStore(directory: directory)
         await store.append(snapshot: snapshot("claude"))
         await store.append(snapshot: snapshot("codex"))
-        await store.append(snapshot: snapshot("gemini"))
+        await store.append(snapshot: snapshot("antigravity"))
         try FileManager.default.setAttributes([.posixPermissions: 0o444], ofItemAtPath: log.path)
 
         await store.append(snapshot: snapshot("grok"))
 
         let onDisk = await HistoryStore(directory: directory).recordedServices()
-        XCTAssertEqual(onDisk, ["claude", "codex", "gemini"], "three records on disk, not the fourth alone")
+        XCTAssertEqual(onDisk, ["antigravity", "claude", "codex"], "three records on disk, not the fourth alone")
         let inMemory = await store.recordedServices()
-        XCTAssertEqual(inMemory, ["claude", "codex", "gemini", "grok"], "the fourth waits for the next rewrite")
+        XCTAssertEqual(inMemory, ["antigravity", "claude", "codex", "grok"], "the fourth waits for the next rewrite")
     }
 
     func testTheFirstAppendStillCreatesTheLog() async throws {
