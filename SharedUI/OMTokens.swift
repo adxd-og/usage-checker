@@ -330,3 +330,70 @@ extension OMPalette {
         ])
     }
 }
+
+// MARK: - 3.0 glass recipes (spec § Tokens: chrome glass, pane glass, raised pill)
+
+/// The four glass surfaces of 3.0.
+enum OMGlassKind: CaseIterable, Sendable {
+    /// Popover body and window chrome.
+    case chrome
+    /// Glass over the content fill: sidebar and dashboard cards.
+    case pane
+    /// The capsule track under a segmented control. The spec files it under chrome
+    /// glass; the mockups draw it on the chrome body as a faint overlay, so it has its
+    /// own values rather than a second chrome layer.
+    case controlTrack
+    /// The selected segment or nav item, raised on its track or pane.
+    case raisedPill
+}
+
+/// A CSS `box-shadow: 0 <y> <blur> <color>` from the mockups.
+struct OMShadow: Equatable, Sendable {
+    let color: OMRGBA
+    let y: CGFloat
+    let blur: CGFloat
+}
+
+/// What one glass surface wears in one appearance. `fill` tints the system glass
+/// (for the raised pill it is the pill's own fill); `border` is 1 px inside the
+/// shape; the highlights are 1 px inner edge lights at the top and the bottom.
+struct OMGlassRecipe: Equatable, Sendable {
+    let fill: OMRGBA
+    let border: OMRGBA?
+    let topHighlight: OMRGBA?
+    let bottomHighlight: OMRGBA?
+    let shadow: OMShadow?
+}
+
+/// The glass table. The mockups' `backdrop-filter` values are the target look, not
+/// the implementation: the blur is the system's, and these numbers tint and edge it
+/// until the owner's visual check matches the screens (spec § Platform floor).
+enum OMGlass {
+    static func recipe(_ kind: OMGlassKind, scheme: ColorScheme) -> OMGlassRecipe {
+        let dark = scheme == .dark
+        switch kind {
+        case .chrome:
+            return dark
+                ? OMGlassRecipe(fill: OMRGBA(hex: 0x1A1A1F, opacity: 0.6), border: .white(0.11),
+                                topHighlight: .white(0.16), bottomHighlight: .white(0.03), shadow: nil)
+                : OMGlassRecipe(fill: .white(0.56), border: .white(0.75),
+                                topHighlight: .white(0.95), bottomHighlight: nil, shadow: nil)
+        case .pane:
+            return OMGlassRecipe(fill: OMPalette.rgba(.contentFill, scheme: scheme),
+                                 border: OMPalette.rgba(.contentBorder, scheme: scheme),
+                                 topHighlight: nil, bottomHighlight: nil, shadow: nil)
+        case .controlTrack:
+            return dark
+                ? OMGlassRecipe(fill: .white(0.07), border: .white(0.08),
+                                topHighlight: .white(0.08), bottomHighlight: nil, shadow: nil)
+                : OMGlassRecipe(fill: .black(0.05), border: .white(0.6),
+                                topHighlight: .white(0.6), bottomHighlight: nil, shadow: nil)
+        case .raisedPill:
+            return dark
+                ? OMGlassRecipe(fill: .white(0.17), border: nil, topHighlight: .white(0.28), bottomHighlight: nil,
+                                shadow: OMShadow(color: .black(0.35), y: 1, blur: 4))
+                : OMGlassRecipe(fill: .white(0.95), border: nil, topHighlight: .white(1), bottomHighlight: nil,
+                                shadow: OMShadow(color: OMRGBA(hex: 0x281E50, opacity: 0.16), y: 1, blur: 4))
+        }
+    }
+}
