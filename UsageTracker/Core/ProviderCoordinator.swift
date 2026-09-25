@@ -6,7 +6,6 @@ actor ProviderCoordinator {
         betaHeader: String,
         preferAdmin: Bool,
         codexEnabled: Bool,
-        geminiEnabled: Bool,
         antigravityEnabled: Bool,
         grokEnabled: Bool
     ) async -> UsageSnapshot {
@@ -16,10 +15,6 @@ actor ProviderCoordinator {
         async let codexSnap: ServiceSnapshot? = {
             guard codexEnabled else { return nil }
             return await CodexProvider.shared.fetch()
-        }()
-        async let geminiSnap: ServiceSnapshot? = {
-            guard geminiEnabled else { return nil }
-            return await GeminiProvider.shared.fetch()
         }()
         async let antigravitySnap: ServiceSnapshot? = {
             guard antigravityEnabled else { return nil }
@@ -36,7 +31,6 @@ actor ProviderCoordinator {
 
         let claude = await claudeSnap
         let codex = await codexSnap
-        let gemini = await geminiSnap
         let antigravity = await antigravitySnap
         let grok = await grokSnap
         let admin = await adminSnap
@@ -50,7 +44,6 @@ actor ProviderCoordinator {
             if let a = admin { services.append(a) }
         }
         if let c = codex { services.append(c) }
-        if let g = gemini { services.append(g) }
         if let a = antigravity { services.append(a) }
         if let g = grok { services.append(g) }
 

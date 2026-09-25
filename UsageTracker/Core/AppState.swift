@@ -92,15 +92,32 @@ final class AppState: ObservableObject {
     /// a provider the user has since switched off flashes back onto the All tab at
     /// launch and disappears when the first poll lands.
     private var enabledServiceIDs: Set<String> {
-        // Claude is not behind a toggle: the coordinator always fetches it.
-        var ids: Set<String> = ["claude"]
         let settings = SettingsStore.shared
-        if settings.codexProviderEnabled { ids.insert("codex") }
-        if settings.geminiProviderEnabled { ids.insert("gemini") }
-        if settings.antigravityProviderEnabled { ids.insert("antigravity") }
-        if settings.grokProviderEnabled { ids.insert("grok") }
-        // The admin provider exists only while there is a key to call it with.
-        if let key = KeychainStore.loadAdminKey(), !key.isEmpty { ids.insert("anthropic-admin") }
+        let adminKey = KeychainStore.loadAdminKey() ?? ""
+        return Self.polledServiceIDs(
+            codexEnabled: settings.codexProviderEnabled,
+            antigravityEnabled: settings.antigravityProviderEnabled,
+            grokEnabled: settings.grokProviderEnabled,
+            hasAdminKey: !adminKey.isEmpty
+        )
+    }
+
+    /// `enabledServiceIDs` as a rule. Claude always: it is not behind a toggle, the
+    /// coordinator always fetches it. Each provider whose switch is on. The admin
+    /// organisation only while there is a key to call it with. A stored reading under
+    /// any other id — a provider this build no longer polls — stays in
+    /// `last-known.json` and is never seeded.
+    nonisolated static func polledServiceIDs(
+        codexEnabled: Bool,
+        antigravityEnabled: Bool,
+        grokEnabled: Bool,
+        hasAdminKey: Bool
+    ) -> Set<String> {
+        var ids: Set<String> = ["claude"]
+        if codexEnabled { ids.insert("codex") }
+        if antigravityEnabled { ids.insert("antigravity") }
+        if grokEnabled { ids.insert("grok") }
+        if hasAdminKey { ids.insert("anthropic-admin") }
         return ids
     }
 
@@ -258,7 +275,6 @@ final class AppState: ObservableObject {
             betaHeader: beta,
             preferAdmin: preferAdmin,
             codexEnabled: SettingsStore.shared.codexProviderEnabled,
-            geminiEnabled: SettingsStore.shared.geminiProviderEnabled,
             antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
             grokEnabled: SettingsStore.shared.grokProviderEnabled
         )
