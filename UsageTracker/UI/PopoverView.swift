@@ -136,6 +136,27 @@ struct PopoverView: View {
     /// `Main.dc.html`'s grid gap.
     nonisolated static let tileSpacing: CGFloat = 10
 
+    // MARK: - Provider tab rules (pure, unit-tested)
+
+    /// `Popover-Claude.dc.html`'s weekly-limits card: 14 pt in, 14 pt between rows.
+    nonisolated static let groupPadding: CGFloat = 14
+    nonisolated static let groupSpacing: CGFloat = 14
+
+    /// A window nobody has touched keeps its row, so the list stays in order, but
+    /// dims — as its ring did.
+    nonisolated static func limitRowOpacity(_ bucket: UsageBucket) -> Double {
+        bucket.clampedPercent == 0 ? 0.55 : 1
+    }
+
+    /// Whether a provider tab draws its spend card: the week's dollars (as the headline
+    /// of a windowless account, or under a hero), or an enabled extra-usage or spend
+    /// limit.
+    nonisolated static func showsSpendGroup(service: ServiceSnapshot, hasHero: Bool) -> Bool {
+        if !hasHero, service.spendHeadline != nil { return true }
+        if let extra = service.extraUsage, extra.isEnabled { return true }
+        return hasHero && (service.weekCost ?? 0) > 0
+    }
+
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
@@ -469,14 +490,15 @@ private struct ProviderDetail: View {
     }
 
     /// Everything the provider itself reported, as one block so the dimming for
-    /// last-known values is a single decision.
+    /// last-known values is a single decision: the hero ring, the limits card
+    /// (`Popover-Claude.dc.html`: weekly limits as bars) and the spend card.
     @ViewBuilder
     private var usageBlock: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if let hero {
                 // Last-known numbers can't be extrapolated: a provider that stopped
                 // reporting isn't burning anything, whatever the last slope said.
-                // The caption under the chip already says the numbers are frozen —
+                // The caption under the state already says the numbers are frozen —
                 // same call the dashboard's hero makes (`OverviewView.heroCard`).
                 OMHero(
                     hero: hero,
@@ -485,11 +507,26 @@ private struct ProviderDetail: View {
                         ? nil
                         : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
                 )
-            } else if let cost = service.spendHeadline {
-                // Pay-as-you-go without windows: the 7-day spend is the headline — live,
-                // or last known and dimmed with the rest of this block.
-                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost))
             }
+            if !sessionRows.isEmpty || !weeklyForRow.isEmpty || unusedWeekly.count > 1 {
+                limitsGroup
+            }
+            if PopoverView.showsSpendGroup(service: service, hasHero: hero != nil) {
+                spendGroup
+            }
+            if service.state == .ok, nothingToShow {
+                Text("Server responded but returned no usage data.")
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(2)
+            }
+        }
+    }
+
+    /// A second session window (rare), then the weekly limits as bars under their
+    /// heading, in one card.
+    private var limitsGroup: some View {
+        VStack(alignment: .leading, spacing: PopoverView.groupSpacing) {
             ForEach(sessionRows) { bucket in
                 OMKeyValueRow(
                     label: bucket.label,
@@ -502,10 +539,37 @@ private struct ProviderDetail: View {
             }
             if !weeklyForRow.isEmpty {
                 OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
-                OMRingRow(buckets: weeklyForRow, mode: mode)
-                unusedToggle
-            } else if unusedWeekly.count > 1 {
-                unusedToggle
+                ForEach(weeklyForRow) { bucket in
+                    // The ring's tooltip and spoken line carry over: "when exactly?"
+                    // for the pointer, the full reset date for VoiceOver.
+                    OMKeyValueRow(
+                        label: PopoverCopy.limitRowLabel(bucket.label),
+                        value: PercentDisplay.percentText(bucket.clampedPercent, mode: mode),
+                        barUsedPercent: bucket.clampedPercent,
+                        barMode: mode,
+                        pace: bucket.elapsedFraction(),
+                        help: OMRingRow.tooltip(for: bucket),
+                        valueStyle: .figure,
+                        accessibilityText: OMRingRow.accessibilityLabel(for: bucket, mode: mode)
+                    )
+                    .opacity(PopoverView.limitRowOpacity(bucket))
+                }
+            }
+            unusedToggle
+        }
+        .padding(PopoverView.groupPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .popoverSurface(.group)
+    }
+
+    /// The dollars: a windowless account's week as its headline, the extra-usage or
+    /// spend limit, the week under a hero, and the API-equivalent line once.
+    private var spendGroup: some View {
+        VStack(alignment: .leading, spacing: PopoverView.groupSpacing) {
+            if hero == nil, let cost = service.spendHeadline {
+                // Pay-as-you-go without windows: the 7-day spend is the headline — live,
+                // or last known and dimmed with the rest of this block.
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(cost), valueStyle: .figure)
             }
             if let extra = service.extraUsage, extra.isEnabled {
                 OMKeyValueRow(
@@ -516,19 +580,18 @@ private struct ProviderDetail: View {
                 )
             }
             if hero != nil, let week = service.weekCost, week > 0 {
-                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week))
-            }
-            if service.state == .ok, nothingToShow {
-                Text("Server responded but returned no usage data.")
-                    .font(OMFont.caption).foregroundStyle(.secondary).lineLimit(2)
+                OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week), valueStyle: .figure)
             }
             if let caption = costCaption {
                 Text(caption)
-                    .font(OMFont.caption)
-                    .foregroundStyle(.tertiary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.om(.secondary))
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(PopoverView.groupPadding)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .popoverSurface(.group)
     }
 
     /// The tooltip under a countdown row: the wall-clock time, always — even inside
@@ -557,9 +620,9 @@ private struct ProviderDetail: View {
                         .font(.system(size: 8, weight: .bold))
                         .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
                     Text(showUnusedWindows ? "Hide unused windows" : "\(unusedWeekly.count) unused windows")
-                        .font(OMFont.caption)
+                        .font(.system(size: 11.5))
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(.om(.secondary))
                 .frame(minHeight: 22)
                 .contentShape(Rectangle())
             }

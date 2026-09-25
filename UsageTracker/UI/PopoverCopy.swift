@@ -16,6 +16,12 @@ enum PopoverCopy {
         return rest.isEmpty ? nil : rest
     }
 
+    /// A weekly row's label on a provider tab: "Fable only" → "Fable"; "All models"
+    /// stays whole (a row has room a 160 pt tile does not).
+    static func limitRowLabel(_ label: String) -> String {
+        label.hasSuffix(" only") ? String(label.dropLast(" only".count)) : label
+    }
+
     /// "Updated just now", "Updated 12s ago", "Updated 4m ago", "Updated 2h ago";
     /// "Never updated" before the first reading.
     static func updatedText(fetchedAt: Date, now: Date) -> String {
