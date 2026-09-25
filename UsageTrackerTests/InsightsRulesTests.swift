@@ -165,4 +165,22 @@ final class InsightsRulesTests: XCTestCase {
         XCTAssertEqual(InsightsRules.windowLabel(for: "gemini_pro", in: buckets), "Gemini Pro")
         XCTAssertEqual(InsightsRules.windowLabel(for: "seven_day_opus", in: buckets), "Seven Day Opus")
     }
+
+    // MARK: - Most-used model today
+
+    func testTheMostUsedModelTodayIsTheDearest() {
+        XCTAssertEqual(
+            InsightsRules.mostUsedModelToday([model("Sonnet 5", 15.37), model("Opus 5", 308.95), model("Fable 5.1", 89.79)]),
+            InsightsModelCost(model: "Opus 5", cost: 308.95)
+        )
+    }
+
+    /// Equal costs leave a dictionary in any order; the card must not flicker between polls.
+    func testATieGoesToTheNameFirstInTheAlphabet() {
+        XCTAssertEqual(InsightsRules.mostUsedModelToday([model("Sonnet 5", 10), model("Opus 5", 10)])?.model, "Opus 5")
+    }
+
+    func testNoModelTodayMeansNoMostUsedModel() {
+        XCTAssertNil(InsightsRules.mostUsedModelToday([]))
+    }
 }

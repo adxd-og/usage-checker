@@ -69,7 +69,7 @@ enum InsightsCopy {
                 title: mostUsedModelTodayTitle,
                 value: summary.mostUsedModelToday?.model ?? noValue,
                 delta: nil,
-                caption: summary.mostUsedModelToday.map { money($0.cost, locale: locale) + " today" }
+                caption: summary.mostUsedModelToday.map { money($0.cost, locale: locale) }
             )
         case .averageDailyPeak:
             return InsightsFigureText(
@@ -144,7 +144,7 @@ enum InsightsCopy {
 
     static let biggestDayTitle = "Biggest day"
 
-    static let mostUsedModelTodayTitle = "Most-used model"
+    static let mostUsedModelTodayTitle = "Most-used model today"
 
     // MARK: - Quota figures (a provider without a cost log)
 

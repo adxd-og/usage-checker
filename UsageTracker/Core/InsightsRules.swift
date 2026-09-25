@@ -66,6 +66,9 @@ struct InsightsCacheKey: Hashable, Sendable {
 /// What the Insights tab decides (liquid-glass spec § Screens, "Insights"; § Decisions,
 /// "What limit hit counts"). Pure: the clock and the calendar come in as arguments.
 enum InsightsRules {
+    /// One model's line in `CLIBreakdown.byModelToday` and `WindowUsage.models`.
+    typealias ModelEntry = (model: String, cost: Double, tokens: Int, breakdown: TokenBreakdown)
+
     /// "Days at limit, 7 days": today and the six local days before it.
     static let daysAtLimitSpan = 7
 
@@ -135,7 +138,7 @@ enum InsightsRules {
             ),
             biggestDay: InsightsView.peakDay(in: dailies, now: now, calendar: calendar)
                 .map { InsightsDayCost(day: $0.day, cost: $0.cost) },
-            mostUsedModelToday: cli?.byModelToday.first.map { InsightsModelCost(model: $0.model, cost: $0.cost) },
+            mostUsedModelToday: mostUsedModelToday(cli?.byModelToday ?? []),
             daysAtLimit: daysAtLimit(records: history, bucketIDs: coreBucketIDs, now: now, calendar: calendar),
             // Only a provider without a cost log shows these. Claude has months of
             // history across half a dozen windows, and walking all of it every poll to
@@ -144,6 +147,16 @@ enum InsightsRules {
                 ? .empty
                 : QuotaAnalytics.insights(records: history, bucketIDs: coreBucketIDs, calendar: calendar, now: now)
         )
+    }
+
+    /// Today's dearest model. `byModelToday` is today's already: the aggregators cut it
+    /// at the local day's start. Picked here rather than trusted in order, because equal
+    /// costs come out of a dictionary in any order: ties go to the name first in the
+    /// alphabet.
+    static func mostUsedModelToday(_ byModelToday: [ModelEntry]) -> InsightsModelCost? {
+        byModelToday
+            .min { a, b in a.cost != b.cost ? a.cost > b.cost : a.model < b.model }
+            .map { InsightsModelCost(model: $0.model, cost: $0.cost) }
     }
 
     /// A window's name: the live snapshot's label, or one inferred from its id when the

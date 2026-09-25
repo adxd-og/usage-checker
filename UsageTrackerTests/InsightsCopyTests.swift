@@ -117,4 +117,14 @@ final class InsightsCopyTests: XCTestCase {
         XCTAssertEqual(InsightsCopy.hour(9, calendar: utc, locale: gb), "09:00")
         XCTAssertEqual(InsightsCopy.hour(14, calendar: utc, locale: gb), "14:00")
     }
+
+    /// Spec § Screens: "most-used model today". The dollars are today's, so the title says so.
+    func testTheMostUsedModelIsTitledToday() {
+        let s = summary(mostUsedModelToday: InsightsModelCost(model: "Opus 5", cost: 308.95))
+
+        XCTAssertEqual(
+            text(.mostUsedModelToday, s),
+            InsightsFigureText(title: "Most-used model today", value: "Opus 5", delta: nil, caption: "$308.95")
+        )
+    }
 }
