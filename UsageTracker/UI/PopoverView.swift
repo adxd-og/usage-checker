@@ -312,96 +312,89 @@ struct PopoverView: View {
 
     // MARK: - Footer
 
+    /// `Main.dc.html`'s footer: Dashboard, the floating window and Settings on glass,
+    /// then Quit (`PopoverFooterRules.buttons`, `.trailing`). No version link: Settings
+    /// → General carries the version and the GitHub link. Refresh has no button; ⌘R
+    /// stays (`PopoverFooterRules.keyboardOnly`).
     private var footer: some View {
-        VStack(spacing: OMSpacing.s) {
-            Rectangle()
-                .fill(OMSurface.hairline)
-                .frame(height: 0.5)
-            // 328 pt is not much room for four controls, a version and Quit. The
-            // version rides in the row when it fits and takes its own line when it
-            // doesn't — Quit is never the thing that gets pushed off the edge.
-            ViewThatFits(in: .horizontal) {
-                footerRow(showsVersion: true)
-                VStack(alignment: .leading, spacing: 6) {
-                    footerRow(showsVersion: false)
-                    HStack(spacing: 0) {
-                        versionLink
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-        }
+        footerRow
+            .padding(.top, 2)
+            .background { keyboardOnlyShortcuts }
     }
 
-    private func footerRow(showsVersion: Bool) -> some View {
-        HStack(spacing: 8) {
-            GlassGroup(spacing: 6) {
-                HStack(spacing: 6) {
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openWindow(id: "dashboard")
-                    } label: {
-                        Label("Dashboard", systemImage: "chart.bar.doc.horizontal")
-                            .labelStyle(.titleAndIcon)
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut("d", modifiers: .command)
-                    .help("Open dashboard (⌘D)")
-
-                    Button {
-                        FloatingWindowController.shared.toggle()
-                    } label: {
-                        Image(systemName: FloatingWindowController.shared.isOpen
-                              ? "pip.exit" : "pip.enter")
-                    }
-                    .glassButtonStyle()
-                    .help(FloatingWindowController.shared.isOpen
-                          ? "Close floating window" : "Show floating mini window")
-
-                    Button {
-                        NSApp.activate(ignoringOtherApps: true)
-                        openSettings()
-                    } label: {
-                        Image(systemName: "gearshape")
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut(",", modifiers: .command)
-                    .help("Settings (⌘,)")
-
-                    Button {
-                        state.refreshNow()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .glassButtonStyle()
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Refresh now (⌘R)")
-                }
+    private var footerRow: some View {
+        HStack(spacing: PopoverFooterRules.spacing) {
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openWindow(id: "dashboard")
+            } label: {
+                Label(PopoverFooterRules.title(.dashboard), systemImage: PopoverFooterRules.symbol(.dashboard))
             }
+            .buttonStyle(.omCapsule(.regular))
+            .modifier(FooterShortcut(action: .dashboard))
+            .help(PopoverFooterRules.help(.dashboard))
 
-            Spacer()
+            Button {
+                FloatingWindowController.shared.toggle()
+            } label: {
+                Label(
+                    PopoverFooterRules.title(.floatingWindow),
+                    systemImage: PopoverFooterRules.symbol(.floatingWindow, floatingWindowOpen: FloatingWindowController.shared.isOpen)
+                )
+            }
+            .buttonStyle(.omCircle)
+            .help(PopoverFooterRules.help(.floatingWindow, floatingWindowOpen: FloatingWindowController.shared.isOpen))
 
-            if showsVersion { versionLink }
+            Button {
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+            } label: {
+                Label(PopoverFooterRules.title(.settings), systemImage: PopoverFooterRules.symbol(.settings))
+            }
+            .buttonStyle(.omCircle)
+            .modifier(FooterShortcut(action: .settings))
+            .help(PopoverFooterRules.help(.settings))
+
+            Spacer(minLength: 0)
 
             Button {
                 NSApp.terminate(nil)
             } label: {
-                Text("Quit")
-                    .font(OMFont.caption)
+                Text(PopoverFooterRules.title(.quit))
+                    .font(.system(size: OMButtonRules.fontSize))
+                    .foregroundStyle(.om(.secondary))
+                    .padding(.horizontal, 10)
+                    .frame(height: OMButtonRules.height(.regular))
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
-            .keyboardShortcut("q", modifiers: .command)
+            .buttonStyle(.plain)
+            .modifier(FooterShortcut(action: .quit))
+            .help(PopoverFooterRules.help(.quit))
         }
     }
 
-    /// "Omelette 2.4.1", and the way to the project page. Settings keeps the exact
-    /// build number; this is the version you can read without going looking for it.
-    private var versionLink: some View {
-        Link(AppVersion.current, destination: AppVersion.githubURL)
-            .font(OMFont.caption)
-            .foregroundStyle(.secondary)
-            .help("Open the GitHub page")
+    /// Shortcuts with no button: invisible, zero-sized and hidden from VoiceOver, but
+    /// in the view tree, so ⌘R still reaches them.
+    private var keyboardOnlyShortcuts: some View {
+        Button(PopoverFooterRules.title(.refresh)) { state.refreshNow() }
+            .modifier(FooterShortcut(action: .refresh))
+            .opacity(0)
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+    }
+}
+
+/// ⌘ plus the rule's key for one footer action; nothing for an action without one.
+private struct FooterShortcut: ViewModifier {
+    let action: PopoverAction
+
+    func body(content: Content) -> some View {
+        if let key = PopoverFooterRules.shortcutKey(action) {
+            content.keyboardShortcut(KeyEquivalent(key), modifiers: .command)
+        } else {
+            content
+        }
     }
 }
 
