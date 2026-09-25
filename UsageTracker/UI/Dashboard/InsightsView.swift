@@ -16,7 +16,6 @@ struct InsightsView: View {
         let cliUpdatedAt: Date
         let historyCount: Int
         let lastHistoryAt: Date
-        let peakBucketID: String?
         let quotaBucketIDs: [String]
     }
 
@@ -26,7 +25,6 @@ struct InsightsView: View {
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            peakBucketID: dashboard.burnBucket?.id,
             quotaBucketIDs: dashboard.quotaCoreBucketIDs
         )
     }
@@ -36,7 +34,6 @@ struct InsightsView: View {
         let started = cacheKey
         let cli = dashboard.cliBreakdown
         let history = dashboard.history
-        let peakBucketID = dashboard.burnBucket?.id
         // Empty for a provider whose cost log is showing, which short-circuits the quota
         // pass entirely: Claude has months of history across half a dozen windows, and
         // walking all of it every poll to fill cards nobody sees is pure waste.
@@ -45,7 +42,7 @@ struct InsightsView: View {
         // copying it across two tasks doubles the cost of the expensive part.
         let built = await Task.detached(priority: .userInitiated) {
             (
-                Insights(from: cli, history: history, peakBucketID: peakBucketID),
+                Insights(from: cli, history: history),
                 QuotaAnalytics.insights(records: history, bucketIDs: quotaBucketIDs)
             )
         }.value
@@ -101,11 +98,6 @@ struct InsightsView: View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel(dashboard.displayName(for: dashboard.selectedService) + " · usage history")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
-                card(
-                    title: (dashboard.burnBucket?.label ?? "Window") + " observed peak",
-                    value: insights.windowPeak.map { String(format: "%.0f%%", min(100, $0)) } ?? "—",
-                    sub: "from snapshots"
-                )
                 card(
                     title: "Snapshots recorded",
                     value: "\(insights.snapshotCount)",
@@ -407,20 +399,18 @@ extension InsightsView {
 }
 
 private struct Insights: Sendable {
-    static let empty = Insights(from: nil, history: [], peakBucketID: nil)
+    static let empty = Insights(from: nil, history: [])
 
     let avgDailyCost: Double?
     let activeDays: Int?
     let peakDay: (day: Date, cost: Double)?
     let topModel: (model: String, cost: Double)?
     let topProjectWeek: ProjectSummary?
-    /// Highest utilization ever observed for the provider's leading window.
-    let windowPeak: Double?
     let snapshotCount: Int
     let firstSnapshotAgo: String?
     let weekOverWeek: WeekOverWeek
 
-    init(from cli: CLIBreakdown?, history: [HistoryRecord], peakBucketID: String?) {
+    init(from cli: CLIBreakdown?, history: [HistoryRecord]) {
         let dailies = cli?.daily ?? []
         let last30 = dailies.filter { $0.day >= Date().addingTimeInterval(-30 * 24 * 3600) }
         let active = last30.filter { $0.totalCost > 0 }
@@ -434,11 +424,6 @@ private struct Insights: Sendable {
         }
         self.topProjectWeek = cli?.projectsWeek.first
         self.snapshotCount = history.count
-        // Keyed on whichever window the provider actually leads with — a fixed
-        // "five_hour" read as "—" for every provider that doesn't have one.
-        self.windowPeak = peakBucketID.flatMap { id in
-            history.compactMap { $0.percent(for: id) }.max()
-        }
         if let first = history.first {
             let delta = Date().timeIntervalSince(first.timestamp)
             let days = Int(delta / (24 * 3600))
