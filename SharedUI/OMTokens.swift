@@ -100,6 +100,10 @@ enum OMFont {
     static func numerals(size: CGFloat, weight: Font.Weight) -> Font {
         .system(size: size, weight: weight, design: .rounded).monospacedDigit()
     }
+
+    /// Dashboard screen titles in 3.0: the mockups' `font-size: 26px; font-weight: 700`.
+    /// Its own role because `screenTitle` also titles the welcome tour, which 3.0 leaves as it is.
+    static let dashboardTitle = Font.system(size: 26, weight: .bold)
 }
 
 /// Content surfaces use quiet system fills; Liquid Glass is reserved for controls
@@ -223,6 +227,8 @@ enum OMColorToken: CaseIterable, Sendable {
     case tokenCacheWrite
     /// The flat colour under the window backdrop's gradients.
     case windowBase
+    /// The dashboard window's body over the backdrop: the mockups' window fill.
+    case windowTint
 }
 
 /// The 3.0 colour table (spec § Tokens; hex values are the mockups').
@@ -258,6 +264,7 @@ enum OMPalette {
         case .tokenCacheRead: return (OMRGBA(hex: 0x5CC8C8), OMRGBA(hex: 0x26A8A8))
         case .tokenCacheWrite: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
         case .windowBase: return (OMRGBA(hex: 0x0D0E13), OMRGBA(hex: 0xECE8F1))
+        case .windowTint: return (OMRGBA(hex: 0x14151A, opacity: 0.9), OMRGBA(hex: 0xF7F6FA, opacity: 0.86))
         }
     }
 }
@@ -345,6 +352,9 @@ enum OMGlassKind: CaseIterable, Sendable {
     case controlTrack
     /// The selected segment or nav item, raised on its control track or on the sidebar's chrome glass.
     case raisedPill
+    /// The dashboard sidebar: chrome glass whose light edge is the hairline, not the
+    /// popover body's white rim.
+    case sidebar
 }
 
 /// A CSS `box-shadow: 0 <y> <blur> <color>` from the mockups.
@@ -394,6 +404,25 @@ enum OMGlass {
                                 shadow: OMShadow(color: .black(0.35), y: 1, blur: 4))
                 : OMGlassRecipe(fill: .white(0.95), border: nil, topHighlight: .white(1), bottomHighlight: nil,
                                 shadow: OMShadow(color: OMRGBA(hex: 0x281E50, opacity: 0.16), y: 1, blur: 4))
+        case .sidebar:
+            // Chrome, with the hairline as its light edge: the dashboard mockups' dark
+            // rgba(29,29,31,0.6) outline is a design-file artefact (session ruling,
+            // 2026-09-25). Dark keeps chrome's white edge, as the mockups draw it.
+            let chrome = recipe(.chrome, scheme: scheme)
+            guard !dark else { return chrome }
+            return OMGlassRecipe(fill: chrome.fill, border: OMPalette.rgba(.hairline, scheme: .light),
+                                 topHighlight: chrome.topHighlight, bottomHighlight: chrome.bottomHighlight,
+                                 shadow: chrome.shadow)
         }
+    }
+
+    /// The dashboard sidebar's drop shadows, in the mockups' CSS order (the `<nav>` of
+    /// `Dashboard-Overview(-Light).dc.html`). System glass draws no recipe shadow, so the
+    /// sidebar casts these itself.
+    static func sidebarShadows(scheme: ColorScheme) -> [OMShadow] {
+        scheme == .dark
+            ? [OMShadow(color: .black(0.35), y: 10, blur: 30), OMShadow(color: .black(0.3), y: 2, blur: 10)]
+            : [OMShadow(color: OMRGBA(hex: 0x32285A, opacity: 0.1), y: 8, blur: 24),
+               OMShadow(color: OMRGBA(hex: 0x32285A, opacity: 0.08), y: 2, blur: 8)]
     }
 }

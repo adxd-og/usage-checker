@@ -148,7 +148,7 @@ struct DashboardHeader: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title)
-                .font(OMFont.screenTitle)
+                .font(OMFont.dashboardTitle)
                 .lineLimit(1)
                 .fixedSize(horizontal: true, vertical: false)
             if let subtitle {
