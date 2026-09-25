@@ -20,3 +20,10 @@ enum HistoryCopy {
             : "API-equivalent cost from \(source), not your subscription bill"
     }
 }
+
+// MARK: - Controls
+
+extension HistoryCopy {
+    /// What VoiceOver calls the Cost/Tokens switch.
+    static let modePickerLabel = "Unit"
+}

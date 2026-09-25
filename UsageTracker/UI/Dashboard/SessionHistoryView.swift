@@ -35,6 +35,9 @@ struct SessionHistoryView: View {
         HistoryRules.effectiveMode(stored: chartMode)
     }
 
+    /// The range on screen — see `HistoryRules.offeredRange`.
+    private var range: TimeRange { HistoryRules.offeredRange(dashboard.range) }
+
     // Built off the main actor: a 90-day range is six figures' worth of history
     // records and every one of them is touched per bucket (same pattern as
     // ActivityGridView's GridCache).
@@ -51,7 +54,7 @@ struct SessionHistoryView: View {
     private var cacheKey: CacheKey {
         CacheKey(
             service: dashboard.selectedService,
-            range: dashboard.range,
+            range: range,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
             bucketIDs: dashboard.quotaBuckets.map(\.id)
@@ -67,7 +70,7 @@ struct SessionHistoryView: View {
         let started = cacheKey
         let records = dashboard.history
         let buckets = dashboard.quotaBuckets
-        let span = dashboard.range.seconds
+        let span = range.seconds
         let built = await Task.detached(priority: .userInitiated) {
             QuotaHistoryCache.build(records: records, buckets: buckets, span: span)
         }.value
@@ -82,7 +85,7 @@ struct SessionHistoryView: View {
     private var data: [DailyPoint] {
         let daily = dashboard.cliBreakdown?.daily ?? []
         let cal = Calendar.current
-        let cutoff = cal.startOfDay(for: Date().addingTimeInterval(-dashboard.range.seconds))
+        let cutoff = cal.startOfDay(for: Date().addingTimeInterval(-range.seconds))
         return daily
             .filter { $0.day >= cutoff }
             .map {
@@ -110,18 +113,17 @@ struct SessionHistoryView: View {
     private func scrollBody(isWide: Bool) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                DashboardHeader(
-                    title: HistoryCopy.title,
-                    subtitle: subtitle,
-                    // A provider with no cost log has one unit to chart, so it is
-                    // shown a range control and nothing to toggle.
-                    trailing: AnyView(
-                        HStack(spacing: 12) {
-                            if !showsQuota { modePicker }
-                            RangePicker(range: $dashboard.range)
-                        }
+                VStack(alignment: .leading, spacing: 0) {
+                    DashboardHeader(
+                        title: HistoryCopy.title,
+                        subtitle: subtitle,
+                        showsServicePicker: false
                     )
-                )
+                    controls
+                        .padding(.top, HistoryLayout.controlsTopPadding)
+                        .padding(.leading, DashboardShellLayout.columnLeading)
+                        .padding(.trailing, DashboardShellLayout.columnTrailing)
+                }
 
                 if showsQuota {
                     quotaContent
@@ -147,6 +149,12 @@ struct SessionHistoryView: View {
         .task(id: cacheKey) {
             await rebuildQuota()
         }
+        // 5h is a range Agents offers and History does not: the page shows a day and
+        // writes it back, so the two tabs agree on the range.
+        .task(id: dashboard.range) {
+            let offered = HistoryRules.offeredRange(dashboard.range)
+            if offered != dashboard.range { dashboard.range = offered }
+        }
         // Provider or range changed: the button's "Show all 34" and any open row are
         // about a list that no longer exists.
         .task(id: SessionScope(service: dashboard.selectedService, range: dashboard.range)) {
@@ -159,18 +167,48 @@ struct SessionHistoryView: View {
         }
     }
 
-    /// Bound through `mode`, not through `chartMode` directly: a segmented control whose
-    /// selection is not among its own tags shows nothing selected, and `chartMode` can
-    /// still hold 2.x's `.sessions`.
-    private var modePicker: some View {
-        Picker("", selection: Binding(get: { mode }, set: { chartMode = $0 })) {
-            ForEach(HistoryRules.chartModes) { option in
-                Text(option.displayName).tag(option)
+    /// The mockups' controls row under the title: the provider on the left, History's
+    /// own switches on the right. It wraps before it clips, as the header does.
+    private var controls: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: HistoryLayout.controlSpacing) {
+                ServicePicker(dashboard: dashboard)
+                Spacer(minLength: HistoryLayout.controlSpacing)
+                pickers
+            }
+            VStack(alignment: .leading, spacing: HistoryLayout.controlSpacing) {
+                ServicePicker(dashboard: dashboard)
+                HStack(spacing: HistoryLayout.controlSpacing) { pickers }
+            }
+            VStack(alignment: .leading, spacing: HistoryLayout.controlSpacing) {
+                ServicePicker(dashboard: dashboard)
+                pickers
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .frame(width: 140)
+    }
+
+    /// A provider with no cost log has one unit to chart: it gets the range and nothing
+    /// to toggle.
+    @ViewBuilder
+    private var pickers: some View {
+        if !showsQuota { modePicker }
+        RangePicker(range: $dashboard.range, ranges: HistoryRules.ranges)
+    }
+
+    /// Bound through `mode`, not through `chartMode` directly: the capsule shows the
+    /// segment whose id is selected, and `chartMode` can still hold 2.x's `.sessions`.
+    private var modePicker: some View {
+        OMSegmentedControl(
+            items: HistoryRules.chartModes.map { OMSegmentItem(id: $0.rawValue, title: $0.displayName) },
+            selection: Binding(
+                get: { mode.rawValue },
+                set: { chartMode = HistoryChartMode(rawValue: $0) ?? chartMode }
+            ),
+            alwaysShowsTitles: true,
+            keyboardShortcuts: false,
+            accessibilityLabel: HistoryCopy.modePickerLabel
+        )
+        .fixedSize()
     }
 
     /// The header's sentence — see `HistoryCopy.subtitle`. Whether the dollars are a

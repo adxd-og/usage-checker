@@ -19,3 +19,17 @@ extension HistoryRules {
         chartModes.contains(stored) ? stored : .cost
     }
 }
+
+// MARK: - Ranges
+
+extension HistoryRules {
+    /// The ranges History offers, in the mockups' order. 5h stays a `TimeRange` for
+    /// Agents; a chart of whole days has nothing to say about five hours.
+    static let ranges: [TimeRange] = [.oneDay, .sevenDays, .thirtyDays, .ninetyDays, .oneYear]
+
+    /// The range History shows for the shared `DashboardState.range`: itself when
+    /// History offers it, otherwise a day (the one it cannot offer is Agents' 5h).
+    static func offeredRange(_ stored: TimeRange) -> TimeRange {
+        ranges.contains(stored) ? stored : .oneDay
+    }
+}

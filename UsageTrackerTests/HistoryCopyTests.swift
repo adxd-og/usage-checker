@@ -59,3 +59,10 @@ final class HistoryCopySubtitleTests: XCTestCase {
         )
     }
 }
+
+/// The Cost/Tokens switch names itself for VoiceOver; the control's default is "Provider".
+final class HistoryCopyControlsTests: XCTestCase {
+    func testTheUnitSwitchIsCalledUnit() {
+        XCTAssertEqual(HistoryCopy.modePickerLabel, "Unit")
+    }
+}

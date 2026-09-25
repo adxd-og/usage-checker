@@ -18,3 +18,22 @@ final class HistoryRulesModeTests: XCTestCase {
         XCTAssertEqual(HistoryRules.effectiveMode(stored: .tokens), .tokens)
     }
 }
+
+/// Liquid-glass spec § Screens, "History · Chart": the range row is 24h 7d 30d 90d 1y.
+/// 5h stays a `TimeRange` for Agents; History shows a day in its place.
+final class HistoryRulesRangeTests: XCTestCase {
+    func testHistoryOffersTheMockupsFiveRanges() {
+        XCTAssertEqual(HistoryRules.ranges, [.oneDay, .sevenDays, .thirtyDays, .ninetyDays, .oneYear])
+        XCTAssertEqual(RangePicker.items(for: HistoryRules.ranges).map(\.id), ["24h", "7d", "30d", "90d", "1y"])
+    }
+
+    func testAnOfferedRangeStaysWhatItIs() {
+        for range in HistoryRules.ranges {
+            XCTAssertEqual(HistoryRules.offeredRange(range), range)
+        }
+    }
+
+    func testFiveHoursSetOnAgentsShowsAsADay() {
+        XCTAssertEqual(HistoryRules.offeredRange(.fiveHours), .oneDay)
+    }
+}
