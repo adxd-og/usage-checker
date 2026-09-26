@@ -2,7 +2,8 @@ import XCTest
 @testable import Omelette
 
 /// Liquid-glass spec § Design → Settings, "General: Launch at login, popover shortcut,
-/// refresh interval, updates, version, GitHub", in `Settings-General.dc.html`'s words.
+/// refresh interval, updates, version, GitHub", in `Settings-General.dc.html`'s words,
+/// less the popover shortcut (removed on the owner's decision, 2026-09-26).
 /// § Decisions: bracketed placeholders are the live values.
 final class GeneralSettingsCopyTests: XCTestCase {
     func testTheVersionRowKeepsTheBuildABugReportNeeds() {
@@ -26,9 +27,6 @@ final class GeneralSettingsCopyTests: XCTestCase {
     func testTheRowsReadAsTheMockup() {
         XCTAssertEqual(GeneralSettingsCopy.startupHeader, "Startup")
         XCTAssertEqual(GeneralSettingsCopy.launchAtLoginTitle, "Launch at login")
-        XCTAssertEqual(GeneralSettingsCopy.shortcutTitle, "Open the popover")
-        XCTAssertEqual(GeneralSettingsCopy.shortcutCaption, "Works from any app. Unset by default.")
-        XCTAssertEqual(GeneralSettingsCopy.shortcutWidth, 160)
         XCTAssertEqual(GeneralSettingsCopy.refreshHeader, "Refresh")
         XCTAssertEqual(GeneralSettingsCopy.refreshTitle, "Update every")
         XCTAssertEqual(GeneralSettingsCopy.refreshFooter, "Faster is closer to real time but can hit rate limits.")

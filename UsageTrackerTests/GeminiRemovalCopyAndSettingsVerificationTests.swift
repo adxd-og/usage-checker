@@ -78,11 +78,7 @@ final class GeminiRemovalCopyAndSettingsVerificationTests: XCTestCase {
     func testResetToDefaultsNeverWritesTheRemovedGeminiSwitch() throws {
         let domainName = Bundle.main.bundleIdentifier ?? "com.usagetracker.app"
         let savedDomain = UserDefaults.standard.persistentDomain(forName: domainName)
-        SettingsStore.shared.resetShortcuts = {}
-        defer {
-            SettingsStore.shared.resetShortcuts = SettingsStore.resetRecordedShortcuts
-            AppDomainRestore.restore(savedDomain, domainName: domainName)
-        }
+        defer { AppDomainRestore.restore(savedDomain, domainName: domainName) }
 
         let key = "geminiProviderEnabled"
         UserDefaults.standard.removeObject(forKey: key)

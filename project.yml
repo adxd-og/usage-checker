@@ -28,11 +28,6 @@ packages:
   CodexBar:
     url: https://github.com/steipete/CodexBar
     revision: 559bfc818eb7b757d4763642a86586c40098d08a
-  # Global hotkey recording + dispatch. Already in CodexBar's own graph, so the
-  # resolved version is shared rather than duplicated.
-  KeyboardShortcuts:
-    url: https://github.com/sindresorhus/KeyboardShortcuts
-    from: 2.4.0
 
 settings:
   base:
@@ -98,7 +93,6 @@ targets:
       - package: Sparkle
       - package: CodexBar
         product: CodexBarCore
-      - package: KeyboardShortcuts
     # Generated Info.plist (xcodegen writes it at `generate` time). NOTE: the
     # Sparkle keys CANNOT go through INFOPLIST_KEY_* build settings — Xcode
     # injects only its own allowlisted keys that way and silently drops custom

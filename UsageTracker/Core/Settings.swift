@@ -1,5 +1,4 @@
 import Foundation
-import KeyboardShortcuts
 
 /// When the menu bar shows a percentage next to the bar.
 enum MenuBarNumberMode: String, CaseIterable, Identifiable, Sendable {
@@ -204,10 +203,9 @@ final class SettingsStore: ObservableObject {
         // Choices that live in the views and state objects rather than in a property
         // here. They are still preferences, so a reset that leaves them behind isn't
         // one: the dashboard stayed on whichever provider was picked, the popover on
-        // whichever tab, and the recorded hotkey kept firing.
+        // whichever tab.
         DashboardState.shared.resetSelection()
         UserDefaults.standard.removeObject(forKey: Self.popoverTabKey)
-        resetShortcuts()
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
         // the new ones should be able to speak.
         UsageNotifier.shared.forgetFiredState()
@@ -215,17 +213,6 @@ final class SettingsStore: ObservableObject {
 
     /// PopoverView's persisted tab. Owned by the view, reset here.
     private static let popoverTabKey = "selectedProviderTab"
-
-    /// How `resetToDefaults()` forgets the recorded popover shortcut. KeyboardShortcuts
-    /// keeps it in the app's own defaults domain, which the test host shares with the
-    /// running app, so a test replaces this with a no-op and the suite never deletes the
-    /// shortcut the user recorded.
-    var resetShortcuts: () -> Void = SettingsStore.resetRecordedShortcuts
-
-    /// The real reset: the recorded shortcut is removed and its hotkey unregistered.
-    nonisolated static func resetRecordedShortcuts() {
-        KeyboardShortcuts.reset(.peekUsage)
-    }
 
     var menuBarHiddenServices: Set<String> {
         get { Set(menuBarHiddenServicesRaw.split(separator: ",").map(String.init)) }
