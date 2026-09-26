@@ -61,8 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   right tab.
 - Providers: one row per provider with its source, status and switch, and
   "Forget last known" inline.
-- While recording the popover shortcut the field says "Press the keys. Esc
-  cancels, Delete clears."
+- The global shortcut that opened the popover is gone; the menu-bar icon and
+  ⌘, in the popover remain.
 
 ### Providers
 - **The Gemini CLI provider is removed.** Antigravity's Gemini windows are
