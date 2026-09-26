@@ -36,7 +36,7 @@ two disclosures underneath.
 <table>
   <tr>
     <td width="36%"><img src="docs/screenshots/popover-all-needs-you.png" alt="The popover: every provider on one tab, a session waiting for your Allow / Deny, one working, one idle"></td>
-    <td width="64%"><img src="docs/screenshots/dashboard-overview-claude.png" alt="Dashboard Overview for Claude: session ring, usage windows with exact reset times, Tokens today split by type, CLI costs"></td>
+    <td width="64%"><img src="docs/screenshots/dashboard-overview-claude.png" alt="Dashboard Overview for Claude: concentric rings per window with reset times, today's CLI cost by model, Tokens today against cost"></td>
   </tr>
   <tr>
     <td>The popover, All tab. An agent asked a question, so its row got Allow / Deny.</td>
@@ -71,21 +71,21 @@ two disclosures underneath.
   <tr><td>Overview, Codex</td><td>Overview, Grok</td></tr>
   <tr>
     <td><img src="docs/screenshots/dashboard-overview-antigravity.png" alt="Overview for Antigravity while it is closed: last known values, burn rate paused"></td>
-    <td><img src="docs/screenshots/dashboard-history-tokens.png" alt="History in Tokens mode: stacked bars by type and a per-day table"></td>
+    <td><img src="docs/screenshots/dashboard-history-tokens.png" alt="History in Tokens mode: stacked bars by type with tooltips, the chats under them"></td>
   </tr>
   <tr><td>Overview, Antigravity closed: last known values</td><td>History, Tokens mode</td></tr>
   <tr>
-    <td><img src="docs/screenshots/dashboard-history-cost.png" alt="History in Cost mode with the API-equivalent note"></td>
+    <td><img src="docs/screenshots/dashboard-history-cost.png" alt="History in Cost mode: cost per day and the chats, with the API-equivalent note"></td>
     <td><img src="docs/screenshots/dashboard-quota-history-antigravity.png" alt="Quota history for Antigravity: every window as a line, daily peaks"></td>
   </tr>
   <tr><td>History, Cost mode</td><td>Quota history for a provider without a token log</td></tr>
   <tr>
-    <td><img src="docs/screenshots/dashboard-activity.png" alt="Activity heatmap, last 52 weeks"></td>
-    <td><img src="docs/screenshots/dashboard-agents.png" alt="Agents tab: live sessions with Allow / Deny, run history"></td>
+    <td><img src="docs/screenshots/dashboard-history-chat.png" alt="History, an open chat: where the money went by type, by model, by day, and its sub-agents"></td>
+    <td><img src="docs/screenshots/dashboard-agents.png" alt="Agents tab: the Sessions figure and the live sessions with Allow / Deny, full width"></td>
   </tr>
-  <tr><td>Activity</td><td>Agents: live sessions and run history</td></tr>
+  <tr><td>History: an open chat</td><td>Agents: live sessions</td></tr>
   <tr>
-    <td colspan="2"><img src="docs/screenshots/dashboard-insights.png" alt="Insights: what ran inside the current session window, week over week, biggest day"></td>
+    <td colspan="2"><img src="docs/screenshots/dashboard-insights.png" alt="Insights: the current session window by model and project, this week vs last, days at limit, daily average, biggest day, most-used model"></td>
   </tr>
   <tr><td colspan="2">Insights: what filled the current session window, ranked by project</td></tr>
 </table>
