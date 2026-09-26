@@ -288,8 +288,8 @@ Next: [Settings](#settings).
 
 A sidebar window with six tabs.
 
-- **General**: launch at login, the popover shortcut, refresh interval,
-  automatic updates and Check now, the version and the GitHub link
+- **General**: launch at login, refresh interval, automatic updates and
+  Check now, the version and the GitHub link
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
   providers show in the menu bar, agents in the menu bar
