@@ -273,6 +273,14 @@ enum HistoryViewMode: String, CaseIterable, Identifiable, Sendable {
 extension HistoryRules {
     static let viewModeKey = "historyView"
 
+    /// The day a History cache was built for. The chart's domain and the calendar's
+    /// "today" come from the clock, not from the records, so a cache keyed on the
+    /// records alone stands still across midnight when a provider has stopped
+    /// reporting; the key carries this instead.
+    static func cacheDay(now: Date, calendar: Calendar) -> Date {
+        calendar.startOfDay(for: now)
+    }
+
     /// Whether Cost/Tokens is drawn: only over a chart of a cost log. The calendar is
     /// cost only (spec § Decisions, "Calendar in Tokens mode"), and a quota-only
     /// provider has one unit.
