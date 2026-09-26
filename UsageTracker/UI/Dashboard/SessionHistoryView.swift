@@ -42,6 +42,7 @@ struct SessionHistoryView: View {
         let historyCount: Int
         let lastHistoryAt: Date
         let bucketIDs: [String]
+        let day: Date
     }
 
     private var cacheKey: CacheKey {
@@ -50,7 +51,8 @@ struct SessionHistoryView: View {
             range: range,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            bucketIDs: dashboard.quotaBuckets.map(\.id)
+            bucketIDs: dashboard.quotaBuckets.map(\.id),
+            day: HistoryRules.cacheDay(now: Date(), calendar: .current)
         )
     }
 

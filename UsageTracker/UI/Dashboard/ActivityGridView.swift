@@ -53,7 +53,8 @@ struct ActivityGridView: View {
             cliUpdatedAt: dashboard.cliBreakdown?.updatedAt ?? .distantPast,
             historyCount: dashboard.history.count,
             lastHistoryAt: dashboard.history.last?.timestamp ?? .distantPast,
-            bucketIDs: dashboard.quotaBuckets.map(\.id)
+            bucketIDs: dashboard.quotaBuckets.map(\.id),
+            day: HistoryRules.cacheDay(now: Date(), calendar: .current)
         )
     }
 
@@ -349,6 +350,7 @@ private struct TaskKey: Hashable {
     let historyCount: Int
     let lastHistoryAt: Date
     let bucketIDs: [String]
+    let day: Date
 }
 
 private struct Day: Sendable {
