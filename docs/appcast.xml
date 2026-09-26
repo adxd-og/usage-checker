@@ -6,6 +6,79 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v3.0.0</title>
+      <pubDate>Sat, 26 Sep 2026 12:37:02 +0300</pubDate>
+      <sparkle:version>50</sparkle:version>
+      <sparkle:shortVersionString>3.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Requirements</h3>
+<ul>
+<li><b>Omelette 3.0 requires macOS 26.</b> The interface is native Liquid Glass with no fallback; 2.7.1 stays available to macOS 14–15 through the update feed.</li>
+</ul>
+<h3>Popover</h3>
+<ul>
+<li><b>Redesigned on glass:</b> provider tiles, a cost tile for local spend, the agents group, and a footer with Dashboard, the floating window, Settings and Quit. The refresh button and the version link are gone (⌘R still refreshes; Settings → General has the version and the update check).</li>
+<li>An Antigravity that is not running reads "Last known HH:mm" instead of a reset countdown.</li>
+<li>Provider tabs cross-fade with a slight slide; off under Reduce Motion.</li>
+<li>The header's second line says "Just updated", as the dashboard does.</li>
+</ul>
+<h3>Dashboard</h3>
+<ul>
+<li><b>A floating glass sidebar with four tabs:</b> Overview, Agents, History, Insights. The Activity tab is gone; its calendar lives in History → Calendar.</li>
+<li>The window's title bar is hidden and the traffic lights sit inside the sidebar.</li>
+<li>"Updated 7s ago" with a status dot replaces the sidebar footnote.</li>
+<li>Every control lights up under the pointer; focus rings show only while navigating with the keyboard.</li>
+<li>Tabs cross-fade; off under Reduce Motion.</li>
+</ul>
+<h3>Overview</h3>
+<ul>
+<li>Concentric rings per provider window; hovering or focusing a legend row magnifies its ring and shows its figure in the centre.</li>
+<li>The CLI card links to History and keeps today's spend by model (up to five rows); "Tokens by day" opens History on its chart.</li>
+<li>Tokens today: tokens against cost per category, with thinking called out.</li>
+<li>The provider's logo sits beside the title.</li>
+</ul>
+<h3>Agents</h3>
+<ul>
+<li>The tab is Sessions plus the Live card, full width, with a link to History → Sessions. The run history list and Busiest project are gone.</li>
+</ul>
+<h3>History</h3>
+<ul>
+<li>One controls row: provider, Chart or Calendar, range up to 1 year.</li>
+<li>Chart bars carry tooltips; the per-day tables (Cost, Tokens, quota peaks) are gone.</li>
+<li>Chats expand in place to show sub-agents and what each model cost.</li>
+<li>Quota-only providers (Antigravity) get a line chart of their windows.</li>
+<li>Token counts from a billion read "2.5B".</li>
+</ul>
+<h3>Insights</h3>
+<ul>
+<li>"Days at limit, 7 days" for every provider; the model split is scoped to today.</li>
+<li>Snapshots recorded, observed peak, Top project this week and the 30-day project list are gone.</li>
+</ul>
+<h3>Settings</h3>
+<ul>
+<li><b>A sidebar window with six tabs:</b> General, Menu bar, Providers, Notifications, Integrations, Advanced. Every row maps onto an existing setting; Force refresh and Quit are gone (the popover has Quit). Old deep links still open the right tab.</li>
+<li>Providers: one row per provider with its source, status and switch, and "Forget last known" inline.</li>
+<li>The global shortcut that opened the popover is gone; the menu-bar icon and ⌘, in the popover remain.</li>
+</ul>
+<h3>Providers</h3>
+<ul>
+<li><b>The Gemini CLI provider is removed.</b> Antigravity's Gemini windows are unaffected. Gemini CLI history already on disk stays and is not shown. A widget that was set to Gemini needs to be edited to another provider.</li>
+</ul>
+<h3>Command line and MCP</h3>
+<ul>
+<li><code>get_sessions</code> prints token counts from a billion as "2.5B", as the dashboard does; <code>omelette status --json</code> keeps raw integers.</li>
+<li>The MCP server's instructions and tool descriptions say where the answers come from: the app's last snapshot, its age, what happens when there is none, and which dollars are API-list-price equivalents.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v3.0.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v3.0.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="TQggRILw5jtowIq6juFiPlvD0b7Tixke6olfuW2URMyipORiRumgYebiOufG/UxWSEPAcgMMh64gFcw/mhmPCw=="
+        length="24684672"/>
+    </item>
+    <item>
       <title>Omelette v2.7.1</title>
       <pubDate>Fri, 25 Sep 2026 02:17:48 +0300</pubDate>
       <sparkle:version>49</sparkle:version>
