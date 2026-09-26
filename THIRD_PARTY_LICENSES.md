@@ -31,13 +31,6 @@ SOFTWARE.
 
 Provider logo SVGs (`ProviderIcon-*.svg` in `SharedAssets/ProviderIcons.xcassets`) are copied from CodexBar's resources under the same MIT license. `UsageTracker/Services/KeychainNoUI.swift` adapts CodexBar's `KeychainNoUIQuery` (runtime resolution of `kSecUseAuthenticationUIFail`) under the same license.
 
-## KeyboardShortcuts (sindresorhus/KeyboardShortcuts)
-
-The global "peek at usage" shortcut is recorded and dispatched by
-<https://github.com/sindresorhus/KeyboardShortcuts>, distributed under the MIT
-License (Copyright (c) Sindre Sorhus): see
-<https://github.com/sindresorhus/KeyboardShortcuts/blob/main/license>.
-
 ## Sparkle
 
 Automatic updates are provided by Sparkle (<https://github.com/sparkle-project/Sparkle>),
