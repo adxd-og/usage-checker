@@ -53,7 +53,7 @@ final class JSONLAggregatorVerificationTests: XCTestCase {
     // MARK: - A real-shaped line, own numbers
 
     /// Copied field-for-field from a `type: assistant` line in
-    /// `~/.claude/projects/-Users-andreianiukov-Desktop-Jaravis/a127ceed-dd01-41c8-8560-b159f317b362.jsonl`
+    /// `~/.claude/projects/<project>/<session>.jsonl`
     /// (verified 2026-09-05: `cache_creation_input_tokens`, `output_tokens_details`,
     /// `server_tool_use`, `service_tier`, nested `cache_creation`, `inference_geo`, and
     /// an `iterations` array all appear alongside the fields the parser actually reads),
