@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `omelette statusline` shows how long the session's prompt cache stays warm,
   `cache 47m`, right after the model and context bar: dim yellow in its last
   minute (last five on a 1-hour cache), `cache cold` in dim red once the next
-  turn will write it again. Needs Claude Code 2.1.251 or later.
+  turn will write it again. Needs Claude Code 2.1.251 or later. If the timer
+  does not appear in a running session, switch the status line off and on
+  again in Settings → Integrations → Claude Code.
 
 ## [3.0.0] — 2026-09-26
 
