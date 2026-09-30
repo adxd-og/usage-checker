@@ -113,8 +113,8 @@ enum CLIMain {
 
     /// Claude Code writes its session JSON to our stdin and closes it. It has to be
     /// read to the end whatever is in it — leaving the pipe unread risks a write error
-    /// on their side — and `StatusLineInput` takes the model and the context window
-    /// out of it.
+    /// on their side — and `StatusLineInput` takes the model, the context window and
+    /// the prompt cache out of it.
     ///
     /// Only when stdin is a pipe: run by hand in a terminal there is nothing to read
     /// and `readToEnd` would sit there until the user pressed ^D. nil is "nobody piped
