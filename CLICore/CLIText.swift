@@ -38,6 +38,9 @@ enum CLIText {
     model and a bar of how full its context window is, coloured for a status bar;
     `--no-color` prints the same line without the escape codes.
 
+    cache 47m   how long the session's prompt cache stays warm;
+    "cache cold" means the next turn writes it again
+
     Dollars are what the same tokens would cost at API list prices. On a
     subscription that is not the bill, so `status` marks them "(API-equivalent)"
     and `statusline` puts `≈` in front of them.

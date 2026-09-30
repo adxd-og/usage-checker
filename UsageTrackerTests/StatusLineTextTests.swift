@@ -185,10 +185,27 @@ final class StatusLineTextTests: XCTestCase {
     }
 
     /// `≈` alone would be a riddle; `omelette --help` says what it and the longer
-    /// suffix mean.
+    /// suffix mean, and what the cache timer counts (spec 2026-09-30 status line
+    /// cache timer, § Line).
     func testTheHelpTextSaysWhatTheMarksMean() {
         XCTAssertTrue(CLIText.usage.contains(StatusLineText.apiEquivalentMarker), CLIText.usage)
         XCTAssertTrue(CLIText.usage.contains(CLIText.apiEquivalentSuffix), CLIText.usage)
+        XCTAssertTrue(
+            CLIText.usage.contains(
+                "cache 47m   how long the session's prompt cache stays warm;"
+            ),
+            CLIText.usage
+        )
+        XCTAssertTrue(
+            CLIText.usage.contains(
+                #""cache cold" means the next turn writes it again"#
+            ),
+            CLIText.usage
+        )
+        XCTAssertTrue(
+            CLIText.usage.contains("\"\(CacheLifeRules.coldText)\""),
+            "the help and the line use one word for a cold cache"
+        )
     }
 
     // MARK: - The prompt cache (spec 2026-09-30 status line cache timer, § Line)
