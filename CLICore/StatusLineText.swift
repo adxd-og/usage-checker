@@ -2,13 +2,13 @@ import Foundation
 
 /// `omelette statusline` — one line for Claude Code's status bar, and never more.
 ///
-/// `Fable [####------] 42% · ◐ 61% · resets in 1h 28m · ≈$386.64 today · ⚑ 1` — or
-/// `… · ◐ 39% left · …` when the app is showing what is left. The prefix is the
-/// session Claude Code piped in (`StatusLineInput`), everything after it is the
-/// account. Parts with nothing to say are dropped rather than shown empty, and a
-/// snapshot that is missing or stale leaves the prefix standing on its own: a status
-/// line that lies is worse than one that is blank, and an error message in that bar
-/// would sit there for the rest of the session.
+/// `Fable [####------] 42% · cache 47m · ◐ 61% · resets in 1h 28m · ≈$386.64 today · ⚑ 1`
+/// — or `… · ◐ 39% left · …` when the app is showing what is left. The prefix and the
+/// cache timer are the session Claude Code piped in (`StatusLineInput`); everything
+/// after them is the account. Parts with nothing to say are dropped rather than shown
+/// empty, and a snapshot that is missing or stale leaves the session's half standing
+/// on its own: a status line that lies is worse than one that is blank, and an error
+/// message in that bar would sit there for the rest of the session.
 enum StatusLineText {
     static let defaultProvider = "claude"
 
@@ -50,11 +50,17 @@ enum StatusLineText {
         let prefix = sessionPrefix(
             model: input.model, contextUsedPercent: input.contextUsedPercent, colour: colour
         )
+        var session: [String] = prefix.isEmpty ? [] : [prefix]
+        if let cache = cachePart(input.promptCache, now: now, colour: colour) {
+            session.append(cache)
+        }
         // The session's numbers do not go stale with the app's: Claude Code piped them
-        // in a moment ago, and losing the model name because Omelette is closed would
-        // be dropping the one part of the line that is still true.
-        guard let snapshot, snapshot.isFresh(now: now) else { return prefix }
-        var parts: [String] = prefix.isEmpty ? [] : [prefix]
+        // in a moment ago, and losing the model name or the cache timer because
+        // Omelette is closed would be dropping the part of the line that is still true.
+        guard let snapshot, snapshot.isFresh(now: now) else {
+            return session.joined(separator: " · ")
+        }
+        var parts = session
 
         let service = snapshot.service(id: provider)
         if let service {
@@ -99,6 +105,18 @@ enum StatusLineText {
         return ANSI.model + name + ANSI.reset
             + " " + barColour + bar + ANSI.reset
             + " " + ANSI.percent + percent + ANSI.reset
+    }
+
+    /// `cache 47m` — how long the session's prompt cache stays warm, in
+    /// `CacheLifeRules`' words and colours. nil when there is nothing to count: no
+    /// `prompt_cache` yet, or a session in which caching was never observed.
+    ///
+    /// It follows the prefix, not the account: the cache is the session's, and like
+    /// the prefix it is Claude Code's own reading, true whether Omelette runs or not.
+    static func cachePart(_ cache: StatusLineInput.PromptCache?, now: Date, colour: Bool) -> String? {
+        guard let segment = CacheLifeRules.segment(cache: cache, now: now) else { return nil }
+        guard colour else { return segment.text }
+        return CacheLifeRules.colour(for: segment.state) + segment.text + ANSI.reset
     }
 
     /// The window the line speaks for: the session window when the provider has one,

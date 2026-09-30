@@ -217,7 +217,8 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
     }
 
     /// Claude Code renders the escape codes, so a payload on stdin means colour unless
-    /// the flag says otherwise. Nothing after the prefix is ever coloured.
+    /// the flag says otherwise. Only the session's half is coloured; the account's
+    /// numbers never are.
     func testAPipedPayloadIsColouredUnlessNoColorSaysOtherwise() throws {
         try publish(sample())
         let session = #"{"model":{"display_name":"Opus"},"context_window":{"used_percentage":91}}"#
@@ -229,6 +230,24 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
             run.stdout.hasPrefix("\u{1B}[2;36mOpus\u{1B}[0m \u{1B}[2;31m[#########-]\u{1B}[0m \u{1B}[2m91%\u{1B}[0m · ◐ 42%"),
             run.stdout
         )
+    }
+
+    /// Claude Code's `prompt_cache` reaches the line through the binary's own clock, so
+    /// the test pins the segment's place and shape rather than the exact minute.
+    func testStatusLineCountsDownThePromptCacheClaudeCodeSends() throws {
+        try publish(sample())
+        // 47½ min out leaves ~30 s of slack for the binary's clock; a slower machine would print `cache 46m`.
+        let expiresAt = Int(Date().timeIntervalSince1970) + 2850
+        let session = #"{"model":{"display_name":"Opus"},"context_window":{"used_percentage":42.4},"prompt_cache":{"warm":true,"caching_observed":true,"ttl":"1h","expires_at":\#(expiresAt)}}"#
+
+        let run = try runCLI(["statusline", "--no-color"], stdin: session)
+        let line = run.stdout
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(line.hasPrefix("Opus [####------] 42% · cache "), line)
+        XCTAssertTrue(line.contains("cache 47m") || line.contains("cache 46m"), line)
+        XCTAssertTrue(line.contains("m · ◐ 42% · resets in "), line)
+        XCTAssertEqual(line.filter { $0 == "\n" }.count, 1)
     }
 
     /// Nothing on stdin is a person running it by hand: there is no session to
