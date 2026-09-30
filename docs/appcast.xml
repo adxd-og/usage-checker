@@ -6,6 +6,25 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v3.0.1</title>
+      <pubDate>Wed, 30 Sep 2026 14:58:28 +0300</pubDate>
+      <sparkle:version>51</sparkle:version>
+      <sparkle:shortVersionString>3.0.1</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Command line</h3>
+<ul>
+<li><code>omelette statusline</code> shows how long the session's prompt cache stays warm, <code>cache 47m</code>, right after the model and context bar: dim yellow in its last minute (last five on a 1-hour cache), <code>cache cold</code> in dim red once the next turn will write it again. Needs Claude Code 2.1.251 or later. If the timer does not appear in a running session, switch the status line off and on again in Settings → Integrations → Claude Code.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v3.0.1">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v3.0.1/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="VGRrE6cLCCHoqps8q3G5LyAIUhVqKTcOAke+gkc9uWOM8pfV1HJ5ZKtOFNUtESg2RJW5NQYevudKdzqgUvLoCA=="
+        length="24686872"/>
+    </item>
+    <item>
       <title>Omelette v3.0.0</title>
       <pubDate>Sat, 26 Sep 2026 12:37:02 +0300</pubDate>
       <sparkle:version>50</sparkle:version>
