@@ -183,7 +183,9 @@ agents.
 Claude Code:
 `Fable 5.1 [######----] 55% · cache 47m · ◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1`,
 where `cache 47m` is how long the session's prompt cache stays warm and
-`cache cold` (red) means the next turn writes it again, and where `≈` marks
+`cache cold` (red) means the next turn writes it again (after updating, switch
+the status line off and on again in Settings → Integrations → Claude Code if
+the timer does not show up), and where `≈` marks
 API-equivalent dollars (`omelette status` writes "(API-equivalent)").
 Or add it yourself to `~/.claude/settings.json` (Claude Code runs the command
 through a shell, so `$HOME` expands):
