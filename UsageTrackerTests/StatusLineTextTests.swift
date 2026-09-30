@@ -190,4 +190,144 @@ final class StatusLineTextTests: XCTestCase {
         XCTAssertTrue(CLIText.usage.contains(StatusLineText.apiEquivalentMarker), CLIText.usage)
         XCTAssertTrue(CLIText.usage.contains(CLIText.apiEquivalentSuffix), CLIText.usage)
     }
+
+    // MARK: - The prompt cache (spec 2026-09-30 status line cache timer, § Line)
+
+    private let cyan = "\u{1B}[2;36m"
+    private let dim = "\u{1B}[2m"
+    private let yellow = "\u{1B}[2;33m"
+    private let red = "\u{1B}[2;31m"
+    private let reset = "\u{1B}[0m"
+
+    /// The session Claude Code pipes in: `Fable 5.1` at 55% context, with a prompt
+    /// cache that goes cold `expiresIn` seconds from `now`.
+    private func session(
+        model: String? = "Fable 5.1",
+        context: Double? = 55,
+        expiresIn: TimeInterval?,
+        warm: Bool = true,
+        ttl: String? = "1h",
+        observed: Bool = true
+    ) -> StatusLineInput {
+        StatusLineInput(
+            model: model,
+            contextUsedPercent: context,
+            promptCache: StatusLineInput.PromptCache(
+                warm: warm,
+                ttl: ttl,
+                expiresAt: expiresIn.map { now.addingTimeInterval($0) },
+                cachingObserved: observed
+            )
+        )
+    }
+
+    /// The spec's example account: 3% of the session window, 4h 14m to its reset,
+    /// $10.35 of API-equivalent dollars today.
+    private var account: StatusSnapshot {
+        snapshot(
+            windows: [window("five_hour", "Session", 3, resetsIn: 254 * 60, kind: "session")],
+            todayCost: 10.35
+        )
+    }
+
+    /// The cache is the session's, so it follows the prefix and comes before the
+    /// account's numbers.
+    func testTheCacheTimerSitsBetweenTheSessionAndTheAccount() {
+        XCTAssertEqual(
+            StatusLineText.render(snapshot: account, now: now, input: session(expiresIn: 47 * 60), colour: false),
+            "Fable 5.1 [######----] 55% · cache 47m · ◐ 3% · resets in 4h 14m · ≈$10.35 today"
+        )
+    }
+
+    /// Like the prefix, it is Claude Code's own reading and stays true while Omelette
+    /// is closed or has not polled for ten minutes.
+    func testTheCacheTimerStaysWhenTheAccountsNumbersGo() {
+        XCTAssertEqual(
+            StatusLineText.render(snapshot: nil, now: now, input: session(expiresIn: 47 * 60), colour: false),
+            "Fable 5.1 [######----] 55% · cache 47m"
+        )
+        XCTAssertEqual(
+            StatusLineText.render(
+                snapshot: snapshot(
+                    windows: [window("five_hour", "Session", 3, kind: "session")],
+                    updatedAt: now.addingTimeInterval(-601)
+                ),
+                now: now, input: session(expiresIn: 47 * 60), colour: false
+            ),
+            "Fable 5.1 [######----] 55% · cache 47m",
+            "a stale snapshot drops the account's numbers, not the session's"
+        )
+    }
+
+    func testTheCacheTimerIsColouredByHowMuchIsLeft() {
+        func line(_ input: StatusLineInput) -> String {
+            StatusLineText.render(snapshot: nil, now: now, input: input, colour: true)
+        }
+        XCTAssertEqual(
+            line(session(context: nil, expiresIn: 47 * 60)),
+            "\(cyan)Fable 5.1\(reset) · \(dim)cache 47m\(reset)"
+        )
+        XCTAssertEqual(
+            line(session(context: nil, expiresIn: 4 * 60)),
+            "\(cyan)Fable 5.1\(reset) · \(yellow)cache 4m\(reset)",
+            "closing: under five minutes on an hour cache"
+        )
+        XCTAssertEqual(
+            line(session(context: nil, expiresIn: 40, ttl: "5m")),
+            "\(cyan)Fable 5.1\(reset) · \(yellow)cache 40s\(reset)",
+            "closing: under a minute on a five-minute cache"
+        )
+        XCTAssertEqual(
+            line(session(context: nil, expiresIn: -1)),
+            "\(cyan)Fable 5.1\(reset) · \(red)cache cold\(reset)"
+        )
+    }
+
+    func testTheAccountsNumbersAfterAColouredTimerStayPlain() {
+        XCTAssertEqual(
+            StatusLineText.render(
+                snapshot: account, now: now,
+                input: session(context: nil, expiresIn: nil, warm: false), colour: true
+            ),
+            "\(cyan)Fable 5.1\(reset) · \(red)cache cold\(reset) · ◐ 3% · resets in 4h 14m · ≈$10.35 today"
+        )
+    }
+
+    /// A file, a pipe into `grep`, or `--no-color`.
+    func testWithoutColourTheCacheTimerHasNoEscapeCode() {
+        for input in [session(expiresIn: 47 * 60), session(expiresIn: 4 * 60), session(expiresIn: -1)] {
+            let line = StatusLineText.render(snapshot: account, now: now, input: input, colour: false)
+            XCTAssertFalse(line.contains("\u{1B}"), line)
+            XCTAssertTrue(line.contains(" · cache "), line)
+        }
+    }
+
+    /// No `prompt_cache` yet, or caching never observed: the line is what it was.
+    func testNothingToCountLeavesTheLineAsItWas() {
+        XCTAssertEqual(
+            StatusLineText.render(
+                snapshot: nil, now: now, input: session(expiresIn: 47 * 60, observed: false), colour: false
+            ),
+            "Fable 5.1 [######----] 55%"
+        )
+        XCTAssertEqual(
+            StatusLineText.render(
+                snapshot: nil, now: now,
+                input: StatusLineInput(model: "Fable 5.1", contextUsedPercent: 55), colour: false
+            ),
+            "Fable 5.1 [######----] 55%"
+        )
+    }
+
+    /// A payload that carries the cache but neither a model nor a context reading has
+    /// no prefix. The segment still prints whenever the input yields one, so it leads.
+    func testACacheTimerWithNothingInFrontOfItLeadsTheLine() {
+        XCTAssertEqual(
+            StatusLineText.render(
+                snapshot: account, now: now,
+                input: session(model: nil, context: nil, expiresIn: 47 * 60), colour: false
+            ),
+            "cache 47m · ◐ 3% · resets in 4h 14m · ≈$10.35 today"
+        )
+    }
 }
