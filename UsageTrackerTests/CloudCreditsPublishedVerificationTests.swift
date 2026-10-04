@@ -293,12 +293,14 @@ final class CloudCreditsPublishedVerificationTests: XCTestCase {
         XCTAssertTrue(readme.contains("Cloud session credits: shown as dollars, never drives the menu bar"))
     }
 
-    func testTheChangelogCarriesAnUnreleasedClaudeLineAboveTheLastRelease() throws {
+    func testTheChangelogCarriesTheClaudeLineInTheReleaseAbove301() throws {
         let changelog = try repoFile("CHANGELOG.md")
-        let unreleased = try XCTUnwrap(changelog.range(of: "## [Unreleased]"))
+        // The line was written under [Unreleased] and rides the release that follows
+        // 3.0.1, whatever its number: the section right above 3.0.1 carries it.
         let release = try XCTUnwrap(changelog.range(of: "## [3.0.1]"))
-        XCTAssertLessThan(unreleased.lowerBound, release.lowerBound)
-        let section = String(changelog[unreleased.upperBound..<release.lowerBound])
+        let above = String(changelog[..<release.lowerBound])
+        let heading = try XCTUnwrap(above.range(of: "## [", options: .backwards))
+        let section = String(above[heading.upperBound...])
         XCTAssertTrue(section.contains("### Claude"))
         XCTAssertTrue(section.contains("Cloud session credits"))
         XCTAssertTrue(section.contains("Included"))
