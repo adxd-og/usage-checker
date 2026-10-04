@@ -137,6 +137,15 @@ final class StatusBarController {
             // untouched window is hidden at 0% used, and it is still the untouched
             // window when the app is counting down from 100.
             for b in service.buckets where b.clampedPercent > 0 || b.kind == .session || b.id == "seven_day" {
+                // A prepaid credit pool is money, not a window counting down: its line
+                // says what the Claude tab's row says, "$231 / $250", in either mode.
+                if let credit = b.credit {
+                    let dollars = CreditCopy.value(
+                        usedDollars: credit.usedDollars, limitDollars: credit.limitDollars, locale: locale
+                    )
+                    lines.append("  \(b.label): \(dollars)")
+                    continue
+                }
                 lines.append("  \(b.label): \(PercentDisplay.percentPhrase(b.clampedPercent, mode: mode))")
             }
             if let cost = service.weekCost {
