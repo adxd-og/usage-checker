@@ -10,6 +10,27 @@ struct OverviewRingWindow: Equatable, Identifiable {
     var id: String { bucket.id }
 }
 
+/// A dollar row in the Overview's legend, after the windows (cloud session credits spec
+/// § Design, "Overview legend row"): an extra-usage or spend limit, or a prepaid credit
+/// pool, with its dollars where a window shows its percent. No ring, no part in the
+/// emphasis, the centre or the verdict.
+struct OverviewDollarRow: Equatable, Identifiable {
+    let id: String
+    let label: String
+    /// `$231 / $250`: used over limit in whole dollars.
+    let figure: String
+    /// `expires 5 Nov, 7:59` for a credit pool with a date; nil otherwise.
+    let subline: String?
+    /// The row's dot.
+    let token: OMColorToken
+
+    /// What VoiceOver reads: "Cloud session credits, $231 / $250, expires 5 Nov, 7:59".
+    var accessibilityLabel: String {
+        guard let subline else { return "\(label), \(figure)" }
+        return "\(label), \(figure), \(subline)"
+    }
+}
+
 /// A line of copy and the colour it is set in.
 struct OverviewLine: Equatable {
     let text: String
@@ -153,6 +174,45 @@ enum OverviewRingsRules {
         let head = "\(bucket.label), \(PercentDisplay.spoken(bucket.clampedPercent, mode: mode))"
         guard let subline else { return head }
         return "\(head), \(subline)"
+    }
+
+    // MARK: - Dollar rows (cloud session credits spec § Design, "Overview legend row")
+
+    /// The legend's dollar rows, after the windows: the extra-usage or spend limit when it
+    /// is on and has a limit (amber), then each prepaid credit pool in the provider's
+    /// order (teal), with "expires …" under it when its date is known. A spend limit that
+    /// is already a ring (the hero of an account with no session window) has a window row
+    /// saying what is spent, so it gets no second row here.
+    nonisolated static func dollarRows(
+        for service: ServiceSnapshot,
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> [OverviewDollarRow] {
+        var rows: [OverviewDollarRow] = []
+        let extraID = WindowRanking.extraUsageBucketID(for: service)
+        if let extra = service.extraUsage, extra.isEnabled, extra.monthlyLimit > 0,
+           !windows(for: service).contains(where: { $0.id == extraID }) {
+            rows.append(OverviewDollarRow(
+                id: extraID,
+                label: extraUsageTitle(plan: service.plan),
+                figure: CreditCopy.value(usedDollars: extra.usedCredits, limitDollars: extra.monthlyLimit, locale: locale),
+                subline: nil,
+                token: .seriesExtraUsage
+            ))
+        }
+        for pool in service.creditPools {
+            guard let credit = pool.credit else { continue }
+            rows.append(OverviewDollarRow(
+                id: pool.id,
+                label: pool.label,
+                figure: CreditCopy.value(usedDollars: credit.usedDollars, limitDollars: credit.limitDollars, locale: locale),
+                subline: ResetCopy.absolute(resetsAt: pool.resetsAt, now: now, calendar: calendar, locale: locale)
+                    .map { "expires \($0)" },
+                token: .seriesCredits
+            ))
+        }
+        return rows
     }
 }
 

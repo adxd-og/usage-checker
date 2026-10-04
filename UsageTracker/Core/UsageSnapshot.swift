@@ -120,6 +120,11 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// Promotional pools stay; each surface already places them last or dims them.
     var percentWindows: [UsageBucket] { buckets.filter { !$0.isCreditPool } }
 
+    /// The prepaid credit pools, in the provider's order: the dollar rows on the provider
+    /// tab's spend card and in the Overview's legend. A pool at 0 % is listed too: it is
+    /// money the account has.
+    var creditPools: [UsageBucket] { buckets.filter(\.isCreditPool) }
+
     /// The number the menu bar shows: the worst *core* constraint. Bonus pools don't
     /// count — a free promo shouldn't scream "almost at the limit", and a prepaid
     /// credit pool ("Cloud session credits") is money the account has: when it runs

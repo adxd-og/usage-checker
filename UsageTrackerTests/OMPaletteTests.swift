@@ -65,6 +65,13 @@ final class OMPaletteTests: XCTestCase {
         XCTAssertEqual(light(.seriesPerModel), OMRGBA(hex: 0x9A66EE))
     }
 
+    func testTheOverviewDollarRowsDotsAreAmberAndTeal() {
+        XCTAssertEqual(dark(.seriesExtraUsage), OMRGBA(hex: 0xF5C76B))
+        XCTAssertEqual(light(.seriesExtraUsage), OMRGBA(hex: 0xD99A1E))
+        XCTAssertEqual(dark(.seriesCredits), OMRGBA(hex: 0x5CC8C8))
+        XCTAssertEqual(light(.seriesCredits), OMRGBA(hex: 0x26A8A8))
+    }
+
     func testTokenCategoriesAreBlueOrangeTealAndViolet() {
         XCTAssertEqual(dark(.tokenInput), OMRGBA(hex: 0x7AA2FF))
         XCTAssertEqual(dark(.tokenOutput), OMRGBA(hex: 0xF59E6B))

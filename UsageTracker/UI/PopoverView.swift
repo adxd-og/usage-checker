@@ -189,7 +189,7 @@ struct PopoverView: View {
     /// The prepaid credit pools a provider tab lists in its spend card, in the
     /// provider's order. A pool at 0 % keeps its row: it is money the account has.
     nonisolated static func creditPools(_ service: ServiceSnapshot) -> [UsageBucket] {
-        service.buckets.filter(\.isCreditPool)
+        service.creditPools
     }
 
     /// A credit row's value: `"$231 / $250"`, used over limit in whole dollars, the
