@@ -121,4 +121,17 @@ final class RemainingModeSettingsTests: XCTestCase {
         let service = Fixture.snapshot(id: "codex", buckets: [], state: .notSignedIn)
         XCTAssertEqual(SettingsView.usageSummary(service, mode: .remaining), "—")
     }
+
+    func testTheProviderSummaryLeavesCloudSessionCreditsOut() {
+        // Pure: reads no setting, so the domain snapshot around it changes nothing.
+        let service = Fixture.snapshot(
+            id: "claude",
+            buckets: [
+                Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+                Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+                Fixture.cloudCredits,
+            ]
+        )
+        XCTAssertEqual(SettingsView.usageSummary(service, mode: .used), "Week 69% · Session 7%")
+    }
 }

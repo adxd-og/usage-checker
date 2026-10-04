@@ -478,17 +478,23 @@ final class DashboardState: ObservableObject {
         clearProviderScopedState()
     }
 
-    /// The window worth predicting: the session one when the provider has it,
-    /// otherwise whichever non-promo window is furthest along — a provider whose
-    /// every limit is a per-model quota has no session window at all.
+    /// The live snapshot's entry for `serviceID`, handed to the rule below.
     private static func burnBucket(of serviceID: String) -> UsageBucket? {
         guard let service = AppState.shared.snapshot.services.first(where: { $0.id == serviceID })
         else { return nil }
+        return Self.burnBucket(of: service)
+    }
+
+    /// The window worth predicting: the session one when the provider has it,
+    /// otherwise whichever window is furthest along that is not a bonus pool — a
+    /// provider whose every limit is a per-model quota has no session window at all,
+    /// and neither a free promo nor a prepaid credit pool is a limit to run into.
+    nonisolated static func burnBucket(of service: ServiceSnapshot) -> UsageBucket? {
         if let session = service.buckets.first(where: { $0.kind == .session && !$0.isPromotional }) {
             return session
         }
         return service.buckets
-            .filter { !$0.isPromotional }
+            .filter { !$0.isBonusPool }
             .max(by: { $0.clampedPercent < $1.clampedPercent })
     }
 

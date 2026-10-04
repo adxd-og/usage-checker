@@ -306,6 +306,39 @@ final class QuotaAnalyticsTests: XCTestCase {
         XCTAssertEqual(QuotaAnalytics.coreBuckets(of: onlyPromo).map(\.id), ["five_hour_promotional"])
     }
 
+    func testACloudSessionCreditPoolIsNeverALiveCoreWindow() {
+        // Money, not a limit: it never colours a day of the activity grid while the
+        // provider is reporting.
+        let live = [
+            Fixture.bucket(id: "five_hour", kind: .session),
+            Fixture.bucket(id: "seven_day", kind: .weekly),
+            Fixture.cloudCredits,
+        ]
+        XCTAssertEqual(QuotaAnalytics.coreBuckets(of: live).map(\.id), ["five_hour", "seven_day"])
+        // Nothing but a scoped cap beside it: the cap is the account's limit.
+        let scopedAndCredit = [Fixture.bucket(id: "seven_day_fable", kind: .modelSpecific), Fixture.cloudCredits]
+        XCTAssertEqual(QuotaAnalytics.coreBuckets(of: scopedAndCredit).map(\.id), ["seven_day_fable"])
+        let infos = QuotaAnalytics.bucketInfos(service: Fixture.snapshot(id: "claude", buckets: live), records: [])
+        XCTAssertEqual(infos.map(\.isCore), [true, true, false])
+    }
+
+    func testACreditPoolNeverColoursTheGridEvenWhenItIsAllThereIs() {
+        // A promo pool may stand in when it is all an account has; a credit pool never.
+        let promo = Fixture.bucket(id: "seven_day_promotional", kind: .weekly)
+        XCTAssertEqual(QuotaAnalytics.coreBuckets(of: [Fixture.cloudCredits]).map(\.id), [])
+        XCTAssertEqual(
+            QuotaAnalytics.coreBuckets(of: [Fixture.cloudCredits, promo]).map(\.id), ["seven_day_promotional"]
+        )
+        let alone = QuotaAnalytics.bucketInfos(
+            service: Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits]), records: []
+        )
+        XCTAssertEqual(alone.map(\.isCore), [false])
+        let withPromo = QuotaAnalytics.bucketInfos(
+            service: Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits, promo]), records: []
+        )
+        XCTAssertEqual(withPromo.map(\.isCore), [false, true])
+    }
+
     func testLiveWindowsKeepTheProvidersOwnNamesAndOrder() {
         let service = Fixture.snapshot(id: "antigravity", buckets: [
             Fixture.bucket(id: "five_hour", label: "5-hour", kind: .session),

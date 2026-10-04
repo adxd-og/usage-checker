@@ -44,6 +44,11 @@ final class FloatingMiniLayoutTests: XCTestCase {
         XCTAssertEqual(content([session, promo, weekly]).rows.map(\.id), ["seven_day"])
     }
 
+    func testACloudSessionCreditPoolNeverTakesARow() {
+        // Money the account has, not a limit: at 92 % it would push the weekly down.
+        XCTAssertEqual(content([session, Fixture.cloudCredits, weekly]).rows.map(\.id), ["seven_day"])
+    }
+
     func testTheHeroIsNeverRepeatedAsARow() {
         XCTAssertEqual(content([weekly, opus]).hero?.id, "seven_day")
         XCTAssertEqual(content([weekly, opus]).rows.map(\.id), ["seven_day_opus"])

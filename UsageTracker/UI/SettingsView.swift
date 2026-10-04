@@ -78,7 +78,7 @@ struct SettingsView: View {
     /// the user's choice.
     nonisolated static func usageSummary(_ svc: ServiceSnapshot, mode: PercentDisplay.Mode) -> String {
         let worst = svc.buckets
-            .filter { !$0.isPromotional }
+            .filter { !$0.isBonusPool }
             .sorted { $0.clampedPercent > $1.clampedPercent }
             .prefix(2)
         if !worst.isEmpty {

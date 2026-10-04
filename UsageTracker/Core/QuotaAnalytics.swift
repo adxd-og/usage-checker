@@ -268,15 +268,18 @@ enum QuotaAnalytics {
     // MARK: - Buckets
 
     /// The provider's real constraints, by the same rule the menu bar headline uses:
-    /// promotional pools are free bonuses and a model-scoped cap is one model's
-    /// ceiling, so neither should colour a day in the activity grid. The fallbacks
-    /// matter for an account that has nothing else — a grid with no squares at all
-    /// would be worse than one drawn from a promo pool.
+    /// promotional pools are free bonuses, a prepaid credit pool is money rather than a
+    /// limit, and a model-scoped cap is one model's ceiling, so none of them should
+    /// colour a day in the activity grid. The fallbacks matter for an account that has
+    /// nothing else — a grid with no squares at all would be worse than one drawn from
+    /// a promo pool. A credit pool never stands in: its percent is money spent, not a
+    /// limit approached, and a blank grid says that better than a coloured one.
     static func coreBuckets(of buckets: [UsageBucket]) -> [UsageBucket] {
-        let core = buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
+        let core = buckets.filter { !$0.isBonusPool && $0.kind != .modelSpecific }
         if !core.isEmpty { return core }
-        let nonPromotional = buckets.filter { !$0.isPromotional }
-        return nonPromotional.isEmpty ? buckets : nonPromotional
+        let nonBonus = buckets.filter { !$0.isBonusPool }
+        if !nonBonus.isEmpty { return nonBonus }
+        return buckets.filter { !$0.isCreditPool }
     }
 
     /// Every bucket id these records carry, sorted so the order is stable.

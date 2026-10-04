@@ -84,12 +84,12 @@ enum FloatingMiniLayout {
 
     /// Other session windows first — mid-week a weekly often reads higher than the
     /// 5-hour window, and the 5-hour window is the one people check — then the rest
-    /// worst-first with ties keeping API order. Promotional pools never take a seat:
-    /// running a free bonus dry costs nothing.
+    /// worst-first with ties keeping API order. Bonus pools never take a seat: running
+    /// a free promo dry costs nothing, and a prepaid credit pool is money, not a limit.
     private static func rows(for service: ServiceSnapshot, hero: UsageBucket, maxRows: Int) -> [UsageBucket] {
         let sessions = WindowRanking.sessionRows(for: service, hero: hero).filter { !$0.isPromotional }
         let taken = Set(sessions.map(\.id) + [hero.id])
-        let rest = service.buckets.filter { !taken.contains($0.id) && !$0.isPromotional }
+        let rest = service.buckets.filter { !taken.contains($0.id) && !$0.isBonusPool }
         // `sorted` is not stable, so the API index is carried along and breaks ties.
         let ordered = rest.enumerated()
             .sorted { a, b in
