@@ -255,6 +255,10 @@ enum OMColorToken: CaseIterable, Sendable {
     case seriesSession
     case seriesAllModels
     case seriesPerModel
+    /// The Overview legend's dollar rows, dots only: an extra-usage or spend limit in
+    /// amber, a prepaid credit pool in teal (the cache-read pair).
+    case seriesExtraUsage
+    case seriesCredits
     /// Token categories in stacked bars and legends.
     case tokenInput
     case tokenOutput
@@ -324,6 +328,8 @@ enum OMPalette {
         case .seriesSession: return (OMRGBA(hex: 0x6FD99A), OMRGBA(hex: 0x2FB36A))
         case .seriesAllModels: return (OMRGBA(hex: 0x7AA2FF), OMRGBA(hex: 0x4C7EF3))
         case .seriesPerModel: return (OMRGBA(hex: 0xC79BFF), OMRGBA(hex: 0x9A66EE))
+        case .seriesExtraUsage: return (OMRGBA(hex: 0xF5C76B), OMRGBA(hex: 0xD99A1E))
+        case .seriesCredits: return (OMRGBA(hex: 0x5CC8C8), OMRGBA(hex: 0x26A8A8))
         case .tokenInput: return (OMRGBA(hex: 0x7AA2FF), OMRGBA(hex: 0x4C7EF3))
         case .tokenOutput: return (OMRGBA(hex: 0xF59E6B), OMRGBA(hex: 0xEE7B3A))
         case .tokenCacheRead: return (OMRGBA(hex: 0x5CC8C8), OMRGBA(hex: 0x26A8A8))

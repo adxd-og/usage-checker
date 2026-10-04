@@ -149,10 +149,20 @@ final class OverviewRingsRulesTests: XCTestCase {
                        "Current session, 47 percent left")
     }
 
-    // MARK: - Credit rows (cloud session credits spec § Design, "Overview legend row")
+    // MARK: - Dollar rows (cloud session credits spec § Design, "Overview legend row")
 
     /// Sunday 2026-10-04 12:00 UTC, the day the pool read $231 of $250.
     private let october4 = Date(timeIntervalSince1970: 1_791_115_200)
+
+    /// The mockup's Claude with dollars beside its windows: an extra-usage limit and any
+    /// credit pools.
+    private func claudeWithDollars(
+        extraUsage: ExtraUsage?, plan: String = "Claude Max 20x", pools: [UsageBucket] = []
+    ) -> ServiceSnapshot {
+        Fixture.snapshot(id: "claude", plan: plan, buckets: claude().buckets + pools, extraUsage: extraUsage, at: now)
+    }
+
+    private let tenDollarExtra = ExtraUsage(isEnabled: true, monthlyLimit: 10, usedCredits: 0, utilization: 0)
 
     func testCreditPoolsListsOnlyTheCreditPoolsInProviderOrder() {
         let untouched = Fixture.bucket(
@@ -165,51 +175,67 @@ final class OverviewRingsRulesTests: XCTestCase {
         XCTAssertEqual(claude().creditPools, [])
     }
 
-    func testACreditPoolGetsALegendRowButNoRing() {
-        let service = claude(extra: [Fixture.cloudCredits])
-        XCTAssertEqual(
-            OverviewRingsRules.windows(for: service).map(\.id), ["five_hour", "seven_day", "seven_day_fable"]
-        )
-        XCTAssertEqual(OverviewRingsRules.creditRows(for: service), [Fixture.cloudCredits])
+    func testExtraUsageGetsADollarRowBeforeTheCreditPools() {
+        let service = claudeWithDollars(extraUsage: tenDollarExtra, pools: [Fixture.cloudCredits])
+        // No locale spells both "$231" and "5 Nov, 7:59": the dollars are pinned in en_US,
+        // the expiry in en_GB (ResetCopy.absolute writes its 07:59 as "7:59").
+        let inUS = OverviewRingsRules.dollarRows(for: service, now: october4, calendar: calendar, locale: us)
+        let inGB = OverviewRingsRules.dollarRows(for: service, now: october4, calendar: calendar, locale: gb)
+        XCTAssertEqual(inUS.map(\.id), ["claude_extra_usage", "iguana_necktie"])
+        XCTAssertEqual(inUS.map(\.label), ["Extra usage credits", "Cloud session credits"])
+        XCTAssertEqual(inUS.map(\.figure), ["$0 / $10", "$231 / $250"])
+        XCTAssertEqual(inUS.map(\.token), [.seriesExtraUsage, .seriesCredits])
+        XCTAssertEqual(inGB.map(\.subline), [nil, "expires 5 Nov, 7:59"])
     }
 
-    func testAnAccountWithoutCreditsHasNoCreditRows() {
-        XCTAssertEqual(OverviewRingsRules.creditRows(for: claude()), [])
+    func testDisabledExtraUsageGetsNoDollarRow() {
+        let off = ExtraUsage(isEnabled: false, monthlyLimit: 10, usedCredits: 0, utilization: 0)
+        let noLimit = ExtraUsage(isEnabled: true, monthlyLimit: 0, usedCredits: 0, utilization: 0)
+        for extra in [off, noLimit] {
+            let service = claudeWithDollars(extraUsage: extra, pools: [Fixture.cloudCredits])
+            XCTAssertEqual(OverviewRingsRules.dollarRows(for: service, now: october4).map(\.id), ["iguana_necktie"])
+        }
     }
 
-    func testTheCreditSublineSaysWhenThePoolExpires() {
-        // ResetCopy.absolute's spelling: Date.FormatStyle writes en_GB's 07:59 as "7:59".
-        XCTAssertEqual(
-            OverviewRingsRules.creditSubline(for: Fixture.cloudCredits, now: october4, calendar: calendar, locale: gb),
-            "expires 5 Nov, 7:59"
-        )
+    func testAnAccountWithoutDollarsHasNoDollarRows() {
+        XCTAssertEqual(OverviewRingsRules.dollarRows(for: claude(), now: october4), [])
     }
 
-    func testACreditPoolWithoutADateHasNoSubline() {
+    func testADollarRowWithoutADateHasNoSubline() {
         let undated = Fixture.bucket(
             id: "nimbus_quill", label: "Included credits", percent: 24, resetsAt: .distantFuture,
             credit: CreditPool(usedDollars: 1200, limitDollars: 5000)
         )
-        XCTAssertNil(OverviewRingsRules.creditSubline(for: undated, now: october4, calendar: calendar, locale: gb))
+        let rows = OverviewRingsRules.dollarRows(
+            for: claudeWithDollars(extraUsage: nil, pools: [undated]), now: october4, calendar: calendar, locale: us
+        )
+        XCTAssertEqual(rows.map(\.subline), [nil])
+        XCTAssertEqual(rows.map(\.accessibilityLabel), ["Included credits, $1,200 / $5,000"])
     }
 
-    func testTheCreditFigureIsUsedOverLimitInWholeDollars() {
-        XCTAssertEqual(OverviewRingsRules.creditFigure(for: Fixture.cloudCredits, locale: us), "$231 / $250")
-        let session = OverviewRingsRules.windows(for: claude())[0].bucket
-        XCTAssertNil(OverviewRingsRules.creditFigure(for: session, locale: us), "a window has no dollars")
+    func testTheDollarRowsNeverTouchTheRingsOrTheVerdict() {
+        let service = claudeWithDollars(extraUsage: tenDollarExtra, pools: [Fixture.cloudCredits])
+        XCTAssertEqual(
+            OverviewRingsRules.windows(for: service).map(\.id), ["five_hour", "seven_day", "seven_day_fable"]
+        )
+        XCTAssertEqual(OverviewRingsRules.status(for: service), OverviewRingsRules.status(for: claude()))
     }
 
-    func testVoiceOverReadsTheCreditRowAsLabelFigureAndExpiry() {
-        XCTAssertEqual(
-            OverviewRingsRules.creditAccessibilityLabel(
-                for: Fixture.cloudCredits, figure: "$231 / $250", subline: "expires 5 Nov, 7:59"
-            ),
-            "Cloud session credits, $231 / $250, expires 5 Nov, 7:59"
+    func testVoiceOverReadsADollarRowAsLabelFigureAndExpiry() {
+        let service = claudeWithDollars(extraUsage: tenDollarExtra, pools: [Fixture.cloudCredits])
+        let inUS = OverviewRingsRules.dollarRows(for: service, now: october4, calendar: calendar, locale: us)
+        let inGB = OverviewRingsRules.dollarRows(for: service, now: october4, calendar: calendar, locale: gb)
+        XCTAssertEqual(inUS[0].accessibilityLabel, "Extra usage credits, $0 / $10")
+        // The spec's line: en_US dollars with en_GB's expiry, which no one locale gives.
+        let credits = OverviewDollarRow(
+            id: inUS[1].id, label: inUS[1].label, figure: inUS[1].figure, subline: inGB[1].subline, token: inUS[1].token
         )
-        XCTAssertEqual(
-            OverviewRingsRules.creditAccessibilityLabel(for: Fixture.cloudCredits, figure: "$231 / $250", subline: nil),
-            "Cloud session credits, $231 / $250"
-        )
+        XCTAssertEqual(credits.accessibilityLabel, "Cloud session credits, $231 / $250, expires 5 Nov, 7:59")
+    }
+
+    func testASpendLimitPlanNamesItsRowSpendLimit() {
+        let service = claudeWithDollars(extraUsage: tenDollarExtra, plan: "Claude Enterprise")
+        XCTAssertEqual(OverviewRingsRules.dollarRows(for: service, now: october4).map(\.label), ["Spend limit"])
     }
 
     // MARK: - Centre
