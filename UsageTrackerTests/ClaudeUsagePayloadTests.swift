@@ -236,6 +236,29 @@ final class ClaudeUsagePayloadTests: XCTestCase {
         XCTAssertTrue(pool.isBonusPool, "funded means credit, whatever else is missing")
     }
 
+    func testAFundedPoolWithoutUtilizationReadsItOffItsDollars() throws {
+        // Funded, with its dollars but no percent: still money the account has, and
+        // its bar is used over limit. Only a pool that reports neither is dropped.
+        let payload = """
+        {
+          "juniper_tide": {
+            "utilization": null, "resets_at": null,
+            "limit_dollars": 250, "used_dollars": 100, "remaining_dollars": 150
+          },
+          "walrus_biscuit": {
+            "utilization": null, "resets_at": null,
+            "limit_dollars": 250, "used_dollars": null, "remaining_dollars": null
+          }
+        }
+        """
+        let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets
+        XCTAssertEqual(buckets.map(\.id), ["juniper_tide"], "a funded pool with neither figure says nothing")
+        let pool = try XCTUnwrap(buckets.first)
+        XCTAssertEqual(pool.utilization, 40)
+        XCTAssertEqual(pool.credit, CreditPool(usedDollars: 100, limitDollars: 250))
+        XCTAssertEqual(PopoverView.creditRowValue(pool, locale: Locale(identifier: "en_US")), "$100 / $250")
+    }
+
     func testAFundedPoolNeverBecomesAWeeklyLimitWhateverItsKeyLooksLike() throws {
         // autoKind makes any seven_day_ key model-specific and autoLabel would call this
         // one "Credits only": a weekly-limit row for money.

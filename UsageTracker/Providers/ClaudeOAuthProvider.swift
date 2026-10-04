@@ -137,10 +137,15 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         /// The pool is worth a row only when there is real money behind it: a null or
         /// zero `limit_dollars` is a pool the account doesn't have. A funded pool keeps
         /// its dollars, so the bucket built from it is a credit pool (`WindowDTO.credit`).
+        /// It needs one of its two figures: a null `utilization` is read off the dollars
+        /// (used over limit; `clampedPercent` bounds it downstream), a null `used_dollars`
+        /// off the percent (`WindowDTO.credit`). A pool that reports neither says nothing.
         var asWindow: WindowDTO? {
-            guard let limit = limitDollars, limit > 0, let utilization else { return nil }
+            guard let limit = limitDollars, limit > 0,
+                  let percent = utilization ?? usedDollars.map({ $0 * 100 / limit })
+            else { return nil }
             return WindowDTO(
-                utilization: utilization, resetsAt: resetsAt, usedPercentage: nil,
+                utilization: percent, resetsAt: resetsAt, usedPercentage: nil,
                 limitDollars: limit, usedDollars: usedDollars
             )
         }
