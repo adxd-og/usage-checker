@@ -57,11 +57,16 @@ enum StatusText {
     /// `Session 42%, resets in 1h 40m (13:00)`, or `Session 58% left, …` when the app
     /// is counting down. The comma keeps a reset attached to its own window: with
     /// " · " between the two halves, a second window's percent would look like it
-    /// belonged to the first window's reset.
+    /// belonged to the first window's reset. A credit pool is money, not a limit, and
+    /// prints its dollars and expiry: `Cloud session credits $231 used of $250,
+    /// expires 5 Nov, 7:59`.
     static func windowText(
         _ window: StatusSnapshot.Window, mode: PercentDisplay.Mode = .used, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
     ) -> String {
+        if let figures = CreditCopy.terminalFigures(window, now: now, calendar: calendar, locale: locale) {
+            return "\(window.label) \(figures)"
+        }
         let head = "\(window.label) \(PercentDisplay.percentPhrase(window.percent, mode: mode))"
         guard let at = window.resetsAt,
               let reset = ResetCopy.both(resetsAt: at, now: now, calendar: calendar, locale: locale)

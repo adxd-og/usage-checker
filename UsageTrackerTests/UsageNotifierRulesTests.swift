@@ -118,6 +118,26 @@ final class UsageNotifierRulesTests: XCTestCase {
 
         XCTAssertEqual(UsageNotifier.watchableBuckets(for: service).map(\.id), ["five_hour"])
     }
+
+    func testACloudSessionCreditPoolNeverAlerts() {
+        // At 92 % the pool would page "almost at the limit" over money the account still
+        // has; when it runs dry the plan's windows take over and alert on their own.
+        let service = Fixture.snapshot(
+            id: "claude",
+            buckets: [
+                Fixture.bucket(id: "five_hour", percent: 7, kind: .session),
+                Fixture.bucket(id: "seven_day", percent: 69, kind: .weekly),
+                Fixture.bucket(id: "seven_day_fable", percent: 20, kind: .modelSpecific),
+                Fixture.cloudCredits,
+            ]
+        )
+        XCTAssertEqual(UsageNotifier.watchableBuckets(for: service).map(\.id), ["five_hour", "seven_day"])
+    }
+
+    func testAnAccountWithNothingButACreditPoolNeverAlerts() {
+        let service = Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits])
+        XCTAssertTrue(UsageNotifier.watchableBuckets(for: service).isEmpty)
+    }
 }
 
 /// The threshold rule's hysteresis. A percentage sitting on a threshold used to alert

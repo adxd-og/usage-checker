@@ -154,18 +154,19 @@ final class UsageNotifier: NSObject {
 
     /// Which of a service's windows a threshold alert may fire for.
     ///
-    /// Promo pools don't alert — running a free bonus dry costs nothing — and
-    /// model-scoped caps ("Fable only") don't page the user either, because the
-    /// all-models weekly is "the" limit. Unless scoping is all a provider has:
-    /// then its per-model quotas ARE its limits, so they alert, the same
-    /// fallback `headlinePercent` makes. An Enterprise spend limit is a real
-    /// limit and joins the list.
+    /// Bonus pools don't alert: running a free promo dry costs nothing, and a prepaid
+    /// credit pool running dry hands over to the plan's own windows, which alert on
+    /// their own. Model-scoped caps ("Fable only") don't page the user either, because
+    /// the all-models weekly is "the" limit. Unless scoping is all a provider has:
+    /// then its per-model quotas ARE its limits, so they alert, the same fallback
+    /// `headlinePercent` makes. An Enterprise spend limit is a real limit and joins
+    /// the list.
     ///
     /// Pure and static so the rule can be tested without the notification centre.
     nonisolated static func watchableBuckets(for service: ServiceSnapshot) -> [UsageBucket] {
-        var watchable = service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
+        var watchable = service.buckets.filter { !$0.isBonusPool && $0.kind != .modelSpecific }
         if watchable.isEmpty {
-            watchable = service.buckets.filter { !$0.isPromotional }
+            watchable = service.buckets.filter { !$0.isBonusPool }
         }
         if let extra = service.extraUsage, extra.isEnabled {
             watchable.append(UsageBucket(

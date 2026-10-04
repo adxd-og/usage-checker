@@ -120,16 +120,16 @@ enum StatusLineText {
     }
 
     /// The window the line speaks for: the session window when the provider has one,
-    /// otherwise the fullest window that is neither a promo pool nor model-scoped —
-    /// the same choice `WidgetService.headlineBucket` makes for the widget's ring, so
-    /// the two surfaces never lead with different numbers. A promo pool leads only when
-    /// it is all the account has.
+    /// otherwise the fullest window that is neither a bonus pool (promo or prepaid
+    /// credit) nor model-scoped — the same choice `WidgetService.headlineBucket` makes
+    /// for the widget's ring, plus credit pools, which only this file can tell apart by
+    /// their dollars. A bonus pool leads only when it is all the account has.
     static func headlineWindow(_ service: StatusSnapshot.Service) -> StatusSnapshot.Window? {
-        if let session = service.windows.first(where: { $0.kind == "session" && !$0.isPromotional }) {
+        if let session = service.windows.first(where: { $0.kind == "session" && !$0.isBonusPool }) {
             return session
         }
-        let core = service.windows.filter { !$0.isPromotional && $0.kind != "modelSpecific" }
-        let pool = core.isEmpty ? service.windows.filter { !$0.isPromotional } : core
+        let core = service.windows.filter { !$0.isBonusPool && $0.kind != "modelSpecific" }
+        let pool = core.isEmpty ? service.windows.filter { !$0.isBonusPool } : core
         return (pool.isEmpty ? service.windows : pool).max(by: { $0.percent < $1.percent })
     }
 

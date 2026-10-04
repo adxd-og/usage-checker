@@ -33,6 +33,11 @@ enum MCPSummary {
         if let plan = service.plan, !plan.isEmpty { head += " (\(plan))" }
 
         var clauses = service.windows.map { window -> String in
+            // A credit pool is money, not a window: its dollars and expiry, as
+            // `omelette status` prints them ("$231 used of $250, expires …").
+            if let figures = CreditCopy.terminalFigures(window, now: now, calendar: calendar, locale: locale) {
+                return "\(window.label.lowercased()) \(figures)"
+            }
             let percent = "\(window.label.lowercased()) \(Int(window.percent.rounded()))%"
             guard let at = window.resetsAt,
                   let reset = ResetCopy.both(resetsAt: at, now: now, calendar: calendar, locale: locale)
@@ -90,9 +95,10 @@ enum MCPSummary {
         return clause + ", so there is room to work."
     }
 
-    /// The window that will stop the work: the fullest one that is neither a promo pool
-    /// nor model-scoped — running a bonus pool dry costs nothing, and an "Opus only" cap
-    /// is not what stops the work; those lead only when they are all there is.
+    /// The window that will stop the work: the fullest one that is neither a bonus pool
+    /// (promo or prepaid credit) nor model-scoped — running a bonus pool dry costs
+    /// nothing or hands over to the plan's windows, and an "Opus only" cap is not what
+    /// stops the work; those lead only when they are all there is.
     ///
     /// Live providers first. A retained provider's windows count only when no live
     /// provider has one — its number is a last reading, not a limit being approached —
@@ -118,8 +124,8 @@ enum MCPSummary {
                 all.append(Pair(service: service, window: window))
             }
         }
-        let core = all.filter { !$0.window.isPromotional && $0.window.kind != "modelSpecific" }
-        let pool = core.isEmpty ? all.filter { !$0.window.isPromotional } : core
+        let core = all.filter { !$0.window.isBonusPool && $0.window.kind != "modelSpecific" }
+        let pool = core.isEmpty ? all.filter { !$0.window.isBonusPool } : core
         let candidates = pool.isEmpty ? all : pool
         return candidates.max { $0.window.percent < $1.window.percent }
     }

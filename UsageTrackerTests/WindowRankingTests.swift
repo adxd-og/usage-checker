@@ -55,6 +55,20 @@ final class WindowRankingTests: XCTestCase {
     func testHeroNilWithoutWindows() {
         XCTAssertNil(WindowRanking.heroBucket(for: claude([])))
     }
+    func testACloudSessionCreditPoolNeverBecomesTheHero() {
+        XCTAssertEqual(WindowRanking.heroBucket(for: claude([session, weekly, Fixture.cloudCredits]))?.id, "seven_day")
+        // A scoped cap and the pool: the cap is the limit, the pool is money.
+        XCTAssertEqual(WindowRanking.heroBucket(for: claude([opus, Fixture.cloudCredits]))?.id, "seven_day_opus")
+        // All the account has: then it leads, like a lone promo pool.
+        XCTAssertEqual(WindowRanking.heroBucket(for: claude([Fixture.cloudCredits]))?.id, "iguana_necktie")
+    }
+    func testACreditPoolNeverLeadsATileOrTakesItsSecondLine() {
+        // No session window: the weekly leads the tile, and there is no other core
+        // window for the bar under it — the pool is not one.
+        let service = claude([weekly, opus, Fixture.cloudCredits])
+        XCTAssertEqual(WindowRanking.tileHero(for: service)?.id, "seven_day")
+        XCTAssertNil(WindowRanking.secondaryBucket(for: service))
+    }
 
     // MARK: detail hero (provider tab)
 

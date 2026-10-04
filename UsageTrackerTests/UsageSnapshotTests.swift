@@ -58,6 +58,34 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(UsageSnapshot.empty.headlinePercent, 0)
     }
 
+    /// The account on 2026-10-04: the menu bar said 92 % in red — the credit pool —
+    /// while the plan's worst window was the weekly at 69 %.
+    private var cloudCreditsAccount: ServiceSnapshot {
+        Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+            Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+            Fixture.bucket(id: "seven_day_fable", label: "Fable only", percent: 20, kind: .modelSpecific),
+            Fixture.cloudCredits,
+        ])
+    }
+
+    func testACloudSessionCreditPoolNeverDrivesTheHeadline() {
+        XCTAssertEqual(cloudCreditsAccount.headlinePercent, 69)
+    }
+
+    func testACreditPoolDoesNotOutrankAScopedCapInTheFallback() {
+        // No core window at all: the scoped cap is this account's limit, the pool is money.
+        let service = Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "seven_day_fable", percent: 20, kind: .modelSpecific),
+            Fixture.cloudCredits,
+        ])
+        XCTAssertEqual(service.headlinePercent, 20)
+    }
+
+    func testACreditPoolLeadsOnlyWhenItIsAllTheAccountHas() {
+        XCTAssertEqual(Fixture.snapshot(buckets: [Fixture.cloudCredits]).headlinePercent, 92.368272, accuracy: 0.0001)
+    }
+
     func testTheSnapshotHeadlineIsTheWorstProvidersHeadline() {
         let snapshot = UsageSnapshot(
             services: [
@@ -79,6 +107,54 @@ final class UsageSnapshotTests: XCTestCase {
         // Case doesn't matter — the server has shipped both.
         XCTAssertTrue(Fixture.bucket(id: "SEVEN_DAY_PROMO", label: "Whatever").isPromotional)
         XCTAssertFalse(Fixture.bucket(id: "seven_day", label: "All models").isPromotional)
+    }
+
+    // MARK: - isBonusPool and the credit field (cloud session credits spec, Package 1)
+
+    func testACreditPoolIsABonusPoolThoughItIsNoPromo() {
+        XCTAssertTrue(Fixture.cloudCredits.isCreditPool)
+        XCTAssertTrue(Fixture.cloudCredits.isBonusPool)
+        XCTAssertFalse(Fixture.cloudCredits.isPromotional, "money the account has, not a free bonus")
+        let promo = Fixture.bucket(id: "seven_day_promotional", kind: .weekly)
+        XCTAssertTrue(promo.isBonusPool)
+        XCTAssertFalse(promo.isCreditPool, "a promo pool is a percentage, not dollars")
+        XCTAssertFalse(Fixture.bucket(id: "seven_day", label: "All models", kind: .weekly).isBonusPool)
+    }
+
+    func testALastKnownBucketWrittenBy301DecodesWithNoCredit() throws {
+        // last-known.json as 3.0.1 wrote this account's pool on 2026-10-04.
+        let json = #"{"id":"iguana_necktie","utilization":92.368272,"resetsAt":"2026-11-05T07:59:00Z","label":"Iguana Necktie","kind":"other"}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let bucket = try decoder.decode(UsageBucket.self, from: Data(json.utf8))
+        XCTAssertNil(bucket.credit)
+        XCTAssertEqual(bucket.utilization, 92.368272)
+        XCTAssertEqual(bucket.resetsAt, Date(timeIntervalSince1970: 1_793_865_540))
+    }
+
+    func testACreditSurvivesTheLastKnownRoundTripAndAWindowWritesNoCreditKey() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(UsageBucket.self, from: try encoder.encode(Fixture.cloudCredits))
+        XCTAssertEqual(decoded, Fixture.cloudCredits)
+        let window = String(decoding: try encoder.encode(Fixture.bucket(id: "seven_day", kind: .weekly)), as: UTF8.self)
+        XCTAssertFalse(window.contains("credit"), window)
+    }
+
+    // MARK: - percentWindows (coordinator ruling: every percent surface)
+
+    func testEveryWindowButACreditPoolIsAPercentWindow() {
+        let service = Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "five_hour", percent: 7, kind: .session),
+            Fixture.bucket(id: "seven_day_promotional", percent: 99, kind: .weekly),
+            Fixture.cloudCredits,
+        ])
+        XCTAssertEqual(
+            service.percentWindows.map(\.id), ["five_hour", "seven_day_promotional"],
+            "a promo pool is still a percentage; a credit pool is dollars"
+        )
     }
 
     // MARK: - clampedPercent

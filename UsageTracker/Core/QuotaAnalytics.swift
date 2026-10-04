@@ -68,6 +68,10 @@ struct QuotaBucketInfo: Equatable, Sendable, Identifiable {
     /// False for a window that exists only in history — the provider has stopped
     /// reporting it, so its name is inferred from the id and its line ends early.
     let isLive: Bool
+    /// A prepaid credit pool in the live snapshot (`UsageBucket.isCreditPool`): its
+    /// percent is money spent, not quota draining, so no chart draws it as a line.
+    /// False for every history-only id, whose records carry percents and nothing else.
+    var isCreditPool: Bool = false
 }
 
 /// Quota over time, for providers that keep no local cost log.
@@ -268,15 +272,18 @@ enum QuotaAnalytics {
     // MARK: - Buckets
 
     /// The provider's real constraints, by the same rule the menu bar headline uses:
-    /// promotional pools are free bonuses and a model-scoped cap is one model's
-    /// ceiling, so neither should colour a day in the activity grid. The fallbacks
-    /// matter for an account that has nothing else — a grid with no squares at all
-    /// would be worse than one drawn from a promo pool.
+    /// promotional pools are free bonuses, a prepaid credit pool is money rather than a
+    /// limit, and a model-scoped cap is one model's ceiling, so none of them should
+    /// colour a day in the activity grid. The fallbacks matter for an account that has
+    /// nothing else — a grid with no squares at all would be worse than one drawn from
+    /// a promo pool. A credit pool never stands in: its percent is money spent, not a
+    /// limit approached, and a blank grid says that better than a coloured one.
     static func coreBuckets(of buckets: [UsageBucket]) -> [UsageBucket] {
-        let core = buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
+        let core = buckets.filter { !$0.isBonusPool && $0.kind != .modelSpecific }
         if !core.isEmpty { return core }
-        let nonPromotional = buckets.filter { !$0.isPromotional }
-        return nonPromotional.isEmpty ? buckets : nonPromotional
+        let nonBonus = buckets.filter { !$0.isBonusPool }
+        if !nonBonus.isEmpty { return nonBonus }
+        return buckets.filter { !$0.isCreditPool }
     }
 
     /// Every bucket id these records carry, sorted so the order is stable.
@@ -302,14 +309,27 @@ enum QuotaAnalytics {
     /// so it keeps a name inferred from its id rather than vanishing from the chart.
     /// It is never core: with a live snapshot on hand, a window absent from it is not a
     /// constraint the user is under today.
-    static func bucketInfos(service: ServiceSnapshot?, records: [HistoryRecord]) -> [QuotaBucketInfo] {
+    ///
+    /// The exception is a prepaid credit pool (`creditPoolIDs`, Claude's by default)
+    /// that survives only in history — it expired and left the payload. Its records hold
+    /// percents of money spent and no label, so it gets no entry at all: neither the
+    /// History chart nor the activity grid draws it under its codename. A live pool keeps
+    /// its entry, flagged `isCreditPool`.
+    static func bucketInfos(
+        service: ServiceSnapshot?, records: [HistoryRecord],
+        creditPoolIDs: Set<String> = ClaudeOAuthProvider.creditPoolIDs
+    ) -> [QuotaBucketInfo] {
         let live = service?.buckets ?? []
         let coreIDs = Set(coreBuckets(of: live).map(\.id))
         var infos = live.map {
-            QuotaBucketInfo(id: $0.id, label: $0.label, isCore: coreIDs.contains($0.id), isLive: true)
+            QuotaBucketInfo(
+                id: $0.id, label: $0.label, isCore: coreIDs.contains($0.id), isLive: true,
+                isCreditPool: $0.isCreditPool
+            )
         }
         var seen = Set(infos.map(\.id))
         for id in bucketIDs(in: records) where seen.insert(id).inserted {
+            if creditPoolIDs.contains(id) { continue }
             // A signed-out provider has no live snapshot at all; without this its whole
             // history would be non-core and the activity grid would come up blank.
             let isCore = live.isEmpty && !id.lowercased().contains("promo")

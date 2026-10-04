@@ -128,6 +128,42 @@ final class MenuBarRemainingTests: XCTestCase {
         XCTAssertFalse(text.contains("Opus only"), "an untouched window must not appear as 100% left: \(text)")
     }
 
+    func testTheTooltipPrintsCloudSessionCreditsAsDollarsInBothModes() {
+        // Cloud session credits spec: a credit pool is money, not a window counting
+        // down. Its line says what the Claude tab's row says, in the tooltip's locale,
+        // whichever way the percentages count.
+        let now = moment(day: 5, hour: 17, minute: 40)
+        let claude = Fixture.snapshot(
+            id: "claude", displayName: "Claude", plan: "Max 20x",
+            buckets: [
+                Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+                Fixture.cloudCredits,
+            ],
+            at: now
+        )
+        let us = Locale(identifier: "en_US")
+        let used = StatusBarController.tooltipText(
+            snapshot: snapshot([claude], at: now), mode: .used, now: now, calendar: calendar, locale: us
+        )
+        XCTAssertEqual(used, """
+        Max 20x
+          All models: 69%
+          Cloud session credits: $231 / $250
+
+        Updated just now
+        """)
+        let remaining = StatusBarController.tooltipText(
+            snapshot: snapshot([claude], at: now), mode: .remaining, now: now, calendar: calendar, locale: us
+        )
+        XCTAssertEqual(remaining, """
+        Max 20x
+          All models: 31% left
+          Cloud session credits: $231 / $250
+
+        Updated just now
+        """)
+    }
+
     func testARetainedProviderHeadsItsBlockWithTheLastKnownLine() {
         let now = moment(day: 5, hour: 17, minute: 40)
         let service = Fixture.snapshot(

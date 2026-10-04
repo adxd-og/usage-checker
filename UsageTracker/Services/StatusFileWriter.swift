@@ -195,7 +195,11 @@ actor StatusFileWriter {
                 percent: bucket.utilization,
                 // `.distantFuture` is the app's spelling of "the provider didn't say".
                 resetsAt: bucket.resetsAt < .distantFuture ? bucket.resetsAt : nil,
-                kind: bucket.kind.rawValue
+                kind: bucket.kind.rawValue,
+                // A credit pool's dollars, so the terminal and the MCP paragraph can say
+                // what the popover's row says. nil, and so absent, on every window.
+                usedDollars: bucket.credit?.usedDollars,
+                limitDollars: bucket.credit?.limitDollars
             )
         }
         if let extra = service.extraUsage, extra.isEnabled {

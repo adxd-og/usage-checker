@@ -7,6 +7,14 @@ enum BucketKind: String, Sendable, Codable {
     case other
 }
 
+/// A prepaid dollar pool's figures, in whole dollars (claude.ai shows the same pool
+/// as "$19 of $250 left"). Money the account has, not a limit: when it runs dry the
+/// plan's own windows take over.
+struct CreditPool: Equatable, Sendable, Codable {
+    let usedDollars: Double
+    let limitDollars: Double
+}
+
 struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     let id: String
     let label: String
@@ -18,6 +26,11 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     /// persisted by older builds still decode, and so the inference below
     /// remains the fallback for providers that report no length.
     var windowLength: TimeInterval? = nil
+    /// Set when this bucket is a prepaid credit pool rather than a rate limit
+    /// (claude.ai's "Cloud session credits"); `utilization` is then the share of the
+    /// pool spent. Optional with a nil default for the same reason as `windowLength`:
+    /// a `last-known.json` written by 3.0.1 has no such key and still decodes.
+    var credit: CreditPool? = nil
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
 
@@ -27,6 +40,15 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     var isPromotional: Bool {
         id.lowercased().contains("promo") || label.lowercased().contains("promo")
     }
+
+    /// A prepaid credit pool: its figure is dollars, not a percent of a limit. The one
+    /// place the test is written; every surface that sets credit pools apart asks this.
+    var isCreditPool: Bool { credit != nil }
+
+    /// The pools that never drive the headline, the hero or a threshold alert: a
+    /// promotional bonus, or a prepaid credit pool. Neither is a limit — running one
+    /// dry costs nothing, or hands over to the plan's own windows.
+    var isBonusPool: Bool { isPromotional || isCreditPool }
 
     /// Total length of this rate-limit window. The provider's own figure wins;
     /// the id/kind inference is a fallback for Anthropic's windows, which the
@@ -93,21 +115,28 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// week's dollars. What retention and `LastKnownStore` count as a reading.
     var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
 
-    /// The number the menu bar shows: the worst *core* constraint. Promotional
-    /// pools don't count (free bonuses shouldn't scream "almost at the limit"),
-    /// and model-scoped windows (an "Opus only" / "Fable only" cap) inform their
-    /// own row without driving the headline — the all-models weekly is "the"
-    /// limit. An Enterprise spend limit does count. Scoped/promo windows only
-    /// lead when they're all the account has.
+    /// The windows a surface may list as percentages: every bucket but a prepaid credit
+    /// pool, whose figure is dollars and whose row is the provider tab's spend card.
+    /// Promotional pools stay; each surface already places them last or dims them.
+    var percentWindows: [UsageBucket] { buckets.filter { !$0.isCreditPool } }
+
+    /// The number the menu bar shows: the worst *core* constraint. Bonus pools don't
+    /// count — a free promo shouldn't scream "almost at the limit", and a prepaid
+    /// credit pool ("Cloud session credits") is money the account has: when it runs
+    /// dry the plan's windows take over. Model-scoped windows (an "Opus only" /
+    /// "Fable only" cap) inform their own row without driving the headline — the
+    /// all-models weekly is "the" limit. An Enterprise spend limit does count. Scoped
+    /// windows lead only when nothing else is left, bonus pools only when they are all
+    /// the account has.
     var headlinePercent: Double {
         var candidates = buckets
-            .filter { !$0.isPromotional && $0.kind != .modelSpecific }
+            .filter { !$0.isBonusPool && $0.kind != .modelSpecific }
             .map(\.clampedPercent)
         if let extra = extraUsage, extra.isEnabled {
             candidates.append(max(0, min(100, extra.utilization)))
         }
         if candidates.isEmpty {
-            candidates = buckets.filter { !$0.isPromotional }.map(\.clampedPercent)
+            candidates = buckets.filter { !$0.isBonusPool }.map(\.clampedPercent)
         }
         if candidates.isEmpty {
             candidates = buckets.map(\.clampedPercent)
