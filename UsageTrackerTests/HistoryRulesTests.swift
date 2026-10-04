@@ -244,6 +244,33 @@ final class HistoryRulesQuotaTests: XCTestCase {
             XCTAssertTrue(chart.series.flatMap(\.points).allSatisfy { chart.domain.contains($0.time) }, "\(range)")
         }
     }
+
+    /// Cloud session credits spec, coordinator ruling "every live percent surface": a
+    /// credit pool's percent is money spent, not quota draining, so History draws no
+    /// line for it. A promo pool is still quota the user can watch drain, and a window
+    /// that survives only in history keeps its line.
+    func testTheQuotaChartDrawsNoLineForALiveCloudSessionCreditPool() {
+        let live = Fixture.snapshot(id: "claude", buckets: [
+            Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+            Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+            Fixture.bucket(id: "seven_day_promotional", label: "Promo pool", percent: 40, kind: .weekly),
+            Fixture.cloudCredits,
+        ], at: now)
+        let records = Fixture.quotaHistory(service: "claude", points: [
+            (at: august31, percents: [
+                "five_hour": 5, "seven_day": 60, "seven_day_promotional": 30, "iguana_necktie": 80, "seven_day_opus": 10,
+            ]),
+            (at: now.addingTimeInterval(-3_600), percents: [
+                "five_hour": 7, "seven_day": 69, "seven_day_promotional": 40, "iguana_necktie": 92,
+            ]),
+        ])
+        let infos = QuotaAnalytics.bucketInfos(service: live, records: records)
+        let chart = HistoryRules.quotaChart(records: records, buckets: infos, range: .sevenDays, now: now, calendar: utc)
+        XCTAssertEqual(
+            chart.series.map(\.id), ["five_hour", "seven_day", "seven_day_promotional", "seven_day_opus"],
+            "no Cloud session credits line; the promo pool and the history-only window keep theirs"
+        )
+    }
 }
 
 /// Liquid-glass spec § Screens, "History · Chart" and "History · Calendar"; § Decisions,

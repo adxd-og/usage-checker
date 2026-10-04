@@ -68,6 +68,10 @@ struct QuotaBucketInfo: Equatable, Sendable, Identifiable {
     /// False for a window that exists only in history — the provider has stopped
     /// reporting it, so its name is inferred from the id and its line ends early.
     let isLive: Bool
+    /// A prepaid credit pool in the live snapshot (`UsageBucket.isCreditPool`): its
+    /// percent is money spent, not quota draining, so no chart draws it as a line.
+    /// False for every history-only id, whose records carry percents and nothing else.
+    var isCreditPool: Bool = false
 }
 
 /// Quota over time, for providers that keep no local cost log.
@@ -309,7 +313,10 @@ enum QuotaAnalytics {
         let live = service?.buckets ?? []
         let coreIDs = Set(coreBuckets(of: live).map(\.id))
         var infos = live.map {
-            QuotaBucketInfo(id: $0.id, label: $0.label, isCore: coreIDs.contains($0.id), isLive: true)
+            QuotaBucketInfo(
+                id: $0.id, label: $0.label, isCore: coreIDs.contains($0.id), isLive: true,
+                isCreditPool: $0.isCreditPool
+            )
         }
         var seen = Set(infos.map(\.id))
         for id in bucketIDs(in: records) where seen.insert(id).inserted {

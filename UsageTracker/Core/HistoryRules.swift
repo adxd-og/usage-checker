@@ -226,13 +226,15 @@ extension HistoryRules {
     }
 
     /// One line per window over `quotaDomain`, core or not: a promotional pool is still
-    /// quota the user can watch drain. A window with no reading in the range has no line.
+    /// quota the user can watch drain. A window with no reading in the range has no line,
+    /// and neither has a live prepaid credit pool: its percent is money spent, shown as
+    /// dollars on the provider tab (cloud session credits spec).
     static func quotaSeries(
         records: [HistoryRecord], buckets: [QuotaBucketInfo],
         range: TimeRange, now: Date, calendar: Calendar
     ) -> [HistoryQuotaSeries] {
         let domain = quotaDomain(range: range, now: now, calendar: calendar)
-        return buckets.compactMap { bucket in
+        return buckets.filter { !$0.isCreditPool }.compactMap { bucket in
             let points = QuotaAnalytics.series(
                 records: records, bucketID: bucket.id, from: domain.lowerBound, to: domain.upperBound
             )
