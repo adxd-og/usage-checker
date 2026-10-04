@@ -210,42 +210,6 @@ enum OverviewRingsRules {
         }
         return rows
     }
-
-    // MARK: - Credit rows (the rings card's current rows; replaced by `dollarRows`)
-
-    /// The legend's dollar rows, after the windows: each prepaid credit pool, in the
-    /// provider's order. No ring, no series colour, no part in the emphasis or the centre.
-    nonisolated static func creditRows(for service: ServiceSnapshot) -> [UsageBucket] {
-        service.creditPools
-    }
-
-    /// A credit row's grey line, lowercase like the windows' "resets …": `expires 5 Nov,
-    /// 7:59`. A pool's reset is when its unspent credit lapses. nil without a date.
-    nonisolated static func creditSubline(
-        for bucket: UsageBucket,
-        now: Date,
-        calendar: Calendar = .current,
-        locale: Locale = .current
-    ) -> String? {
-        ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale)
-            .map { "expires \($0)" }
-    }
-
-    /// A credit row's figure where a window shows its percent: `$231 / $250`, used over
-    /// limit in whole dollars (`CreditCopy.value`, the popover row's wording). nil for a
-    /// bucket that is not a credit pool.
-    nonisolated static func creditFigure(for bucket: UsageBucket, locale: Locale = .current) -> String? {
-        guard let credit = bucket.credit else { return nil }
-        return CreditCopy.value(usedDollars: credit.usedDollars, limitDollars: credit.limitDollars, locale: locale)
-    }
-
-    /// What VoiceOver reads for a credit row: "Cloud session credits, $231 / $250,
-    /// expires 5 Nov, 7:59".
-    nonisolated static func creditAccessibilityLabel(for bucket: UsageBucket, figure: String, subline: String?) -> String {
-        let head = "\(bucket.label), \(figure)"
-        guard let subline else { return head }
-        return "\(head), \(subline)"
-    }
 }
 
 // MARK: - Emphasis (spec § Components, "Overview rings": hover or focus)

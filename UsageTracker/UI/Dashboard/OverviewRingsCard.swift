@@ -157,16 +157,17 @@ struct OverviewRingsCard: View {
                     row(window, index: index, now: now)
                         .opacity(index < opacities.count ? opacities[index] : 1)
                 }
-                // Each prepaid credit pool after the windows: its dollars where a window
-                // shows its percent, no ring, and no part in the hover or focus emphasis.
-                // Inside this stack, so it takes the separators and the last-known dimming.
-                ForEach(Array(OverviewRingsRules.creditRows(for: service).enumerated()), id: \.element.id) { index, pool in
+                // The dollar rows after the windows (extra usage, then each credit pool):
+                // dollars where a window shows its percent, no ring, and no part in the
+                // hover or focus emphasis. Inside this stack, so they take the separators
+                // and the last-known dimming.
+                ForEach(Array(OverviewRingsRules.dollarRows(for: service, now: now).enumerated()), id: \.element.id) { index, dollars in
                     if !windows.isEmpty || index > 0 {
                         Rectangle()
                             .fill(.om(.hairline))
                             .frame(height: 1)
                     }
-                    creditRow(pool, now: now)
+                    dollarRow(dollars)
                 }
             }
             .opacity(service.isRetained ? OverviewRingsRules.retainedOpacity : 1)
@@ -253,23 +254,22 @@ struct OverviewRingsCard: View {
         .accessibilityLabel(OverviewRingsRules.accessibilityLabel(for: window.bucket, subline: subline, mode: mode))
     }
 
-    /// A credit pool's legend row (cloud session credits spec § Design, "Overview legend
-    /// row"): a window row's geometry with the muted dot, "expires …" under the label and
-    /// "$231 / $250" as the figure. It takes no hover and no focus, so it never dims the
-    /// rings or the other rows, and their emphasis never dims it.
-    private func creditRow(_ pool: UsageBucket, now: Date) -> some View {
-        let subline = OverviewRingsRules.creditSubline(for: pool, now: now)
-        let figure = OverviewRingsRules.creditFigure(for: pool) ?? ""
-        return HStack(alignment: .center, spacing: OverviewRingsRules.rowSpacing) {
+    /// A dollar row in the legend (cloud session credits spec § Design, "Overview legend
+    /// row"): a window row's geometry with its own dot, amber for extra usage and teal for
+    /// a credit pool, "expires …" under a dated pool and "$231 / $250" as the figure. It
+    /// takes no hover and no focus, so it never dims the rings or the other rows, and
+    /// their emphasis never dims it.
+    private func dollarRow(_ row: OverviewDollarRow) -> some View {
+        HStack(alignment: .center, spacing: OverviewRingsRules.rowSpacing) {
             Circle()
-                .fill(OMColor(.muted))
+                .fill(OMColor(row.token))
                 .frame(width: OverviewRingsRules.rowDotDiameter, height: OverviewRingsRules.rowDotDiameter)
             VStack(alignment: .leading, spacing: 1) {
-                Text(pool.label)
+                Text(row.label)
                     .font(.system(size: OverviewRingsRules.rowNameSize, weight: .semibold))
                     .foregroundStyle(.om(.text))
                     .lineLimit(1)
-                if let subline {
+                if let subline = row.subline {
                     Text(subline)
                         .font(.system(size: OverviewRingsRules.rowSublineSize))
                         .foregroundStyle(.om(.secondary))
@@ -278,13 +278,13 @@ struct OverviewRingsCard: View {
             }
             Spacer(minLength: 8)
             OMFigureText(
-                text: figure,
+                text: row.figure,
                 size: OverviewRingsRules.rowFigureSize,
                 unitSize: OverviewRingsRules.rowUnitSize
             )
         }
         .padding(.vertical, OverviewRingsRules.rowVerticalPadding)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(OverviewRingsRules.creditAccessibilityLabel(for: pool, figure: figure, subline: subline))
+        .accessibilityLabel(row.accessibilityLabel)
     }
 }
