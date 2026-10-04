@@ -7,7 +7,7 @@ struct LastKnownService: Codable, Equatable, Sendable {
     let icon: String
     let plan: String?
     let accountLabel: String?
-    let buckets: [UsageBucket]
+    private(set) var buckets: [UsageBucket]
     let extraUsage: ExtraUsage?
     let weekCost: Double?
     let fetchedAt: Date
@@ -31,6 +31,13 @@ struct LastKnownService: Codable, Equatable, Sendable {
     /// A reading worth keeping: windows, or a windowless account's dollars — the same
     /// test as `ServiceSnapshot.hasContent`.
     var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
+
+    /// The same reading without the buckets `drop` picks out.
+    func removingBuckets(where drop: (UsageBucket) -> Bool) -> LastKnownService {
+        var copy = self
+        copy.buckets.removeAll(where: drop)
+        return copy
+    }
 
     /// The throttle's comparison: everything the file holds except `fetchedAt`,
     /// which moves on every poll and is not by itself a reason to rewrite. The
@@ -56,6 +63,9 @@ actor LastKnownStore {
     static let shared = LastKnownStore()
 
     private let fileURL: URL
+    /// The keys known as prepaid credit pools (`ClaudeOAuthProvider.creditPoolIDs`),
+    /// injected the way `QuotaAnalytics.bucketInfos` takes them.
+    private let creditPoolIDs: Set<String>
     /// Loaded once; this actor is the only writer, so the cache can't go stale.
     private var entries: [String: LastKnownService]?
     /// Set when a write fails and cleared only when one succeeds. The next poll
@@ -82,8 +92,12 @@ actor LastKnownStore {
     }
 
     /// Injectable location — the tests point it at a temp file.
-    init(fileURL: URL = LastKnownStore.defaultFileURL) {
+    init(
+        fileURL: URL = LastKnownStore.defaultFileURL,
+        creditPoolIDs: Set<String> = ClaudeOAuthProvider.creditPoolIDs
+    ) {
         self.fileURL = fileURL
+        self.creditPoolIDs = creditPoolIDs
     }
 
     func load() -> [String: LastKnownService] {
@@ -94,8 +108,23 @@ actor LastKnownStore {
             entries = [:]
             return [:]
         }
-        entries = decoded
-        return decoded
+        let restored = Self.restorable(decoded, creditPoolIDs: creditPoolIDs)
+        entries = restored
+        return restored
+    }
+
+    /// What a stored file may put back on screen. A `last-known.json` written by 3.0.1
+    /// holds Claude's cloud session credits as a bare percent window under their
+    /// codename, with no dollars: restored while the first poll after the update fails,
+    /// it drove the headline to 92 % and showed "Iguana Necktie". A bucket under a
+    /// known credit-pool key that carries no `credit` is dropped; the next good poll
+    /// writes it back with its dollars.
+    static func restorable(
+        _ entries: [String: LastKnownService], creditPoolIDs: Set<String>
+    ) -> [String: LastKnownService] {
+        entries.mapValues { entry in
+            entry.removingBuckets { creditPoolIDs.contains($0.id) && $0.credit == nil }
+        }
     }
 
     /// Stores every service that actually reported something. A failing service is

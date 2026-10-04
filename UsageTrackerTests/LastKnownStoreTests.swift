@@ -179,4 +179,42 @@ final class LastKnownStoreTests: XCTestCase {
         let reloaded = await s.load()
         XCTAssertEqual(reloaded["antigravity"]?.buckets.first?.utilization, 62)
     }
+
+    // MARK: - Cloud session credits (a codename never reaches the UI)
+
+    /// `last-known.json` as 3.0.1 wrote this account on 2026-10-04: the cloud session
+    /// credits as a bare 92 % window under their codename, with no dollars.
+    private let claudeFrom301 = """
+    {"claude": {"displayName": "Claude", "icon": "sparkles", "plan": "Max 5x", "order": 0,
+      "fetchedAt": "2026-10-04T12:00:00Z", "buckets": [
+        {"id": "five_hour", "label": "Current session", "utilization": 7, "resetsAt": "2026-10-04T12:49:59Z", "kind": "session"},
+        {"id": "seven_day", "label": "All models", "utilization": 69, "resetsAt": "2026-10-08T09:59:59Z", "kind": "weekly"},
+        {"id": "iguana_necktie", "label": "Iguana Necktie", "utilization": 92.37, "resetsAt": "2026-11-05T07:59:00Z", "kind": "other"}
+      ]}}
+    """
+
+    func testARetainedCreditPoolFrom301IsDroppedUntilTheNextGoodPoll() async throws {
+        // While the first poll after the update fails, this record is what the app
+        // shows: as stored it drove the headline to 92 % and printed the codename.
+        try Data(claudeFrom301.utf8).write(to: fileURL)
+        let loaded = await store().load()
+        let entry = try XCTUnwrap(loaded["claude"])
+        XCTAssertEqual(entry.buckets.map(\.id), ["five_hour", "seven_day"])
+        XCTAssertEqual(entry.buckets.map(\.utilization), [7, 69], "the other windows are untouched")
+        XCTAssertEqual(entry.plan, "Max 5x")
+    }
+
+    func testARetainedCreditPoolThatKnowsItsDollarsIsKept() async throws {
+        let claude = Fixture.snapshot(
+            id: "claude", displayName: "Claude",
+            buckets: [
+                Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+                Fixture.cloudCredits,
+            ],
+            at: stored
+        )
+        await store().remember([claude])
+        let loaded = await store().load()
+        XCTAssertEqual(try XCTUnwrap(loaded["claude"]).buckets, claude.buckets)
+    }
 }
