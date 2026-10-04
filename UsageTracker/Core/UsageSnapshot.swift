@@ -115,21 +115,23 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// week's dollars. What retention and `LastKnownStore` count as a reading.
     var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
 
-    /// The number the menu bar shows: the worst *core* constraint. Promotional
-    /// pools don't count (free bonuses shouldn't scream "almost at the limit"),
-    /// and model-scoped windows (an "Opus only" / "Fable only" cap) inform their
-    /// own row without driving the headline — the all-models weekly is "the"
-    /// limit. An Enterprise spend limit does count. Scoped/promo windows only
-    /// lead when they're all the account has.
+    /// The number the menu bar shows: the worst *core* constraint. Bonus pools don't
+    /// count — a free promo shouldn't scream "almost at the limit", and a prepaid
+    /// credit pool ("Cloud session credits") is money the account has: when it runs
+    /// dry the plan's windows take over. Model-scoped windows (an "Opus only" /
+    /// "Fable only" cap) inform their own row without driving the headline — the
+    /// all-models weekly is "the" limit. An Enterprise spend limit does count. Scoped
+    /// windows lead only when nothing else is left, bonus pools only when they are all
+    /// the account has.
     var headlinePercent: Double {
         var candidates = buckets
-            .filter { !$0.isPromotional && $0.kind != .modelSpecific }
+            .filter { !$0.isBonusPool && $0.kind != .modelSpecific }
             .map(\.clampedPercent)
         if let extra = extraUsage, extra.isEnabled {
             candidates.append(max(0, min(100, extra.utilization)))
         }
         if candidates.isEmpty {
-            candidates = buckets.filter { !$0.isPromotional }.map(\.clampedPercent)
+            candidates = buckets.filter { !$0.isBonusPool }.map(\.clampedPercent)
         }
         if candidates.isEmpty {
             candidates = buckets.map(\.clampedPercent)

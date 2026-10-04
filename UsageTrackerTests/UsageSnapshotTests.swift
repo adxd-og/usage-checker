@@ -58,6 +58,34 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(UsageSnapshot.empty.headlinePercent, 0)
     }
 
+    /// The account on 2026-10-04: the menu bar said 92 % in red — the credit pool —
+    /// while the plan's worst window was the weekly at 69 %.
+    private var cloudCreditsAccount: ServiceSnapshot {
+        Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+            Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+            Fixture.bucket(id: "seven_day_fable", label: "Fable only", percent: 20, kind: .modelSpecific),
+            Fixture.cloudCredits,
+        ])
+    }
+
+    func testACloudSessionCreditPoolNeverDrivesTheHeadline() {
+        XCTAssertEqual(cloudCreditsAccount.headlinePercent, 69)
+    }
+
+    func testACreditPoolDoesNotOutrankAScopedCapInTheFallback() {
+        // No core window at all: the scoped cap is this account's limit, the pool is money.
+        let service = Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "seven_day_fable", percent: 20, kind: .modelSpecific),
+            Fixture.cloudCredits,
+        ])
+        XCTAssertEqual(service.headlinePercent, 20)
+    }
+
+    func testACreditPoolLeadsOnlyWhenItIsAllTheAccountHas() {
+        XCTAssertEqual(Fixture.snapshot(buckets: [Fixture.cloudCredits]).headlinePercent, 92.368272, accuracy: 0.0001)
+    }
+
     func testTheSnapshotHeadlineIsTheWorstProvidersHeadline() {
         let snapshot = UsageSnapshot(
             services: [

@@ -8,13 +8,14 @@ enum WindowRanking {
     static let allTab = "all"
 
     /// The most-constrained window of a service — the one that answers "can I
-    /// keep working right now?". Promotional pools and model-scoped windows do
-    /// not compete unless they are all the account has; enabled extra usage
-    /// (spend limit) does compete. Ties resolve to the first in API order.
+    /// keep working right now?". Bonus pools (promo, prepaid credit) and
+    /// model-scoped windows do not compete unless they are all the account has;
+    /// enabled extra usage (spend limit) does compete. Ties resolve to the first in
+    /// API order.
     static func heroBucket(for service: ServiceSnapshot) -> UsageBucket? {
         var candidates = coreCandidates(for: service)
         if candidates.isEmpty {
-            candidates = service.buckets.filter { !$0.isPromotional }
+            candidates = service.buckets.filter { !$0.isBonusPool }
         }
         if candidates.isEmpty {
             candidates = service.buckets
@@ -125,7 +126,7 @@ enum WindowRanking {
     // MARK: - Private
 
     private static func coreCandidates(for service: ServiceSnapshot) -> [UsageBucket] {
-        var candidates = service.buckets.filter { !$0.isPromotional && $0.kind != .modelSpecific }
+        var candidates = service.buckets.filter { !$0.isBonusPool && $0.kind != .modelSpecific }
         if let extra = service.extraUsage, extra.isEnabled {
             candidates.append(UsageBucket(
                 id: extraUsageBucketID(for: service),
