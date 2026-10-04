@@ -45,6 +45,22 @@ final class WidgetBridgeMappingTests: XCTestCase {
         XCTAssertEqual(mapped.buckets.last?.label, "Spend limit")
     }
 
+    func testACloudSessionCreditPoolIsNotAWidgetWindow() throws {
+        // The widget has no dollar row, and its medium size shows the busiest
+        // non-session window: the pool at 92 % took the weekly's place there.
+        let service = Fixture.snapshot(
+            id: "claude",
+            buckets: [
+                Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+                Fixture.bucket(id: "seven_day", label: "All models", percent: 69, kind: .weekly),
+                Fixture.cloudCredits,
+            ]
+        )
+        let mapped = try XCTUnwrap(WidgetBridge.widgetServices(from: [service]).first)
+        XCTAssertEqual(mapped.buckets.map(\.id), ["five_hour", "seven_day"])
+        XCTAssertEqual(mapped.nonSessionBuckets.map(\.id), ["seven_day"])
+    }
+
     // MARK: - Decoding a file an older build wrote
 
     func testAWidgetServiceFromABuildWithoutIsRetainedStillDecodes() throws {

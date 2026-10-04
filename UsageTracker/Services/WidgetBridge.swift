@@ -55,7 +55,9 @@ enum WidgetBridge {
     nonisolated static func widgetServices(from services: [ServiceSnapshot]) -> [WidgetService] {
         services
             .map { service in
-                var buckets = service.buckets.map { bucket in
+                // A credit pool's figure is dollars and the widget has no dollar row: as a
+                // percent it took the medium widget's second line from the weekly.
+                var buckets = service.percentWindows.map { bucket in
                     WidgetBucket(
                         id: bucket.id,
                         label: bucket.label,

@@ -115,6 +115,11 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// week's dollars. What retention and `LastKnownStore` count as a reading.
     var hasContent: Bool { !buckets.isEmpty || (weekCost ?? 0) > 0 }
 
+    /// The windows a surface may list as percentages: every bucket but a prepaid credit
+    /// pool, whose figure is dollars and whose row is the provider tab's spend card.
+    /// Promotional pools stay; each surface already places them last or dims them.
+    var percentWindows: [UsageBucket] { buckets.filter { !$0.isCreditPool } }
+
     /// The number the menu bar shows: the worst *core* constraint. Bonus pools don't
     /// count — a free promo shouldn't scream "almost at the limit", and a prepaid
     /// credit pool ("Cloud session credits") is money the account has: when it runs

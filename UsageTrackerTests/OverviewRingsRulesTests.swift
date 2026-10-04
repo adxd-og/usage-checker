@@ -46,6 +46,23 @@ final class OverviewRingsRulesTests: XCTestCase {
         XCTAssertNil(windows[3].series)
     }
 
+    func testACloudSessionCreditPoolIsNeitherARingNorALegendRow() {
+        // Its figure is dollars, and its row is on the provider tab's spend card.
+        let windows = OverviewRingsRules.windows(for: claude(extra: [Fixture.cloudCredits]))
+        XCTAssertEqual(windows.map(\.id), ["five_hour", "seven_day", "seven_day_fable"])
+    }
+
+    func testACreditPoolNeverLeadsTheRingsEvenWhenItIsTheFullestBonusPool() {
+        // detailHero falls back to the fullest bonus pool when that is all there is.
+        // Alone, the pool gets no ring at all.
+        let alone = Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits], at: now)
+        XCTAssertTrue(OverviewRingsRules.windows(for: alone).isEmpty)
+        // Beside a calmer promo pool, the promo pool leads and the credit pool is not listed.
+        let promo = Fixture.bucket(id: "seven_day_promotional", label: "Promo pool", percent: 40, kind: .weekly)
+        let withPromo = Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits, promo], at: now)
+        XCTAssertEqual(OverviewRingsRules.windows(for: withPromo).map(\.id), ["seven_day_promotional"])
+    }
+
     func testTheProviderTabsHeroIsTheOutermostRing() {
         // Antigravity lists its weekly pool before its session window.
         let service = Fixture.snapshot(id: "antigravity", plan: nil, buckets: [

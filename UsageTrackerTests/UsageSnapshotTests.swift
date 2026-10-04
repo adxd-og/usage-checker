@@ -143,6 +143,20 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertFalse(window.contains("credit"), window)
     }
 
+    // MARK: - percentWindows (coordinator ruling: every percent surface)
+
+    func testEveryWindowButACreditPoolIsAPercentWindow() {
+        let service = Fixture.snapshot(buckets: [
+            Fixture.bucket(id: "five_hour", percent: 7, kind: .session),
+            Fixture.bucket(id: "seven_day_promotional", percent: 99, kind: .weekly),
+            Fixture.cloudCredits,
+        ])
+        XCTAssertEqual(
+            service.percentWindows.map(\.id), ["five_hour", "seven_day_promotional"],
+            "a promo pool is still a percentage; a credit pool is dollars"
+        )
+    }
+
     // MARK: - clampedPercent
 
     func testPercentsAreClampedToTheBar() {

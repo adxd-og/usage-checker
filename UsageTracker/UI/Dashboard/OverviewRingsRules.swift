@@ -61,10 +61,18 @@ enum OverviewRingsRules {
     /// (`WindowRanking.detailHero`: the session when there is one, else the most
     /// constrained window, a spend limit included), then the rest in the provider's own
     /// order, promotional pools last. The first three get a ring and a series colour;
-    /// any further window is a legend row only.
+    /// any further window is a legend row only. A prepaid credit pool is none of them:
+    /// its figure is dollars, and its row is on the provider tab (`percentWindows`).
+    /// `detailHero` picks one only when every bucket is a bonus pool; the fullest
+    /// listed window leads then, and with nothing listed there are no rings.
     static func windows(for service: ServiceSnapshot) -> [OverviewRingWindow] {
-        guard let hero = WindowRanking.detailHero(for: service) else { return [] }
-        let rest = service.buckets.filter { $0.id != hero.id }
+        let listed = service.percentWindows
+        var lead = WindowRanking.detailHero(for: service)
+        if lead?.isCreditPool == true {
+            lead = listed.max(by: { $0.clampedPercent < $1.clampedPercent })
+        }
+        guard let hero = lead else { return [] }
+        let rest = listed.filter { $0.id != hero.id }
         let ordered = [hero] + rest.filter { !$0.isPromotional } + rest.filter(\.isPromotional)
         return ordered.enumerated().map { index, bucket in
             OverviewRingWindow(bucket: bucket, series: index < seriesTokens.count ? seriesTokens[index] : nil)
