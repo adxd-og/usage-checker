@@ -58,8 +58,8 @@ enum StatusText {
     /// is counting down. The comma keeps a reset attached to its own window: with
     /// " · " between the two halves, a second window's percent would look like it
     /// belonged to the first window's reset. A credit pool is money, not a limit, and
-    /// prints what the popover's row says: `Cloud session credits $231 / $250, expires
-    /// 5 Nov, 7:59`.
+    /// prints its dollars and expiry: `Cloud session credits $231 used of $250,
+    /// expires 5 Nov, 7:59`.
     static func windowText(
         _ window: StatusSnapshot.Window, mode: PercentDisplay.Mode = .used, now: Date,
         calendar: Calendar = .current, locale: Locale = .current

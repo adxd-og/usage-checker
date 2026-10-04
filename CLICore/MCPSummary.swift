@@ -33,8 +33,8 @@ enum MCPSummary {
         if let plan = service.plan, !plan.isEmpty { head += " (\(plan))" }
 
         var clauses = service.windows.map { window -> String in
-            // A credit pool is money, not a window: its dollars and expiry, as the
-            // popover's row and `omelette status` print them.
+            // A credit pool is money, not a window: its dollars and expiry, as
+            // `omelette status` prints them ("$231 used of $250, expires …").
             if let figures = CreditCopy.terminalFigures(window, now: now, calendar: calendar, locale: locale) {
                 return "\(window.label.lowercased()) \(figures)"
             }

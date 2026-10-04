@@ -20,15 +20,19 @@ enum CreditCopy {
     /// whatever the machine's locale, so a credit pool's figures there match it.
     static let terminalLocale = Locale(identifier: "en_US")
 
-    /// `$231 / $250, expires 5 Nov, 7:59`: what `omelette status` and the MCP paragraph
-    /// print after a credit pool's label, the popover row's value and tooltip on one
-    /// line. nil for a window that is not a credit pool.
+    /// `$231 used of $250, expires 5 Nov, 7:59`: what `omelette status` and the MCP
+    /// paragraph print after a credit pool's label, the popover row's figures and
+    /// tooltip on one line. In words rather than the row's `/`: with no bar beside it,
+    /// a reader — or a model reading `get_usage` — could take $231 for what is left,
+    /// where claude.ai says "$19 of $250 left". nil for a window that is not a credit
+    /// pool.
     static func terminalFigures(
         _ window: StatusSnapshot.Window, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
     ) -> String? {
         guard let limit = window.limitDollars else { return nil }
-        let figures = value(usedDollars: window.usedDollars ?? 0, limitDollars: limit, locale: terminalLocale)
+        let used = dollars(window.usedDollars ?? 0, locale: terminalLocale)
+        let figures = "\(used) used of \(dollars(limit, locale: terminalLocale))"
         guard let at = window.resetsAt,
               let expiry = ResetCopy.absolute(resetsAt: at, now: now, calendar: calendar, locale: locale)
         else { return figures }

@@ -69,7 +69,7 @@ final class StatusCreditPoolTests: XCTestCase {
         )
         XCTAssertEqual(
             line,
-            "Claude  Current session 7%, resets in 49m · All models 69%, resets in 3d 21h (Thu 9:59) · Cloud session credits $231 / $250, expires 5 Nov, 7:59"
+            "Claude  Current session 7%, resets in 49m · All models 69%, resets in 3d 21h (Thu 9:59) · Cloud session credits $231 used of $250, expires 5 Nov, 7:59"
         )
     }
 
@@ -88,7 +88,7 @@ final class StatusCreditPoolTests: XCTestCase {
         )
         XCTAssertEqual(
             MCPSummary.serviceSentence(service, now: now, calendar: calendar, locale: locale),
-            "Claude (Max 5x): current session 7%, resets in 49m; all models 69%, resets in 3d 21h (Thu 9:59); cloud session credits $231 / $250, expires 5 Nov, 7:59."
+            "Claude (Max 5x): current session 7%, resets in 49m; all models 69%, resets in 3d 21h (Thu 9:59); cloud session credits $231 used of $250, expires 5 Nov, 7:59."
         )
         XCTAssertEqual(
             MCPSummary.advice(for: snapshot, now: now, calendar: calendar, locale: locale),
