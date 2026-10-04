@@ -7,6 +7,14 @@ enum BucketKind: String, Sendable, Codable {
     case other
 }
 
+/// A prepaid dollar pool's figures, in whole dollars (claude.ai shows the same pool
+/// as "$19 of $250 left"). Money the account has, not a limit: when it runs dry the
+/// plan's own windows take over.
+struct CreditPool: Equatable, Sendable, Codable {
+    let usedDollars: Double
+    let limitDollars: Double
+}
+
 struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     let id: String
     let label: String
@@ -18,6 +26,11 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     /// persisted by older builds still decode, and so the inference below
     /// remains the fallback for providers that report no length.
     var windowLength: TimeInterval? = nil
+    /// Set when this bucket is a prepaid credit pool rather than a rate limit
+    /// (claude.ai's "Cloud session credits"); `utilization` is then the share of the
+    /// pool spent. Optional with a nil default for the same reason as `windowLength`:
+    /// a `last-known.json` written by 3.0.1 has no such key and still decodes.
+    var credit: CreditPool? = nil
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
 
@@ -27,6 +40,15 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     var isPromotional: Bool {
         id.lowercased().contains("promo") || label.lowercased().contains("promo")
     }
+
+    /// A prepaid credit pool: its figure is dollars, not a percent of a limit. The one
+    /// place the test is written; every surface that sets credit pools apart asks this.
+    var isCreditPool: Bool { credit != nil }
+
+    /// The pools that never drive the headline, the hero or a threshold alert: a
+    /// promotional bonus, or a prepaid credit pool. Neither is a limit — running one
+    /// dry costs nothing, or hands over to the plan's own windows.
+    var isBonusPool: Bool { isPromotional || isCreditPool }
 
     /// Total length of this rate-limit window. The provider's own figure wins;
     /// the id/kind inference is a fallback for Anthropic's windows, which the

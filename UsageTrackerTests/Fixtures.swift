@@ -11,7 +11,8 @@ enum Fixture {
         percent: Double = 0,
         resetsAt: Date = .distantFuture,
         kind: BucketKind = .other,
-        windowLength: TimeInterval? = nil
+        windowLength: TimeInterval? = nil,
+        credit: CreditPool? = nil
     ) -> UsageBucket {
         UsageBucket(
             id: id,
@@ -19,9 +20,38 @@ enum Fixture {
             utilization: percent,
             resetsAt: resetsAt,
             kind: kind,
-            windowLength: windowLength
+            windowLength: windowLength,
+            credit: credit
         )
     }
+
+    /// `/api/oauth/usage` as this account returned it on 2026-10-04: the plan's windows
+    /// in `limits` and as legacy keys, and `iguana_necktie` — claude.ai's "Cloud session
+    /// credits", $19 of $250 left, expiring November 5 — copied verbatim. `limits` does
+    /// not carry the pool. Its dollars are WHOLE dollars, unlike `extra_usage`, which is
+    /// in cents.
+    static let cloudCreditsPayload = """
+    {
+      "five_hour": { "utilization": 7.0, "resets_at": "2026-10-04T12:49:59+00:00" },
+      "seven_day": { "utilization": 69.0, "resets_at": "2026-10-08T09:59:59+00:00" },
+      "iguana_necktie": {"utilization": 92.368272, "resets_at": "2026-11-05T07:59:00+00:00", "limit_dollars": 250, "used_dollars": 230.92068, "remaining_dollars": 19.08, "locked_reason": null},
+      "limits": [
+        { "kind": "session", "group": "session", "percent": 7.0, "resets_at": "2026-10-04T12:49:59+00:00" },
+        { "kind": "weekly_all", "group": "weekly", "percent": 69.0, "resets_at": "2026-10-08T09:59:59+00:00" }
+      ]
+    }
+    """
+
+    /// The bucket `cloudCreditsPayload`'s pool becomes: 92 % spent, $230.92 of $250,
+    /// expiring 2026-11-05 07:59 UTC.
+    static let cloudCredits = Fixture.bucket(
+        id: "iguana_necktie",
+        label: "Cloud session credits",
+        percent: 92.368272,
+        resetsAt: Date(timeIntervalSince1970: 1_793_865_540),
+        kind: .other,
+        credit: CreditPool(usedDollars: 230.92068, limitDollars: 250)
+    )
 
     static func snapshot(
         id: String = "claude",

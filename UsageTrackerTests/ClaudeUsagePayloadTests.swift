@@ -180,7 +180,10 @@ final class ClaudeUsagePayloadTests: XCTestCase {
         XCTAssertNil(buckets.first { $0.id == "spend" })
     }
 
-    func testAFundedDollarPoolBecomesItsOwnWindow() throws {
+    /// Was `testAFundedDollarPoolBecomesItsOwnWindow`, which pinned the codename label
+    /// "Nimbus Quill". A funded pool under a key this build doesn't know is money the
+    /// account has, and a codename never reaches the UI.
+    func testAFundedPoolUnderAnUnknownKeyIsCalledIncludedCredits() throws {
         let payload = """
         {
           "five_hour": { "utilization": 11.0, "resets_at": "2026-08-27T18:00:00.000Z" },
@@ -193,9 +196,61 @@ final class ClaudeUsagePayloadTests: XCTestCase {
         let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets
         let pool = try XCTUnwrap(buckets.first { $0.id == "nimbus_quill" })
         XCTAssertEqual(pool.utilization, 24)
-        XCTAssertEqual(pool.label, "Nimbus Quill")
+        XCTAssertEqual(pool.label, "Included credits")
         XCTAssertEqual(pool.kind, .other)
         XCTAssertEqual(pool.resetsAt, .distantFuture)
+        XCTAssertEqual(pool.credit, CreditPool(usedDollars: 1200, limitDollars: 5000))
+    }
+
+    // MARK: - Credit pools (cloud session credits spec, Package 1)
+
+    func testTheLiveCloudSessionCreditsPoolArrivesAsADollarPoolInWholeDollars() throws {
+        let buckets = try ClaudeOAuthProvider.usage(fromPayload: Data(Fixture.cloudCreditsPayload.utf8)).buckets
+        XCTAssertEqual(
+            buckets.map(\.id), ["five_hour", "seven_day", "iguana_necktie"],
+            "limits does not carry the pool; the legacy key does, and it trails"
+        )
+        let pool = try XCTUnwrap(buckets.first { $0.id == "iguana_necktie" })
+        XCTAssertEqual(pool.label, "Cloud session credits")
+        XCTAssertEqual(pool.kind, .other)
+        XCTAssertEqual(pool.utilization, 92.368272)
+        XCTAssertEqual(pool.resetsAt, Date(timeIntervalSince1970: 1_793_865_540), "2026-11-05 07:59 UTC")
+        // Whole dollars: claude.ai shows this pool as "$19 of $250 left". extra_usage is
+        // the one dollar field in cents; dividing these by 100 would read "$2 / $3".
+        XCTAssertEqual(pool.credit, CreditPool(usedDollars: 230.92068, limitDollars: 250))
+        XCTAssertEqual(pool, Fixture.cloudCredits)
+        XCTAssertTrue(pool.isBonusPool)
+    }
+
+    func testAFundedPoolWithoutUsedDollarsReadsThemOffItsPercent() throws {
+        let payload = """
+        {
+          "juniper_tide": {
+            "utilization": 40, "resets_at": null,
+            "limit_dollars": 250, "used_dollars": null, "remaining_dollars": null
+          }
+        }
+        """
+        let pool = try XCTUnwrap(ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets.first)
+        XCTAssertEqual(pool.credit, CreditPool(usedDollars: 100, limitDollars: 250))
+        XCTAssertTrue(pool.isBonusPool, "funded means credit, whatever else is missing")
+    }
+
+    func testAFundedPoolNeverBecomesAWeeklyLimitWhateverItsKeyLooksLike() throws {
+        // autoKind makes any seven_day_ key model-specific and autoLabel would call this
+        // one "Credits only": a weekly-limit row for money.
+        let payload = """
+        {
+          "seven_day_credits": {
+            "utilization": 10, "resets_at": null,
+            "limit_dollars": 50, "used_dollars": 5, "remaining_dollars": 45
+          }
+        }
+        """
+        let pool = try XCTUnwrap(ClaudeOAuthProvider.usage(fromPayload: Data(payload.utf8)).buckets.first)
+        XCTAssertEqual(pool.kind, .other)
+        XCTAssertEqual(pool.label, "Included credits")
+        XCTAssertEqual(pool.credit, CreditPool(usedDollars: 5, limitDollars: 50))
     }
 
     func testExtraUsageIsNotMistakenForARateWindow() throws {

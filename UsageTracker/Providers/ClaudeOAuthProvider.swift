@@ -12,11 +12,19 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         let utilization: Double?
         let resetsAt: Date?
         let usedPercentage: Double?
+        /// A funded dollar pool's limit and spend, in WHOLE dollars: the live
+        /// `iguana_necktie` carries `"limit_dollars": 250, "used_dollars": 230.92068` and
+        /// claude.ai shows it as "$19 of $250 left". Unlike `extra_usage`, which is in
+        /// cents. nil on every rate-limit window.
+        let limitDollars: Double?
+        let usedDollars: Double?
 
         enum CodingKeys: String, CodingKey {
             case utilization
             case resetsAt = "resets_at"
             case usedPercentage = "used_percentage"
+            case limitDollars = "limit_dollars"
+            case usedDollars = "used_dollars"
         }
 
         var normalizedPercent: Double? {
@@ -25,6 +33,15 @@ private struct OAuthUsageResponse: Decodable, Sendable {
             // 0–1 fraction), which turned a genuine 1% into 100% on low-usage windows
             // like "Sonnet only". Bounds are clamped downstream via clampedPercent.
             utilization ?? usedPercentage
+        }
+
+        /// The credit pool behind a funded dollar window; nil for a rate-limit window.
+        /// A pool that reports no `used_dollars` is read off its percentage, so a funded
+        /// pool is always a credit pool — never a window competing for the headline.
+        var credit: CreditPool? {
+            guard let limit = limitDollars, limit > 0 else { return nil }
+            let used = usedDollars ?? limit * (normalizedPercent ?? 0) / 100
+            return CreditPool(usedDollars: used, limitDollars: limit)
         }
     }
 
@@ -96,6 +113,7 @@ private struct OAuthUsageResponse: Decodable, Sendable {
         let utilization: Double?
         let resetsAt: Date?
         let limitDollars: Double?
+        let usedDollars: Double?
 
         private enum CodingKeys: String, CodingKey {
             case utilization
@@ -113,13 +131,18 @@ private struct OAuthUsageResponse: Decodable, Sendable {
             utilization = try? c.decodeIfPresent(Double.self, forKey: .utilization)
             resetsAt = try? c.decodeIfPresent(Date.self, forKey: .resetsAt)
             limitDollars = try? c.decodeIfPresent(Double.self, forKey: .limitDollars)
+            usedDollars = try? c.decodeIfPresent(Double.self, forKey: .usedDollars)
         }
 
-        /// The pool is worth a bar only when there is real money behind it: a null or
-        /// zero `limit_dollars` is a pool the account doesn't have.
+        /// The pool is worth a row only when there is real money behind it: a null or
+        /// zero `limit_dollars` is a pool the account doesn't have. A funded pool keeps
+        /// its dollars, so the bucket built from it is a credit pool (`WindowDTO.credit`).
         var asWindow: WindowDTO? {
             guard let limit = limitDollars, limit > 0, let utilization else { return nil }
-            return WindowDTO(utilization: utilization, resetsAt: resetsAt, usedPercentage: nil)
+            return WindowDTO(
+                utilization: utilization, resetsAt: resetsAt, usedPercentage: nil,
+                limitDollars: limit, usedDollars: usedDollars
+            )
         }
     }
 
@@ -147,9 +170,10 @@ private struct OAuthUsageResponse: Decodable, Sendable {
             // above; anything else that decodes as a window object and reports a percent
             // is treated as one.
             if let pool = try? c.decode(DollarPoolDTO.self, forKey: key), pool.isDollarPool {
-                // A dollar pool is either a real limit or nothing at all — never a 0%
-                // bar. `spend` (the usage-credits object) has no dollar keys of this
-                // shape and no `utilization`, so it falls through and is skipped below.
+                // A dollar pool is either a credit pool with money behind it or nothing
+                // at all — never a 0% bar. `spend` (the usage-credits object) has no
+                // dollar keys of this shape and no `utilization`, so it falls through and
+                // is skipped below.
                 if let window = pool.asWindow { windows[key.stringValue] = window }
                 continue
             }
@@ -385,6 +409,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     }
 
     /// Display metadata for the windows we know about; also fixes their order in the UI.
+    /// `iguana_necktie` is claude.ai's "Cloud session credits": a prepaid dollar pool,
+    /// not a window, which `buckets(from:)` marks as a credit pool by its dollars.
     private static let knownWindows: [(id: String, label: String, kind: BucketKind)] = [
         ("five_hour", "Current session", .session),
         ("seven_day", "All models", .weekly),
@@ -394,7 +420,12 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         ("seven_day_omelette", "Claude Design", .modelSpecific),
         ("seven_day_cowork", "Cowork", .modelSpecific),
         ("seven_day_oauth_apps", "OAuth apps", .modelSpecific),
+        ("iguana_necktie", "Cloud session credits", .other),
     ]
+
+    /// What a funded dollar pool under a key this build doesn't know is called. A
+    /// codename never reaches the UI: "Iguana Necktie" did, and "Nimbus Quill" before it.
+    private static let includedCreditsLabel = "Included credits"
 
     private static func buckets(from windows: [String: OAuthUsageResponse.WindowDTO]) -> [UsageBucket] {
         var remaining = windows
@@ -403,25 +434,31 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         for known in knownWindows {
             guard let dto = remaining.removeValue(forKey: known.id),
                   let p = dto.normalizedPercent else { continue }
+            let credit = dto.credit
             buckets.append(UsageBucket(
                 id: known.id,
                 label: known.label,
                 utilization: p,
                 resetsAt: dto.resetsAt ?? .distantFuture,
-                kind: known.kind
+                kind: credit == nil ? known.kind : .other,
+                credit: credit
             ))
         }
 
         // Windows this build doesn't know by name (a new model's weekly cap, a new
-        // surface) still get shown, with a label derived from the key.
+        // surface) still get shown, with a label derived from the key. A funded dollar
+        // pool is money, not a window: it is "Included credits" and `.other` whatever
+        // its key looks like, so it never takes a weekly row or shows a codename.
         for (key, dto) in remaining.sorted(by: { $0.key < $1.key }) {
             guard let p = dto.normalizedPercent else { continue }
+            let credit = dto.credit
             buckets.append(UsageBucket(
                 id: key,
-                label: autoLabel(for: key),
+                label: credit == nil ? autoLabel(for: key) : includedCreditsLabel,
                 utilization: p,
                 resetsAt: dto.resetsAt ?? .distantFuture,
-                kind: autoKind(for: key)
+                kind: credit == nil ? autoKind(for: key) : .other,
+                credit: credit
             ))
         }
         return buckets

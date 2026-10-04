@@ -81,6 +81,40 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertFalse(Fixture.bucket(id: "seven_day", label: "All models").isPromotional)
     }
 
+    // MARK: - isBonusPool and the credit field (cloud session credits spec, Package 1)
+
+    func testACreditPoolIsABonusPoolThoughItIsNoPromo() {
+        XCTAssertTrue(Fixture.cloudCredits.isCreditPool)
+        XCTAssertTrue(Fixture.cloudCredits.isBonusPool)
+        XCTAssertFalse(Fixture.cloudCredits.isPromotional, "money the account has, not a free bonus")
+        let promo = Fixture.bucket(id: "seven_day_promotional", kind: .weekly)
+        XCTAssertTrue(promo.isBonusPool)
+        XCTAssertFalse(promo.isCreditPool, "a promo pool is a percentage, not dollars")
+        XCTAssertFalse(Fixture.bucket(id: "seven_day", label: "All models", kind: .weekly).isBonusPool)
+    }
+
+    func testALastKnownBucketWrittenBy301DecodesWithNoCredit() throws {
+        // last-known.json as 3.0.1 wrote this account's pool on 2026-10-04.
+        let json = #"{"id":"iguana_necktie","utilization":92.368272,"resetsAt":"2026-11-05T07:59:00Z","label":"Iguana Necktie","kind":"other"}"#
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let bucket = try decoder.decode(UsageBucket.self, from: Data(json.utf8))
+        XCTAssertNil(bucket.credit)
+        XCTAssertEqual(bucket.utilization, 92.368272)
+        XCTAssertEqual(bucket.resetsAt, Date(timeIntervalSince1970: 1_793_865_540))
+    }
+
+    func testACreditSurvivesTheLastKnownRoundTripAndAWindowWritesNoCreditKey() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let decoded = try decoder.decode(UsageBucket.self, from: try encoder.encode(Fixture.cloudCredits))
+        XCTAssertEqual(decoded, Fixture.cloudCredits)
+        let window = String(decoding: try encoder.encode(Fixture.bucket(id: "seven_day", kind: .weekly)), as: UTF8.self)
+        XCTAssertFalse(window.contains("credit"), window)
+    }
+
     // MARK: - clampedPercent
 
     func testPercentsAreClampedToTheBar() {
