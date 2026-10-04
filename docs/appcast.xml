@@ -6,6 +6,30 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v3.0.2</title>
+      <pubDate>Sun, 04 Oct 2026 17:44:19 +0300</pubDate>
+      <sparkle:version>52</sparkle:version>
+      <sparkle:shortVersionString>3.0.2</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Claude</h3>
+<ul>
+<li>Cloud session credits, claude.ai's prepaid pool for cloud sessions, show as dollars with their expiry: "$231 / $250" in the Claude tab and the menu-bar tooltip, "$231 used of $250" in <code>omelette status</code> and <code>get_usage</code>. They never trigger an alert and never appear as a percent in the widget, the dashboard's Overview or Settings. The menu bar, the popover, the floating window, the status line and the MCP advice lead with them only when they are all the account has.</li>
+<li>A funded credit pool Omelette does not know by name shows as "Included credits", never as an internal codename.</li>
+</ul>
+<h3>Dashboard</h3>
+<ul>
+<li>The Overview legend lists Extra usage credits and each credit pool as dollar rows after the usage windows, each with its own dot: "$0 / $10", "$231 / $250 · expires 5 Nov". No ring, and a spend limit that already has a ring is not listed twice.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v3.0.2">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v3.0.2/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="oPyguGqw02AUHDFp2SCR6yDYV2aIX1vBv6yhCpB5JRRSEW9goBCJe2gxbgrQpGH+XMLpsqf3wecf8CXtF0i7DQ=="
+        length="24708655"/>
+    </item>
+    <item>
       <title>Omelette v3.0.1</title>
       <pubDate>Wed, 30 Sep 2026 14:58:28 +0300</pubDate>
       <sparkle:version>51</sparkle:version>
