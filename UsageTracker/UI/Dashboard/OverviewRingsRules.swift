@@ -180,7 +180,9 @@ enum OverviewRingsRules {
 
     /// The legend's dollar rows, after the windows: the extra-usage or spend limit when it
     /// is on and has a limit (amber), then each prepaid credit pool in the provider's
-    /// order (teal), with "expires …" under it when its date is known.
+    /// order (teal), with "expires …" under it when its date is known. A spend limit that
+    /// is already a ring (the hero of an account with no session window) has a window row
+    /// saying what is spent, so it gets no second row here.
     nonisolated static func dollarRows(
         for service: ServiceSnapshot,
         now: Date,
@@ -188,9 +190,11 @@ enum OverviewRingsRules {
         locale: Locale = .current
     ) -> [OverviewDollarRow] {
         var rows: [OverviewDollarRow] = []
-        if let extra = service.extraUsage, extra.isEnabled, extra.monthlyLimit > 0 {
+        let extraID = WindowRanking.extraUsageBucketID(for: service)
+        if let extra = service.extraUsage, extra.isEnabled, extra.monthlyLimit > 0,
+           !windows(for: service).contains(where: { $0.id == extraID }) {
             rows.append(OverviewDollarRow(
-                id: WindowRanking.extraUsageBucketID(for: service),
+                id: extraID,
                 label: extraUsageTitle(plan: service.plan),
                 figure: CreditCopy.value(usedDollars: extra.usedCredits, limitDollars: extra.monthlyLimit, locale: locale),
                 subline: nil,

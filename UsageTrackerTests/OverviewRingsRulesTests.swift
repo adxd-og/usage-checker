@@ -233,6 +233,22 @@ final class OverviewRingsRulesTests: XCTestCase {
         XCTAssertEqual(credits.accessibilityLabel, "Cloud session credits, $231 / $250, expires 5 Nov, 7:59")
     }
 
+    func testASpendLimitThatIsAlreadyARingGetsNoDollarRow() {
+        // testASpendLimitWithNoSessionIsTheOnlyRingAndSaysHowMuchIsSpent's account: with no
+        // session the spend limit is the hero ring, and its legend row already says
+        // "$431.26 of $1,500". A dollar row would list it twice.
+        let spendLimit = ExtraUsage(isEnabled: true, monthlyLimit: 1_500, usedCredits: 431.26, utilization: 28.75)
+        let service = Fixture.snapshot(plan: "Claude Enterprise", buckets: [], extraUsage: spendLimit, at: now)
+        XCTAssertEqual(OverviewRingsRules.windows(for: service).map(\.id), ["claude_extra_usage"])
+        XCTAssertEqual(OverviewRingsRules.dollarRows(for: service, now: now), [])
+        // A credit pool beside it keeps its row: only the ringed limit is skipped.
+        let withPool = Fixture.snapshot(
+            plan: "Claude Enterprise", buckets: [Fixture.cloudCredits], extraUsage: spendLimit, at: now
+        )
+        XCTAssertEqual(OverviewRingsRules.windows(for: withPool).map(\.id), ["claude_extra_usage"])
+        XCTAssertEqual(OverviewRingsRules.dollarRows(for: withPool, now: now).map(\.id), ["iguana_necktie"])
+    }
+
     func testASpendLimitPlanNamesItsRowSpendLimit() {
         let service = claudeWithDollars(extraUsage: tenDollarExtra, plan: "Claude Enterprise")
         XCTAssertEqual(OverviewRingsRules.dollarRows(for: service, now: october4).map(\.label), ["Spend limit"])
