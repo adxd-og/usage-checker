@@ -271,6 +271,24 @@ final class HistoryRulesQuotaTests: XCTestCase {
             "no Cloud session credits line; the promo pool and the history-only window keep theirs"
         )
     }
+
+    /// After the pool expires it leaves the payload and only its readings remain: drawn
+    /// from history alone it came back as an "Iguana Necktie" percent line.
+    func testAnExpiredCreditPoolDrawsNoLineFromHistoryAlone() {
+        let live = Fixture.snapshot(id: "claude", buckets: [
+            Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),
+        ], at: now)
+        let records = Fixture.quotaHistory(service: "claude", points: [
+            (at: august31, percents: ["five_hour": 5, "iguana_necktie": 80, "seven_day_opus": 10]),
+        ])
+        for service in [live, nil] as [ServiceSnapshot?] {
+            let infos = QuotaAnalytics.bucketInfos(service: service, records: records)
+            let chart = HistoryRules.quotaChart(records: records, buckets: infos, range: .sevenDays, now: now, calendar: utc)
+            XCTAssertEqual(
+                chart.series.map(\.id), ["five_hour", "seven_day_opus"], service == nil ? "signed out" : "signed in"
+            )
+        }
+    }
 }
 
 /// Liquid-glass spec § Screens, "History · Chart" and "History · Calendar"; § Decisions,

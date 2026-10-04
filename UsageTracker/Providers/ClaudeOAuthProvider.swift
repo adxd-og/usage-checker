@@ -425,8 +425,21 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         ("seven_day_omelette", "Claude Design", .modelSpecific),
         ("seven_day_cowork", "Cowork", .modelSpecific),
         ("seven_day_oauth_apps", "OAuth apps", .modelSpecific),
-        ("iguana_necktie", "Cloud session credits", .other),
+        ("iguana_necktie", cloudSessionCreditsLabel, .other),
     ]
+
+    /// claude.ai's name for its prepaid cloud-session pool. `knownWindows` labels the
+    /// pool's key with it, and `creditPoolIDs` finds the key by it.
+    private static let cloudSessionCreditsLabel = "Cloud session credits"
+
+    /// The keys this build knows as prepaid credit pools, read off `knownWindows` so the
+    /// codename is written once. History keeps percents by id and nothing else, so a pool
+    /// that has expired and left the payload can only be told apart by its key:
+    /// `QuotaAnalytics.bucketInfos` gives it no entry rather than chart it under the
+    /// codename.
+    static let creditPoolIDs: Set<String> = Set(
+        knownWindows.filter { $0.label == cloudSessionCreditsLabel }.map { $0.id }
+    )
 
     /// What a funded dollar pool under a key this build doesn't know is called. A
     /// codename never reaches the UI: "Iguana Necktie" did, and "Nimbus Quill" before it.

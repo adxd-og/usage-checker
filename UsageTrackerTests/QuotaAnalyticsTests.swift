@@ -339,6 +339,28 @@ final class QuotaAnalyticsTests: XCTestCase {
         XCTAssertEqual(withPromo.map(\.isCore), [false, true])
     }
 
+    func testACreditPoolThatLivesOnlyInHistoryGetsNoEntry() {
+        // On 5 November the cloud session credits expire and leave the payload; their
+        // readings stay in history as percents by id, with no dollars and no label.
+        let records = Fixture.quotaHistory(service: "claude", points: [
+            (at: Date(timeIntervalSince1970: 1_791_115_200),
+             percents: ["five_hour": 7, "seven_day_opus": 10, "iguana_necktie": 92]),
+        ])
+        // Signed out: nothing is live at all.
+        XCTAssertEqual(
+            QuotaAnalytics.bucketInfos(service: nil, records: records).map(\.id), ["five_hour", "seven_day_opus"]
+        )
+        // Signed in after the pool expired: the plan's windows are live, the pool is not.
+        let live = Fixture.snapshot(id: "claude", buckets: [
+            Fixture.bucket(id: "five_hour", kind: .session),
+            Fixture.bucket(id: "seven_day", kind: .weekly),
+        ])
+        XCTAssertEqual(
+            QuotaAnalytics.bucketInfos(service: live, records: records).map(\.id),
+            ["five_hour", "seven_day", "seven_day_opus"]
+        )
+    }
+
     func testLiveWindowsKeepTheProvidersOwnNamesAndOrder() {
         let service = Fixture.snapshot(id: "antigravity", buckets: [
             Fixture.bucket(id: "five_hour", label: "5-hour", kind: .session),

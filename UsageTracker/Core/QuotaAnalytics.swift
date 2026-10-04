@@ -309,7 +309,16 @@ enum QuotaAnalytics {
     /// so it keeps a name inferred from its id rather than vanishing from the chart.
     /// It is never core: with a live snapshot on hand, a window absent from it is not a
     /// constraint the user is under today.
-    static func bucketInfos(service: ServiceSnapshot?, records: [HistoryRecord]) -> [QuotaBucketInfo] {
+    ///
+    /// The exception is a prepaid credit pool (`creditPoolIDs`, Claude's by default)
+    /// that survives only in history — it expired and left the payload. Its records hold
+    /// percents of money spent and no label, so it gets no entry at all: neither the
+    /// History chart nor the activity grid draws it under its codename. A live pool keeps
+    /// its entry, flagged `isCreditPool`.
+    static func bucketInfos(
+        service: ServiceSnapshot?, records: [HistoryRecord],
+        creditPoolIDs: Set<String> = ClaudeOAuthProvider.creditPoolIDs
+    ) -> [QuotaBucketInfo] {
         let live = service?.buckets ?? []
         let coreIDs = Set(coreBuckets(of: live).map(\.id))
         var infos = live.map {
@@ -320,6 +329,7 @@ enum QuotaAnalytics {
         }
         var seen = Set(infos.map(\.id))
         for id in bucketIDs(in: records) where seen.insert(id).inserted {
+            if creditPoolIDs.contains(id) { continue }
             // A signed-out provider has no live snapshot at all; without this its whole
             // history would be non-core and the activity grid would come up blank.
             let isCore = live.isEmpty && !id.lowercased().contains("promo")
