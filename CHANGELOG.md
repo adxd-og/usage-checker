@@ -10,9 +10,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Claude
 - Cloud session credits, claude.ai's prepaid pool for cloud sessions, show
   as dollars with their expiry ("$231 / $250") in the Claude tab, in
-  `omelette status` and in `get_usage`. They no longer appear as a percent
-  in the menu bar, the tiles, the widget, the dashboard, the floating window
-  or Settings, and never trigger alerts or the MCP advice.
+  `omelette status` and in `get_usage`. They never trigger an alert and
+  never appear as a percent in the widget, the dashboard's Overview or
+  Settings. The menu bar, the popover, the floating window, the status line
+  and the MCP advice lead with them only when they are all the account has.
 - A funded credit pool Omelette does not know by name shows as "Included
   credits", never as an internal codename.
 
