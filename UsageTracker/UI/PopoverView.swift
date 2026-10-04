@@ -177,12 +177,46 @@ struct PopoverView: View {
     }
 
     /// Whether a provider tab draws its spend card: the week's dollars (as the headline
-    /// of a windowless account, or under a hero), or an enabled extra-usage or spend
-    /// limit.
+    /// of a windowless account, or under a hero), an enabled extra-usage or spend
+    /// limit, or a prepaid credit pool.
     nonisolated static func showsSpendGroup(service: ServiceSnapshot, hasHero: Bool) -> Bool {
         if !hasHero, service.spendHeadline != nil { return true }
         if let extra = service.extraUsage, extra.isEnabled { return true }
+        if !creditPools(service).isEmpty { return true }
         return hasHero && (service.weekCost ?? 0) > 0
+    }
+
+    /// The prepaid credit pools a provider tab lists in its spend card, in the
+    /// provider's order. A pool at 0 % keeps its row: it is money the account has.
+    nonisolated static func creditPools(_ service: ServiceSnapshot) -> [UsageBucket] {
+        service.buckets.filter(\.isCreditPool)
+    }
+
+    /// A credit row's value: `"$231 / $250"`, used over limit in whole dollars, the
+    /// extra-usage row's currency style. nil for a bucket that is not a credit pool.
+    nonisolated static func creditRowValue(_ bucket: UsageBucket, locale: Locale = .current) -> String? {
+        guard let credit = bucket.credit else { return nil }
+        return CreditCopy.value(usedDollars: credit.usedDollars, limitDollars: credit.limitDollars, locale: locale)
+    }
+
+    /// A credit row's tooltip: `"Expires 5 Nov, 7:59"`. A pool's reset is when its
+    /// unspent credit lapses, not when a window starts over. nil when the provider gave
+    /// no date.
+    nonisolated static func creditRowHelp(
+        _ bucket: UsageBucket,
+        now: Date = Date(),
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String? {
+        ResetCopy.absolute(resetsAt: bucket.resetsAt, now: now, calendar: calendar, locale: locale)
+            .map { "Expires \($0)" }
+    }
+
+    /// Whether a live provider tab says "Server responded but returned no usage data":
+    /// nothing at all to draw. A credit pool is a bucket, so an account whose only
+    /// reading is its credit has something to show.
+    nonisolated static func nothingToShow(_ service: ServiceSnapshot) -> Bool {
+        service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0
     }
 
     /// A provider tab's state line: its word in its colour ("Not running" in secondary,
@@ -464,9 +498,7 @@ private struct ProviderDetail: View {
         let shown = visibleWeekly + (showUnusedWindows ? unusedWeekly : (unusedWeekly.count == 1 ? unusedWeekly : []))
         return shown.filter { $0.id != hero?.id }
     }
-    private var nothingToShow: Bool {
-        service.buckets.isEmpty && service.extraUsage == nil && (service.weekCost ?? 0) == 0
-    }
+    private var nothingToShow: Bool { PopoverView.nothingToShow(service) }
 
     /// The "API-equivalent" line, once, and only under a dollar row that is actually
     /// on screen. A pay-as-you-go account has no subscription to be confused with.
@@ -594,7 +626,8 @@ private struct ProviderDetail: View {
     }
 
     /// The dollars: a windowless account's week as its headline, the extra-usage or
-    /// spend limit, the week under a hero, and the API-equivalent line once.
+    /// spend limit, each prepaid credit pool, the week under a hero, and the
+    /// API-equivalent line once.
     private var spendGroup: some View {
         VStack(alignment: .leading, spacing: PopoverView.groupSpacing) {
             if hero == nil, let cost = service.spendHeadline {
@@ -608,6 +641,17 @@ private struct ProviderDetail: View {
                     value: "\(OMCostTile.money(extra.usedCredits)) / \(extra.monthlyLimit.formatted(.currency(code: "USD").precision(.fractionLength(0))))",
                     barUsedPercent: extra.utilization,
                     barMode: mode
+                )
+            }
+            // A prepaid credit pool is money the account has, not a limit: its dollars
+            // sit next to extra usage and never among the weekly limits.
+            ForEach(PopoverView.creditPools(service)) { pool in
+                OMKeyValueRow(
+                    label: pool.label,
+                    value: PopoverView.creditRowValue(pool) ?? "",
+                    barUsedPercent: pool.clampedPercent,
+                    barMode: mode,
+                    help: PopoverView.creditRowHelp(pool)
                 )
             }
             if hero != nil, let week = service.weekCost, week > 0 {

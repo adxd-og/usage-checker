@@ -40,4 +40,58 @@ final class ProviderTabRulesTests: XCTestCase {
         XCTAssertEqual(PopoverView.groupPadding, 14)
         XCTAssertEqual(PopoverView.groupSpacing, 14)
     }
+
+    // MARK: - Credit pools (cloud session credits spec § A row where the dollars live)
+
+    private let us = Locale(identifier: "en_US")
+    private let gb = Locale(identifier: "en_GB")
+    private var utcGB: Calendar {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        c.locale = Locale(identifier: "en_GB")
+        return c
+    }
+    /// Sunday 2026-10-04 12:00 UTC, the day the menu bar showed the pool's 92 %.
+    private let october4 = Date(timeIntervalSince1970: 1_791_115_200)
+
+    func testACloudSessionCreditRowReadsWholeDollarsUsedOverLimit() {
+        // $230.92 of $250 spent; claude.ai shows the same pool as "$19 of $250 left".
+        XCTAssertEqual(PopoverView.creditRowValue(Fixture.cloudCredits, locale: us), "$231 / $250")
+    }
+
+    func testACreditRowsTooltipSaysWhenTheCreditsExpire() {
+        XCTAssertEqual(
+            PopoverView.creditRowHelp(Fixture.cloudCredits, now: october4, calendar: utcGB, locale: gb),
+            // ResetCopy.absolute's own spelling: Date.FormatStyle's `.shortened` time
+            // writes en_GB's 07:59 as "7:59".
+            "Expires 5 Nov, 7:59"
+        )
+        let undated = Fixture.bucket(
+            id: "nimbus_quill", label: "Included credits", percent: 24,
+            credit: CreditPool(usedDollars: 1200, limitDollars: 5000)
+        )
+        XCTAssertNil(PopoverView.creditRowHelp(undated, now: october4, calendar: utcGB, locale: gb))
+    }
+
+    func testOnlyCreditPoolsGetACreditRowAndAPoolAtZeroKeepsIt() {
+        let untouched = Fixture.bucket(
+            id: "nimbus_quill", label: "Included credits", percent: 0,
+            credit: CreditPool(usedDollars: 0, limitDollars: 50)
+        )
+        let service = Fixture.snapshot(id: "claude", buckets: [session, Fixture.cloudCredits, untouched])
+        XCTAssertEqual(PopoverView.creditPools(service).map(\.id), ["iguana_necktie", "nimbus_quill"])
+        XCTAssertEqual(PopoverView.creditRowValue(untouched, locale: us), "$0 / $50")
+        XCTAssertNil(PopoverView.creditRowValue(session, locale: us), "a rate-limit window has no dollars")
+    }
+
+    func testACreditPoolOpensTheSpendCardOnItsOwn() {
+        // No week's dollars, no extra usage: before this the pool had no row anywhere.
+        let service = Fixture.snapshot(id: "claude", buckets: [session, Fixture.cloudCredits])
+        XCTAssertTrue(PopoverView.showsSpendGroup(service: service, hasHero: true))
+    }
+
+    func testAnAccountWhoseOnlyReadingIsItsCreditHasSomethingToShow() {
+        XCTAssertFalse(PopoverView.nothingToShow(Fixture.snapshot(id: "claude", buckets: [Fixture.cloudCredits])))
+        XCTAssertTrue(PopoverView.nothingToShow(Fixture.snapshot(id: "claude")))
+    }
 }
