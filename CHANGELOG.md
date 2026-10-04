@@ -5,7 +5,7 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.0.2] — 2026-10-04
 
 ### Claude
 - Cloud session credits, claude.ai's prepaid pool for cloud sessions, show
@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the MCP advice lead with them only when they are all the account has.
 - A funded credit pool Omelette does not know by name shows as "Included
   credits", never as an internal codename.
+
+### Dashboard
+- The Overview legend lists Extra usage credits and each credit pool as
+  dollar rows after the usage windows, each with its own dot: "$0 / $10",
+  "$231 / $250 · expires 5 Nov". No ring, and a spend limit that already
+  has a ring is not listed twice.
 
 ## [3.0.1] — 2026-09-30
 
