@@ -149,6 +149,69 @@ final class OverviewRingsRulesTests: XCTestCase {
                        "Current session, 47 percent left")
     }
 
+    // MARK: - Credit rows (cloud session credits spec § Design, "Overview legend row")
+
+    /// Sunday 2026-10-04 12:00 UTC, the day the pool read $231 of $250.
+    private let october4 = Date(timeIntervalSince1970: 1_791_115_200)
+
+    func testCreditPoolsListsOnlyTheCreditPoolsInProviderOrder() {
+        let untouched = Fixture.bucket(
+            id: "nimbus_quill", label: "Included credits", percent: 0,
+            credit: CreditPool(usedDollars: 0, limitDollars: 50)
+        )
+        let service = claude(extra: [Fixture.cloudCredits, untouched])
+        XCTAssertEqual(service.creditPools.map(\.id), ["iguana_necktie", "nimbus_quill"])
+        XCTAssertEqual(PopoverView.creditPools(service), service.creditPools, "the popover reads the same list")
+        XCTAssertEqual(claude().creditPools, [])
+    }
+
+    func testACreditPoolGetsALegendRowButNoRing() {
+        let service = claude(extra: [Fixture.cloudCredits])
+        XCTAssertEqual(
+            OverviewRingsRules.windows(for: service).map(\.id), ["five_hour", "seven_day", "seven_day_fable"]
+        )
+        XCTAssertEqual(OverviewRingsRules.creditRows(for: service), [Fixture.cloudCredits])
+    }
+
+    func testAnAccountWithoutCreditsHasNoCreditRows() {
+        XCTAssertEqual(OverviewRingsRules.creditRows(for: claude()), [])
+    }
+
+    func testTheCreditSublineSaysWhenThePoolExpires() {
+        // ResetCopy.absolute's spelling: Date.FormatStyle writes en_GB's 07:59 as "7:59".
+        XCTAssertEqual(
+            OverviewRingsRules.creditSubline(for: Fixture.cloudCredits, now: october4, calendar: calendar, locale: gb),
+            "expires 5 Nov, 7:59"
+        )
+    }
+
+    func testACreditPoolWithoutADateHasNoSubline() {
+        let undated = Fixture.bucket(
+            id: "nimbus_quill", label: "Included credits", percent: 24, resetsAt: .distantFuture,
+            credit: CreditPool(usedDollars: 1200, limitDollars: 5000)
+        )
+        XCTAssertNil(OverviewRingsRules.creditSubline(for: undated, now: october4, calendar: calendar, locale: gb))
+    }
+
+    func testTheCreditFigureIsUsedOverLimitInWholeDollars() {
+        XCTAssertEqual(OverviewRingsRules.creditFigure(for: Fixture.cloudCredits, locale: us), "$231 / $250")
+        let session = OverviewRingsRules.windows(for: claude())[0].bucket
+        XCTAssertNil(OverviewRingsRules.creditFigure(for: session, locale: us), "a window has no dollars")
+    }
+
+    func testVoiceOverReadsTheCreditRowAsLabelFigureAndExpiry() {
+        XCTAssertEqual(
+            OverviewRingsRules.creditAccessibilityLabel(
+                for: Fixture.cloudCredits, figure: "$231 / $250", subline: "expires 5 Nov, 7:59"
+            ),
+            "Cloud session credits, $231 / $250, expires 5 Nov, 7:59"
+        )
+        XCTAssertEqual(
+            OverviewRingsRules.creditAccessibilityLabel(for: Fixture.cloudCredits, figure: "$231 / $250", subline: nil),
+            "Cloud session credits, $231 / $250"
+        )
+    }
+
     // MARK: - Centre
 
     func testAtRestTheCentreIsTheOutermostWindowAsTheMockupWritesIt() {
@@ -207,6 +270,14 @@ final class OverviewRingsRulesTests: XCTestCase {
         ], at: now)
         XCTAssertEqual(OverviewRingsRules.status(for: service),
                        OverviewLine(text: "Almost at the limit", token: .critical))
+    }
+
+    func testTheLegendVerdictIgnoresACreditPool() {
+        // The pool at 92 % would read "Almost at the limit"; it is money, not a limit.
+        XCTAssertEqual(
+            OverviewRingsRules.status(for: claude(extra: [Fixture.cloudCredits])),
+            OverviewRingsRules.status(for: claude())
+        )
     }
 
     func testLastKnownNumbersGetNoVerdict() {
