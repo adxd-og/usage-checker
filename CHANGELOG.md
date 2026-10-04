@@ -5,6 +5,17 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Claude
+- Cloud session credits, claude.ai's prepaid pool for cloud sessions, show
+  as dollars with their expiry ("$231 / $250") in the Claude tab, in
+  `omelette status` and in `get_usage`. They no longer appear as a percent
+  in the menu bar, the tiles, the widget, the dashboard, the floating window
+  or Settings, and never trigger alerts or the MCP advice.
+- A funded credit pool Omelette does not know by name shows as "Included
+  credits", never as an internal codename.
+
 ## [3.0.1] — 2026-09-30
 
 ### Command line
