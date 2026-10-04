@@ -157,6 +157,17 @@ struct OverviewRingsCard: View {
                     row(window, index: index, now: now)
                         .opacity(index < opacities.count ? opacities[index] : 1)
                 }
+                // Each prepaid credit pool after the windows: its dollars where a window
+                // shows its percent, no ring, and no part in the hover or focus emphasis.
+                // Inside this stack, so it takes the separators and the last-known dimming.
+                ForEach(Array(OverviewRingsRules.creditRows(for: service).enumerated()), id: \.element.id) { index, pool in
+                    if !windows.isEmpty || index > 0 {
+                        Rectangle()
+                            .fill(.om(.hairline))
+                            .frame(height: 1)
+                    }
+                    creditRow(pool, now: now)
+                }
             }
             .opacity(service.isRetained ? OverviewRingsRules.retainedOpacity : 1)
             // The ring follows the input, as on the segmented control and the sidebar: Tab
@@ -240,5 +251,40 @@ struct OverviewRingsCard: View {
         .help(OverviewRingsRules.help(for: window.bucket, now: now))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(OverviewRingsRules.accessibilityLabel(for: window.bucket, subline: subline, mode: mode))
+    }
+
+    /// A credit pool's legend row (cloud session credits spec § Design, "Overview legend
+    /// row"): a window row's geometry with the muted dot, "expires …" under the label and
+    /// "$231 / $250" as the figure. It takes no hover and no focus, so it never dims the
+    /// rings or the other rows, and their emphasis never dims it.
+    private func creditRow(_ pool: UsageBucket, now: Date) -> some View {
+        let subline = OverviewRingsRules.creditSubline(for: pool, now: now)
+        let figure = OverviewRingsRules.creditFigure(for: pool) ?? ""
+        return HStack(alignment: .center, spacing: OverviewRingsRules.rowSpacing) {
+            Circle()
+                .fill(OMColor(.muted))
+                .frame(width: OverviewRingsRules.rowDotDiameter, height: OverviewRingsRules.rowDotDiameter)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(pool.label)
+                    .font(.system(size: OverviewRingsRules.rowNameSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
+                if let subline {
+                    Text(subline)
+                        .font(.system(size: OverviewRingsRules.rowSublineSize))
+                        .foregroundStyle(.om(.secondary))
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            OMFigureText(
+                text: figure,
+                size: OverviewRingsRules.rowFigureSize,
+                unitSize: OverviewRingsRules.rowUnitSize
+            )
+        }
+        .padding(.vertical, OverviewRingsRules.rowVerticalPadding)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(OverviewRingsRules.creditAccessibilityLabel(for: pool, figure: figure, subline: subline))
     }
 }
