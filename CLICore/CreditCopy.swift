@@ -15,4 +15,23 @@ enum CreditCopy {
     static func dollars(_ amount: Double, locale: Locale = .current) -> String {
         amount.formatted(.currency(code: "USD").precision(.fractionLength(0)).locale(locale))
     }
+
+    /// The terminal spells every dollar `$`: `StatusText.costParts` prints `$%.2f`
+    /// whatever the machine's locale, so a credit pool's figures there match it.
+    static let terminalLocale = Locale(identifier: "en_US")
+
+    /// `$231 / $250, expires 5 Nov, 7:59`: what `omelette status` and the MCP paragraph
+    /// print after a credit pool's label, the popover row's value and tooltip on one
+    /// line. nil for a window that is not a credit pool.
+    static func terminalFigures(
+        _ window: StatusSnapshot.Window, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String? {
+        guard let limit = window.limitDollars else { return nil }
+        let figures = value(usedDollars: window.usedDollars ?? 0, limitDollars: limit, locale: terminalLocale)
+        guard let at = window.resetsAt,
+              let expiry = ResetCopy.absolute(resetsAt: at, now: now, calendar: calendar, locale: locale)
+        else { return figures }
+        return "\(figures), expires \(expiry)"
+    }
 }

@@ -83,7 +83,8 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         var sessions: [SessionEntry]?
     }
 
-    /// One rate-limit window of a service.
+    /// One rate-limit window of a service — or a prepaid credit pool, which carries its
+    /// dollars as well.
     struct Window: Codable, Equatable, Sendable {
         let id: String
         let label: String
@@ -95,12 +96,26 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         var resetsAt: Date?
         /// `BucketKind.rawValue`: "session", "weekly", "modelSpecific", "other".
         var kind: String?
+        /// A prepaid credit pool's spend and limit (`UsageBucket.credit`), in whole
+        /// dollars and unrounded. Absent on every rate-limit window and in every file
+        /// written before 3.0.2: optional, so the synthesized decoder reads those files
+        /// as before, and an added key is not a new `currentVersion`.
+        var usedDollars: Double?
+        var limitDollars: Double?
 
         /// Bonus quota pools. Running one dry costs nothing, so they never lead a
         /// headline — the same rule as `UsageBucket.isPromotional`.
         var isPromotional: Bool {
             id.lowercased().contains("promo") || label.lowercased().contains("promo")
         }
+
+        /// A prepaid credit pool: money the account has, not a limit. Known by its
+        /// dollars, which only a credit pool's entry carries.
+        var isCreditPool: Bool { limitDollars != nil }
+
+        /// Never leads the status line or the MCP advice unless it is all there is: a
+        /// promo pool or a credit pool — the same rule as `UsageBucket.isBonusPool`.
+        var isBonusPool: Bool { isPromotional || isCreditPool }
     }
 
     /// One chat, as the file records it.
