@@ -23,7 +23,9 @@ struct ChatStretch: Equatable, Sendable {
     /// API-list dollars of its turns, sub-agents' included.
     let cost: Double
     /// What rebuilding the context cost in it: the fresh input and cache write of its
-    /// cold-start turns, at API-list prices.
+    /// cold-start turns, at API-list prices. The chat's first main-thread turn builds the
+    /// context rather than rebuilding it, so it never counts here; a later cold start
+    /// does, one merged into the first stretch included.
     let coldStartCost: Double
     /// The first prompt typed for it, collapsed and cut like a chat's name; nil when none
     /// was.
@@ -70,7 +72,8 @@ extension LimitShareRules {
     /// A stretch begins at the chat's first turn in the window, at a compaction of its
     /// context, or at a cold start (`isColdStart`). One shorter than `shortestStretch` up
     /// to the next beginning merges into the next one. A turn belongs to the stretch it ran
-    /// in, sub-agents' turns included.
+    /// in, sub-agents' turns included. Its cold-start cost is `rebuildCost` of its cold-start
+    /// turns, except the chat's first main-thread turn in the log, which builds the context.
     ///
     /// A stretch's points are what the bin rule gave the chat in its half hours (spec § The
     /// rule): a half hour's points for the chat are split between its stretches the way
@@ -137,12 +140,18 @@ extension LimitShareRules {
         }
 
         // A turn belongs to the stretch it ran in: from that stretch's beginning up to, not
-        // including, the next one's.
+        // including, the next one's. Its cold-start cost goes with it, except the chat's
+        // first main-thread turn's: that turn builds the context, it does not rebuild it.
+        let buildingTurn = turns.firstIndex { $0.isMainThread && $0.timestamp == mainTimes.first }
         var groups = [[TurnCost]](repeating: [], count: starts.count)
+        var coldStartCosts = [Double](repeating: 0, count: starts.count)
         var current = 0
-        for turn in turns {
+        for (index, turn) in turns.enumerated() {
             while current + 1 < starts.count, turn.timestamp >= starts[current + 1].at { current += 1 }
             groups[current].append(turn)
+            if index != buildingTurn, isColdStart(turn, serviceID: serviceID) {
+                coldStartCosts[current] += rebuildCost(turn)
+            }
         }
 
         // The bin rule's points for this chat, half hour by half hour.
@@ -185,9 +194,7 @@ extension LimitShareRules {
                 lastAt: lastAt,
                 points: points[index],
                 cost: group.reduce(0) { $0 + $1.cost },
-                coldStartCost: group
-                    .filter { isColdStart($0, serviceID: serviceID) }
-                    .reduce(0) { $0 + rebuildCost($1) },
+                coldStartCost: coldStartCosts[index],
                 prompt: opener?.text
             ))
         }
