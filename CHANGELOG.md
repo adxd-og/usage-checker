@@ -5,6 +5,26 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Antigravity
+- Gemini 4 Argon's weekly limit on Pro plans has its own row instead of
+  showing twice as "Gemini models" and "Gemini weekly". It no longer drives
+  the Antigravity headline, the menu bar or alerts.
+- While Antigravity is running, the "Gemini models" and "Claude & GPT models"
+  rows are gone: each pool's 5-hour and weekly limits already have their own
+  rows.
+- `status.json` and MCP `get_usage` no longer publish `antigravity_gemini` /
+  `antigravity_claude_gpt` while Antigravity is running; read the per-pool
+  windows instead.
+- With Antigravity closed, Argon's Low, Medium and High variants show as one
+  row and no longer drive the headline.
+
+### Popover
+- Weekly limits keep their row at 0 % (Antigravity's Gemini and Claude/GPT
+  pools, Codex and Grok weeklies); only untouched per-model limits fold under
+  "N unused windows".
+
 ## [3.0.2] — 2026-10-04
 
 ### Claude

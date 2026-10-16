@@ -8,7 +8,8 @@ import Foundation
 /// Gemini quotas. The core probe talks to the local language server of a running
 /// Antigravity app / `agy` CLI / IDE extension — no external auth, no processes
 /// spawned. Quotas come back as two pools (Gemini models; Claude & GPT models), each
-/// with weekly and five-hour windows.
+/// with weekly and five-hour windows; a Pro plan adds per-model pools such as Argon
+/// (`buckets(from:)`).
 ///
 /// The same quotas also live behind Google's web API, which needs only the OAuth
 /// credentials Antigravity already wrote to `~/.antigravity/oauth_creds.json`. That is
@@ -163,39 +164,242 @@ actor AntigravityProvider: UsageProvider {
         status: AntigravityStatusSnapshot,
         at now: Date
     ) -> ServiceSnapshot {
-        var buckets: [UsageBucket] = []
-        if let b = bucket(from: usage.primary, id: "antigravity_gemini", label: "Gemini models") {
-            buckets.append(b)
-        }
-        if let b = bucket(from: usage.secondary, id: "antigravity_claude_gpt", label: "Claude & GPT models") {
-            buckets.append(b)
-        }
-        for named in usage.extraRateWindows ?? [] {
-            guard named.usageKnown, !named.window.isSyntheticPlaceholder else { continue }
-            buckets.append(UsageBucket(
-                id: "antigravity_\(named.id)",
-                label: named.title,
-                utilization: named.window.usedPercent,
-                resetsAt: named.window.resetsAt ?? .distantFuture,
-                kind: kind(for: named.window),
-                windowLength: windowLength(for: named.window)
-            ))
-        }
-
-        NSLog("[UT] Antigravity fetch ok: %d window(s), plan=%@", buckets.count, status.accountPlan ?? "?")
+        let mapped = buckets(from: usage)
+        NSLog("[UT] Antigravity fetch ok: %d window(s), plan=%@", mapped.count, status.accountPlan ?? "?")
         return ServiceSnapshot(
             id: "antigravity",
             displayName: "Antigravity",
             icon: icon,
             plan: status.accountPlan.map { "Antigravity \($0.capitalized)" } ?? "Antigravity",
             accountLabel: status.accountEmail,
-            buckets: buckets,
+            buckets: mapped,
             extraUsage: nil,
             weekCost: nil,
             state: .ok,
             stateMessage: nil,
             fetchedAt: now
         )
+    }
+
+    /// The probe's reading as the app's buckets, one rule for both of its paths. Pure, so
+    /// the tests hand it the `UsageSnapshot` the probe would.
+    ///
+    /// Quota summary (the local language server; a window id passes
+    /// `AntigravityStatusSnapshot.isQuotaSummaryWindowID`): every window by itself and no
+    /// aggregates. Each pool's windows are already there, and an aggregate is the worst
+    /// window of its family, a per-model pool included (`summaryBucket`).
+    /// Per-model (the web API, older servers): the two pool aggregates, then the model
+    /// windows (`modelBuckets`).
+    nonisolated static func buckets(from usage: CodexBarCore.UsageSnapshot) -> [UsageBucket] {
+        let windows = usage.extraRateWindows ?? []
+        let reported = windows.filter { $0.usageKnown && !$0.window.isSyntheticPlaceholder }
+        if windows.contains(where: { AntigravityStatusSnapshot.isQuotaSummaryWindowID($0.id) }) {
+            let labels = poolLabels(reported)
+            return reported.map { summaryBucket($0, labels: labels) }
+        }
+        var aggregates: [UsageBucket] = []
+        if let b = bucket(from: usage.primary, id: "antigravity_gemini", label: "Gemini models") {
+            aggregates.append(b)
+        }
+        if let b = bucket(from: usage.secondary, id: "antigravity_claude_gpt", label: "Claude & GPT models") {
+            aggregates.append(b)
+        }
+        return aggregates + modelBuckets(reported)
+    }
+
+    /// A named window as CodexBarCore reports it: its title, its kind from its length.
+    private static func windowBucket(_ named: NamedRateWindow) -> UsageBucket {
+        UsageBucket(
+            id: "antigravity_\(named.id)",
+            label: named.title,
+            utilization: named.window.usedPercent,
+            resetsAt: named.window.resetsAt ?? .distantFuture,
+            kind: kind(for: named.window),
+            windowLength: windowLength(for: named.window)
+        )
+    }
+
+    /// The stems of the two pools every plan has. Any other stem is a per-model pool.
+    private static let poolStems: Set<String> = [
+        "gemini", // the Gemini models pool
+        "3p", // the Claude and GPT models pool
+    ]
+
+    /// One quota-summary window. A pool's window keeps CodexBarCore's title and its kind
+    /// from its length. Any other group is a per-model pool (Argon on Pro plans, since
+    /// 2026-10-16). CodexBarCore titles every group after its family, so such a pool's
+    /// weekly reads exactly like its family's own. It is named from its stem instead
+    /// (`labels`, from `poolLabels`) and is `.modelSpecific`: its own row, never the
+    /// headline while a pool is reported. The id stays the wire's, so History keeps the
+    /// line it already has.
+    private static func summaryBucket(_ named: NamedRateWindow, labels: [String: String]) -> UsageBucket {
+        guard let stem = summaryStem(named.id), !poolStems.contains(stem) else {
+            return windowBucket(named)
+        }
+        return UsageBucket(
+            id: "antigravity_\(named.id)",
+            label: labels[stem] ?? named.title,
+            utilization: named.window.usedPercent,
+            resetsAt: named.window.resetsAt ?? .distantFuture,
+            kind: .modelSpecific,
+            windowLength: windowLength(for: named.window)
+        )
+    }
+
+    /// A summary window's bucket id without the cadence, lowercased and with `_` read as
+    /// `-` (as CodexBarCore reads it for the cadence): `antigravity-quota-summary-3p-weekly`
+    /// → `3p`. nil outside the quota summary.
+    private static func summaryStem(_ id: String) -> String? {
+        let prefix = "antigravity-quota-summary-"
+        guard AntigravityStatusSnapshot.isQuotaSummaryWindowID(id), id.hasPrefix(prefix) else { return nil }
+        let stem = String(id.dropFirst(prefix.count))
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
+        guard let cadence = ["-weekly", "-5h"].first(where: { stem.hasSuffix($0) }) else { return stem }
+        return String(stem.dropLast(cadence.count))
+    }
+
+    /// The row name of every per-model pool in one reading, by stem. A name is the stem's
+    /// words of four letters or more and words with a digit (`poolLabel`), so `…-argon-wtu`
+    /// loses the wire's "wtu". Two pools in the reading that would share a name both keep
+    /// every word of their stems, so neither row reads as the other. No model table: a
+    /// pool that appears next month is named by the same rule. A stem with no word at all
+    /// has no entry; its row keeps CodexBarCore's title, the only name left.
+    private static func poolLabels(_ windows: [NamedRateWindow]) -> [String: String] {
+        let stems = Set(windows.compactMap { summaryStem($0.id) }).subtracting(poolStems)
+        var labels: [String: String] = [:]
+        for (label, sharing) in Dictionary(grouping: stems, by: { poolLabel($0, everyWord: false) })
+        where !label.isEmpty {
+            for stem in sharing {
+                labels[stem] = sharing.count > 1 ? poolLabel(stem, everyWord: true) : label
+            }
+        }
+        return labels
+    }
+
+    /// A stem's words, each capitalised: only those of four letters or more and those with
+    /// a digit, unless `everyWord`. When none of them passes, every word is kept
+    /// (`xp-wtu` → "Xp Wtu"), never CodexBarCore's title, which names the family.
+    private static func poolLabel(_ stem: String, everyWord: Bool) -> String {
+        let words = stem.split(separator: "-")
+        let kept = everyWord ? words : words.filter { $0.count >= 4 || $0.contains(where: \.isNumber) }
+        return (kept.isEmpty ? words : kept)
+            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+            .joined(separator: " ")
+    }
+
+    /// The probe's reset-only pool windows, listed when a pool's models report a reset but
+    /// no usage. They and the compact fallback (the stand-in when no pool is reported)
+    /// keep the plain mapping on the per-model path.
+    private static let poolWindowIDs: Set<String> = [
+        "antigravity-gemini", // the Gemini models pool
+        "antigravity-claude-gpt", // the Claude and GPT models pool
+    ]
+    private static let compactFallbackPrefix = "antigravity-compact-fallback-"
+
+    /// The row name of a model window that carries no name of its own (`modelRow`).
+    private static let unnamedModelLabel = "Unnamed model"
+
+    /// The per-model path's named windows. The probe lists a model apart only when it is
+    /// in neither pool aggregate, so each is one model's limit: `.modelSpecific`, its own
+    /// row, never the headline while a pool is reported. Effort variants, titles equal but
+    /// for a trailing parenthesis ("… (Low)", "(Medium)", "(High)"), are one row named by
+    /// the shared part, at the highest variant's percent and that variant's reset (the
+    /// first listed on a tie). Windows are grouped by their row's id, so a bare title
+    /// joins the variants it names and two spellings of one name are one row; the row
+    /// keeps the first listed spelling, so its name holds still from poll to poll.
+    private static func modelBuckets(_ windows: [NamedRateWindow]) -> [UsageBucket] {
+        var rows: [UsageBucket] = []
+        var rowIndex: [String: Int] = [:]
+        for named in windows {
+            if poolWindowIDs.contains(named.id) || named.id.hasPrefix(compactFallbackPrefix) {
+                rows.append(windowBucket(named))
+                continue
+            }
+            let row = modelRow(named)
+            guard let index = rowIndex[row.id] else {
+                rowIndex[row.id] = rows.count
+                rows.append(row)
+                continue
+            }
+            if row.utilization > rows[index].utilization {
+                rows[index] = UsageBucket(
+                    id: row.id,
+                    label: rows[index].label,
+                    utilization: row.utilization,
+                    resetsAt: row.resetsAt,
+                    kind: row.kind,
+                    windowLength: row.windowLength
+                )
+            }
+        }
+        return rows
+    }
+
+    /// One model window as a row, before its variants collapse. The wire ids are
+    /// placeholders, so the id comes from the name (`modelSlug`). A window with no human
+    /// name, or whose name has no letter or digit (empty, blank, punctuation only), is
+    /// "Unnamed model" under its own wire id and collapses with nothing.
+    private static func modelRow(_ named: NamedRateWindow) -> UsageBucket {
+        let stem = modelStem(named.title)
+        let slug = modelSlug(stem)
+        let unnamed = hasNoHumanName(named) || slug.isEmpty
+        return UsageBucket(
+            id: unnamed ? "antigravity_\(named.id)" : "antigravity_model-" + slug,
+            label: unnamed ? unnamedModelLabel : stem,
+            utilization: named.window.usedPercent,
+            resetsAt: named.window.resetsAt ?? .distantFuture,
+            kind: .modelSpecific,
+            windowLength: windowLength(for: named.window)
+        )
+    }
+
+    /// A title that is the wire id itself (any case) or says "placeholder" names no model
+    /// a person would know: `MODEL_PLACEHOLDER_M419` is a codename.
+    private static func hasNoHumanName(_ named: NamedRateWindow) -> Bool {
+        let title = named.title.trimmingCharacters(in: .whitespaces).lowercased()
+        return title == named.id.lowercased() || title.contains("placeholder")
+    }
+
+    /// A model window's title without its trailing variant, the last balanced
+    /// parenthesis with any nested in it: "Argon 4 (High)" → "Argon 4",
+    /// "Argon (Fast (High))" → "Argon". A title without one, or whose parentheses do not
+    /// balance ("Argon (High"), is its own name.
+    private static func modelStem(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasSuffix(")") else { return trimmed }
+        var depth = 0
+        var index = trimmed.endIndex
+        while index > trimmed.startIndex {
+            index = trimmed.index(before: index)
+            if trimmed[index] == ")" {
+                depth += 1
+            } else if trimmed[index] == "(" {
+                depth -= 1
+                if depth == 0 {
+                    let stem = trimmed[..<index].trimmingCharacters(in: .whitespaces)
+                    return stem.isEmpty ? trimmed : stem
+                }
+            }
+        }
+        return trimmed
+    }
+
+    /// The slug of a model row's id, stable across polls: the name lowercased, each run of
+    /// other characters as one `-`, so "Model 4.1 Pro" → `antigravity_model-model-4-1-pro`.
+    /// Empty for a name with no letter or digit, whose row then keeps its wire id rather
+    /// than a bare `antigravity_model-`.
+    private static func modelSlug(_ name: String) -> String {
+        var slug = ""
+        for character in name.lowercased() {
+            if character.isLetter || character.isNumber {
+                slug.append(character)
+            } else if let last = slug.last, last != "-" {
+                slug.append("-")
+            }
+        }
+        if slug.hasSuffix("-") { slug.removeLast() }
+        return slug
     }
 
     private static func bucket(from window: CodexBarCore.RateWindow?, id: String, label: String) -> UsageBucket? {
