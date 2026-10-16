@@ -4,6 +4,16 @@ import Foundation
 /// started without a shell: a menu-bar app started by launchd does not inherit the login
 /// shell's PATH.
 enum AgyCommand {
+    /// `agy -p /usage --output-format json`: the quota as one JSON object, no model turn.
+    /// No `--print-timeout`: it does not bound `/usage` (measured), the deadline does.
+    static let arguments = ["-p", "/usage", "--output-format", "json"]
+    /// The variables agy gets from Omelette's environment, when set there.
+    static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG"]
+    /// agy's PATH before its own folder: the system's folders only.
+    static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
+    /// Set for the child only. Without it agy starts its self-updater on every run, a
+    /// second process; a background poll has no business updating the CLI.
+    static let environmentOverrides = ["AGY_CLI_DISABLE_AUTO_UPDATE": "true"]
     /// A run's answer is due by then. Measured runs took 5–24 s on 2026-10-16; the poll
     /// never waits for one (`AntigravityProvider.startAgyRunIfDue`), so the bound only ends
     /// a run that hangs.
@@ -14,6 +24,55 @@ enum AgyCommand {
     /// At most this much of agy's stdout is kept (1 MiB). Its answer is about 3 KB; a child
     /// that prints more is stopped, and the run is no reading.
     static let outputLimit = 1 << 20
+
+    /// agy's answer to `/usage`. agy is the one `executablePath` finds; it runs in
+    /// `directory` (the user's temporary folder: agy writes nothing there, and one fixed
+    /// folder is one workspace in agy's records) with `childEnvironment`. Throws
+    /// `.notInstalled` without agy.
+    static func fetch(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        homeDirectory: String = NSHomeDirectory(),
+        directory: URL = FileManager.default.temporaryDirectory
+    ) async throws -> Data {
+        guard let path = executablePath(
+            environment: environment,
+            homeDirectory: homeDirectory,
+            isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
+        ) else {
+            throw AgyUsageError.notInstalled
+        }
+        return try await run(
+            executable: path,
+            arguments: arguments,
+            environment: childEnvironment(from: environment, executable: path, homeDirectory: homeDirectory),
+            directory: directory,
+            deadline: deadline,
+            killGrace: killGrace
+        )
+    }
+
+    /// The environment agy runs with, an allowlist: `inheritedVariables` from `environment`
+    /// when set there (HOME falls back to `homeDirectory`: agy keeps its state under it),
+    /// PATH as `systemPath` plus the folder agy is in, and `environmentOverrides`. Nothing
+    /// else of Omelette's environment reaches agy: no token, proxy or `DYLD_` variable,
+    /// nothing a parent shell exported.
+    static func childEnvironment(
+        from environment: [String: String],
+        executable: String,
+        homeDirectory: String
+    ) -> [String: String] {
+        var child: [String: String] = [:]
+        for name in inheritedVariables {
+            if let value = environment[name], !value.isEmpty { child[name] = value }
+        }
+        if child["HOME"] == nil { child["HOME"] = homeDirectory }
+        let agyFolder = (executable as NSString).deletingLastPathComponent
+        let systemFolders = systemPath.split(separator: ":").map(String.init)
+        child["PATH"] = agyFolder.isEmpty || systemFolders.contains(agyFolder)
+            ? systemPath
+            : systemPath + ":" + agyFolder
+        return child.merging(environmentOverrides) { _, override in override }
+    }
 
     /// Runs `executable` with `arguments`, no shell, stdin and stderr closed, in `directory`,
     /// and returns its stdout when it exits 0. Throws `.launchFailed` when it cannot start,

@@ -194,4 +194,101 @@ final class AgyCommandRunTests: XCTestCase {
         XCTAssertEqual(AgyCommand.killGrace, 5)
         XCTAssertEqual(AgyCommand.outputLimit, 1_048_576)
     }
+
+    // MARK: - fetch: which agy, with what
+
+    /// A stub `agy` in `bin/` under this test's folder: `body` after a `#!/bin/sh` line.
+    private func stubAgy(_ body: String) throws -> URL {
+        let bin = directory.appendingPathComponent("bin", isDirectory: true)
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let stub = bin.appendingPathComponent("agy")
+        try ("#!/bin/sh\n" + body + "\n").write(to: stub, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        return stub
+    }
+
+    func testFetchRunsTheAgyItFindsWithTheUsageArgumentsAndAutoUpdateOff() async throws {
+        let stub = try stubAgy(#"printf '%s|%s' "$*" "$AGY_CLI_DISABLE_AUTO_UPDATE""#)
+        let output = try await AgyCommand.fetch(
+            environment: ["PATH": stub.deletingLastPathComponent().path],
+            homeDirectory: directory.path,
+            directory: directory
+        )
+        XCTAssertEqual(String(decoding: output, as: UTF8.self), "-p /usage --output-format json|true")
+        XCTAssertEqual(AgyCommand.arguments, ["-p", "/usage", "--output-format", "json"])
+    }
+
+    func testFetchWithNoAgyAnywhereIsNotInstalled() async {
+        do {
+            _ = try await AgyCommand.fetch(
+                environment: ["PATH": directory.path],
+                homeDirectory: directory.path,
+                directory: directory
+            )
+            XCTFail("no agy is no reading")
+        } catch {
+            XCTAssertEqual(error as? AgyUsageError, .notInstalled)
+        }
+    }
+
+    /// Ruling A7: agy sees HOME, USER, LOGNAME, TMPDIR, LANG, a fixed PATH and the
+    /// auto-update switch, nothing else of Omelette's environment. The stub prints the
+    /// environment it got; `PWD` and `SHLVL` are what `/bin/sh` itself adds.
+    func testTheChildGetsOnlyTheAllowlistedEnvironment() async throws {
+        let stub = try stubAgy("exec /usr/bin/env")
+        let bin = stub.deletingLastPathComponent().path
+        let output = try await AgyCommand.fetch(
+            environment: [
+                "HOME": directory.path,
+                "USER": "omelette",
+                "LOGNAME": "omelette",
+                "TMPDIR": directory.path + "/",
+                "LANG": "en_US.UTF-8",
+                "PATH": "/opt/homebrew/bin:/usr/local/bin",
+                "AGY_BIN": stub.path,
+                "OMELETTE_TEST_SECRET": "do-not-pass-this-on",
+                "SSH_AUTH_SOCK": "/private/tmp/agent.sock",
+            ],
+            homeDirectory: directory.path,
+            directory: directory
+        )
+        var seen: [String: String] = [:]
+        for line in String(decoding: output, as: UTF8.self).split(separator: "\n") {
+            let pair = line.split(separator: "=", maxSplits: 1).map(String.init)
+            seen[pair[0]] = pair.count > 1 ? pair[1] : ""
+        }
+        for added in ["PWD", "SHLVL", "_"] { seen[added] = nil }
+        XCTAssertEqual(seen, [
+            "HOME": directory.path,
+            "USER": "omelette",
+            "LOGNAME": "omelette",
+            "TMPDIR": directory.path + "/",
+            "LANG": "en_US.UTF-8",
+            "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:" + bin,
+            "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+        ])
+    }
+
+    func testTheEnvironmentRuleKeepsWhatIsSetAndFallsBackForHome() {
+        let agy = "/home/omelette/.local/bin/agy"
+        XCTAssertEqual(
+            AgyCommand.childEnvironment(
+                from: ["USER": "omelette", "LANG": "", "TERM": "xterm", "PATH": "/opt/bin", "AWS_SECRET_ACCESS_KEY": "x"],
+                executable: agy,
+                homeDirectory: "/home/omelette"
+            ),
+            [
+                "HOME": "/home/omelette",
+                "USER": "omelette",
+                "PATH": "/usr/bin:/bin:/usr/sbin:/sbin:/home/omelette/.local/bin",
+                "AGY_CLI_DISABLE_AUTO_UPDATE": "true",
+            ],
+            "an empty LANG is not set; a missing HOME is the home folder"
+        )
+        XCTAssertEqual(
+            AgyCommand.childEnvironment(from: ["HOME": "/home/omelette"], executable: "/usr/bin/agy", homeDirectory: "/home/omelette")["PATH"],
+            "/usr/bin:/bin:/usr/sbin:/sbin",
+            "agy in a system folder adds nothing to PATH"
+        )
+    }
 }

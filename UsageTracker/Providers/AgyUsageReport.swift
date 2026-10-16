@@ -7,6 +7,8 @@ enum AgyUsageError: Error, Equatable {
     case status(String)
     /// agy printed no JSON object, or one without a quota group.
     case unreadable(String)
+    /// No executable agy at `AGY_BIN`, `~/.local/bin/agy` or on PATH.
+    case notInstalled
     /// agy could not be started.
     case launchFailed(String)
     /// agy was still running, or its stdout still open, at the deadline.
