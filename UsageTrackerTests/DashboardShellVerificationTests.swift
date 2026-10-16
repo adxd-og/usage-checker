@@ -110,7 +110,7 @@ final class DashboardTabRouteVerificationTests: XCTestCase {
 /// directions clamp rather than wrap or crash, since a list's arrow keys never wrap.
 final class DashboardTabStepVerificationTests: XCTestCase {
     func testALargeDownwardOffsetClampsAtTheLastTabNotPastIt() {
-        XCTAssertEqual(DashboardTab.step(from: .overview, by: 100), .insights)
+        XCTAssertEqual(DashboardTab.step(from: .overview, by: 100), .limits)
     }
 
     func testALargeUpwardOffsetClampsAtTheFirstTabNotPastIt() {

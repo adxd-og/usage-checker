@@ -104,6 +104,8 @@ struct DashboardWindow: View {
             SessionHistoryView(appState: appState, dashboard: dashboard)
         case .insights:
             InsightsView(dashboard: dashboard)
+        case .limits:
+            LimitsView(appState: appState, dashboard: dashboard)
         }
     }
 }

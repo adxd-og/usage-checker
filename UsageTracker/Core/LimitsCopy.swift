@@ -102,3 +102,11 @@ extension LimitsCopy {
         }
     }
 }
+
+// MARK: - Header
+
+extension LimitsCopy {
+    /// The page's title: the sidebar's name for the tab (`DashboardTab.limits`).
+    static let title = "Limits"
+    static let subtitle = "Limit analytics"
+}

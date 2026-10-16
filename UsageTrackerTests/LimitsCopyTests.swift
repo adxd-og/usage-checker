@@ -38,4 +38,10 @@ final class LimitsCopyTests: XCTestCase {
         XCTAssertEqual(LimitsCopy.tokens(84_000), "84 k")
         XCTAssertEqual(LimitsCopy.tokens(512), "512")
     }
+
+    func testTheTabIsTitledLimitsUnderLimitAnalytics() {
+        XCTAssertEqual(LimitsCopy.title, "Limits")
+        XCTAssertEqual(LimitsCopy.title, DashboardTab.limits.rawValue, "the sidebar and the page name the tab alike")
+        XCTAssertEqual(LimitsCopy.subtitle, "Limit analytics")
+    }
 }
