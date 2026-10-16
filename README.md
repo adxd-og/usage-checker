@@ -103,7 +103,7 @@ never catches you mid-task.
 |---|---|
 | **Claude** | 5-hour session and weekly limits per model, decoded dynamically so a new model appears without an update; extra usage credits; Enterprise spend limits; Cloud session credits: shown as dollars, never drives the menu bar |
 | **Codex (OpenAI)** | session and weekly limits from the local Codex CLI; local dollar cost accounting from its session logs, now including compaction calls and sessions moved to `~/.codex/archived_sessions` |
-| **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts; per-model limits such as Gemini 4 Argon get their own row |
+| **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts; per-model limits such as Gemini 4 Argon get their own row; while the app is closed or not answering, read through the `agy` CLI |
 | **Grok (xAI)** | billing-period credit usage from the local Grok CLI, falling back to grok.com web billing when the CLI is unavailable |
 
 - Costs come from local logs at models.dev list prices, never invented
@@ -323,8 +323,9 @@ Reads the OAuth token that **Claude Code** stores in your macOS Keychain
 Claude Code itself uses for its `/usage` command and status line. Omelette
 never refreshes that token itself; Claude Code owns its own refresh cycle.
 Other providers are read the same reuse-what's-already-there way: the local
-Codex CLI's RPC server, a running Antigravity's local language server, or the
-local Grok CLI (with a grok.com fallback).
+Codex CLI's RPC server, a running Antigravity's local language server (while
+the app is closed or not answering, Antigravity's own `agy` CLI), or the local
+Grok CLI (with a grok.com fallback).
 
 Cost and the History calendar are read from the CLIs' own logs, so they reach back as far
 as those logs do — up to a year. Claude Code deletes its local transcripts
@@ -344,7 +345,14 @@ to keep a year of them:
   `cloudcode-pa.googleapis.com` (Antigravity's quota while it isn't running, only if enabled),
   `grok.com` (Grok web-billing fallback, only if enabled), `github.com` and
   `adxd-og.github.io` (Sparkle update feed and DMG download), and local RPC
-  to the Codex CLI or Antigravity's language server
+  to the Codex CLI or Antigravity's language server. The `agy` CLI, when
+  Omelette runs it, talks to Google itself under its own sign-in
+- While Antigravity is closed or not answering, runs its CLI as
+  `agy -p /usage` in the background about every five minutes and stops it
+  after 45 s or on a normal quit. agy gets none of Omelette's environment
+  beyond HOME, USER, LOGNAME, TMPDIR, LANG and a system PATH; Omelette reads
+  only the quota it prints, and skips the run unless the login keychain is
+  unlocked
 - Agent status comes from a tiny `omelette-hook` helper inside the app that
   Claude Code and Codex run on their hook events. It talks to Omelette over
   a local Unix socket (0600, 64 KB cap) and forwards only the session id,

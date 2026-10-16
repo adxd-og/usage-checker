@@ -77,17 +77,32 @@ enum KeychainNoUI {
     ///
     /// The status call itself is free and silent: it reads the keychain's lock state,
     /// not its contents (bits 7 = unlocked/readable/writable, 2 = locked here).
+    ///
+    /// When the state can't be read (`.unknown`) this answers true: assume unlocked and
+    /// let the query's own no-UI policy do what it can. A caller that has no such policy
+    /// behind it asks `defaultKeychainLockState` and treats `.unknown` as locked.
     static var isDefaultKeychainUnlocked: Bool {
+        defaultKeychainLockState != .locked
+    }
+
+    /// The default (login) keychain's lock state, as `isDefaultKeychainUnlocked` reads it.
+    enum LockState: Equatable, Sendable {
+        case unlocked
+        case locked
+        /// The legacy entry points are missing, or a status call failed.
+        case unknown
+    }
+
+    /// The lock state behind `isDefaultKeychainUnlocked`, with "could not tell" kept apart.
+    static var defaultKeychainLockState: LockState {
         guard let copyDefault = legacy.copyDefault, let getStatus = legacy.getStatus else {
-            // Without the legacy entry points we can't tell — assume unlocked and let
-            // the query's own no-UI policy do what it can.
-            return true
+            return .unknown
         }
         var keychain: SecKeychain?
-        guard copyDefault(&keychain) == errSecSuccess else { return true }
+        guard copyDefault(&keychain) == errSecSuccess else { return .unknown }
         var bits: UInt32 = 0
-        guard getStatus(keychain, &bits) == errSecSuccess else { return true }
-        return (bits & kSecUnlockStateStatus) != 0
+        guard getStatus(keychain, &bits) == errSecSuccess else { return .unknown }
+        return (bits & kSecUnlockStateStatus) != 0 ? .unlocked : .locked
     }
 
     /// Whether the item's access list lets the binary at `path` decrypt it — i.e.
