@@ -15,18 +15,37 @@ import Foundation
 enum StatusCosts {
     /// What one poll gathers from the cost logs: the dollars every provider's file entry
     /// carries, and — for the two providers whose logs identify a chat — the last seven
-    /// days of chats. Gathered together because both come off the same actor and the same
-    /// incremental `refresh()`; a second pass would re-enter every aggregator for numbers
-    /// it has already computed.
+    /// days of chats and each chat's limit shares. Gathered together because all of it
+    /// comes off the same actors and the same incremental `refresh()`; a second pass
+    /// would re-enter every aggregator for numbers it has already computed.
     struct Gathered: Sendable {
         var costs: [String: StatusFileWriter.CostEntry] = [:]
         var sessions: [String: [SessionSummary]] = [:]
+        /// Each provider's chat limit shares and the windows they were cut for (spec
+        /// 2026-10-16 § Published data). Claude and Codex only, and only where a share
+        /// applies.
+        var shares: [String: PublishedShares] = [:]
     }
 
     /// The window the file's chat list covers (§ 5).
     static let sessionWindow: TimeInterval = 7 * 24 * 3600
 
-    static func gather(serviceIDs: Set<String>, now: Date = Date()) async -> Gathered {
+    /// `services` is the poll's snapshot and `weeklyBudgetUSD` the budget setting, both
+    /// read on the main actor by the caller. So the shares are cut against the windows
+    /// the same write publishes.
+    ///
+    /// The shares are worked out once per poll, after the refreshes. A window's percent
+    /// moves only when a poll lands, and the turns only when `refresh()` has ingested
+    /// new ones. The writes between polls reuse them (`AppState.lastShares`), and
+    /// `StatusFileWriter.build` drops any whose window has gone by then. The turns are
+    /// already in memory and the rule is linear in turns and readings, and it runs in a
+    /// task the poll does not wait for.
+    static func gather(
+        serviceIDs: Set<String>,
+        services: [ServiceSnapshot] = [],
+        weeklyBudgetUSD: Double = 0,
+        now: Date = Date()
+    ) async -> Gathered {
         var out = Gathered()
         let start = now.addingTimeInterval(-sessionWindow)
         if serviceIDs.contains("claude") {
@@ -45,7 +64,39 @@ enum StatusCosts {
             await GrokUsageAggregator.shared.refresh()
             out.costs["grok"] = entry(await GrokUsageAggregator.shared.breakdown())
         }
+        // After the refreshes above, so the turns the shares split are the ones just
+        // ingested. Only the providers this gather read.
+        out.shares = await PublishedShareRules.shares(
+            services: services.filter { serviceIDs.contains($0.id) },
+            weeklyBudgetUSD: weeklyBudgetUSD,
+            now: now,
+            calendar: .current,
+            sources: shareSources
+        )
         return out
+    }
+
+    /// Where each provider whose log names a chat reads its turns and its percent
+    /// readings: its cost log's actor, and `HistoryStore`'s. Claude and Codex, the
+    /// providers `DashboardState.hasSessionLog` names.
+    static var shareSources: [String: PublishedShareRules.Sources] {
+        shareSources(readings: { await HistoryStore.shared.records(since: $0, service: $1) })
+    }
+
+    /// The same, with the percent history passed in: `readings(since, serviceID)`.
+    static func shareSources(
+        readings: @escaping @Sendable (Date, String) async -> [HistoryRecord]
+    ) -> [String: PublishedShareRules.Sources] {
+        [
+            "claude": PublishedShareRules.Sources(
+                turns: { await JSONLAggregator.shared.turnCosts(from: $0, to: $1) },
+                readings: { await readings($0, "claude") }
+            ),
+            "codex": PublishedShareRules.Sources(
+                turns: { await CodexUsageAggregator.shared.turnCosts(from: $0, to: $1) },
+                readings: { await readings($0, "codex") }
+            ),
+        ]
     }
 
     /// The three numbers out of the whole daily/project/model matrix that the file

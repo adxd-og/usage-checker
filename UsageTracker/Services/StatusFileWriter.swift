@@ -115,10 +115,19 @@ actor StatusFileWriter {
 
     /// The whole file, from values the app already has. No clock of its own, no disk,
     /// no actor hop: every rule the CLI depends on is decided here.
+    ///
+    /// `shares` holds each provider's chat shares and the windows they were cut for, as
+    /// `PublishedShareRules.shares(services:weeklyBudgetUSD:now:calendar:sources:)` worked
+    /// them out, possibly a poll ago. This is their last gate.
+    /// `PublishedShareRules.current(_:for:weeklyBudgetUSD:now:calendar:)` keeps a share
+    /// only next to the window it was cut for. It needs `weeklyBudgetUSD` because the
+    /// budget decides whether a pay-as-you-go account publishes a share at all.
     nonisolated static func build(
         services: [ServiceSnapshot],
         costs: [String: CostEntry],
         sessions: [String: [SessionSummary]] = [:],
+        shares: [String: PublishedShares] = [:],
+        weeklyBudgetUSD: Double = 0,
         agents: AgentSummary,
         now: Date,
         calendar: Calendar = .current,
@@ -133,7 +142,16 @@ actor StatusFileWriter {
                 let today = cost?.todayCost
                 let week = cost?.weekCost ?? service.weekCost
                 let hasDollars = today != nil || week != nil
-                let chats = sessionEntries(sessions[service.id] ?? [], calendar: calendar, locale: locale)
+                let chats = sessionEntries(
+                    sessions[service.id] ?? [],
+                    shares: shares[service.id].map {
+                        PublishedShareRules.current(
+                            $0, for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+                        )
+                    } ?? [:],
+                    calendar: calendar,
+                    locale: locale
+                )
                 return StatusSnapshot.Service(
                     id: service.id,
                     name: service.displayName,
@@ -158,9 +176,11 @@ actor StatusFileWriter {
 
     /// The chats the file carries for one provider: `SessionListRule.pick` — the same
     /// ranking History shows — capped at `maxFileSessions`, with the title and the
-    /// project already in the words the dashboard uses.
+    /// project already in the words the dashboard uses, and each chat's limit shares
+    /// from `shares`, keyed by chat id, where it has any.
     nonisolated static func sessionEntries(
         _ sessions: [SessionSummary],
+        shares: [String: ChatShareFields] = [:],
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> [StatusSnapshot.SessionEntry] {
@@ -168,6 +188,7 @@ actor StatusFileWriter {
             .prefix(maxFileSessions)
             .map { row in
                 let session = row.session
+                let share = shares[session.id]
                 return StatusSnapshot.SessionEntry(
                     id: session.id,
                     title: SessionCopy.rowTitle(session, calendar: calendar, locale: locale),
@@ -179,7 +200,10 @@ actor StatusFileWriter {
                     tokens: session.tokens.total,
                     cost: session.tokens.cost?.total,
                     agents: session.agents.count,
-                    origin: session.origin
+                    origin: session.origin,
+                    sessionShare: share?.sessionShare,
+                    weekShare: share?.weekShare,
+                    budgetShare: share?.budgetShare
                 )
             }
     }

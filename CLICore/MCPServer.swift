@@ -77,7 +77,7 @@ enum MCPServer {
             [
                 "name": "get_sessions",
                 "title": "Recent chats",
-                "description": "The recent Claude Code and Codex chats Omelette can see, newest first: what each one is called, the project it ran in, when it was last active, its turns, tokens and cost (where apiEquivalent is true, an API-list-price equivalent rather than the subscription bill), and how many sub-agents it launched. provider narrows to one CLI; limit caps the list at 15. Read from the app's last snapshot; returns an error result when there is no snapshot to read. It does not return transcripts or per-turn detail.",
+                "description": "The recent Claude Code and Codex chats Omelette can see, newest first: what each one is called, the project it ran in, when it was last active, its turns, tokens and cost (where apiEquivalent is true, an API-list-price equivalent rather than the subscription bill), and how many sub-agents it launched. A chat that ran in the current session or weekly limit window also carries sessionShare or weekShare: how many percentage points of that window it used, to one decimal, estimated from the half hours in which the window's percent rose while it ran. On a pay-as-you-go account with a weekly budget, or an account with a monthly spend limit, a chat carries budgetShare instead: its cost as a percent of that budget or limit, to one decimal. A share that does not apply is left out. provider narrows to one CLI; limit caps the list at 15. Read from the app's last snapshot; returns an error result when there is no snapshot to read. It does not return transcripts or per-turn detail.",
                 "inputSchema": sessionsInputSchema,
             ],
         ]

@@ -439,4 +439,54 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(lines[1].contains("356 turns"), String(lines[1]))
         XCTAssertTrue(lines[1].contains("41.2M tokens"), String(lines[1]))
     }
+
+    // MARK: - Limit shares (spec 2026-10-16 § Published data)
+
+    /// `sampleWithChats`, its chat carrying the shares the app publishes on a
+    /// subscription.
+    func sampleWithShares(updatedAt: Date) -> StatusSnapshot {
+        var snapshot = sampleWithChats(updatedAt: updatedAt)
+        snapshot.services[0].sessions?[0].sessionShare = 3.5
+        snapshot.services[0].sessions?[0].weekShare = 12.5
+        return snapshot
+    }
+
+    func testStatusJSONCarriesEachChatsShares() throws {
+        try publish(sampleWithShares(updatedAt: Date()))
+
+        let run = try runCLI(["status", "--json"])
+
+        XCTAssertEqual(run.status, 0)
+        let decoded = try StatusFile.decoder.decode(StatusSnapshot.self, from: Data(run.stdout.utf8))
+        let entry = try XCTUnwrap(decoded.services.first?.sessions?.first)
+        XCTAssertEqual(entry.sessionShare, 3.5)
+        XCTAssertEqual(entry.weekShare, 12.5)
+        XCTAssertNil(entry.budgetShare)
+    }
+
+    /// "CLI text unchanged": the plain status is byte for byte what the same file
+    /// without the shares prints.
+    func testPlainStatusPrintsTheSameWithShares() throws {
+        let at = Date()
+        try publish(sampleWithShares(updatedAt: at))
+
+        let run = try runCLI(["status"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertEqual(run.stdout, StatusText.render(snapshot: sampleWithChats(updatedAt: at), now: Date()))
+        XCTAssertFalse(run.stdout.contains("Share"), run.stdout)
+    }
+
+    func testTheMCPServerReturnsEachChatsSharesOverTheRealPipe() throws {
+        try publish(sampleWithShares(updatedAt: Date()))
+        let request = #"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_sessions","arguments":{"limit":5}}}"# + "\n"
+
+        let run = try runCLI(["mcp"], stdin: request)
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stderr.isEmpty, run.stderr)
+        XCTAssertTrue(run.stdout.contains(#""sessionShare":3.5"#), run.stdout)
+        XCTAssertTrue(run.stdout.contains(#""weekShare":12.5"#), run.stdout)
+        XCTAssertFalse(run.stdout.contains("budgetShare"), run.stdout)
+    }
 }

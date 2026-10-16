@@ -48,4 +48,47 @@ final class StatusCostsTests: XCTestCase {
         XCTAssertTrue(gathered.costs.isEmpty)
         XCTAssertTrue(gathered.sessions.isEmpty, "and it names no chat either")
     }
+
+    // MARK: - Limit shares (spec 2026-10-16 § Published data)
+
+    func testOnlyProvidersWithAChatLogHaveShareSources() {
+        // Grok's log names no chat and Antigravity keeps no token log: neither can
+        // split a window by chat.
+        let withChatLog = Set(["claude", "codex", "grok", "antigravity"].filter {
+            DashboardState.hasSessionLog(for: $0)
+        })
+        XCTAssertEqual(Set(StatusCosts.shareSources.keys), withChatLog)
+    }
+
+    func testEachProviderSplitsItsChatsByItsOwnPercentHistory() async {
+        // Claude's chats split by Claude's readings, Codex's by Codex's: a swap would cut
+        // one provider's turns by the other's percent.
+        actor Asked { var services: [String] = []; func add(_ s: String) { services.append(s) } }
+        let asked = Asked()
+        let sources = StatusCosts.shareSources(readings: { _, service in
+            await asked.add(service)
+            return []
+        })
+
+        _ = await sources["claude"]?.readings(day)
+        _ = await sources["codex"]?.readings(day)
+
+        let services = await asked.services
+        XCTAssertEqual(services, ["claude", "codex"])
+    }
+
+    func testAProviderWithoutAChatLogGetsNoShares() async {
+        // A weekly window would make it a subscription; with no chat log there is
+        // nothing to split it by. Antigravity reaches no aggregator in `gather`.
+        let antigravity = Fixture.snapshot(id: "antigravity", plan: nil, buckets: [
+            Fixture.bucket(id: "antigravity_weekly", label: "Weekly", percent: 30,
+                           resetsAt: day.addingTimeInterval(86_400), kind: .weekly),
+        ], at: day)
+
+        let gathered = await StatusCosts.gather(
+            serviceIDs: ["antigravity"], services: [antigravity], weeklyBudgetUSD: 0, now: day
+        )
+
+        XCTAssertTrue(gathered.shares.isEmpty)
+    }
 }

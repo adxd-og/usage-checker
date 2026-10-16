@@ -42,6 +42,11 @@ final class AppState: ObservableObject {
     /// `lastCosts`: an agent starting a tool re-publishes the file, and it did not
     /// change which chats ran this week.
     private var lastSessions: [String: [SessionSummary]] = [:]
+    /// The last limit shares `StatusCosts` worked out, per provider, with the windows they
+    /// were cut for (spec 2026-10-16 § Published data). Kept for the reason
+    /// `lastSessions` is: a write between two polls moved no window's percent.
+    /// `StatusFileWriter.build` drops any whose window has gone by the time it writes.
+    private var lastShares: [String: PublishedShares] = [:]
     /// Today's dollars per service, mirrored out of `lastCosts` so the All-tab cost
     /// tile can lead with today rather than with the week. A service with no local
     /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
@@ -52,6 +57,10 @@ final class AppState: ObservableObject {
     private var agentObserver: AnyCancellable?
     /// One trailing write is pending, so the throttle can never swallow the last change.
     private var statusWriteScheduled = false
+    /// Bumped by every `publishStatusFileAfterPoll()`. Each poll's gather remembers the
+    /// value it started under, and its result is applied only while that value is still
+    /// the newest (`appliesGather(started:latest:)`).
+    private var statusGatherGeneration = 0
 
     private init() {}
 
@@ -346,17 +355,40 @@ final class AppState: ObservableObject {
     /// dollars from the cost logs. Gathering and writing both happen off the main
     /// actor — the aggregators are actors and their scan is file I/O — so a slow log
     /// tree delays the file, never the poll or the menu bar.
+    ///
+    /// Each chat's limit shares are worked out in the same task, once per poll: the
+    /// snapshot and the budget are read here, on the main actor, and the rule runs in
+    /// `gather`, which this poll does not wait for.
     private func publishStatusFileAfterPoll() {
-        let ids = Set(snapshot.services.map(\.id))
+        statusGatherGeneration &+= 1
+        let generation = statusGatherGeneration
+        let services = snapshot.services
+        let ids = Set(services.map(\.id))
+        let weeklyBudgetUSD = SettingsStore.shared.claudeWeeklyBudgetUSD
         Task { [weak self] in
-            let gathered = await StatusCosts.gather(serviceIDs: ids)
+            let gathered = await StatusCosts.gather(
+                serviceIDs: ids, services: services, weeklyBudgetUSD: weeklyBudgetUSD
+            )
             await MainActor.run {
-                guard let self else { return }
+                guard let self,
+                      AppState.appliesGather(started: generation, latest: self.statusGatherGeneration)
+                else { return }
                 self.lastCosts = gathered.costs
                 self.lastSessions = gathered.sessions
-                self.publishStatusFile(costs: gathered.costs, sessions: gathered.sessions)
+                self.lastShares = gathered.shares
+                self.publishStatusFile(
+                    costs: gathered.costs, sessions: gathered.sessions, shares: gathered.shares
+                )
             }
         }
+    }
+
+    /// Whether a gather's costs, chats and shares may still be applied: only while no
+    /// later poll has started a gather of its own. Gathers run concurrently and can
+    /// finish out of order. One that finished last would put an older poll's numbers
+    /// back on disk, and into the caches the writes between polls reuse.
+    nonisolated static func appliesGather(started generation: Int, latest: Int) -> Bool {
+        generation == latest
     }
 
     /// The display mode changed. Not one number moved, but two files on disk carry
@@ -373,7 +405,7 @@ final class AppState: ObservableObject {
         )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
-        publishStatusFile(costs: lastCosts, sessions: lastSessions)
+        publishStatusFile(costs: lastCosts, sessions: lastSessions, shares: lastShares)
     }
 
     /// The agent list changes far more often than the poll does, and the CLI's flag
@@ -386,6 +418,7 @@ final class AppState: ObservableObject {
                     AppState.shared.publishStatusFile(
                         costs: AppState.shared.lastCosts,
                         sessions: AppState.shared.lastSessions,
+                        shares: AppState.shared.lastShares,
                         agents: agents
                     )
                 }
@@ -414,12 +447,16 @@ final class AppState: ObservableObject {
     private func publishStatusFile(
         costs: [String: StatusFileWriter.CostEntry],
         sessions: [String: [SessionSummary]],
+        shares: [String: PublishedShares],
         agents: StatusFileWriter.AgentSummary? = nil
     ) {
         let built = StatusFileWriter.build(
             services: snapshot.services,
             costs: costs,
             sessions: sessions,
+            shares: shares,
+            // Read at every write: a cleared budget drops its share at once.
+            weeklyBudgetUSD: SettingsStore.shared.claudeWeeklyBudgetUSD,
             agents: agents ?? StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
             now: Date(),
             mode: SettingsStore.shared.percentMode
@@ -439,7 +476,7 @@ final class AppState: ObservableObject {
             await MainActor.run {
                 guard let self else { return }
                 self.statusWriteScheduled = false
-                self.publishStatusFile(costs: self.lastCosts, sessions: self.lastSessions)
+                self.publishStatusFile(costs: self.lastCosts, sessions: self.lastSessions, shares: self.lastShares)
             }
         }
     }
