@@ -214,3 +214,253 @@ extension LimitShareRules {
         return out
     }
 }
+
+// MARK: - Attribution
+
+extension LimitWindow {
+    /// A turn belongs to the window from its start up to, but not including, its end.
+    /// So two windows that meet at a reset never both count it.
+    func containsTurn(at time: Date) -> Bool { time >= start && time < end }
+}
+
+/// One chat's part of a window.
+struct ChatShare: Equatable, Sendable, Identifiable {
+    /// The chat id the cost log carries (Claude `sessionId`, Codex `session_id`).
+    let id: String
+    /// The chat's name from the log; nil when it has none.
+    let title: String?
+    /// The project of the chat's latest main-thread turn in the window, or of its latest
+    /// turn when only its sub-agents ran in it.
+    let projectSlug: String
+    /// Percent points of the window this chat filled.
+    let points: Double
+    /// API-list dollars the chat spent in the window, its sub-agents included.
+    let cost: Double
+    let tokens: Int
+    /// The chat's last turn in the window.
+    let lastAt: Date
+}
+
+/// One project's part of a window: the sum of its chats.
+struct ProjectShare: Equatable, Sendable, Identifiable {
+    /// The provider's project slug.
+    let id: String
+    let points: Double
+    let cost: Double
+    let tokens: Int
+    /// How many of the window's chats ran in it.
+    let chats: Int
+}
+
+/// One bin of the timeline: how far the percent moved, and who it went to.
+struct LimitBinShare: Equatable, Sendable {
+    let start: Date
+    let delta: Double
+    /// Points per chat id: the bin's own turns', or the previous bin's when the percent
+    /// lagged.
+    let chats: [String: Double]
+    /// Points no local turn explains.
+    let outside: Double
+}
+
+/// A window's percent split by chat, by project and Outside this Mac.
+struct LimitShare: Equatable, Sendable {
+    let window: LimitWindow
+    /// What the chats and Outside add up to. In the Subscription mode this is the
+    /// window's percent now: its last monotone reading, or 0 with none.
+    let percent: Double
+    /// Every chat with a turn in the window, ranked by points, then dollars, then id.
+    let chats: [ChatShare]
+    /// Ranked the same way.
+    let projects: [ProjectShare]
+    /// Outside this Mac: claude.ai, the desktop app, another machine.
+    let outside: Double
+    /// One per half hour of the window, oldest first.
+    let bins: [LimitBinShare]
+    /// The window's local API-list dollars and tokens.
+    let cost: Double
+    let tokens: Int
+
+    /// The points local turns explain: the window's percent minus Outside.
+    var attributedPoints: Double { percent - outside }
+}
+
+extension LimitShareRules {
+    /// What the chats spent in one bin. A chat with a turn here counts even at $0.
+    private struct BinUse {
+        var cost: [String: Double] = [:]
+        var tokens: [String: Int] = [:]
+
+        var isEmpty: Bool { cost.isEmpty }
+
+        /// `points` split among the bin's chats. The split is by dollars. If the bin has
+        /// no dollars at all (a model no price table knows yet), it is by tokens. If it
+        /// has neither, it is even.
+        func split(_ points: Double) -> [String: Double] {
+            let dollars = cost.values.reduce(0, +)
+            if dollars > 0 { return cost.mapValues { points * $0 / dollars } }
+            let total = tokens.values.reduce(0, +)
+            if total > 0 { return tokens.mapValues { points * Double($0) / Double(total) } }
+            return cost.mapValues { _ in points / Double(cost.count) }
+        }
+    }
+
+    /// Splits the window's percent among the chats that filled it (§ Design, Attribution).
+    ///
+    /// A bin's Δp goes to:
+    /// - its own chats, in proportion to their dollars in the bin, when it has a local
+    ///   turn;
+    /// - otherwise, the previous bin's chats in that bin's proportions, when the
+    ///   previous bin had a turn. The percent lags a turn by up to one step and one
+    ///   poll;
+    /// - otherwise, Outside this Mac.
+    ///
+    /// The chats and Outside add up to the window's percent now. A project's share is
+    /// the sum of its chats'.
+    nonisolated static func share(
+        window: LimitWindow,
+        bucketID: String,
+        readings: [HistoryRecord],
+        log: TurnCostLog
+    ) -> LimitShare {
+        share(window: window, series: series(readings, bucketID: bucketID), log: log)
+    }
+
+    /// The same split over a bucket's readings already in `LimitReading` form, such as a
+    /// series that ends on the live bucket's percent (`endingOnLive(_:percent:at:)`).
+    nonisolated static func share(
+        window: LimitWindow,
+        series: [LimitReading],
+        log: TurnCostLog
+    ) -> LimitShare {
+        let rising = monotone(series, in: window)
+        let cut = bins(of: window, readings: rising)
+        let turns = log.turns.filter { window.containsTurn(at: $0.timestamp) }
+        let use = binnedUse(turns, in: window, binCount: cut.count)
+
+        var points: [String: Double] = [:]
+        var outside = 0.0
+        var binShares: [LimitBinShare] = []
+        binShares.reserveCapacity(cut.count)
+        for (index, bin) in cut.enumerated() {
+            var given: [String: Double] = [:]
+            var binOutside = 0.0
+            if bin.delta > 0 {
+                if !use[index].isEmpty {
+                    given = use[index].split(bin.delta)
+                } else if index > 0, !use[index - 1].isEmpty {
+                    given = use[index - 1].split(bin.delta)
+                } else {
+                    binOutside = bin.delta
+                }
+            }
+            for (chat, part) in given { points[chat, default: 0] += part }
+            outside += binOutside
+            binShares.append(LimitBinShare(
+                start: bin.start, delta: bin.delta, chats: given, outside: binOutside
+            ))
+        }
+
+        let chats = chatShares(turns: turns, points: points, titles: log.titles)
+        let percent = rising.last?.percent ?? 0
+        let cost = turns.reduce(0) { $0 + $1.cost }
+        let tokens = turns.reduce(0) { TokenBreakdown.saturating($0, $1.tokens.total) }
+        return LimitShare(
+            window: window,
+            percent: percent,
+            chats: chats,
+            projects: projectShares(chats),
+            outside: outside,
+            bins: binShares,
+            cost: cost,
+            tokens: tokens
+        )
+    }
+
+    /// The turns' dollars and tokens per bin and chat.
+    private static func binnedUse(_ turns: [TurnCost], in window: LimitWindow, binCount: Int) -> [BinUse] {
+        var use = [BinUse](repeating: BinUse(), count: binCount)
+        for turn in turns {
+            let index = binIndex(of: turn.timestamp, in: window, binCount: binCount)
+            use[index].cost[turn.chatID, default: 0] += turn.cost
+            use[index].tokens[turn.chatID, default: 0] += turn.tokens.total
+        }
+        return use
+    }
+
+    /// One row per chat with a turn among `turns`, ranked by points, then dollars, then id.
+    static func chatShares(
+        turns: [TurnCost], points: [String: Double], titles: [String: String]
+    ) -> [ChatShare] {
+        struct Running {
+            var cost = 0.0
+            var tokens = 0
+            var lastAt = Date.distantPast
+            var project = ""
+            var projectAt = Date.distantPast
+            var projectFromMain = false
+        }
+        var byChat: [String: Running] = [:]
+        for turn in turns {
+            var running = byChat[turn.chatID] ?? Running()
+            running.cost += turn.cost
+            running.tokens = TokenBreakdown.saturating(running.tokens, turn.tokens.total)
+            running.lastAt = max(running.lastAt, turn.timestamp)
+            // The main thread names the project. A sub-agent's turn names it only until
+            // a main-thread turn does.
+            let namesProject = turn.isMainThread
+                ? !running.projectFromMain || turn.timestamp >= running.projectAt
+                : !running.projectFromMain && turn.timestamp >= running.projectAt
+            if namesProject {
+                running.project = turn.projectSlug
+                running.projectAt = turn.timestamp
+                running.projectFromMain = turn.isMainThread
+            }
+            byChat[turn.chatID] = running
+        }
+        return byChat
+            .map { id, running in
+                ChatShare(
+                    id: id, title: titles[id], projectSlug: running.project,
+                    points: points[id] ?? 0, cost: running.cost, tokens: running.tokens,
+                    lastAt: running.lastAt
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.points != rhs.points { return lhs.points > rhs.points }
+                if lhs.cost != rhs.cost { return lhs.cost > rhs.cost }
+                return lhs.id < rhs.id
+            }
+    }
+
+    /// One row per project among `chats`: the sum of its chats, ranked like them.
+    static func projectShares(_ chats: [ChatShare]) -> [ProjectShare] {
+        struct Running {
+            var points = 0.0
+            var cost = 0.0
+            var tokens = 0
+            var chats = 0
+        }
+        var byProject: [String: Running] = [:]
+        for chat in chats {
+            var running = byProject[chat.projectSlug] ?? Running()
+            running.points += chat.points
+            running.cost += chat.cost
+            running.tokens = TokenBreakdown.saturating(running.tokens, chat.tokens)
+            running.chats += 1
+            byProject[chat.projectSlug] = running
+        }
+        return byProject
+            .map { id, running in
+                ProjectShare(
+                    id: id, points: running.points, cost: running.cost,
+                    tokens: running.tokens, chats: running.chats
+                )
+            }
+            .sorted { lhs, rhs in
+                if lhs.points != rhs.points { return lhs.points > rhs.points }
+                if lhs.cost != rhs.cost { return lhs.cost > rhs.cost }
+                return lhs.id < rhs.id
+            }
+    }
+}
