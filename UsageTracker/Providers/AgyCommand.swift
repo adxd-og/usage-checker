@@ -11,8 +11,9 @@ enum AgyCommand {
     static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG"]
     /// agy's PATH before its own folder: the system's folders only.
     static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
-    /// Set for the child only. Without it agy starts its self-updater on every run, a
-    /// second process; a background poll has no business updating the CLI.
+    /// Set for the child only. With it agy runs no child process (measured on 2026-10-16);
+    /// without it, agy would start its self-updater, a second process, on every run, and a
+    /// background poll has no business updating the CLI.
     static let environmentOverrides = ["AGY_CLI_DISABLE_AUTO_UPDATE": "true"]
     /// A run's answer is due by then. Measured runs took 5–24 s on 2026-10-16; the poll
     /// never waits for one (`AntigravityProvider.startAgyRunIfDue`), so the bound only ends
@@ -326,9 +327,10 @@ private final class AgyChild: @unchecked Sendable {
     /// Ends the run after the caller was answered `.timedOut` or `.outputTooLarge`: the
     /// stdout reader is closed first, so a read pending on a pipe that something the child
     /// left behind still holds open returns; then SIGTERM through `Process.terminate()`
-    /// while the child runs, and SIGKILL `killGrace` later if it still runs. agy starts no
-    /// process of its own (measured on 2026-10-16: no child during a run, its language
-    /// server is in-process), so the signal reaches all of it.
+    /// while the child runs, and SIGKILL `killGrace` later if it still runs. With its
+    /// self-updater off (`environmentOverrides`) agy runs no child process (measured on
+    /// 2026-10-16: none during a run, its language server is in-process), so the signal
+    /// reaches all of it.
     private func stop() {
         lock.lock()
         let channel = reader

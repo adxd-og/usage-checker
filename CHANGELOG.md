@@ -19,16 +19,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   windows instead.
 - With Antigravity closed, Argon's Low, Medium and High variants show as one
   row and no longer drive the headline.
-- With Antigravity closed and the `agy` CLI installed, its limits stay
-  current: Omelette asks `agy -p /usage` in the background at most every
-  five minutes, 5-hour and weekly limits apart, instead of keeping the
-  numbers from when the app was last open. A slow agy never holds the other
+- While Antigravity is closed or not answering and the `agy` CLI is
+  installed, its limits stay current: Omelette asks `agy -p /usage` in the
+  background about every five minutes, 5-hour and weekly limits apart, and
+  stops it after 45 s or on a normal quit, instead of keeping the numbers
+  from when the app was last open. A slow agy never holds the other
   providers' update. agy signs in by itself; Omelette never reads its
   credentials and skips the run unless the login keychain is unlocked.
 - Argon's row takes the name Antigravity gives it, "Gemini 4 Argon", once
-  agy has answered, and keeps it while Omelette runs, the app open or not.
-- Numbers kept from before this release no longer show Argon twice or the
-  "Gemini models" and "Claude & GPT models" rows while Antigravity is closed.
+  agy has answered, and keeps it, the app open or not, after a relaunch too.
+- Numbers kept from before this release come back in this release's shape
+  while Antigravity is closed: Argon no longer shows twice or drives the
+  headline, and the "Gemini models" and "Claude & GPT models" rows go where
+  each pool has its own rows. After a relaunch, agy's readings keep the
+  stored plan and account.
 
 ### Popover
 - Weekly limits keep their row at 0 % (Antigravity's Gemini and Claude/GPT
