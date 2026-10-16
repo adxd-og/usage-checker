@@ -129,7 +129,8 @@ actor LastKnownStore {
     ///
     /// An Antigravity reading stored before Argon had its own row (3.0.2 and earlier)
     /// comes back in this build's shape (`AntigravityProvider.restoredBuckets`): as
-    /// stored, a closed app's tab showed Argon twice beside the two aggregates.
+    /// stored, a closed app's tab showed Argon twice beside the two aggregates, or let
+    /// Argon's per-model placeholder rows drive the headline.
     static func restorable(
         _ entries: [String: LastKnownService], creditPoolIDs: Set<String>
     ) -> [String: LastKnownService] {

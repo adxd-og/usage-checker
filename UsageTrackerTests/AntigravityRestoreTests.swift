@@ -109,6 +109,55 @@ final class AntigravityRestoreTests: XCTestCase {
         XCTAssertEqual(AntigravityProvider.restoredBuckets(perModel), perModel, "on that path the aggregates are the pools")
     }
 
+    /// The per-model shape (the web fallback) as builds before the Argon fix stored it,
+    /// History 07:50:14: the two aggregates and Argon's three effort variants under their
+    /// placeholder wire ids, every one `.other`, no window length.
+    private var perModelBeforeTheArgonFix: [UsageBucket] {
+        [
+            Fixture.bucket(id: "antigravity_gemini", label: "Gemini models", percent: 0.035733,
+                           resetsAt: F.gemini5hReset, kind: .other),
+            Fixture.bucket(id: "antigravity_claude_gpt", label: "Claude & GPT models", percent: 0,
+                           resetsAt: F.thirdParty5hReset, kind: .other),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M419", label: "Gemini 4 Argon (High)", percent: 6.11776,
+                           resetsAt: F.argonWeeklyReset, kind: .other),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M418", label: "Gemini 4 Argon (Medium)", percent: 6.11776,
+                           resetsAt: F.argonWeeklyReset, kind: .other),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M417", label: "Gemini 4 Argon (Low)", percent: 6.11776,
+                           resetsAt: F.argonWeeklyReset, kind: .other),
+        ]
+    }
+
+    /// Session ruling of the fix round: on a stored per-model reading every model row
+    /// becomes `.modelSpecific`, so Argon's placeholders stop driving the headline. The
+    /// aggregates stay (on this path they leave Argon out); nothing collapses or goes.
+    func testAPerModelReadingStoredBeforeTheArgonFixNoLongerDrivesTheHeadline() {
+        let before = Fixture.snapshot(id: "antigravity", buckets: perModelBeforeTheArgonFix, at: F.readAt)
+        XCTAssertGreaterThan(before.headlinePercent, 6, "the bug: the placeholders compete for the headline")
+
+        let restored = AntigravityProvider.restoredBuckets(perModelBeforeTheArgonFix)
+        XCTAssertEqual(restored.map(\.id), perModelBeforeTheArgonFix.map(\.id), "nothing dropped, nothing collapsed")
+        XCTAssertEqual(restored.map(\.label), perModelBeforeTheArgonFix.map(\.label))
+        XCTAssertEqual(restored.map(\.utilization), perModelBeforeTheArgonFix.map(\.utilization))
+        XCTAssertEqual(restored.map(\.kind), [.other, .other, .modelSpecific, .modelSpecific, .modelSpecific])
+        let after = Fixture.snapshot(id: "antigravity", buckets: restored, at: F.readAt)
+        XCTAssertLessThan(after.headlinePercent, 1, "the Gemini pool's 0.04 %, not Argon's 6 %")
+        XCTAssertEqual(AntigravityProvider.restoredBuckets(restored), restored, "restoring twice is restoring once")
+    }
+
+    /// The probe's reset-only pool windows and its compact fallback stand for the pools on
+    /// the per-model path; they keep their kind like the aggregates.
+    func testOnAStoredPerModelReadingPoolAndFallbackWindowsKeepTheirKind() {
+        let stored = [
+            Fixture.bucket(id: "antigravity_gemini", label: "Gemini models", percent: 3, kind: .other),
+            Fixture.bucket(id: "antigravity_antigravity-gemini", label: "Gemini models", percent: 0, kind: .other),
+            Fixture.bucket(id: "antigravity_antigravity-claude-gpt", label: "Claude & GPT models", percent: 0, kind: .other),
+            Fixture.bucket(id: "antigravity_antigravity-compact-fallback-pro", label: "Quota", percent: 5, kind: .other),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M417", label: "Gemini 4 Argon (Low)", percent: 9, kind: .other),
+        ]
+        XCTAssertEqual(AntigravityProvider.restoredBuckets(stored).map(\.kind),
+                       [.other, .other, .other, .other, .modelSpecific])
+    }
+
     func testOnlyTheAntigravityEntryIsReshapedAndCreditPoolsStillGo() {
         let claude = LastKnownService(from: Fixture.snapshot(id: "claude", displayName: "Claude", buckets: [
             Fixture.bucket(id: "five_hour", label: "Current session", percent: 7, kind: .session),

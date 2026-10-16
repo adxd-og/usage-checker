@@ -746,12 +746,15 @@ actor AntigravityProvider: UsageProvider {
     /// app's tab, restored from `last-known.json`, showed Argon twice until the next good
     /// reading. When any bucket is a quota-summary window, the aggregates go, and each
     /// per-model pool that is not `.modelSpecific` yet becomes one under its stem name
-    /// (`poolLabels`). A row already `.modelSpecific` keeps its name, which may be agy's. A
-    /// per-model reading (no summary window) is left as it is. This build's own readings
-    /// come back unchanged.
+    /// (`poolLabels`). A row already `.modelSpecific` keeps its name, which may be agy's.
+    /// On a per-model reading (no summary window) the same builds stored each model, Argon's
+    /// effort variants among them, as `.other` rows that competed for the headline: every
+    /// Antigravity row there but the aggregates, the reset-only pool windows and the compact
+    /// fallback becomes `.modelSpecific` (`restoredModelRow`). The aggregates stay, as on
+    /// that path they leave Argon out. This build's own readings come back unchanged.
     nonisolated static func restoredBuckets(_ buckets: [UsageBucket]) -> [UsageBucket] {
         let windowIDs = buckets.compactMap { summaryWindowID($0) }
-        guard !windowIDs.isEmpty else { return buckets }
+        guard !windowIDs.isEmpty else { return buckets.map(restoredModelRow) }
         let labels = poolLabels(windowIDs)
         return buckets.compactMap { bucket in
             if aggregateBucketIDs.contains(bucket.id) { return nil }
@@ -770,6 +773,30 @@ actor AntigravityProvider: UsageProvider {
                 credit: bucket.credit
             )
         }
+    }
+
+    /// A stored row of a per-model reading as `modelBuckets` publishes it now: one model's
+    /// limit, `.modelSpecific`, its id, name and numbers kept. Rows that stand for a pool (an
+    /// aggregate, a reset-only pool window, the compact fallback) and any row that is not
+    /// Antigravity's keep their kind. Variants are not collapsed: their ids are the wire's
+    /// placeholders, and the next fresh reading replaces them.
+    private static func restoredModelRow(_ bucket: UsageBucket) -> UsageBucket {
+        let prefix = "antigravity_"
+        guard bucket.kind != .modelSpecific,
+              bucket.id.hasPrefix(prefix),
+              !aggregateBucketIDs.contains(bucket.id)
+        else { return bucket }
+        let windowID = String(bucket.id.dropFirst(prefix.count))
+        guard !poolWindowIDs.contains(windowID), !windowID.hasPrefix(compactFallbackPrefix) else { return bucket }
+        return UsageBucket(
+            id: bucket.id,
+            label: bucket.label,
+            utilization: bucket.utilization,
+            resetsAt: bucket.resetsAt,
+            kind: .modelSpecific,
+            windowLength: bucket.windowLength,
+            credit: bucket.credit
+        )
     }
 
     /// The two pool aggregates of the per-model path, `antigravity_gemini` and its Claude/GPT twin.
