@@ -77,6 +77,11 @@ actor AntigravityProvider: UsageProvider {
     /// When the local probe last answered. An agy reading older than that is never shown:
     /// it would put older numbers over newer ones the moment the app closes.
     private var localReadAt: Date?
+    /// Each per-model pool's group name from the last usable agy reading, by bucket id
+    /// (`poolNames(from:)`). The probe titles those pools after their family; agy names
+    /// them, and every path borrows the name (`publishedBuckets(from:)`), so a row keeps it
+    /// when the app opens. In memory only: a relaunch starts from the stem names again.
+    private var rememberedPoolNames: [String: String] = [:]
 
     init(
         localFetch: @escaping StatusFetch = {
@@ -120,7 +125,7 @@ actor AntigravityProvider: UsageProvider {
             let status = try await localFetch()
             let usage = try status.toUsageSnapshot()
             localReadAt = now
-            let snapshot = Self.snapshot(from: usage, status: status, at: now)
+            let snapshot = self.snapshot(from: usage, status: status, at: now)
             cached = (snapshot, now)
             return snapshot
         } catch {
@@ -226,13 +231,13 @@ actor AntigravityProvider: UsageProvider {
         agyRun = nil
         do {
             let report = try AgyUsageReport.parse(result.get())
-            let buckets = Self.named(
-                Self.buckets(from: Self.quotaSummary(from: report, at: startedAt)),
-                by: Self.poolNames(from: report)
-            )
+            let names = Self.poolNames(from: report)
+            let buckets = Self.named(Self.buckets(from: Self.quotaSummary(from: report, at: startedAt)), by: names)
             guard !buckets.isEmpty else {
                 throw AgyUsageError.unreadable("no window with a known usage")
             }
+            // Only a usable reading changes the names every path borrows.
+            rememberedPoolNames = names
             agyReading = ServiceSnapshot(
                 id: serviceID,
                 displayName: "Antigravity",
@@ -283,7 +288,7 @@ actor AntigravityProvider: UsageProvider {
         do {
             let status = try await remoteFetch()
             let usage = try status.toUsageSnapshot()
-            let snapshot = Self.snapshot(from: usage, status: status, at: now)
+            let snapshot = self.snapshot(from: usage, status: status, at: now)
             remoteCache = (snapshot, now)
             NSLog("[UT] Antigravity remote fetch ok: %d window(s)", snapshot.buckets.count)
             return snapshot
@@ -295,17 +300,17 @@ actor AntigravityProvider: UsageProvider {
         }
     }
 
-    private static func snapshot(
+    private func snapshot(
         from usage: CodexBarCore.UsageSnapshot,
         status: AntigravityStatusSnapshot,
         at now: Date
     ) -> ServiceSnapshot {
-        let mapped = buckets(from: usage)
+        let mapped = publishedBuckets(from: usage)
         NSLog("[UT] Antigravity fetch ok: %d window(s), plan=%@", mapped.count, status.accountPlan ?? "?")
         return ServiceSnapshot(
             id: "antigravity",
             displayName: "Antigravity",
-            icon: icon,
+            icon: Self.icon,
             plan: status.accountPlan.map { "Antigravity \($0.capitalized)" } ?? "Antigravity",
             accountLabel: status.accountEmail,
             buckets: mapped,
@@ -341,6 +346,12 @@ actor AntigravityProvider: UsageProvider {
             aggregates.append(b)
         }
         return aggregates + modelBuckets(reported)
+    }
+
+    /// A probe or web reading as this provider publishes it: `buckets(from:)`, with each
+    /// per-model pool under the name the last usable agy reading gave its group.
+    func publishedBuckets(from usage: CodexBarCore.UsageSnapshot) -> [UsageBucket] {
+        Self.named(Self.buckets(from: usage), by: rememberedPoolNames)
     }
 
     /// A named window as CodexBarCore reports it: its title, its kind from its length.

@@ -491,4 +491,78 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(AntigravityProvider.agyMinInterval, 280)
         XCTAssertEqual(AntigravityProvider.agyReadingMaxAge, 900)
     }
+
+    /// Spec § "Package 2": "the provider keeps that label for the bucket id so the local
+    /// path shows the same name". The local reading here is the probe's 2026-10-16 Pro
+    /// quota summary, mapped as the local path maps it.
+    func testOnceAgyHasNamedArgonTheLocalPathUsesTheSameName() async {
+        let output = AgyUsageFixture.proOutput
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { output }
+        )
+        let before = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(before.map(\.label),
+                       ["Gemini 5-hour", "Gemini weekly", "Gemini Argon", "Claude/GPT 5-hour", "Claude/GPT weekly"])
+
+        _ = await provider.fetch(now: t0)
+        await provider.settleAgyRun()
+
+        let after = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(after.map(\.label),
+                       ["Gemini 5-hour", "Gemini weekly", "Gemini 4 Argon", "Claude/GPT 5-hour", "Claude/GPT weekly"])
+        XCTAssertEqual(after.map(\.id), before.map(\.id))
+        XCTAssertEqual(after.map(\.kind), before.map(\.kind))
+    }
+
+    func testTheNextAgyReadingReplacesTheNamesItRemembered() async {
+        let agyCalls = Calls()
+        let pro = AgyUsageFixture.proOutput
+        let ultra = AgyUsageFixture.ultraOutput
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: {
+                agyCalls.count += 1
+                return agyCalls.count == 1 ? pro : ultra
+            }
+        )
+        _ = await provider.fetch(now: t0)
+        await provider.settleAgyRun()
+        _ = await provider.fetch(now: t0.addingTimeInterval(301))
+        await provider.settleAgyRun()
+        XCTAssertEqual(agyCalls.count, 2)
+
+        let buckets = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(buckets.first { $0.kind == .modelSpecific }?.label, "Gemini Argon",
+                       "a reading without the group drops its name")
+    }
+
+    /// Ruling A10: only a usable reading, one known window at least, changes the names. A
+    /// run that answered with nothing to show keeps the names of the last one that did.
+    func testAReadingWithNoKnownWindowKeepsTheNamesItRemembered() async {
+        let agyCalls = Calls()
+        let pro = AgyUsageFixture.proOutput
+        let nothingKnown = AgyUsageFixture.output(
+            groups: #"[{"name":"Gemini Models","buckets":[{"id":"gemini-weekly","window":"weekly","reset_time":"2026-10-23T07:46:06Z"}]}]"#
+        )
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: {
+                agyCalls.count += 1
+                return agyCalls.count == 1 ? pro : nothingKnown
+            }
+        )
+        _ = await provider.fetch(now: t0)
+        await provider.settleAgyRun()
+        _ = await provider.fetch(now: t0.addingTimeInterval(301))
+        await provider.settleAgyRun()
+        XCTAssertEqual(agyCalls.count, 2)
+
+        let buckets = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(buckets.first { $0.kind == .modelSpecific }?.label, "Gemini 4 Argon",
+                       "a reading with no known window is no reading, for the names too")
+    }
 }
