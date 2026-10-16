@@ -52,6 +52,10 @@ final class AppState: ObservableObject {
     private var agentObserver: AnyCancellable?
     /// One trailing write is pending, so the throttle can never swallow the last change.
     private var statusWriteScheduled = false
+    /// Bumped by every `publishStatusFileAfterPoll()`. Each poll's gather remembers the
+    /// value it started under, and its result is applied only while that value is still
+    /// the newest (`appliesGather(started:latest:)`).
+    private var statusGatherGeneration = 0
 
     private init() {}
 
@@ -347,16 +351,28 @@ final class AppState: ObservableObject {
     /// actor — the aggregators are actors and their scan is file I/O — so a slow log
     /// tree delays the file, never the poll or the menu bar.
     private func publishStatusFileAfterPoll() {
+        statusGatherGeneration &+= 1
+        let generation = statusGatherGeneration
         let ids = Set(snapshot.services.map(\.id))
         Task { [weak self] in
             let gathered = await StatusCosts.gather(serviceIDs: ids)
             await MainActor.run {
-                guard let self else { return }
+                guard let self,
+                      AppState.appliesGather(started: generation, latest: self.statusGatherGeneration)
+                else { return }
                 self.lastCosts = gathered.costs
                 self.lastSessions = gathered.sessions
                 self.publishStatusFile(costs: gathered.costs, sessions: gathered.sessions)
             }
         }
+    }
+
+    /// Whether a gather's costs, chats and shares may still be applied: only while no
+    /// later poll has started a gather of its own. Gathers run concurrently and can
+    /// finish out of order. One that finished last would put an older poll's numbers
+    /// back on disk, and into the caches the writes between polls reuse.
+    nonisolated static func appliesGather(started generation: Int, latest: Int) -> Bool {
+        generation == latest
     }
 
     /// The display mode changed. Not one number moved, but two files on disk carry
