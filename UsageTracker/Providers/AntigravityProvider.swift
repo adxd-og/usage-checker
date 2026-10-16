@@ -188,8 +188,8 @@ actor AntigravityProvider: UsageProvider {
     /// `AntigravityStatusSnapshot.isQuotaSummaryWindowID`): every window by itself and no
     /// aggregates. Each pool's windows are already there, and an aggregate is the worst
     /// window of its family, a per-model pool included (`summaryBucket`).
-    /// Per-model (the web API, older servers): the two pool aggregates, then every named
-    /// window with known usage.
+    /// Per-model (the web API, older servers): the two pool aggregates, then the model
+    /// windows (`modelBuckets`).
     nonisolated static func buckets(from usage: CodexBarCore.UsageSnapshot) -> [UsageBucket] {
         let windows = usage.extraRateWindows ?? []
         let reported = windows.filter { $0.usageKnown && !$0.window.isSyntheticPlaceholder }
@@ -204,7 +204,7 @@ actor AntigravityProvider: UsageProvider {
         if let b = bucket(from: usage.secondary, id: "antigravity_claude_gpt", label: "Claude & GPT models") {
             aggregates.append(b)
         }
-        return aggregates + reported.map { windowBucket($0) }
+        return aggregates + modelBuckets(reported)
     }
 
     /// A named window as CodexBarCore reports it: its title, its kind from its length.
@@ -286,6 +286,118 @@ actor AntigravityProvider: UsageProvider {
         return (kept.isEmpty ? words : kept)
             .map { $0.prefix(1).uppercased() + $0.dropFirst() }
             .joined(separator: " ")
+    }
+
+    /// The probe's reset-only pool windows, listed when a pool's models report a reset but
+    /// no usage. They and the compact fallback (the stand-in when no pool is reported)
+    /// keep the plain mapping on the per-model path.
+    private static let poolWindowIDs: Set<String> = [
+        "antigravity-gemini", // the Gemini models pool
+        "antigravity-claude-gpt", // the Claude and GPT models pool
+    ]
+    private static let compactFallbackPrefix = "antigravity-compact-fallback-"
+
+    /// The row name of a model window that carries no name of its own (`hasNoHumanName`).
+    private static let unnamedModelLabel = "Unnamed model"
+
+    /// The per-model path's named windows. The probe lists a model apart only when it is
+    /// in neither pool aggregate, so each is one model's limit: `.modelSpecific`, its own
+    /// row, never the headline while a pool is reported. Effort variants, titles equal but
+    /// for a trailing parenthesis ("… (Low)", "(Medium)", "(High)"), are one row named by
+    /// the shared part, at the highest variant's percent and that variant's reset (the
+    /// first listed on a tie). Windows are grouped by their row's id, so a bare title
+    /// joins the variants it names and two spellings of one name are one row; the row
+    /// keeps the first listed spelling, so its name holds still from poll to poll.
+    private static func modelBuckets(_ windows: [NamedRateWindow]) -> [UsageBucket] {
+        var rows: [UsageBucket] = []
+        var rowIndex: [String: Int] = [:]
+        for named in windows {
+            if poolWindowIDs.contains(named.id) || named.id.hasPrefix(compactFallbackPrefix) {
+                rows.append(windowBucket(named))
+                continue
+            }
+            let row = modelRow(named)
+            guard let index = rowIndex[row.id] else {
+                rowIndex[row.id] = rows.count
+                rows.append(row)
+                continue
+            }
+            if row.utilization > rows[index].utilization {
+                rows[index] = UsageBucket(
+                    id: row.id,
+                    label: rows[index].label,
+                    utilization: row.utilization,
+                    resetsAt: row.resetsAt,
+                    kind: row.kind,
+                    windowLength: row.windowLength
+                )
+            }
+        }
+        return rows
+    }
+
+    /// One model window as a row, before its variants collapse. The wire ids are
+    /// placeholders, so the id comes from the name (`modelBucketID`). A window with no
+    /// human name is "Unnamed model" under its own wire id and collapses with nothing.
+    private static func modelRow(_ named: NamedRateWindow) -> UsageBucket {
+        let unnamed = hasNoHumanName(named)
+        let name = unnamed ? unnamedModelLabel : modelStem(named.title)
+        return UsageBucket(
+            id: unnamed ? "antigravity_\(named.id)" : modelBucketID(name, wireID: named.id),
+            label: name,
+            utilization: named.window.usedPercent,
+            resetsAt: named.window.resetsAt ?? .distantFuture,
+            kind: .modelSpecific,
+            windowLength: windowLength(for: named.window)
+        )
+    }
+
+    /// A title that is the wire id itself (any case) or says "placeholder" names no model
+    /// a person would know: `MODEL_PLACEHOLDER_M419` is a codename.
+    private static func hasNoHumanName(_ named: NamedRateWindow) -> Bool {
+        let title = named.title.trimmingCharacters(in: .whitespaces).lowercased()
+        return title == named.id.lowercased() || title.contains("placeholder")
+    }
+
+    /// A model window's title without its trailing variant, the last balanced
+    /// parenthesis with any nested in it: "Argon 4 (High)" → "Argon 4",
+    /// "Argon (Fast (High))" → "Argon". A title without one, or whose parentheses do not
+    /// balance ("Argon (High"), is its own name.
+    private static func modelStem(_ title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespaces)
+        guard trimmed.hasSuffix(")") else { return trimmed }
+        var depth = 0
+        var index = trimmed.endIndex
+        while index > trimmed.startIndex {
+            index = trimmed.index(before: index)
+            if trimmed[index] == ")" {
+                depth += 1
+            } else if trimmed[index] == "(" {
+                depth -= 1
+                if depth == 0 {
+                    let stem = trimmed[..<index].trimmingCharacters(in: .whitespaces)
+                    return stem.isEmpty ? trimmed : stem
+                }
+            }
+        }
+        return trimmed
+    }
+
+    /// A model row's id from its name, stable across polls: lowercased, each run of other
+    /// characters as one `-`, so "Model 4.1 Pro" → `antigravity_model-model-4-1-pro`. A
+    /// name with no letter or digit would leave a bare `antigravity_model-`, so its row
+    /// keeps the wire id instead.
+    private static func modelBucketID(_ name: String, wireID: String) -> String {
+        var slug = ""
+        for character in name.lowercased() {
+            if character.isLetter || character.isNumber {
+                slug.append(character)
+            } else if let last = slug.last, last != "-" {
+                slug.append("-")
+            }
+        }
+        if slug.hasSuffix("-") { slug.removeLast() }
+        return slug.isEmpty ? "antigravity_\(wireID)" : "antigravity_model-" + slug
     }
 
     private static func bucket(from window: CodexBarCore.RateWindow?, id: String, label: String) -> UsageBucket? {
