@@ -6,7 +6,7 @@ import XCTest
 /// reaches back to past windows and earlier 7-day blocks) and items 2–3 (the price card,
 /// the ranked list). A past window is "that" week or session and how full it got, not
 /// "so far"; the price card names the period it prices; the current period keeps the
-/// words Package 2 gave it.
+/// words the Limits tab already gives it.
 final class LimitsPastPeriodCopyTests: XCTestCase {
     /// 2026-09-06 12:00 UTC, a Sunday.
     private let now = Date(timeIntervalSince1970: 1_788_696_000)

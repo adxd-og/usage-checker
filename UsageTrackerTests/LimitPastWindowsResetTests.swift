@@ -7,8 +7,8 @@ import XCTest
 /// ones inside the 31-day horizon, newest first").
 ///
 /// A reading reports when its window resets, so a run of readings naming one reset is one
-/// window. On this Mac's history (2026-07-18 to 2026-10-16) that finds all 266 session
-/// changes and the 13 week changes; a held drop of 5 points finds 207 of the sessions (46
+/// window. On this Mac's history at the time, that finds all 266 session changes and the
+/// 13 week changes; a held drop of 5 points finds 207 of the sessions (46
 /// never reached 5 %) and splits 5 weeks at mid-week restores. A reported reset wandered at
 /// most 2 s between polls here, and the closest two real windows were 20 minutes apart:
 /// resets less than 10 minutes apart, reading to reading, are one window. Readings that

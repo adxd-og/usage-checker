@@ -22,10 +22,9 @@ extension LimitShareRules {
     static let turnHorizon: TimeInterval = 31 * 24 * 3600
 
     /// How far apart two readings in a row may put their window's reset and still name one
-    /// window. A reported reset wandered at most 2 s between polls on this Mac, and one that
-    /// wanders by minutes is still its window; two windows' resets are at least ten minutes
-    /// apart, since Claude's sit on ten-minute marks (the closest two here were twenty
-    /// minutes apart).
+    /// window. What the rule needs: a reported reset wanders by seconds between polls (at
+    /// most 2 s on this Mac), and two real windows' resets are at least ten minutes apart
+    /// (the closest two here were twenty minutes apart).
     static let resetDrift: TimeInterval = 10 * 60
 
     /// The finished windows of a bucket, newest first (spec § Design, Window bounds; § The
