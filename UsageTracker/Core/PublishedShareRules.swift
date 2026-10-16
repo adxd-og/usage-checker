@@ -82,3 +82,41 @@ enum PublishedShareRules {
         }
     }
 }
+
+// MARK: - One chat's fields
+
+/// One chat's shares as `status.json` carries them: percent points to one decimal, nil
+/// where a share does not apply.
+struct ChatShareFields: Equatable, Sendable {
+    var sessionShare: Double? = nil
+    var weekShare: Double? = nil
+    var budgetShare: Double? = nil
+}
+
+extension PublishedShareRules {
+    /// Percent points to one decimal, as the file writes them: 3.333… is 3.3, 5.666…
+    /// is 5.7.
+    nonisolated static func oneDecimal(_ points: Double) -> Double {
+        (points * 10).rounded() / 10
+    }
+
+    /// Each chat's fields, keyed by chat id, from the shares the requests asked for.
+    ///
+    /// A chat gets a field for every share it had a turn in, even when that turn moved
+    /// nothing (0.0). A share it did not run in leaves the field nil, so the file has no
+    /// key for it.
+    nonisolated static func fields(_ shares: [PublishedShareField: LimitShare]) -> [String: ChatShareFields] {
+        var out: [String: ChatShareFields] = [:]
+        for (field, share) in shares {
+            for chat in share.chats {
+                let points = oneDecimal(chat.points)
+                switch field {
+                case .session: out[chat.id, default: ChatShareFields()].sessionShare = points
+                case .week: out[chat.id, default: ChatShareFields()].weekShare = points
+                case .budget: out[chat.id, default: ChatShareFields()].budgetShare = points
+                }
+            }
+        }
+        return out
+    }
+}
