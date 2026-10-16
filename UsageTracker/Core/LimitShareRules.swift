@@ -145,3 +145,72 @@ extension LimitShareRules {
         return Array(windows.reversed())
     }
 }
+
+// MARK: - Bins
+
+/// One half hour of a window.
+struct LimitBin: Equatable, Sendable {
+    let start: Date
+    /// Δp: the last monotone reading in the bin minus the last one before it, counting
+    /// from 0 at the window's start. 0 for a bin with no reading.
+    let delta: Double
+}
+
+extension LimitShareRules {
+    /// The readings inside `window`, made a running maximum from 0 at its start. A
+    /// window does not empty between resets, so a dip is API noise.
+    nonisolated static func monotone(_ series: [LimitReading], in window: LimitWindow) -> [LimitReading] {
+        var high = 0.0
+        return series
+            .filter { window.containsReading(at: $0.time) }
+            .sorted { $0.time < $1.time }
+            .map { reading in
+                high = max(high, reading.percent)
+                return LimitReading(time: reading.time, percent: high)
+            }
+    }
+
+    /// How many bins `window` has: whole half hours from its start, the last one cut
+    /// short at its end.
+    static func binCount(of window: LimitWindow) -> Int {
+        max(1, Int((window.end.timeIntervalSince(window.start) / binLength).rounded(.up)))
+    }
+
+    /// The bin a turn falls in. A turn belongs to the bin [start, end): whole half hours
+    /// since the window's start, clamped to the window's bins.
+    static func binIndex(of time: Date, in window: LimitWindow, binCount: Int) -> Int {
+        let raw = Int((time.timeIntervalSince(window.start) / binLength).rounded(.down))
+        return min(max(raw, 0), binCount - 1)
+    }
+
+    /// The bin a reading closes. A reading belongs to the bin (start, end], so a
+    /// reading exactly on a boundary closes the earlier bin, and it keeps that bin as
+    /// the window grows. The percent it reports is what the turns up to it spent.
+    /// Clamped to the window's bins.
+    static func readingBinIndex(of time: Date, in window: LimitWindow, binCount: Int) -> Int {
+        let raw = Int((time.timeIntervalSince(window.start) / binLength).rounded(.up)) - 1
+        return min(max(raw, 0), binCount - 1)
+    }
+
+    /// The window's bins, oldest first, from its monotone readings (`monotone(_:in:)`).
+    nonisolated static func bins(of window: LimitWindow, readings: [LimitReading]) -> [LimitBin] {
+        let count = binCount(of: window)
+        var last = [Double?](repeating: nil, count: count)
+        for reading in readings where window.containsReading(at: reading.time) {
+            last[readingBinIndex(of: reading.time, in: window, binCount: count)] = reading.percent
+        }
+        var out: [LimitBin] = []
+        out.reserveCapacity(count)
+        var before = 0.0
+        for index in 0..<count {
+            let start = window.start.addingTimeInterval(Double(index) * binLength)
+            if let value = last[index] {
+                out.append(LimitBin(start: start, delta: max(0, value - before)))
+                before = max(before, value)
+            } else {
+                out.append(LimitBin(start: start, delta: 0))
+            }
+        }
+        return out
+    }
+}
