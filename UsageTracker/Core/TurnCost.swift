@@ -9,8 +9,9 @@ import Foundation
 /// The whole priced `TokenBreakdown` is carried: cache reads, both cache-write TTLs and
 /// their dollars. So a chat's stretches (a cold start is a main-thread turn whose cache
 /// read is under 5 % of its prompt) need no field this record does not already have.
-/// A compaction or a human prompt is an event of the log, not a part of a turn. Each
-/// joins `TurnCostLog` as a property of its own.
+/// A compaction or a human prompt is an event of the log, not a part of a turn. Neither
+/// is in `TurnCostLog` yet: each will join it as a property of its own with the
+/// stretches (spec 2026-10-16 limit analytics § Packages, 3).
 struct TurnCost: Equatable, Sendable {
     let timestamp: Date
     /// The chat: Claude Code's `sessionId`, or Codex's `session_id`. A sub-agent's turn

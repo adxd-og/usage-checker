@@ -6,7 +6,7 @@ import XCTest
 /// - Readings: "made monotone … The window starts at 0";
 /// - Bins: "30 minutes from the window start. `Δp` of a bin = the last monotone reading
 ///   in it minus the last one before it";
-/// - Totals: "A reading closes its bin (it belongs to (bin start, bin end])", ruling C1.
+/// - Totals: "A reading closes its bin (it belongs to (bin start, bin end])".
 final class LimitShareBinsTests: XCTestCase {
     /// 2026-09-06 12:00 UTC, a Sunday.
     private let start = Date(timeIntervalSince1970: 1_788_696_000)

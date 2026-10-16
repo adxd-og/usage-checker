@@ -3,7 +3,7 @@ import XCTest
 
 /// The price of a percent: spec `docs/superpowers/specs/2026-10-16-limit-analytics.md`
 /// § Design, Price of a percent. The price is the local cost in the window (every bin
-/// with local turns, zero-Δp bins included; ruling C5) divided by the attributed points
+/// with local turns, zero-Δp bins included) divided by the attributed points
 /// (window percent minus Outside), and tokens the same way. Below 1 attributed point
 /// there is no price ("Not enough use yet").
 final class LimitSharePriceTests: XCTestCase {

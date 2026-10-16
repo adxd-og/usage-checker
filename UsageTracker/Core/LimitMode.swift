@@ -202,7 +202,7 @@ extension LimitShareRules {
         }
     }
 
-    /// `series` ending on the live bucket's reading (§ Design, Totals; ruling C3). The
+    /// `series` ending on the live bucket's reading (§ Design, Totals). The
     /// live percent at `time` is appended as the final reading when it is newer than the
     /// last recorded reading or higher than it.
     ///

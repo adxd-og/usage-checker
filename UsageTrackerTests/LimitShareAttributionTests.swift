@@ -7,7 +7,7 @@ import XCTest
 /// - Attribution: a bin's Δp goes to its chats by dollars; a lagging Δp goes to the
 ///   previous bin's chats; otherwise it goes to Outside this Mac.
 /// - Totals: chats plus Outside equal the window's percent; a project is the sum of
-///   its chats; a reading closes its bin (ruling C1).
+///   its chats; a reading closes its bin.
 /// - § Design, The tab, item 2: Outside is whole points on Claude's whole-number
 ///   percents.
 final class LimitShareAttributionTests: XCTestCase {
@@ -221,8 +221,8 @@ final class LimitShareAttributionTests: XCTestCase {
     }
 
     func testAReadingOnABinsEdgeClosesTheEarlierBinAndTheLagGivesTheRestToItsChat() {
-        // Ruling C1, the review's fixture: a 90-minute window, chat A's turn at minute
-        // 29, and the percent reads 4 at minute 30 and 6 at minute 60.
+        // § Design, Totals: a reading closes its bin. A 90-minute window, chat A's turn
+        // at minute 29, and the percent reads 4 at minute 30 and 6 at minute 60.
         let result = LimitShareRules.share(
             window: LimitWindow(start: start, end: at(90)),
             bucketID: "five_hour",

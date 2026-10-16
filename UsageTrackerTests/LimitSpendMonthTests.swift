@@ -2,12 +2,12 @@ import XCTest
 @testable import Omelette
 
 /// A spend limit's month: spec `docs/superpowers/specs/2026-10-16-limit-analytics.md`
-/// § Accounts without percent windows, with ruling C7.
+/// § Accounts without percent windows.
 /// - Spend limit: "the server's used credits minus this Mac's spend in the month, when
 ///   positive".
 /// - Periods: "calendar months, current month only".
-/// - This Mac's month spend comes from the cost log's day totals, which survive the fold
-///   past the 31-day turn horizon.
+/// - A calendar month can reach past the 31-day turn horizon, so this Mac's month spend
+///   comes from the cost log's day totals, which survive the fold.
 /// - The part of it the turns no longer itemise is one "Earlier this month" row, never
 ///   Outside.
 final class LimitSpendMonthTests: XCTestCase {

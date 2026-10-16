@@ -6,7 +6,7 @@ import XCTest
 /// loads one window's result off the main actor") and § Accounts without percent
 /// windows, Periods.
 /// - Subscription: the current window of the asked kind, ending on the live bucket's
-///   percent. Per § Design, Totals and ruling C3, "the live bucket's percent is the
+///   percent. Per § Design, Totals, "the live bucket's percent is the
 ///   final reading when it is newer or higher than the last recorded one".
 /// - Subscription, Totals: "Chat shares plus Outside equal the window's percent now",
 ///   so a held drop inside the current window restarts its readings there.

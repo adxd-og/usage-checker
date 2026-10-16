@@ -5,9 +5,9 @@ import XCTest
 /// `docs/superpowers/specs/2026-10-16-limit-analytics.md` § Design, Window bounds ("A
 /// past window: between two resets, the current window's start … counting as one; a
 /// reset is a reading at least 5 points below the previous one"), within the 31-day
-/// turn horizon. Ruling Q3 (`.omelette/ledger-limit-analytics.md`): a reset must hold,
-/// meaning the next reading, when there is one, is also at least 5 points below the
-/// pre-drop value. A lone dip is noise.
+/// turn horizon. A reset must hold, because § Design, Readings calls a dip API noise:
+/// the next reading, when there is one, is also at least 5 points below the pre-drop
+/// value.
 final class LimitSharePastWindowsTests: XCTestCase {
     /// The current window's start: 2026-09-06 12:00 UTC, a Sunday.
     private let start = Date(timeIntervalSince1970: 1_788_696_000)
@@ -62,7 +62,7 @@ final class LimitSharePastWindowsTests: XCTestCase {
         let readings = series([(0, 30), (hour, 31), (hour + 60, 0), (hour + 120, 31)])
         XCTAssertEqual(
             LimitShareRules.resets(in: readings), [],
-            "the next reading is not 5 points below 31; the running maximum (Task 7) absorbs the dip"
+            "the next reading is not 5 points below 31; the running maximum absorbs the dip"
         )
         XCTAssertEqual(
             LimitShareRules.pastWindows(series: readings, before: at(3 * hour), horizonStart: at(-31 * day)), [],

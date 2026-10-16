@@ -67,8 +67,9 @@ struct LimitReset: Equatable, Sendable {
 
 extension LimitWindow {
     /// A reading belongs to the window if it is after the start and at or before the
-    /// end. A past window starts on the last reading of the window before it, and ends
-    /// on its own last reading.
+    /// end. A past window runs from the last reading before its reset to the next reset,
+    /// and ends on the last reading before that one. The newest past window ends at the
+    /// current window's start instead, which is not a reading.
     func containsReading(at time: Date) -> Bool { time > start && time <= end }
 }
 
@@ -502,7 +503,7 @@ extension LimitShareRules {
     static let pointSlack: Double = 1e-9
 
     /// The local cost in the window divided by the attributed points, and the tokens
-    /// the same way (§ Design, Price of a percent; ruling C5).
+    /// the same way (§ Design, Price of a percent).
     ///
     /// The cost covers every bin with local turns, including those whose percent did
     /// not move. With whole-number percents, a bin whose Δp is 0 still spent quota that

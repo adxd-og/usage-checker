@@ -8,7 +8,7 @@ import XCTest
 ///   spend.
 /// - Spend limit: chat cost / monthly limit, and Outside is the server's used credits
 ///   minus this Mac's spend, when positive.
-/// - Ruling C6: that Outside has no time, so it is carried unbinned. The bins' deltas
+/// - That Outside has no time, so it is carried unbinned. The bins' deltas
 ///   plus `unbinnedOutside` add up to the total in every mode.
 final class LimitSpendShareTests: XCTestCase {
     /// 2026-09-06 12:00 UTC, a Sunday.
