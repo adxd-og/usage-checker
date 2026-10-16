@@ -514,3 +514,48 @@ extension LimitsCopy {
         return line
     }
 }
+
+// MARK: - Timeline
+
+extension LimitsCopy {
+    static let timelineTitle = "Timeline"
+    /// Beside the title: what one bar is (the mockup's caption).
+    static let timelineCaption = "30-minute steps"
+    /// The projects past the five largest, in the legend and the tooltip.
+    static let otherProjects = "Other"
+
+    /// "3 %" on the y axis.
+    static func timelineAxisLabel(_ points: Double) -> String {
+        "\(Int(points.rounded())) %"
+    }
+
+    /// "+1 %", "+1.4 %": how far the percent rose in a half hour, to one decimal, a whole
+    /// point without one.
+    static func binRise(_ points: Double) -> String {
+        let text = String(format: "%.1f", points)
+        return "+" + (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + " %"
+    }
+
+    /// "0.7": one series' points in a half hour.
+    static func binPoints(_ points: Double) -> String {
+        String(format: "%.1f", points)
+    }
+
+    /// Under the bars: "14:00" for a session, "Mon 12 Oct" for a week, "12 Oct" for a
+    /// month.
+    static func timelineAxisDate(
+        _ date: Date, span: LimitsSpan, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        switch span {
+        case .session:
+            return HistoryCopy.time(date, calendar: calendar, locale: locale)
+        case .week:
+            let weekday = date.formatted(Date.FormatStyle(
+                locale: locale, calendar: calendar, timeZone: calendar.timeZone
+            ).weekday(.abbreviated))
+            return "\(weekday) \(SessionCopy.dayText(date, calendar: calendar, locale: locale))"
+        case .month:
+            return SessionCopy.dayText(date, calendar: calendar, locale: locale)
+        }
+    }
+}

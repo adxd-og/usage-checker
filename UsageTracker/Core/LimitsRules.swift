@@ -529,3 +529,177 @@ extension LimitsRules {
         return list.windows
     }
 }
+
+// MARK: - Timeline
+
+/// The timeline card as `LimitsTimelineCard` draws it (spec 2026-10-16 limit analytics
+/// § The tab, item 4).
+struct LimitsTimeline: Equatable, Sendable {
+    /// Bottom of the stack first: up to five projects, then Other, then Outside this Mac.
+    /// Other and Outside appear only when some half hour has them.
+    let series: [LimitsTimelineSeries]
+    /// One per half hour that moved, oldest first.
+    let bars: [LimitsTimelineBar]
+    /// The y axis' marks in points, 0 first; the last is the axis' top.
+    let axis: [Double]
+}
+
+/// One colour of the stack and its legend entry.
+struct LimitsTimelineSeries: Equatable, Sendable, Identifiable {
+    /// A project slug, or `LimitsRules.otherSeriesID` / `outsideSeriesID`.
+    let id: String
+    let name: String
+    let token: OMColorToken
+}
+
+/// One half hour's bar.
+struct LimitsTimelineBar: Equatable, Sendable, Identifiable {
+    let start: Date
+    /// The half hour's end; the last one ends with the window.
+    let end: Date
+    /// In `series` order, the empty ones left out.
+    let parts: [LimitsTimelinePart]
+
+    var id: Date { start }
+    /// The bar's height: how far the percent moved in the half hour.
+    var total: Double { parts.last?.top ?? 0 }
+}
+
+/// One series' piece of a bar.
+struct LimitsTimelinePart: Equatable, Sendable {
+    let seriesID: String
+    let points: Double
+    /// Where the piece starts in the stack.
+    let base: Double
+
+    var top: Double { base + points }
+}
+
+/// What a card built from a load is built again for (`.task(id:)`): the query the load
+/// answered and the share itself. A share cut again after an ingest under the same query
+/// and period (the window open now, a past week whose late turns arrived) is a new key,
+/// so a card never keeps what it drew from the cut before.
+struct LimitsCardKey: Equatable, Sendable {
+    let query: LimitsQuery
+    let share: LimitShare
+}
+
+extension DashboardState.LimitShareLoad {
+    /// What a card drawn from this load is keyed on (`LimitsCardKey`).
+    var cardKey: LimitsCardKey { LimitsCardKey(query: query, share: share) }
+}
+
+extension LimitsRules {
+    /// How many projects get a colour of their own; the rest are Other.
+    static let timelineProjectCount = 5
+    /// The five projects' colours, largest first: the mockup's, from the series tokens.
+    static let timelineProjectTokens: [OMColorToken] = [
+        .seriesAllModels, .seriesPerModel, .seriesCredits, .seriesSession, .tokenOutput,
+    ]
+    static let otherSeriesID = "other"
+    static let outsideSeriesID = "outside"
+    static let otherSeriesToken: OMColorToken = .muted
+    static let outsideSeriesToken: OMColorToken = .seriesQuota
+    /// A bar's share of its half hour; the rest is the gap beside it.
+    static let timelineBarFraction = 0.7
+
+    /// The window's half hours as stacked bars (spec § The tab, item 4): a chat's points go
+    /// to its project when that project is one of the window's five largest (by points),
+    /// otherwise to Other; Outside this Mac is the half hour's own. A half hour that moved
+    /// nothing has no bar. A spend limit's Outside has no time and is not drawn.
+    nonisolated static func timeline(
+        of share: LimitShare,
+        serviceID: String,
+        projectName: (_ providerID: String, _ slug: String) -> String = SessionCopy.projectName(providerID:projectSlug:)
+    ) -> LimitsTimeline {
+        let projectIDs = Array(
+            share.projects.filter { $0.points > LimitShareRules.pointSlack }.prefix(timelineProjectCount).map(\.id)
+        )
+        let projectOfChat = Dictionary(share.chats.map { ($0.id, $0.projectSlug) }, uniquingKeysWith: { first, _ in first })
+        var hasOther = false
+        var hasOutside = false
+        var bars: [LimitsTimelineBar] = []
+        for bin in share.bins where bin.delta > LimitShareRules.pointSlack {
+            var byProject: [String: Double] = [:]
+            var other = 0.0
+            for (chat, points) in bin.chats {
+                if let project = projectOfChat[chat], projectIDs.contains(project) {
+                    byProject[project, default: 0] += points
+                } else {
+                    other += points
+                }
+            }
+            var pieces: [(String, Double)] = projectIDs.map { ($0, byProject[$0] ?? 0) }
+            pieces.append((otherSeriesID, other))
+            pieces.append((outsideSeriesID, bin.outside))
+            var parts: [LimitsTimelinePart] = []
+            var base = 0.0
+            for (id, points) in pieces where points > LimitShareRules.pointSlack {
+                parts.append(LimitsTimelinePart(seriesID: id, points: points, base: base))
+                base += points
+            }
+            guard !parts.isEmpty else { continue }
+            if other > LimitShareRules.pointSlack { hasOther = true }
+            if bin.outside > LimitShareRules.pointSlack { hasOutside = true }
+            bars.append(LimitsTimelineBar(
+                start: bin.start,
+                end: min(bin.start.addingTimeInterval(LimitShareRules.binLength), share.window.end),
+                parts: parts
+            ))
+        }
+        var series = projectIDs.enumerated().map { index, id in
+            LimitsTimelineSeries(id: id, name: projectName(serviceID, id), token: timelineProjectTokens[index])
+        }
+        if hasOther {
+            series.append(LimitsTimelineSeries(id: otherSeriesID, name: LimitsCopy.otherProjects, token: otherSeriesToken))
+        }
+        if hasOutside {
+            series.append(LimitsTimelineSeries(id: outsideSeriesID, name: LimitsCopy.outsideTitle, token: outsideSeriesToken))
+        }
+        return LimitsTimeline(series: series, bars: bars, axis: timelineAxis(top: bars.map(\.total).max() ?? 0))
+    }
+
+    /// The y axis: whole points from 0 up to the tallest bar rounded up, at least 1, in at
+    /// most four steps (the mockup's 0 % to 3 %).
+    nonisolated static func timelineAxis(top: Double) -> [Double] {
+        let ceiling = max(1, (top - LimitShareRules.pointSlack).rounded(.up))
+        let step = max(1, (ceiling / 4).rounded(.up))
+        let marks = Int((ceiling / step).rounded(.up))
+        return (0...marks).map { Double($0) * step }
+    }
+
+    /// How far a bar stands in from each edge of its half hour.
+    nonisolated static func barInset(_ bar: LimitsTimelineBar) -> TimeInterval {
+        bar.end.timeIntervalSince(bar.start) * (1 - timelineBarFraction) / 2
+    }
+
+    /// What hovering a bar shows: its half hour, how far the percent rose, and each
+    /// series' points in stack order.
+    nonisolated static func timelineTooltip(
+        for bar: LimitsTimelineBar, in timeline: LimitsTimeline, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> HistoryTooltip {
+        let named = Dictionary(timeline.series.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return HistoryTooltip(
+            title: LimitsCopy.timeRange(from: bar.start, to: bar.end, now: now, calendar: calendar, locale: locale),
+            headline: LimitsCopy.binRise(bar.total),
+            rows: bar.parts.map { part in
+                HistoryTooltipRow(
+                    label: named[part.seriesID]?.name ?? part.seriesID,
+                    value: LimitsCopy.binPoints(part.points),
+                    token: named[part.seriesID]?.token
+                )
+            }
+        )
+    }
+
+    /// Where the x axis is marked: every hour of a session, every day of a week, every
+    /// fifth day of a month.
+    nonisolated static func timelineStride(span: LimitsSpan) -> HistoryAxisStride {
+        switch span {
+        case .session: return HistoryAxisStride(component: .hour, count: 1)
+        case .week: return HistoryAxisStride(component: .day, count: 1)
+        case .month: return HistoryAxisStride(component: .day, count: 5)
+        }
+    }
+}
