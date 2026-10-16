@@ -221,9 +221,29 @@ extension LimitShareRules {
         return series + [live]
     }
 
+    /// The current window's readings from its last reset on, so the shares total the
+    /// window's percent now (spec 2026-10-16 limit analytics § Design, Totals). The last
+    /// held drop inside `window`, by `resets(in:)`, ends what came before it:
+    /// - the old window's last readings, stamped after the computed start: `resetsAt` is
+    ///   rounded to the second, the poll's clock differs, and the old percent can still
+    ///   be reported minutes into the new window;
+    /// - a limit restored mid-window: the percent falls and `resetsAt` stays.
+    ///
+    /// The running maximum restarts at the drop's reading. A lone dip is still noise.
+    /// Past windows are not cut: each ends at a reset (`pastWindows`), and the newest can
+    /// hold the current window's own drop seen up to a bin early.
+    nonisolated static func readingsSinceLastReset(
+        _ series: [LimitReading], in window: LimitWindow
+    ) -> [LimitReading] {
+        let inside = series.filter { window.containsReading(at: $0.time) }
+        guard let reset = resets(in: inside).last else { return inside }
+        return inside.filter { $0.time >= reset.firstAfter }
+    }
+
     /// The share `request` asks for:
-    /// - Subscription: the half-hour-bin rule over the bucket's readings, ending on the
-    ///   live percent at the period's end, so the shares total the percent now;
+    /// - Subscription: the half-hour-bin rule over the bucket's readings since the
+    ///   window's last held reset (`readingsSinceLastReset(_:in:)`), ending on the live
+    ///   percent at the period's end, so the shares total the percent now;
     /// - Pay as you go and Spend limit: the period's dollars against the mode's
     ///   denominator. A spend limit's Outside is the server's used credits minus the
     ///   period's local spend.
@@ -241,7 +261,9 @@ extension LimitShareRules {
             let readingsToNow = endingOnLive(
                 series(readings, bucketID: bucketID), percent: request.livePercent, at: request.period.end
             )
-            return share(window: request.period, series: readingsToNow, log: log)
+            return share(
+                window: request.period, series: readingsSinceLastReset(readingsToNow, in: request.period), log: log
+            )
         case .payAsYouGo, .spendLimit:
             let spend = log.turns
                 .filter { request.period.containsTurn(at: $0.timestamp) }

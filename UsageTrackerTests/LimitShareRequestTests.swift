@@ -8,6 +8,8 @@ import XCTest
 /// - Subscription: the current window of the asked kind, ending on the live bucket's
 ///   percent. Per § Design, Totals and ruling C3, "the live bucket's percent is the
 ///   final reading when it is newer or higher than the last recorded one".
+/// - Subscription, Totals: "Chat shares plus Outside equal the window's percent now",
+///   so a held drop inside the current window restarts its readings there.
 /// - Pay as you go: the last 7 days.
 /// - Spend limit: the calendar month so far.
 ///
@@ -183,6 +185,81 @@ final class LimitShareRequestTests: XCTestCase {
             [LimitReading(time: now, percent: 7), LimitReading(time: now, percent: 100)],
             "higher at the same instant; clamped like every reading"
         )
+    }
+
+    // MARK: - A held drop inside the current window
+
+    func testAnOldWindowsReadingStampedAfterTheWindowsStartIsLeftToTheOldWindow() throws {
+        // `resetsAt` is rounded to the second and the poll's clock differs: the old
+        // session's last 43 % is stamped a second after the computed start, and the
+        // drop to 0 is seen a minute later.
+        let request = try XCTUnwrap(
+            LimitShareRules.request(for: claudeMax, kind: .session, weeklyBudgetUSD: 0, now: now, calendar: utc)
+        )
+        let start = request.period.start
+        let readings = Fixture.readings(bucketID: "five_hour", points: [
+            (at: start.addingTimeInterval(1), percent: 43),
+            (at: start.addingTimeInterval(64), percent: 0),
+            (at: start.addingTimeInterval(20 * 60), percent: 3),
+        ])
+        let log = TurnCostLog(turns: [
+            Fixture.turnCost(at: start.addingTimeInterval(5 * 60), chat: "chat-a", cost: 2),
+        ])
+
+        let share = try XCTUnwrap(LimitShareRules.share(for: request, log: log, readings: readings))
+        XCTAssertEqual(share.percent, 9, "the live bucket's 9 %, not the old window's 43")
+        XCTAssertEqual(share.chats.first?.points ?? -1, 3, accuracy: 1e-9)
+        XCTAssertEqual(share.outside, 6, accuracy: 1e-9, "the live 9 % moved the last half hour, where no local turn ran")
+    }
+
+    func testALimitRestoredMidWeekRestartsTheWindowsReadingsAtTheRestore() throws {
+        // The weekly percent falls from 94 to 36 with `resetsAt` unchanged, and stays
+        // down: the readings before the restore are no longer the window's.
+        let request = try XCTUnwrap(
+            LimitShareRules.request(for: claudeMax, kind: .weekly, weeklyBudgetUSD: 0, now: now, calendar: utc)
+        )
+        let start = request.period.start
+        let readings = Fixture.readings(bucketID: "seven_day", points: [
+            (at: start.addingTimeInterval(1 * day), percent: 30),
+            (at: start.addingTimeInterval(2 * day), percent: 94),
+            (at: start.addingTimeInterval(3 * day), percent: 36),
+            (at: start.addingTimeInterval(4 * day), percent: 38),
+        ])
+        let log = TurnCostLog(turns: [
+            Fixture.turnCost(at: start.addingTimeInterval(2 * day - 10 * 60), chat: "chat-before", cost: 5),
+            Fixture.turnCost(at: start.addingTimeInterval(4 * day - 10 * 60), chat: "chat-after", cost: 5),
+        ])
+
+        let share = try XCTUnwrap(LimitShareRules.share(for: request, log: log, readings: readings))
+        XCTAssertEqual(share.percent, 40, "the live bucket's 40 %, not the 94 held before the restore")
+        XCTAssertEqual(share.chats.reduce(0) { $0 + $1.points } + share.outside, 40, accuracy: 1e-9)
+        XCTAssertEqual(
+            share.chats.first { $0.id == "chat-before" }?.points ?? -1, 0, accuracy: 1e-9,
+            "its percent rose before the restore, in readings the window no longer counts"
+        )
+        XCTAssertEqual(share.chats.first { $0.id == "chat-after" }?.points ?? -1, 2, accuracy: 1e-9)
+    }
+
+    func testAnOldWindowsReadingExactlyOnTheWindowsStartIsLeftToTheOldWindow() throws {
+        // The old session's 43 % is stamped on the computed start itself, and the drop
+        // holds from the next reading on.
+        let request = try XCTUnwrap(
+            LimitShareRules.request(for: claudeMax, kind: .session, weeklyBudgetUSD: 0, now: now, calendar: utc)
+        )
+        let start = request.period.start
+        let readings = Fixture.readings(bucketID: "five_hour", points: [
+            (at: start, percent: 43),
+            (at: start.addingTimeInterval(64), percent: 0),
+            (at: start.addingTimeInterval(20 * 60), percent: 3),
+        ])
+        let log = TurnCostLog(turns: [
+            Fixture.turnCost(at: start.addingTimeInterval(5 * 60), chat: "chat-a", cost: 2),
+        ])
+
+        let share = try XCTUnwrap(LimitShareRules.share(for: request, log: log, readings: readings))
+        XCTAssertEqual(share.percent, 9)
+        XCTAssertEqual(share.chats.first?.points ?? -1, 3, accuracy: 1e-9)
+        XCTAssertEqual(share.outside, 6, accuracy: 1e-9)
     }
 
     func testAPayAsYouGoShareIsEachChatsPartOfTheWeeksSpend() throws {

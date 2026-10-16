@@ -115,10 +115,13 @@ extension LimitShareRules {
     /// (`resetsAt − windowDuration`), counts as a reset, so the newest window ends there
     /// (spec § Design, Window bounds).
     ///
-    /// A drop that landed within one bin before `currentStart`, or after it, is the
-    /// current window's own reset seen by the poll. The provider's clock and the poll's
-    /// differ by seconds, and a laptop asleep at the reset sees the drop later. Such a
-    /// drop does not open a window.
+    /// A drop from one bin before `currentStart` on does not open a window:
+    /// - within one bin of the start, it is the current window's own reset seen by the
+    ///   poll. The provider's clock and the poll's differ by seconds, and a laptop asleep
+    ///   at the reset sees the drop later;
+    /// - a held drop later inside the current window, such as a limit restored with
+    ///   `resetsAt` unchanged, restarts the current window's readings
+    ///   (`readingsSinceLastReset(_:in:)`).
     ///
     /// These spans are left out:
     /// - a window that began before `horizonStart`: turns older than the 31-day horizon
