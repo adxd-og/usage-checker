@@ -62,6 +62,8 @@ final class SettingsStoreTests: XCTestCase {
         // a dashboard reload against the developer's real history log.
         UserDefaults.standard.set("codex", forKey: DashboardState.selectionKey)
         UserDefaults.standard.set("grok", forKey: "selectedProviderTab")
+        UserDefaults.standard.set(BucketKind.session.rawValue, forKey: LimitsRules.windowKey)
+        UserDefaults.standard.set("claude=projects", forKey: LimitsRules.groupingKey)
         UserDefaults.standard.set(["claude:five_hour": 95], forKey: UsageNotifier.firedLevelsKey)
         UserDefaults.standard.set(
             ["reset:claude:five_hour": Date().timeIntervalSince1970],
@@ -106,6 +108,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
         XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedLevelsKey), message)
         XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedWindowsKey), message)
+        XCTAssertNil(UserDefaults.standard.string(forKey: LimitsRules.windowKey), message)
+        XCTAssertNil(UserDefaults.standard.string(forKey: LimitsRules.groupingKey), message)
     }
 
     @MainActor
@@ -146,6 +150,19 @@ final class SettingsStoreTests: XCTestCase {
             "'already alerted at 95%' outlived the thresholds that produced it"
         )
         XCTAssertNil(UserDefaults.standard.dictionary(forKey: UsageNotifier.firedWindowsKey))
+    }
+
+    /// Limit analytics spec (2026-10-16) § The tab: the Limits tab's window switch and its
+    /// Chats / Projects choice per provider are preferences too, kept by the views.
+    @MainActor
+    func testResetForgetsTheLimitsTabsWindowAndGrouping() {
+        UserDefaults.standard.set(BucketKind.session.rawValue, forKey: LimitsRules.windowKey)
+        UserDefaults.standard.set("claude=projects,codex=chats", forKey: LimitsRules.groupingKey)
+
+        SettingsStore.shared.resetToDefaults()
+
+        XCTAssertNil(UserDefaults.standard.string(forKey: LimitsRules.windowKey), "the window switch stayed on Session")
+        XCTAssertNil(UserDefaults.standard.string(forKey: LimitsRules.groupingKey), "Claude stayed on Projects")
     }
 
     @MainActor

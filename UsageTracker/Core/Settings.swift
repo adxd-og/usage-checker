@@ -206,6 +206,9 @@ final class SettingsStore: ObservableObject {
         // whichever tab.
         DashboardState.shared.resetSelection()
         UserDefaults.standard.removeObject(forKey: Self.popoverTabKey)
+        // The Limits tab's window switch, and its Chats / Projects choice per provider.
+        UserDefaults.standard.removeObject(forKey: LimitsRules.windowKey)
+        UserDefaults.standard.removeObject(forKey: LimitsRules.groupingKey)
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
         // the new ones should be able to speak.
         UsageNotifier.shared.forgetFiredState()
