@@ -110,6 +110,12 @@ actor AntigravityProvider: UsageProvider {
     }
 
     private func fetchFresh(now: Date) async -> ServiceSnapshot {
+        // Our own agy run is an agy process too: the probe (`.ideAndCLI`) would find it and
+        // could wait on its endpoints or report its sign-in error. While it is in flight
+        // the app counts as closed, and the poll goes straight to agy and the web API.
+        if agyRun != nil {
+            return await closedAppSnapshot(now: now) ?? noReading(state: .notRunning, message: nil, at: now)
+        }
         do {
             let status = try await localFetch()
             let usage = try status.toUsageSnapshot()
@@ -124,32 +130,44 @@ actor AntigravityProvider: UsageProvider {
             let isNotRunning = Self.isUnreachable(error)
             // Only that quiet state is worth asking agy, then the web API. A signed-out
             // probe or a parse failure is a different problem, and neither can fix it.
-            // agy runs in the background: this poll shows its last reading, never waits.
-            if isNotRunning {
-                startAgyRunIfDue(now: now)
-                if let fromAgy = agySnapshot(now: now) {
-                    return fromAgy
-                }
+            if isNotRunning, let reading = await closedAppSnapshot(now: now) {
+                return reading
             }
-            if isNotRunning, let remote = await remoteSnapshot(now: now) {
-                return remote
-            }
-            return ServiceSnapshot(
-                id: serviceID,
-                displayName: "Antigravity",
-                icon: Self.icon,
-                plan: nil,
-                accountLabel: nil,
-                buckets: [],
-                extraUsage: nil,
-                weekCost: nil,
+            return noReading(
                 state: isNotRunning ? .notRunning : .error,
-                stateMessage: isNotRunning
-                    ? "Antigravity isn't running"
-                    : error.localizedDescription,
-                fetchedAt: now
+                message: isNotRunning ? nil : error.localizedDescription,
+                at: now
             )
         }
+    }
+
+    /// A reading with the app closed: agy's last one, else the web API's. agy runs in the
+    /// background (`startAgyRunIfDue`): this poll shows its last reading, never waits for
+    /// one. nil when neither has a reading to show.
+    private func closedAppSnapshot(now: Date) async -> ServiceSnapshot? {
+        startAgyRunIfDue(now: now)
+        if let fromAgy = agySnapshot(now: now) {
+            return fromAgy
+        }
+        return await remoteSnapshot(now: now)
+    }
+
+    /// No numbers: the quiet "Antigravity isn't running" when `message` is nil, else the
+    /// probe's own error.
+    private func noReading(state: ServiceState, message: String?, at now: Date) -> ServiceSnapshot {
+        ServiceSnapshot(
+            id: serviceID,
+            displayName: "Antigravity",
+            icon: Self.icon,
+            plan: nil,
+            accountLabel: nil,
+            buckets: [],
+            extraUsage: nil,
+            weekCost: nil,
+            state: state,
+            stateMessage: message ?? "Antigravity isn't running",
+            fetchedAt: now
+        )
     }
 
     /// "Not running" in the sense that matters here: nothing answered. A closed app

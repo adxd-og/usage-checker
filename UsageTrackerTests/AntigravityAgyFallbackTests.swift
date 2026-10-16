@@ -415,6 +415,43 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(localCalls.count, 2)
     }
 
+    // MARK: - No local probe while our run is in flight (ruling A2)
+
+    /// The probe looks for any agy process (`.ideAndCLI`) and would find our own run: it
+    /// could wait on that child's endpoints or report its sign-in error. While the run is
+    /// in flight a poll goes straight to agy's last reading and the web API.
+    func testWhileARunIsInFlightTheLocalProbeIsNotAsked() async {
+        let agy = HeldAgy()
+        let localCalls = Calls()
+        let remoteCalls = Calls()
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                throw AntigravityStatusProbeError.notRunning
+            },
+            remoteFetch: {
+                remoteCalls.count += 1
+                throw AntigravityRemoteFetchError.notLoggedIn
+            },
+            agyFetch: { try await agy.fetch() }
+        )
+        _ = await provider.fetch(now: t0) // the probe finds nothing; the run starts
+
+        let during = await provider.fetch(now: t0.addingTimeInterval(301))
+        XCTAssertEqual(localCalls.count, 1, "the probe was not asked while the run was in flight")
+        XCTAssertEqual(remoteCalls.count, 2, "the web API was, its five minutes being up")
+        XCTAssertEqual(during.state, .notRunning)
+        XCTAssertEqual(during.stateMessage, "Antigravity isn't running")
+
+        agy.release(.success(AgyUsageFixture.proOutput))
+        await provider.settleAgyRun()
+        let after = await provider.fetch(now: t0.addingTimeInterval(347))
+        await provider.settleAgyRun()
+        XCTAssertEqual(localCalls.count, 2, "asked again once the run is over")
+        XCTAssertEqual(after.state, .ok)
+        XCTAssertEqual(agy.callCount, 2, "no second run while the first was in flight; one once it was over")
+    }
+
     func testTheStartIntervalAndTheMaximumAgeAreWhatTheySay() {
         XCTAssertEqual(AntigravityProvider.agyMinInterval, 280)
         XCTAssertEqual(AntigravityProvider.agyReadingMaxAge, 900)
