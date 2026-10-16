@@ -8,16 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Antigravity
-- Gemini 4 Argon's weekly limit on Pro plans has its own row, "Gemini Argon",
-  instead of showing twice as "Gemini models" and "Gemini weekly". It no
-  longer drives the Antigravity headline, the menu bar or alerts.
-- The Gemini and Claude/GPT weekly limits keep their rows at 0% instead of
-  folding under "2 unused windows"; only untouched per-model limits fold.
+- Gemini 4 Argon's weekly limit on Pro plans has its own row instead of
+  showing twice as "Gemini models" and "Gemini weekly". It no longer drives
+  the Antigravity headline, the menu bar or alerts.
 - While Antigravity is running, the "Gemini models" and "Claude & GPT models"
   rows are gone: each pool's 5-hour and weekly limits already have their own
   rows.
+- `status.json` and MCP `get_usage` no longer publish `antigravity_gemini` /
+  `antigravity_claude_gpt` while Antigravity is running; read the per-pool
+  windows instead.
 - With Antigravity closed, Argon's Low, Medium and High variants show as one
-  "Gemini 4 Argon" row and no longer drive the headline.
+  row and no longer drive the headline.
+
+### Popover
+- Weekly limits keep their row at 0 % (Antigravity's Gemini and Claude/GPT
+  pools, Codex and Grok weeklies); only untouched per-model limits fold under
+  "N unused windows".
 
 ## [3.0.2] — 2026-10-04
 
