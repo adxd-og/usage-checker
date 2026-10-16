@@ -49,10 +49,32 @@ final class AgyCommandLookupTests: XCTestCase {
         )
     }
 
-    func testABareAGYBINNameIsIgnored() {
+    /// A bare `AGY_BIN` name is resolved as the fleet resolves it (`locateBin`): in PATH's
+    /// absolute entries, in order. It wins over `~/.local/bin/agy` and a plain `agy` on
+    /// PATH, and a relative entry never answers for it.
+    func testABareAGYBINNameIsLookedUpInThePATHEntries() {
         XCTAssertEqual(
-            lookup(["AGY_BIN": "agy", "PATH": "/opt/homebrew/bin"], executables: ["agy", "/opt/homebrew/bin/agy"]),
-            "/opt/homebrew/bin/agy"
+            lookup(["AGY_BIN": "agy-beta", "PATH": "bin::/usr/local/bin:/opt/agy/bin/"],
+                   executables: ["bin/agy-beta", "/opt/agy/bin/agy-beta", "/home/omelette/.local/bin/agy", "/usr/local/bin/agy"]),
+            "/opt/agy/bin/agy-beta"
+        )
+    }
+
+    /// A bare name that no PATH entry holds is no agy, as for the fleet: the installer's
+    /// `~/.local/bin/agy` and a plain `agy` on PATH are not the binary the user named.
+    func testABareAGYBINNameFoundNowhereIsNoAgy() {
+        XCTAssertNil(
+            lookup(["AGY_BIN": "agy-beta", "PATH": "/usr/local/bin"],
+                   executables: ["agy-beta", "/home/omelette/.local/bin/agy", "/usr/local/bin/agy"])
+        )
+    }
+
+    /// An absolute `AGY_BIN` is used as it is, never searched for on PATH.
+    func testAnAbsoluteAGYBINIsNotSearchedForOnPATH() {
+        XCTAssertEqual(
+            lookup(["AGY_BIN": "/opt/agy/bin/agy", "PATH": "/opt/agy/bin/agy:/usr/local/bin"],
+                   executables: ["/opt/agy/bin/agy", "/opt/agy/bin/agy/agy", "/usr/local/bin/agy"]),
+            "/opt/agy/bin/agy"
         )
     }
 

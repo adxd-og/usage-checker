@@ -119,24 +119,30 @@ enum AgyCommand {
     /// Where agy is, as the fleet finds it plus the installer's default: `AGY_BIN` (an
     /// absolute path, or one under `~/`), then `~/.local/bin/agy`, then each absolute PATH
     /// entry in order. The first candidate `isExecutable` accepts wins; nil when none does.
-    /// A bare `AGY_BIN` name ("agy") is no path and is ignored; PATH covers it.
+    /// A bare `AGY_BIN` name ("agy-beta") is resolved as the fleet's `locateBin` resolves
+    /// it: in the absolute PATH entries, in order, and nowhere else; when none holds it
+    /// there is no agy. A relative entry never answers: the child runs elsewhere.
     static func executablePath(
         environment: [String: String],
         homeDirectory: String,
         isExecutable: (String) -> Bool
     ) -> String? {
+        let pathEntries = (environment["PATH"] ?? "").split(separator: ":").map(String.init).filter { $0.hasPrefix("/") }
+        func onPath(_ name: String) -> [String] {
+            pathEntries.map { $0.hasSuffix("/") ? $0 + name : $0 + "/" + name }
+        }
+        let bin = environment["AGY_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !bin.isEmpty, !bin.contains("/") {
+            return onPath(bin).first(where: isExecutable)
+        }
         var candidates: [String] = []
-        if let bin = environment["AGY_BIN"]?.trimmingCharacters(in: .whitespacesAndNewlines) {
-            if bin.hasPrefix("/") {
-                candidates.append(bin)
-            } else if bin.hasPrefix("~/") {
-                candidates.append(homeDirectory + String(bin.dropFirst()))
-            }
+        if bin.hasPrefix("/") {
+            candidates.append(bin)
+        } else if bin.hasPrefix("~/") {
+            candidates.append(homeDirectory + String(bin.dropFirst()))
         }
         candidates.append(homeDirectory + "/.local/bin/agy")
-        for entry in (environment["PATH"] ?? "").split(separator: ":").map(String.init) where entry.hasPrefix("/") {
-            candidates.append(entry.hasSuffix("/") ? entry + "agy" : entry + "/agy")
-        }
+        candidates += onPath("agy")
         return candidates.first(where: isExecutable)
     }
 }
