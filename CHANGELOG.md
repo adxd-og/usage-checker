@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   windows instead.
 - With Antigravity closed, Argon's Low, Medium and High variants show as one
   row and no longer drive the headline.
+- With Antigravity closed and the `agy` CLI installed, its limits stay
+  current: Omelette asks `agy -p /usage` in the background at most every
+  five minutes, 5-hour and weekly limits apart, instead of keeping the
+  numbers from when the app was last open. A slow agy never holds the other
+  providers' update. agy signs in by itself; Omelette never reads its
+  credentials and skips the run unless the login keychain is unlocked.
+- Argon's row takes the name Antigravity gives it, "Gemini 4 Argon", once
+  agy has answered, and keeps it while Omelette runs, the app open or not.
+- Numbers kept from before this release no longer show Argon twice or the
+  "Gemini models" and "Claude & GPT models" rows while Antigravity is closed.
 
 ### Popover
 - Weekly limits keep their row at 0 % (Antigravity's Gemini and Claude/GPT
