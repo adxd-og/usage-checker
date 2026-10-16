@@ -262,8 +262,8 @@ the popover footer or ⌘D.
   window, by chat or project, in percent points with their dollars; use
   from claude.ai, the desktop app or another machine is Outside this Mac.
   The first card prices one percent in dollars and tokens. A pay-as-you-go
-  account sees its spend against the weekly budget, a spend-limit account
-  its month against the limit
+  account sees its last 7 days of spend (on Claude, against the weekly
+  budget when one is set), a spend-limit account its month against the limit
 - **Agents tab**: the Sessions figure and the Live card (the same rows as
   the popover, full width), with a link to History's chats
 - The sidebar footer says when the numbers were last updated, with a status

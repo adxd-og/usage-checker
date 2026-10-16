@@ -45,9 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dollars. Use on claude.ai, the desktop app or another machine shows as
   Outside this Mac.
 - The Limits tab's first card prices one percent of the window in dollars
-  and tokens. A pay-as-you-go account sees its last 7 days against the
-  weekly budget; an Enterprise or Team spend limit, its month against the
-  limit.
+  and tokens. A pay-as-you-go account sees its last 7 days (on Claude,
+  against the weekly budget when one is set); an account with a monthly
+  spend limit, its month against the limit.
 - Grok and Antigravity say why the Limits tab is empty: they keep no
   chat-level cost log.
 
