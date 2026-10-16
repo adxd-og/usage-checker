@@ -273,7 +273,12 @@ actor AntigravityProvider: UsageProvider {
     /// returns the plain `.notRunning` snapshot and retention keeps the numbers.
     private func remoteSnapshot(now: Date) async -> ServiceSnapshot? {
         if let remoteCache, now.timeIntervalSince(remoteCache.at) < Self.remoteMinInterval {
-            return remoteCache.snapshot
+            // agy's rule: a reading older than the local probe's last answer is not shown,
+            // or numbers from before the app opened would cover newer ones once it closes.
+            guard let cachedReading = remoteCache.snapshot,
+                  cachedReading.fetchedAt >= (localReadAt ?? .distantPast)
+            else { return nil }
+            return cachedReading
         }
         do {
             let status = try await remoteFetch()

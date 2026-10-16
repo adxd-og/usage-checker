@@ -452,6 +452,41 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(agy.callCount, 2, "no second run while the first was in flight; one once it was over")
     }
 
+    // MARK: - A web reading older than the app's own is not shown (ruling A9)
+
+    /// Agy's rule for the web API's cached reading: numbers from before the app opened do
+    /// not cover newer ones once it closes again. The web API keeps its five-minute
+    /// throttle; the older reading is only not shown (retention keeps the app's numbers).
+    func testACachedWebReadingOlderThanTheAppsOwnIsNotShown() async {
+        let localCalls = Calls()
+        let remoteCalls = Calls()
+        let local = status(remaining: 0.9)
+        let web = status(remaining: 0.38)
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                if localCalls.count == 2 { return local }
+                throw AntigravityStatusProbeError.notRunning
+            },
+            remoteFetch: {
+                remoteCalls.count += 1
+                return web
+            }
+        )
+        let closed = await provider.fetch(now: t0)
+        XCTAssertEqual(closed.buckets.first?.utilization ?? 0, 62, accuracy: 0.0001, "the web API's reading")
+        let open = await provider.fetch(now: t0.addingTimeInterval(46))
+        XCTAssertEqual(open.buckets.first?.utilization ?? 0, 10, accuracy: 0.0001, "the app's own")
+
+        let closedAgain = await provider.fetch(now: t0.addingTimeInterval(92))
+        XCTAssertEqual(closedAgain.state, .notRunning, "the web reading from t0 is older than the app's from t0+46")
+        XCTAssertEqual(remoteCalls.count, 1, "and the web API is not asked again inside its five minutes")
+
+        let later = await provider.fetch(now: t0.addingTimeInterval(301))
+        XCTAssertEqual(later.buckets.first?.utilization ?? 0, 62, accuracy: 0.0001, "a newer web reading is shown")
+        XCTAssertEqual(remoteCalls.count, 2)
+    }
+
     func testTheStartIntervalAndTheMaximumAgeAreWhatTheySay() {
         XCTAssertEqual(AntigravityProvider.agyMinInterval, 280)
         XCTAssertEqual(AntigravityProvider.agyReadingMaxAge, 900)
