@@ -288,8 +288,13 @@ struct LimitShare: Equatable, Sendable {
     let costByModel: [String: Double]
     /// The part of `outside` no bin carries. A spend limit's Outside is the server's
     /// month total, which has no time to bin it by. It is 0 in the Subscription mode,
-    /// whose Outside lives in the bins. The bins' deltas plus this add up to `percent`.
+    /// whose Outside lives in the bins. The bins' deltas, this and `earlier`'s points add
+    /// up to `percent`.
     let unbinnedOutside: Double
+    /// A spend limit's local dollars from before the 31-day turn horizon: the "Earlier
+    /// this month" row. It is one row, not split by chat, and never part of Outside. nil
+    /// when the turns cover the whole period, and in every other mode.
+    let earlier: EarlierLocalShare?
 
     /// The points local turns explain: the window's percent minus Outside.
     var attributedPoints: Double { percent - outside }
@@ -386,7 +391,8 @@ extension LimitShareRules {
             tokens: tokens,
             price: price(cost: cost, tokens: tokens, attributedPoints: percent - outside),
             costByModel: costByModel(turns),
-            unbinnedOutside: 0
+            unbinnedOutside: 0,
+            earlier: nil
         )
     }
 

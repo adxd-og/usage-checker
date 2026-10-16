@@ -586,8 +586,16 @@ final class DashboardState: ObservableObject {
         } else {
             readings = []
         }
+        let dailySpend: [CLIDailySummary]
+        if case .spendLimit = request.mode {
+            // The month's local spend from the day totals, which outlive the turns.
+            dailySpend = await aggregator.breakdown().daily
+            guard isCurrent() else { return }
+        } else {
+            dailySpend = []
+        }
         let share = await Task.detached(priority: .userInitiated) {
-            LimitShareRules.share(for: request, log: log, readings: readings)
+            LimitShareRules.share(for: request, log: log, readings: readings, dailySpend: dailySpend)
         }.value
         guard isCurrent() else { return }
         limitShare = share.map {

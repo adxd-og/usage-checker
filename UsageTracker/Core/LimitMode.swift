@@ -96,7 +96,8 @@ extension LimitShareRules {
         period: LimitWindow,
         log: TurnCostLog,
         denominator: SpendDenominator,
-        outsideDollars: Double = 0
+        outsideDollars: Double = 0,
+        earlierDollars: Double = 0
     ) -> LimitShare {
         let dollars = denominator.dollars
         func percentOf(_ cost: Double) -> Double { dollars > 0 ? cost * 100 / dollars : 0 }
@@ -120,9 +121,13 @@ extension LimitShareRules {
         }
         let chats = chatShares(turns: turns, points: points, titles: log.titles)
         let outside = percentOf(outsideDollars)
+        // Local dollars the turns no longer itemise: one row, never Outside.
+        let earlier = earlierDollars >= minimumEarlierDollars
+            ? EarlierLocalShare(points: percentOf(earlierDollars), cost: earlierDollars)
+            : nil
         return LimitShare(
             window: period,
-            percent: chats.reduce(0) { $0 + $1.points } + outside,
+            percent: chats.reduce(0) { $0 + $1.points } + outside + (earlier?.points ?? 0),
             chats: chats,
             projects: projectShares(chats),
             outside: outside,
@@ -131,7 +136,8 @@ extension LimitShareRules {
             tokens: turns.reduce(0) { TokenBreakdown.saturating($0, $1.tokens.total) },
             price: nil,
             costByModel: costByModel(turns),
-            unbinnedOutside: outside
+            unbinnedOutside: outside,
+            earlier: earlier
         )
     }
 }
@@ -224,7 +230,10 @@ extension LimitShareRules {
     ///
     /// nil when there is nothing to measure against.
     nonisolated static func share(
-        for request: LimitShareRequest, log: TurnCostLog, readings: [HistoryRecord]
+        for request: LimitShareRequest,
+        log: TurnCostLog,
+        readings: [HistoryRecord],
+        dailySpend: [CLIDailySummary] = []
     ) -> LimitShare? {
         switch request.mode {
         case .subscription:
@@ -239,10 +248,47 @@ extension LimitShareRules {
                 .reduce(0) { $0 + $1.cost }
             guard let denominator = denominator(for: request.mode, periodSpend: spend) else { return nil }
             var outside = 0.0
+            var earlier = 0.0
             if case .spendLimit(_, let used) = request.mode {
-                outside = spendLimitOutside(usedCredits: used, localSpend: spend)
+                // A calendar month can reach past the 31-day turn horizon (31 days and
+                // an hour when summer time ends in it). The day totals still hold that
+                // spend; the turns do not.
+                let monthSpend = max(spend, localSpend(days: dailySpend, in: request.period))
+                earlier = monthSpend - spend
+                outside = spendLimitOutside(usedCredits: used, localSpend: monthSpend)
             }
-            return spendShare(period: request.period, log: log, denominator: denominator, outsideDollars: outside)
+            return spendShare(
+                period: request.period, log: log, denominator: denominator,
+                outsideDollars: outside, earlierDollars: earlier
+            )
         }
+    }
+}
+
+// MARK: - A spend limit's whole month
+
+/// This Mac's dollars in the period that its turns no longer itemise: a spend limit's
+/// month-to-date spend from before the 31-day turn horizon, known only from the cost
+/// log's day totals. Shown as one row, "Earlier this month", not split by chat, and
+/// never part of Outside.
+struct EarlierLocalShare: Equatable, Sendable {
+    /// Points of the denominator, measured like a chat's.
+    let points: Double
+    let cost: Double
+}
+
+extension LimitShareRules {
+    /// Below a cent, the day totals and the turns agree: their sums differ only in
+    /// floating-point order.
+    static let minimumEarlierDollars: Double = 0.01
+
+    /// This Mac's dollars in `period`, from the cost log's day totals
+    /// (`CLIBreakdown.daily`), which survive the fold past the 31-day turn horizon.
+    /// A day counts when its start lies in the period. A calendar month starts on a day
+    /// boundary of the same calendar the day rows are keyed in.
+    nonisolated static func localSpend(days: [CLIDailySummary], in period: LimitWindow) -> Double {
+        days
+            .filter { $0.day >= period.start && $0.day < period.end }
+            .reduce(0) { $0 + $1.totalCost }
     }
 }
