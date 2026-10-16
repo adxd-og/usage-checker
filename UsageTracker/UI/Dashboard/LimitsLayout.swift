@@ -129,3 +129,26 @@ extension LimitsLayout {
     static let changeLineSize: CGFloat = 12.5
     static let changeIconSpacing: CGFloat = 6
 }
+
+// MARK: - Timeline
+
+extension LimitsLayout {
+    /// `padding: 20px 24px 14px; gap: 10px`.
+    static var timelineCardPadding: EdgeInsets { EdgeInsets(top: 20, leading: 24, bottom: 14, trailing: 24) }
+    static let timelineCardSpacing: CGFloat = 10
+    /// The chart's 176 px.
+    static let timelineHeight: CGFloat = 176
+    /// The y axis' 11 px; the dates' 11.5 px, 500.
+    static let timelineAxisSize: CGFloat = 11
+    static let timelineDateSize: CGFloat = 11.5
+    /// The hover bubble, 184 px wide.
+    static let timelineTooltipWidth: CGFloat = 184
+    /// The legend: 8 px dots 7 px before 12 px names, `gap: 8px 18px`, wrapping.
+    static let timelineLegendDotSize: CGFloat = 8
+    static let timelineLegendDotSpacing: CGFloat = 7
+    static let timelineLegendSize: CGFloat = 12
+    static let timelineLegendRowSpacing: CGFloat = 8
+    static let timelineLegendColumnSpacing: CGFloat = 18
+    /// The narrowest legend entry before its name truncates.
+    static let timelineLegendItemWidth: CGFloat = 120
+}

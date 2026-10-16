@@ -252,6 +252,8 @@ struct LimitsView: View {
             )
             // A new provider, window, period or measure starts the list capped again.
             .id(load.query)
+            LimitsTimelineCard(load: load, span: windowSpan)
+                .id(load.query)
         }
     }
 }
