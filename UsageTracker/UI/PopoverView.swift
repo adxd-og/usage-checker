@@ -176,6 +176,14 @@ struct PopoverView: View {
         bucket.clampedPercent == 0 ? 0.55 : 1
     }
 
+    /// Whether a weekly-limits row folds behind "N unused windows": only a model-specific
+    /// window nobody has touched (under 0.05%). A `.weekly` window is a limit the whole
+    /// plan shares and keeps its row at 0% too: Claude's "All models", and each
+    /// Antigravity pool's weekly alike.
+    nonisolated static func foldsWhenUnused(_ bucket: UsageBucket) -> Bool {
+        bucket.kind == .modelSpecific && bucket.clampedPercent < 0.05
+    }
+
     /// Whether a provider tab draws its spend card: the week's dollars (as the headline
     /// of a windowless account, or under a hero), an enabled extra-usage or spend
     /// limit, or a prepaid credit pool.
@@ -483,9 +491,10 @@ private struct ProviderDetail: View {
     private var sessionBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .session } }
     private var weeklyBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } }
     /// Untouched model-specific windows are noise most of the day — fold them
-    /// behind a disclosure row. "All models" stays visible even at zero.
-    private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent >= 0.05 || $0.id == "seven_day" } }
-    private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { $0.clampedPercent < 0.05 && $0.id != "seven_day" } }
+    /// behind a disclosure row. A weekly window keeps its row even at zero
+    /// (`PopoverView.foldsWhenUnused`).
+    private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { !PopoverView.foldsWhenUnused($0) } }
+    private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { PopoverView.foldsWhenUnused($0) } }
     /// The session window when the service has one: "can I keep working right
     /// now" is what this tab is for, and every other window still gets a row
     /// below. Only a service without a session falls back to the worst window.
