@@ -703,3 +703,32 @@ extension LimitsRules {
         }
     }
 }
+
+// MARK: - Stretches
+
+extension LimitsRules {
+    /// The rows under each open chat (spec 2026-10-16 limit analytics § The tab, item 5), by
+    /// chat id: its stretches in the period, oldest first, each named by the first prompt
+    /// typed for it, with its hours, how it began and what its cold start cost, its share
+    /// and its dollars. Only the chats in `chatIDs` are formatted, and only those with
+    /// stretches get an entry.
+    nonisolated static func stretchRows(
+        chatIDs: Set<String>, stretches: [String: [ChatStretch]], now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> [String: [LimitsRow]] {
+        var rows: [String: [LimitsRow]] = [:]
+        for chatID in chatIDs {
+            guard let chatStretches = stretches[chatID], !chatStretches.isEmpty else { continue }
+            rows[chatID] = chatStretches.enumerated().map { index, stretch in
+                LimitsRow(
+                    id: "\(chatID)#\(index)",
+                    title: stretch.prompt ?? LimitsCopy.noPrompt,
+                    subtitle: LimitsCopy.stretchSubtitle(stretch, now: now, calendar: calendar, locale: locale),
+                    share: LimitsCopy.share(stretch.points),
+                    dollars: LimitsCopy.dollars(stretch.cost)
+                )
+            }
+        }
+        return rows
+    }
+}

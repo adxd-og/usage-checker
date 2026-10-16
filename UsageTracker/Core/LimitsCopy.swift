@@ -559,3 +559,35 @@ extension LimitsCopy {
         }
     }
 }
+
+// MARK: - Stretches
+
+extension LimitsCopy {
+    /// A stretch no prompt was typed for: a cold start in the middle of a run, or a chat
+    /// carried over from before the period.
+    static let noPrompt = "No prompt in this stretch"
+    static let afterCompaction = "after a compaction"
+    /// Below this a cold start's dollars round to nothing, and it is not named.
+    static let coldStartFloor = 0.005
+
+    /// "cold start $1.20": what rebuilding the context cost in the stretch.
+    static func coldStart(_ amount: Double) -> String {
+        "cold start \(dollars(amount))"
+    }
+
+    /// "Sat 13:00–14:20 · after a compaction · cold start $1.20": the stretch's hours, a
+    /// compaction when that is how it began, and its cold start when it had one.
+    static func stretchSubtitle(
+        _ stretch: ChatStretch, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        var parts = [timeRange(from: stretch.firstAt, to: stretch.lastAt, now: now, calendar: calendar, locale: locale)]
+        if stretch.opening == .compaction { parts.append(afterCompaction) }
+        if stretch.coldStartCost >= coldStartFloor { parts.append(coldStart(stretch.coldStartCost)) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// What VoiceOver and the tooltip say on a chat's chevron.
+    static func stretchToggle(expanded: Bool) -> String {
+        expanded ? "Hide stretches" : "Show stretches"
+    }
+}
