@@ -564,6 +564,32 @@ actor CodexUsageAggregator: CostLogAggregating {
             .sorted { $0.lastAt > $1.lastAt }
     }
 
+    /// Every response in `[start, end]`, oldest first, with the names of their chats.
+    /// The limit-share rule gives a window's percent to these turns. A sub-agent's
+    /// response carries its parent's `session_id`, so it lands under that chat. Reads
+    /// what `refresh()` has already ingested, from `recentTurns`, so the 31-day horizon
+    /// is this query's horizon too. Spelled `async` for the reason `sessions(from:to:)`
+    /// gives.
+    func turnCosts(from start: Date, to end: Date) async -> TurnCostLog {
+        var log = TurnCostLog()
+        for t in recentTurns where t.timestamp >= start && t.timestamp <= end {
+            log.turns.append(TurnCost(
+                timestamp: t.timestamp,
+                chatID: t.sessionID,
+                projectSlug: t.projectSlug,
+                model: t.model,
+                tokens: t.tokens,
+                cost: t.cost,
+                isMainThread: t.agentID == nil
+            ))
+            if log.titles[t.sessionID] == nil, let title = title(for: t.sessionID) {
+                log.titles[t.sessionID] = title
+            }
+        }
+        log.turns.sort { $0.timestamp < $1.timestamp }
+        return log
+    }
+
     // MARK: - Day tiers
 
     /// The zone moved: `calendar` bins every day from now on. The bin cache forgets its
