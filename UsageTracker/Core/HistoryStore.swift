@@ -17,6 +17,13 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     /// Every bucket's utilization keyed by bucket id. Optional because records written
     /// by older builds don't have it; those fall back to the fixed fields above.
     let bucketPercents: [String: Double]?
+    /// The account's core session and weekly windows (`LimitShareRules.coreBucket`) at this
+    /// reading, by bucket id: when each was due to reset, while open, and how long it runs.
+    /// Claude's `five_hour` and `seven_day` keep their resets in the fields above and only
+    /// their lengths here. nil in records written before windows were kept. The Limits tab
+    /// tells one window from the next by them (spec 2026-10-16 limit analytics § Design,
+    /// Window bounds).
+    let bucketWindows: [String: HistoryWindow]?
     /// Absent in every record written before history went multi-provider, and back
     /// then only Claude was ever recorded — so a missing field means "claude".
     private let storedServiceID: String?
@@ -24,7 +31,7 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     var serviceID: String { storedServiceID ?? "claude" }
 
     private enum CodingKeys: String, CodingKey {
-        case id, timestamp, plan, bucketPercents
+        case id, timestamp, plan, bucketPercents, bucketWindows
         case fiveHourPercent, fiveHourResetsAt
         case sevenDayPercent, sevenDayResetsAt
         case opusWeeklyPercent, sonnetWeeklyPercent
@@ -56,6 +63,15 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
             snapshot.buckets.map { ($0.id, $0.utilization) },
             uniquingKeysWith: { first, _ in first }
         )
+        var windows: [String: HistoryWindow] = [:]
+        for kind in [BucketKind.session, .weekly] {
+            guard let core = LimitShareRules.coreBucket(kind: kind, in: snapshot) else { continue }
+            let hasOwnField = core.id == "five_hour" || core.id == "seven_day"
+            let resetsAt = !hasOwnField && core.resetsAt < .distantFuture ? core.resetsAt : nil
+            guard resetsAt != nil || core.windowDuration != nil else { continue }
+            windows[core.id] = HistoryWindow(resetsAt: resetsAt, length: core.windowDuration)
+        }
+        self.bucketWindows = windows.isEmpty ? nil : windows
     }
 
     func percent(for bucketId: String) -> Double? {
@@ -70,6 +86,36 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
         default: return nil
         }
     }
+
+    /// When the window `bucketId` was due to reset at this reading. nil when the record
+    /// does not say, and while the window was not open: Claude reports
+    /// `Date.distantFuture` then.
+    func resetsAt(for bucketId: String) -> Date? {
+        let stored: Date?
+        switch bucketId {
+        case "five_hour": stored = fiveHourResetsAt
+        case "seven_day": stored = sevenDayResetsAt
+        default: stored = bucketWindows?[bucketId]?.resetsAt
+        }
+        guard let stored, stored < .distantFuture else { return nil }
+        return stored
+    }
+
+    /// How long the window `bucketId` ran at this reading; nil when the record does not
+    /// say.
+    func windowLength(for bucketId: String) -> TimeInterval? {
+        bucketWindows?[bucketId]?.length
+    }
+}
+
+/// What a reading kept of one core window besides its percent (spec 2026-10-16 limit
+/// analytics § Design, Window bounds).
+struct HistoryWindow: Codable, Equatable, Sendable {
+    /// When the window was due to reset. nil while it was not open, and for Claude's
+    /// `five_hour` and `seven_day`, whose record keeps it in a field of its own.
+    let resetsAt: Date?
+    /// How long the window runs (`UsageBucket.windowDuration`). nil when nothing said.
+    let length: TimeInterval?
 }
 
 actor HistoryStore {
