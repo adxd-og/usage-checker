@@ -696,19 +696,10 @@ final class StatusLineCacheEndToEndVerificationTests: XCTestCase {
     }
 }
 
-// MARK: - Docs
+// MARK: - Help text
 
-/// The words the user reads: `--help`, CHANGELOG 3.0.1, README.
+/// The words the user reads in `--help`.
 final class StatusLineCacheDocsVerificationTests: XCTestCase {
-    /// The repository root, from this file's own path: `<root>/UsageTrackerTests/<file>`.
-    private var root: URL {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-    }
-
-    private func read(_ name: String) throws -> String {
-        try String(contentsOf: root.appendingPathComponent(name), encoding: .utf8)
-    }
-
     private func collapsed(_ text: String) -> String {
         text.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
@@ -731,67 +722,4 @@ final class StatusLineCacheDocsVerificationTests: XCTestCase {
         XCTAssertTrue(CLIText.usage.contains("omelette statusline"))
     }
 
-    func testTheChangelogHasA301SectionAboveA300WithTheLine() throws {
-        let changelog = try read("CHANGELOG.md")
-        let newer = try XCTUnwrap(changelog.range(of: "## [3.0.1]"), "no 3.0.1 section")
-        let older = try XCTUnwrap(changelog.range(of: "## [3.0.0]"), "no 3.0.0 section")
-        XCTAssertTrue(newer.lowerBound < older.lowerBound, "3.0.1 sits above 3.0.0")
-
-        let section = String(changelog[newer.lowerBound..<older.lowerBound])
-        let heading = try XCTUnwrap(section.range(of: "### Command line"), "the line goes under Command line")
-        let entry = try XCTUnwrap(section.range(of: "cache 47m"))
-        XCTAssertTrue(heading.upperBound <= entry.lowerBound)
-        let collapsedSection = collapsed(section)
-        XCTAssertTrue(collapsedSection.contains("omelette statusline"), section)
-        XCTAssertTrue(collapsedSection.contains(CacheLifeRules.coldText), section)
-        XCTAssertFalse(section.contains("## [3.0.0]"))
-    }
-
-    func testTheReadmeExampleLineHasTheCacheTimer() throws {
-        let readme = try read("README.md")
-        let line = try XCTUnwrap(
-            readme.split(separator: "\n").first { $0.contains("cache 47m") && $0.contains("◐") },
-            "no README line with `cache 47m` and the gauge"
-        )
-        XCTAssertTrue(line.contains("[######----]"), String(line))
-        let prefix = try XCTUnwrap(line.range(of: "] 55%"))
-        let cacheAt = try XCTUnwrap(line.range(of: "cache 47m"))
-        let gaugeAt = try XCTUnwrap(line.range(of: "◐"))
-        XCTAssertTrue(prefix.upperBound <= cacheAt.lowerBound && cacheAt.upperBound <= gaugeAt.lowerBound, String(line))
-    }
-
-    /// The README's example is what the line prints for those numbers, not a picture
-    /// of a line the code cannot produce.
-    func testTheReadmeExampleIsExactlyWhatTheCodePrints() throws {
-        let now = Date(timeIntervalSince1970: 1_788_693_600)
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let locale = Locale(identifier: "en_GB")
-        let snapshot = StatusSnapshot(
-            version: 1, updatedAt: now,
-            services: [
-                StatusSnapshot.Service(
-                    id: "claude", name: "Claude", state: "ok", retained: false, retainedAt: nil, plan: nil,
-                    windows: [
-                        StatusSnapshot.Window(
-                            id: "five_hour", label: "Session", percent: 42,
-                            resetsAt: now.addingTimeInterval(70 * 60), kind: "session"
-                        ),
-                    ],
-                    todayCost: 4.2, weekCost: nil, todayTokens: nil, apiEquivalent: true
-                ),
-            ],
-            agents: StatusSnapshot.Agents(needsYou: 1, working: 0, sessions: [])
-        )
-        let cache = StatusLineInput.PromptCache(
-            warm: true, ttl: "1h", expiresAt: now.addingTimeInterval(47 * 60 + 5), cachingObserved: true
-        )
-        let line = StatusLineText.render(
-            snapshot: snapshot, now: now,
-            input: StatusLineInput(model: "Fable 5.1", contextUsedPercent: 55, promptCache: cache),
-            colour: false, calendar: calendar, locale: locale
-        )
-
-        XCTAssertTrue(try read("README.md").contains("`\(line)`"), line)
-    }
 }

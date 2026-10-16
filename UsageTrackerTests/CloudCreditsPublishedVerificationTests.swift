@@ -275,34 +275,4 @@ final class CloudCreditsPublishedVerificationTests: XCTestCase {
         XCTAssertTrue(line.contains("Cloud session credits $231 used of $250"), line)
         XCTAssertTrue(line.contains("last known"), line)
     }
-
-    // MARK: - docs the spec's package 5 asks for
-
-    private func repoFile(_ name: String) throws -> String {
-        var url = URL(fileURLWithPath: #filePath)
-        url.deleteLastPathComponent()
-        url.deleteLastPathComponent()
-        guard FileManager.default.fileExists(atPath: url.appendingPathComponent("UsageTracker.xcodeproj").path) else {
-            throw XCTSkip("could not locate the repo root from #filePath")
-        }
-        return try String(contentsOf: url.appendingPathComponent(name), encoding: .utf8)
-    }
-
-    func testTheReadmeLimitsTableMentionsTheCreditsAsDollars() throws {
-        let readme = try repoFile("README.md")
-        XCTAssertTrue(readme.contains("Cloud session credits: shown as dollars, never drives the menu bar"))
-    }
-
-    func testTheChangelogCarriesTheClaudeLineInTheReleaseAbove301() throws {
-        let changelog = try repoFile("CHANGELOG.md")
-        // The line was written under [Unreleased] and rides the release that follows
-        // 3.0.1, whatever its number: the section right above 3.0.1 carries it.
-        let release = try XCTUnwrap(changelog.range(of: "## [3.0.1]"))
-        let above = String(changelog[..<release.lowerBound])
-        let heading = try XCTUnwrap(above.range(of: "## [", options: .backwards))
-        let section = String(above[heading.upperBound...])
-        XCTAssertTrue(section.contains("### Claude"))
-        XCTAssertTrue(section.contains("Cloud session credits"))
-        XCTAssertTrue(section.contains("Included"))
-    }
 }

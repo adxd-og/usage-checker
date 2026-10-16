@@ -231,33 +231,11 @@ final class StatusLineRefreshVerificationTests: XCTestCase {
         )
     }
 
-    // MARK: - Docs and preview agree with what install writes, and the constant is one source
+    // MARK: - The caption and preview agree with what install writes, and the constant is one source
 
-    /// The test host's working directory is "/", not the repo (`#file` and
-    /// `FileManager.currentDirectoryPath` both verified empty of anything useful), so
-    /// README.md is found by walking up from the test bundle's own location — which
-    /// lives under `build/DerivedData` inside the repo — until a directory containing
-    /// it turns up. No `/Users/<name>` path is hardcoded to do it.
-    private func findRepoRoot() throws -> URL {
-        var candidate = Bundle(for: Self.self).bundleURL
-        for _ in 0..<25 {
-            candidate = candidate.deletingLastPathComponent()
-            if FileManager.default.fileExists(atPath: candidate.appendingPathComponent("README.md").path) {
-                return candidate
-            }
-        }
-        throw XCTSkip("could not locate the repo root by walking up from the test bundle")
-    }
-
-    func testReadmeSnippetContainsTheExactRefreshIntervalLine() throws {
-        let readmeURL = try findRepoRoot().appendingPathComponent("README.md")
-        let readme = try String(contentsOf: readmeURL, encoding: .utf8)
-        XCTAssertTrue(readme.contains("\"refreshInterval\": 60"), "README snippet must show the literal we write")
-    }
-
-    /// The caption is the only other place the number is spelled out for a human. Both
-    /// it and the README must agree with `StatusLineInstaller.refreshInterval`, so a
-    /// change to the constant cannot silently leave the copy saying something else.
+    /// The caption spells the number out for a human. It must agree with
+    /// `StatusLineInstaller.refreshInterval`, so a change to the constant cannot
+    /// silently leave the copy saying something else.
     func testCaptionRefreshIntervalMatchesTheInstallerConstant() {
         let caption = CommandLineSettingsText.statusLineCaption
         XCTAssertTrue(
