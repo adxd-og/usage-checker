@@ -82,6 +82,11 @@ final class DashboardState: ObservableObject {
     @Published private(set) var burnBucket: UsageBucket?
     /// What ran during the session window that's open right now.
     @Published private(set) var sessionWindow: WindowUsage?
+    /// The selected provider's limit share for the Limits tab (spec 2026-10-16): the
+    /// current window of one kind on a subscription, the current spend period otherwise.
+    /// Loaded by `refreshLimitShare(kind:)`. nil before the first load, for a provider
+    /// with no chat log, and for an account with nothing to measure.
+    @Published private(set) var limitShare: LimitShareLoad?
     /// The selected provider's chartable quota windows, named from the live snapshot
     /// wherever it is still reporting them. Published next to `history` because the
     /// quota views need both at once: a record stores bucket ids and percentages, and
@@ -127,6 +132,7 @@ final class DashboardState: ObservableObject {
         cliBreakdown = nil
         sessions = []
         sessionWindow = nil
+        limitShare = nil
         sessionBurn = nil
         burnBucket = nil
         history = []
@@ -525,6 +531,68 @@ final class DashboardState: ObservableObject {
         let usage = await aggregator.usage(from: start, to: end)
         guard canPublish(pass) else { return }
         sessionWindow = usage
+    }
+
+    /// One limit share on screen, and what it was asked for.
+    struct LimitShareLoad: Equatable, Sendable {
+        let serviceID: String
+        let kind: BucketKind
+        let request: LimitShareRequest
+        let share: LimitShare
+    }
+
+    /// Bumped by every `refreshLimitShare(kind:)`. If the window switch is clicked twice
+    /// within one refresh generation, only the later load publishes.
+    private var limitShareGeneration = 0
+
+    /// Loads the selected provider's limit share for the Limits tab (spec 2026-10-16
+    /// § Packages 1). On a subscription that is the current window of `kind`; otherwise
+    /// it is the current spend period.
+    ///
+    /// The turns come from the cost log's actor and the readings from `HistoryStore`'s.
+    /// The rule runs on a detached task, and only the result comes back to the main
+    /// actor.
+    ///
+    /// Guarded like `refreshSessionWindow()`: a pass started for another provider or
+    /// another refresh generation publishes nothing, and neither does an older call of
+    /// this method. It reads what `refreshCLI()` has already ingested. The Limits tab
+    /// (Package 2) calls it.
+    func refreshLimitShare(kind: BucketKind) async {
+        limitShareGeneration &+= 1
+        let generation = limitShareGeneration
+        let pass = begin()
+        func isCurrent() -> Bool { canPublish(pass) && limitShareGeneration == generation }
+
+        guard Self.hasSessionLog(for: pass.service),
+              let aggregator = Self.costAggregator(for: pass.service),
+              let service = AppState.shared.snapshot.services.first(where: { $0.id == pass.service }),
+              let request = LimitShareRules.request(
+                for: service,
+                kind: kind,
+                weeklyBudgetUSD: SettingsStore.shared.claudeWeeklyBudgetUSD,
+                now: Date(),
+                calendar: .current
+              )
+        else {
+            if isCurrent() { limitShare = nil }
+            return
+        }
+        let log = await aggregator.turnCosts(from: request.period.start, to: request.period.end)
+        guard isCurrent() else { return }
+        let readings: [HistoryRecord]
+        if request.bucketID != nil {
+            readings = await HistoryStore.shared.records(since: request.period.start, service: pass.service)
+            guard isCurrent() else { return }
+        } else {
+            readings = []
+        }
+        let share = await Task.detached(priority: .userInitiated) {
+            LimitShareRules.share(for: request, log: log, readings: readings)
+        }.value
+        guard isCurrent() else { return }
+        limitShare = share.map {
+            LimitShareLoad(serviceID: pass.service, kind: kind, request: request, share: $0)
+        }
     }
 
     /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation
