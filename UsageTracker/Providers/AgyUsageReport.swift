@@ -7,6 +7,14 @@ enum AgyUsageError: Error, Equatable {
     case status(String)
     /// agy printed no JSON object, or one without a quota group.
     case unreadable(String)
+    /// agy could not be started.
+    case launchFailed(String)
+    /// agy was still running, or its stdout still open, at the deadline.
+    case timedOut
+    /// agy exited non-zero, or a signal of this number ended it.
+    case exitStatus(Int32)
+    /// agy printed more than `AgyCommand.outputLimit`; it was stopped there.
+    case outputTooLarge
 }
 
 /// What `agy -p /usage --output-format json` prints, reduced to the quota. agy prints one
