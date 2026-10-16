@@ -592,4 +592,112 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(closed.plan, "Antigravity Pro")
         XCTAssertEqual(closed.accountLabel, "owner@example.com")
     }
+
+    // MARK: - Seeded from the stored reading at launch (fix-round ruling 3)
+
+    /// Antigravity's entry as `LastKnownStore.load` hands it back after a relaunch: the
+    /// app's plan and account, Argon under the name agy gave it.
+    private var storedEntry: LastKnownService {
+        LastKnownService(
+            from: Fixture.snapshot(
+                id: "antigravity", displayName: "Antigravity", icon: "circle.grid.cross",
+                plan: "Antigravity Google Ai Pro", accountLabel: "owner@example.com",
+                buckets: AgyUsageFixture.proBuckets, at: t0.addingTimeInterval(-3600)
+            ),
+            order: 2
+        )
+    }
+
+    /// After a relaunch with the app closed, the first agy reading would publish plain
+    /// "Antigravity" and no account, and overwrite the richer stored entry.
+    func testASeededProvidersFirstAgyReadingKeepsTheStoredPlanAndAccount() async {
+        let output = AgyUsageFixture.proOutput
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { output }
+        )
+        await provider.seed(from: storedEntry)
+
+        _ = await provider.fetch(now: t0)
+        await provider.settleAgyRun()
+        let first = await provider.fetch(now: t0.addingTimeInterval(46))
+        XCTAssertEqual(first.state, .ok)
+        XCTAssertEqual(first.plan, "Antigravity Google Ai Pro")
+        XCTAssertEqual(first.accountLabel, "owner@example.com")
+    }
+
+    func testASeededNameShowsOnTheLocalPathBeforeAnyAgyRun() async {
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn }
+        )
+        await provider.seed(from: storedEntry)
+        let buckets = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(buckets.map(\.label),
+                       ["Gemini 5-hour", "Gemini weekly", "Gemini 4 Argon", "Claude/GPT 5-hour", "Claude/GPT weekly"])
+    }
+
+    /// Only a name the stem rule would not give is a name agy gave; a stored stem name
+    /// seeds nothing.
+    func testOnlyANameTheStemRuleWouldNotGiveIsSeeded() {
+        XCTAssertEqual(
+            AntigravityProvider.seededPoolNames(from: AgyUsageFixture.proBuckets),
+            ["antigravity_antigravity-quota-summary-gemini-argon-wtu-weekly": "Gemini 4 Argon"]
+        )
+        XCTAssertEqual(AntigravityProvider.seededPoolNames(from: AntigravityProvider.buckets(from: AntigravityFixture.proSummary)), [:])
+        XCTAssertEqual(AntigravityProvider.seededPoolNames(from: AntigravityProvider.buckets(from: AntigravityFixture.perModel0750)), [:],
+                       "a per-model row is no quota-summary pool")
+    }
+
+    /// A fresh reading replaces the seed: the app's own plan, and the names of the next
+    /// usable agy reading (here one without Argon's group).
+    func testAFreshReadingReplacesTheSeed() async {
+        let localCalls = Calls()
+        let ok = status(remaining: 0.38)
+        let ultra = AgyUsageFixture.ultraOutput
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                if localCalls.count == 1 { return ok }
+                throw AntigravityStatusProbeError.notRunning
+            },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { ultra }
+        )
+        await provider.seed(from: storedEntry)
+
+        _ = await provider.fetch(now: t0) // the app's own reading: "Antigravity Pro"
+        _ = await provider.fetch(now: t0.addingTimeInterval(46)) // closed: a run starts
+        await provider.settleAgyRun()
+        let closed = await provider.fetch(now: t0.addingTimeInterval(92))
+        XCTAssertEqual(closed.plan, "Antigravity Pro")
+
+        let buckets = await provider.publishedBuckets(from: AntigravityFixture.proSummary)
+        XCTAssertEqual(buckets.first { $0.kind == .modelSpecific }?.label, "Gemini Argon")
+    }
+
+    /// The launch seed runs beside the first poll: one that lands after a fresh reading
+    /// changes nothing.
+    func testASeedNeverOverridesWhatThisRunHasRead() async {
+        let localCalls = Calls()
+        let ok = status(remaining: 0.38)
+        let output = AgyUsageFixture.proOutput
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                if localCalls.count == 1 { return ok }
+                throw AntigravityStatusProbeError.notRunning
+            },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { output }
+        )
+        _ = await provider.fetch(now: t0)
+        await provider.seed(from: storedEntry)
+
+        _ = await provider.fetch(now: t0.addingTimeInterval(46))
+        await provider.settleAgyRun()
+        let closed = await provider.fetch(now: t0.addingTimeInterval(92))
+        XCTAssertEqual(closed.plan, "Antigravity Pro", "the app's own plan, read before the seed")
+    }
 }

@@ -80,10 +80,12 @@ actor AntigravityProvider: UsageProvider {
     /// Each per-model pool's group name from the last usable agy reading, by bucket id
     /// (`poolNames(from:)`). The probe titles those pools after their family; agy names
     /// them, and every path borrows the name (`publishedBuckets(from:)`), so a row keeps it
-    /// when the app opens. In memory only: a relaunch starts from the stem names again.
-    private var rememberedPoolNames: [String: String] = [:]
+    /// when the app opens. Until this run has a usable agy reading, the names the stored
+    /// reading carried (`seed(from:)`); nil while there are neither.
+    private var rememberedPoolNames: [String: String]?
     /// The plan and account of the last probe or web reading. agy prints neither, so its
-    /// reading borrows them; before any, the plan is plain "Antigravity".
+    /// reading borrows them. Until this run has one, those of the stored reading
+    /// (`seed(from:)`); before any, the plan is plain "Antigravity".
     private var identity: (plan: String?, accountLabel: String?)?
 
     init(
@@ -277,6 +279,39 @@ actor AntigravityProvider: UsageProvider {
         await agyRun?.value
     }
 
+    /// What a relaunch would otherwise forget, from Antigravity's stored reading as
+    /// `LastKnownStore.load` restores it: the plan and account an agy reading borrows, and
+    /// the per-model names agy gave (`seededPoolNames`). Without it, the first agy reading
+    /// after a relaunch with the app closed says plain "Antigravity" with no account,
+    /// overwrites the richer stored entry, and Argon loses its name until agy runs again.
+    /// `AppState` calls it once at launch, beside the first poll, so it fills only what
+    /// this run has not read yet: a fresh reading always wins.
+    func seed(from stored: LastKnownService) {
+        if identity == nil {
+            identity = (stored.plan, stored.accountLabel)
+        }
+        if rememberedPoolNames == nil {
+            rememberedPoolNames = Self.seededPoolNames(from: stored.buckets)
+        }
+    }
+
+    /// The per-model names a stored reading carries that the stem rule would not give,
+    /// which only agy gives: the label of each `.modelSpecific` quota-summary pool row
+    /// that differs from its stem name (`poolLabels`), by bucket id.
+    nonisolated static func seededPoolNames(from buckets: [UsageBucket]) -> [String: String] {
+        let stemNames = poolLabels(buckets.compactMap { summaryWindowID($0) })
+        var names: [String: String] = [:]
+        for bucket in buckets where bucket.kind == .modelSpecific {
+            guard let windowID = summaryWindowID(bucket),
+                  let stem = summaryStem(windowID),
+                  let stemName = stemNames[stem],
+                  bucket.label != stemName
+            else { continue }
+            names[bucket.id] = bucket.label
+        }
+        return names
+    }
+
     /// The web API, at most once every `remoteMinInterval`. nil = no reading, either
     /// because the last attempt failed or because this one did; the caller then
     /// returns the plain `.notRunning` snapshot and retention keeps the numbers.
@@ -356,7 +391,7 @@ actor AntigravityProvider: UsageProvider {
     /// A probe or web reading as this provider publishes it: `buckets(from:)`, with each
     /// per-model pool under the name the last usable agy reading gave its group.
     func publishedBuckets(from usage: CodexBarCore.UsageSnapshot) -> [UsageBucket] {
-        Self.named(Self.buckets(from: usage), by: rememberedPoolNames)
+        Self.named(Self.buckets(from: usage), by: rememberedPoolNames ?? [:])
     }
 
     /// A named window as CodexBarCore reports it: its title, its kind from its length.

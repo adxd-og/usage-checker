@@ -75,6 +75,11 @@ final class AppState: ObservableObject {
     private func seedFromLastKnown() {
         Task { [weak self] in
             let stored = await LastKnownStore.shared.load()
+            // An agy reading after a relaunch borrows the stored plan, account and Argon's
+            // name; the provider keeps whatever this run has already read.
+            if let antigravity = stored["antigravity"] {
+                await AntigravityProvider.shared.seed(from: antigravity)
+            }
             await MainActor.run {
                 guard let self else { return }
                 self.lastKnown = stored
