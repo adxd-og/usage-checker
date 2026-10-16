@@ -132,3 +132,39 @@ enum Fixture {
         )
     }
 }
+
+/// Builders for the limit-share rule's two inputs (spec 2026-10-16 § Design): the turns
+/// `turnCosts(from:to:)` hands over and the readings `HistoryStore` keeps.
+extension Fixture {
+    /// One local turn as the aggregators build it, with `tokens` priced so their dollars
+    /// are `cost`, which is how `CLITurn.cost` and Codex's turn read them back.
+    static func turnCost(
+        at date: Date,
+        chat: String,
+        project: String = "-Users-tester-Projects-alpha",
+        model: String = "claude-sonnet-4-5",
+        cost: Double,
+        tokens: Int = 1_000,
+        isMainThread: Bool = true
+    ) -> TurnCost {
+        var breakdown = TokenBreakdown(input: tokens)
+        breakdown.cost = TokenCostBreakdown(input: cost)
+        return TurnCost(
+            timestamp: date, chatID: chat, projectSlug: project, model: model,
+            tokens: breakdown, cost: cost, isMainThread: isMainThread
+        )
+    }
+
+    /// One bucket's readings at absolute times, as `HistoryStore.records(since:service:)`
+    /// returns them: one record per poll, with the percent under the bucket's id.
+    static func readings(
+        service: String = "claude",
+        bucketID: String,
+        points: [(at: Date, percent: Double)]
+    ) -> [HistoryRecord] {
+        quotaHistory(
+            service: service,
+            points: points.map { (at: $0.at, percents: [bucketID: $0.percent]) }
+        )
+    }
+}
