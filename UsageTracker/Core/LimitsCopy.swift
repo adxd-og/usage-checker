@@ -21,7 +21,9 @@ extension LimitsCopy {
     /// included: with whole-number percents its quota shows in a later step.
     static func share(_ points: Double) -> String {
         guard points + LimitShareRules.pointSlack >= shareFloor else { return "< 0.1 %" }
-        return String(format: "≈ %.1f %%", points)
+        // Halves round away from zero, as status.json writes a share (§ Published data).
+        let tenths = (points * 10).rounded() / 10
+        return String(format: "≈ %.1f %%", tenths)
     }
 
     /// "≈ 2 %": Outside this Mac on a Claude subscription. It takes whole half hours of
