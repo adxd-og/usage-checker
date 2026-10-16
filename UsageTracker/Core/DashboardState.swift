@@ -561,8 +561,8 @@ final class DashboardState: ObservableObject {
     ///
     /// Guarded like `refreshSessionWindow()`: a pass started for another provider or
     /// another refresh generation publishes nothing, and neither does an older call of
-    /// this method. It reads what `refreshCLI()` has already ingested. The Limits tab
-    /// (Package 2) calls it.
+    /// this method. It reads what `refreshCLI()` has already ingested. The dashboard's
+    /// Limits tab (`LimitsView`) calls it.
     func refreshLimitShare(kind: BucketKind) async {
         limitShareGeneration &+= 1
         let generation = limitShareGeneration
