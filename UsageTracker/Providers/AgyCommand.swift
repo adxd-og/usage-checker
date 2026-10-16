@@ -28,10 +28,15 @@ enum AgyCommand {
     /// agy's answer to `/usage`. agy is the one `executablePath` finds; it runs in
     /// `directory` (the user's temporary folder: agy writes nothing there, and one fixed
     /// folder is one workspace in agy's records) with `childEnvironment`. Throws
-    /// `.notInstalled` without agy.
+    /// `.notInstalled` without agy. agy reads its sign-in from the login keychain on every
+    /// run, and a locked keychain answers with a password panel that a background poll
+    /// must never raise (`KeychainNoUI`), so agy starts only while `keychainState` says
+    /// unlocked: `.keychainLocked`, or `.keychainStateUnknown` when the state could not be
+    /// read, and agy is not started.
     static func fetch(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: String = NSHomeDirectory(),
+        keychainState: () -> KeychainNoUI.LockState = { KeychainNoUI.defaultKeychainLockState },
         directory: URL = FileManager.default.temporaryDirectory
     ) async throws -> Data {
         guard let path = executablePath(
@@ -40,6 +45,11 @@ enum AgyCommand {
             isExecutable: { FileManager.default.isExecutableFile(atPath: $0) }
         ) else {
             throw AgyUsageError.notInstalled
+        }
+        switch keychainState() {
+        case .unlocked: break
+        case .locked: throw AgyUsageError.keychainLocked
+        case .unknown: throw AgyUsageError.keychainStateUnknown
         }
         return try await run(
             executable: path,

@@ -9,6 +9,10 @@ enum AgyUsageError: Error, Equatable {
     case unreadable(String)
     /// No executable agy at `AGY_BIN`, `~/.local/bin/agy` or on PATH.
     case notInstalled
+    /// The login keychain is locked; agy, which reads its sign-in there, was not started.
+    case keychainLocked
+    /// The login keychain's lock state could not be read; agy was not started either.
+    case keychainStateUnknown
     /// agy could not be started.
     case launchFailed(String)
     /// agy was still running, or its stdout still open, at the deadline.

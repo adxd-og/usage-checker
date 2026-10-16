@@ -212,6 +212,7 @@ final class AgyCommandRunTests: XCTestCase {
         let output = try await AgyCommand.fetch(
             environment: ["PATH": stub.deletingLastPathComponent().path],
             homeDirectory: directory.path,
+            keychainState: { .unlocked },
             directory: directory
         )
         XCTAssertEqual(String(decoding: output, as: UTF8.self), "-p /usage --output-format json|true")
@@ -223,12 +224,49 @@ final class AgyCommandRunTests: XCTestCase {
             _ = try await AgyCommand.fetch(
                 environment: ["PATH": directory.path],
                 homeDirectory: directory.path,
+                keychainState: { .unlocked },
                 directory: directory
             )
             XCTFail("no agy is no reading")
         } catch {
             XCTAssertEqual(error as? AgyUsageError, .notInstalled)
         }
+    }
+
+    /// agy reads its sign-in from the login keychain on every run, and a locked keychain
+    /// answers with a password panel no background poll may raise (session ruling D3).
+    func testALockedKeychainNeverStartsAgy() async throws {
+        let stub = try stubAgy(#": > "$0.ran""#)
+        do {
+            _ = try await AgyCommand.fetch(
+                environment: ["PATH": stub.deletingLastPathComponent().path],
+                homeDirectory: directory.path,
+                keychainState: { .locked },
+                directory: directory
+            )
+            XCTFail("a locked keychain is no reading")
+        } catch {
+            XCTAssertEqual(error as? AgyUsageError, .keychainLocked)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stub.path + ".ran"), "agy was never started")
+    }
+
+    /// Ruling A8: only a keychain confirmed unlocked starts agy. A lock state that could
+    /// not be read may be a locked keychain.
+    func testAnUnknownKeychainStateNeverStartsAgy() async throws {
+        let stub = try stubAgy(#": > "$0.ran""#)
+        do {
+            _ = try await AgyCommand.fetch(
+                environment: ["PATH": stub.deletingLastPathComponent().path],
+                homeDirectory: directory.path,
+                keychainState: { .unknown },
+                directory: directory
+            )
+            XCTFail("an unknown keychain state is no reading")
+        } catch {
+            XCTAssertEqual(error as? AgyUsageError, .keychainStateUnknown)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stub.path + ".ran"), "agy was never started")
     }
 
     /// Ruling A7: agy sees HOME, USER, LOGNAME, TMPDIR, LANG, a fixed PATH and the
@@ -250,6 +288,7 @@ final class AgyCommandRunTests: XCTestCase {
                 "SSH_AUTH_SOCK": "/private/tmp/agent.sock",
             ],
             homeDirectory: directory.path,
+            keychainState: { .unlocked },
             directory: directory
         )
         var seen: [String: String] = [:]
