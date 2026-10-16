@@ -202,3 +202,43 @@ extension LimitShareRules {
         let leftZero: Bool
     }
 }
+
+// MARK: - A past window's readings
+
+extension LimitShareRules {
+    /// A past window's readings when its readings named its reset (spec § Design, Window
+    /// bounds), in time order:
+    /// - every reading that named a reset in `resets`, whenever the poll stamped it. Its
+    ///   time is held inside `window`, so the window's last reading counts though it was
+    ///   stamped seconds after the window ended;
+    /// - every reading that named no reset, by its time (`containsReading(at:)`).
+    ///
+    /// A reading that named another reset is another window's, inside this one's span or
+    /// not.
+    nonisolated static func series(
+        _ records: [HistoryRecord], bucketID: String, resets: ClosedRange<Date>, in window: LimitWindow
+    ) -> [LimitReading] {
+        // A reading exactly on the start is the window before's (`containsReading(at:)`).
+        let firstInside = window.start.addingTimeInterval(1)
+        return records
+            .compactMap { record -> LimitReading? in
+                guard let percent = record.percent(for: bucketID) else { return nil }
+                let clamped = max(0, min(100, percent))
+                if let reported = record.resetsAt(for: bucketID) {
+                    guard resets.contains(reported) else { return nil }
+                    return LimitReading(time: min(max(record.timestamp, firstInside), window.end), percent: clamped)
+                }
+                guard window.containsReading(at: record.timestamp) else { return nil }
+                return LimitReading(time: record.timestamp, percent: clamped)
+            }
+            .sorted { $0.time < $1.time }
+    }
+
+    /// What a past window's share is cut from: the window on its bucket, with the resets its
+    /// readings named and no live percent, since its readings end where it ended.
+    nonisolated static func request(for past: LimitPastWindow, bucketID: String) -> LimitShareRequest {
+        LimitShareRequest(
+            mode: .subscription, period: past.window, bucketID: bucketID, livePercent: nil, resets: past.resets
+        )
+    }
+}

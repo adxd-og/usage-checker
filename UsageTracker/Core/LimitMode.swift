@@ -154,6 +154,10 @@ struct LimitShareRequest: Equatable, Sendable {
     /// The live bucket's percent, clamped to 0...100. `share(for:log:readings:)` ends the
     /// readings on it at the period's end. nil outside the Subscription mode.
     let livePercent: Double?
+    /// A past window's resets, as its readings named them (`LimitPastWindow.resets`): its
+    /// readings are then the ones that named them, not the ones stamped inside the period
+    /// (spec 2026-10-16 limit analytics § Design, Window bounds). nil cuts by time.
+    var resets: ClosedRange<Date>? = nil
 }
 
 extension LimitShareRules {
@@ -270,9 +274,10 @@ extension LimitShareRules {
         switch request.mode {
         case .subscription:
             guard let bucketID = request.bucketID else { return nil }
-            let readingsToNow = endingOnLive(
-                series(readings, bucketID: bucketID), percent: request.livePercent, at: request.period.end
-            )
+            let own = request.resets.map {
+                series(readings, bucketID: bucketID, resets: $0, in: request.period)
+            } ?? series(readings, bucketID: bucketID)
+            let readingsToNow = endingOnLive(own, percent: request.livePercent, at: request.period.end)
             return share(
                 window: request.period, series: restoredReadings(readingsToNow, in: request.period), log: log
             )
