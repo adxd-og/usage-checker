@@ -50,6 +50,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   spend limit, its month against the limit.
 - Grok and Antigravity say why the Limits tab is empty: they keep no
   chat-level cost log.
+- The Limits tab's period picker reaches back through the past sessions
+  and weeks of the last 31 days (pay as you go: the earlier 7-day blocks).
+  Windows are told apart by the reset time each reading reported, so a
+  session that ended under 5 % is a window of its own and a limit restored
+  mid-week no longer splits the week.
+- A Limits timeline: one bar per half hour, stacked by the five largest
+  projects, Other and Outside this Mac.
+- A chat in the Limits list opens into its stretches, cut at compactions
+  and cold starts, each with its first prompt, hours, share, dollars and
+  what rebuilding the context cost.
+- The price of a percent says when a percent buys clearly less than in
+  the previous weeks, and when the costliest model changed.
+- On the Limits tab, a chat run in a git worktree counts under the
+  repository the worktree belongs to, also after the worktree is removed,
+  once Omelette has seen a session run in it.
+- A limit restored mid-window keeps each chat's part of what still counts,
+  on the Limits tab and in the shares `status.json` publishes, instead of
+  landing in one half hour.
 
 ### Command line and MCP
 - `status.json` and MCP `get_sessions` give each Claude and Codex chat its
