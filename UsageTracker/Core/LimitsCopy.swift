@@ -51,3 +51,38 @@ extension LimitsCopy {
         return String(format: "%.0f", count)
     }
 }
+
+// MARK: - A page without cards
+
+extension LimitsCopy {
+    static let unsupported = "Limit analytics needs a chat-level cost log. Claude and Codex have one."
+    static let loading = "Loading…"
+    static let noSpend = "Nothing spent in the last 7 days."
+
+    /// An account that reports no window, budget or spend limit: signed out, or not
+    /// polled yet.
+    static func nothingToMeasure(providerName: String) -> String {
+        "\(providerName) has reported no limit to measure yet."
+    }
+
+    /// A subscription whose window has no reset time yet: it opens with the next message.
+    static func noOpenWindow(_ span: LimitsSpan) -> String {
+        switch span {
+        case .session: return "No session window is open right now."
+        case .week: return "No weekly window is open right now."
+        case .month: return "No monthly window is open right now."
+        }
+    }
+
+    /// The sentence a page shows in place of its cards; nil for the page with cards.
+    static func message(for page: LimitsPage, providerName: String) -> String? {
+        switch page {
+        case .unsupported: return unsupported
+        case .nothingToMeasure: return nothingToMeasure(providerName: providerName)
+        case .noOpenWindow(let span): return noOpenWindow(span)
+        case .loading: return loading
+        case .noSpend: return noSpend
+        case .ready: return nil
+        }
+    }
+}

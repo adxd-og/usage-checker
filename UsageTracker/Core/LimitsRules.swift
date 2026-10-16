@@ -80,3 +80,102 @@ extension DashboardState.LimitShareLoad {
         LimitsRules.query(serviceID: serviceID, kind: kind, request: request)
     }
 }
+
+/// What the tab's `.task(id:)` watches: the query the live snapshot and settings ask, and
+/// the cost log's ingest stamp (`CLIBreakdown.updatedAt`, new on every `refreshCLI()`). A
+/// new query (a reset, a mode change, a new budget) loads at once; a new stamp loads the
+/// same query again, when the turns and the live percent have moved.
+struct LimitsLoadKey: Hashable, Sendable {
+    let query: LimitsQuery
+    /// nil until `refreshCLI()` has ingested the selected provider's log. A provider
+    /// switch clears it.
+    let ingestedAt: Date?
+}
+
+/// How long the window on screen is, in the words its strings use. Codex gives every
+/// window over a day the kind `.weekly` (`CodexProvider.kind(for:)`), and the free plan's
+/// is about 30 days: a month, not a week.
+enum LimitsSpan: Equatable, Sendable {
+    case session, week, month
+}
+
+/// What the Limits tab shows for the selected provider and window.
+enum LimitsPage: Equatable, Sendable {
+    /// Grok and Antigravity: no cost log that names a chat.
+    case unsupported
+    /// Claude or Codex reporting no window, budget or spend limit: signed out, or not
+    /// polled yet.
+    case nothingToMeasure
+    /// A subscription whose window of this span has not opened.
+    case noOpenWindow(LimitsSpan)
+    /// No share has answered the query on screen yet.
+    case loading
+    /// Pay as you go with no budget and nothing spent in the period: nothing to divide by.
+    case noSpend
+    case ready(DashboardState.LimitShareLoad)
+}
+
+// MARK: - The page
+
+extension LimitsRules {
+    /// The longest window that is still a week: Codex labels anything longer "Monthly"
+    /// (`CodexProvider.label(for:)`), a day's slack over seven.
+    static let longestWeek: TimeInterval = 8 * 24 * 3600
+
+    /// The span of the account's window of `kind`: a session, a week, or a month for a
+    /// weekly-kind window longer than `longestWeek`. With no such window to read, the
+    /// kind alone decides.
+    nonisolated static func span(of kind: BucketKind, in service: ServiceSnapshot?) -> LimitsSpan {
+        guard kind != .session else { return .session }
+        guard let service,
+              let length = LimitShareRules.coreBucket(kind: kind, in: service)?.windowDuration,
+              length > longestWeek
+        else { return .week }
+        return .month
+    }
+
+    /// The page for the selected provider and window kind:
+    /// 1. a provider whose log names no chat gets the empty state (§ The tab);
+    /// 2. an account with no mode has nothing to measure (`LimitShareRules.mode`);
+    /// 3. a subscription needs its window of `kind` open now;
+    /// 4. a share is shown when it answered the query asked now (`query(serviceID:service:…)`):
+    ///    same provider, kind, window or period, and budget or limit. A share of last week,
+    ///    or against the budget set before, is not;
+    /// 5. otherwise the load is running, except for pay as you go once the dashboard has
+    ///    answered this very query with no share: no budget and no spend.
+    ///
+    /// `answered` is `DashboardState.limitShareAnswer`. A subscription's load always answers
+    /// with a share, so it never reads as nothing spent.
+    nonisolated static func page(
+        serviceID: String,
+        kind: BucketKind,
+        service: ServiceSnapshot?,
+        weeklyBudgetUSD: Double,
+        load: DashboardState.LimitShareLoad?,
+        answered: LimitsQuery?,
+        now: Date,
+        calendar: Calendar
+    ) -> LimitsPage {
+        guard DashboardState.hasSessionLog(for: serviceID) else { return .unsupported }
+        guard let service, let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD)
+        else { return .nothingToMeasure }
+        if mode == .subscription {
+            guard let bucket = LimitShareRules.coreBucket(kind: kind, in: service),
+                  LimitShareRules.currentWindow(of: bucket, now: now) != nil
+            else { return .noOpenWindow(span(of: kind, in: service)) }
+        }
+        let current = query(
+            serviceID: serviceID, service: service, kind: kind,
+            weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+        )
+        if let load, load.query == current { return .ready(load) }
+        if case .payAsYouGo = mode, answered == current { return .noSpend }
+        return .loading
+    }
+
+    /// Whether the tab asks `DashboardState.refreshLimitShare(kind:)` for `key`: once the
+    /// provider's cost log is in, and only for a provider whose log names a chat.
+    nonisolated static func loads(_ key: LimitsLoadKey) -> Bool {
+        key.ingestedAt != nil && DashboardState.hasSessionLog(for: key.query.serviceID)
+    }
+}
