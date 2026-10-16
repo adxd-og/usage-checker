@@ -255,10 +255,17 @@ protocol CostLogAggregating: Actor {
     /// Every chat with at least one turn in `[start, end]`, clipped to the range at
     /// day granularity. Default: none, until an aggregator keeps session aggregates.
     func sessions(from start: Date, to end: Date) async -> [SessionSummary]
+    /// Every turn in `[start, end]` that belongs to a chat, as a value record, oldest
+    /// first, with the names of those chats (spec 2026-10-16 § Design, Turns). Reads what
+    /// `refresh()` has already ingested. Default: an empty log, for a provider whose log
+    /// names no chat (Grok). A conformer must spell it `async`. Otherwise it only
+    /// overloads the default, and a call through the existential answers the default.
+    func turnCosts(from start: Date, to end: Date) async -> TurnCostLog
 }
 
 extension CostLogAggregating {
     func sessions(from start: Date, to end: Date) async -> [SessionSummary] { [] }
+    func turnCosts(from start: Date, to end: Date) async -> TurnCostLog { .empty }
 }
 
 actor JSONLAggregator: CostLogAggregating {
