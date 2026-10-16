@@ -7,6 +7,8 @@ import XCTest
 ///   inside the 31-day turn horizon, each with at least 10 attributed points.
 /// - It fires below 75 % of that mean, when this week has at least 10 points.
 /// - It says when the costliest model changed.
+/// - "Weekly only" means a window of at most 8 days, this week's and the usual ones: a
+///   30-day window of kind `.weekly` is not a week.
 final class LimitShareChangeSignalTests: XCTestCase {
     /// This week's start: 2026-09-06 12:00 UTC, a Sunday. "Now" is three days in.
     private let weekStart = Date(timeIntervalSince1970: 1_788_696_000)
@@ -112,6 +114,56 @@ final class LimitShareChangeSignalTests: XCTestCase {
     func testASessionWindowHasNoChangeSignal() {
         XCTAssertNil(LimitShareRules.changeSignal(
             kind: .session, current: week(0, points: 20, cost: 800), previous: usualWeeks,
+            horizonStart: horizonStart
+        ))
+    }
+
+    /// A share of the window from `start` to `end`. One turn costs `cost`, and the percent
+    /// reaches `points` in the same half hour.
+    private func window(from start: Date, to end: Date, points: Double, cost: Double) -> LimitShare {
+        LimitShareRules.share(
+            window: LimitWindow(start: start, end: end),
+            bucketID: "codex_session",
+            readings: Fixture.readings(
+                bucketID: "codex_session", points: [(at: start.addingTimeInterval(20 * 60), percent: points)]
+            ),
+            log: TurnCostLog(turns: [
+                Fixture.turnCost(at: start.addingTimeInterval(5 * 60), chat: "chat", cost: cost),
+            ])
+        )
+    }
+
+    func testAThirtyDayWindowIsNotAWeekAndHasNoChangeSignal() {
+        // Codex Free's window has kind `.weekly` and lasts 30 days. The horizon passed here
+        // reaches back far enough for two ordinary weeks before it to be usual, so only
+        // the window's length keeps the signal off.
+        let farHorizon = now.addingTimeInterval(-44 * day)
+        let usual = [
+            window(from: now.addingTimeInterval(-37 * day), to: now.addingTimeInterval(-30 * day), points: 40, cost: 2_400),
+            window(from: farHorizon, to: now.addingTimeInterval(-37 * day), points: 50, cost: 3_000),
+        ]
+        XCTAssertNil(LimitShareRules.changeSignal(
+            kind: .weekly,
+            current: window(from: now.addingTimeInterval(-30 * day), to: now, points: 20, cost: 800),
+            previous: usual, horizonStart: farHorizon
+        ))
+        XCTAssertNotNil(LimitShareRules.changeSignal(
+            kind: .weekly,
+            current: window(from: now.addingTimeInterval(-8 * day), to: now, points: 20, cost: 800),
+            previous: usual, horizonStart: farHorizon
+        ), "a window of eight days is still compared")
+    }
+
+    func testAPreviousThirtyDayWindowIsNotAUsualWeek() {
+        // Twelve hours into a Codex Free window, the 30-day window before it still starts
+        // inside the 31-day turn horizon.
+        let currentStart = now.addingTimeInterval(-12 * 3_600)
+        XCTAssertNil(LimitShareRules.changeSignal(
+            kind: .weekly,
+            current: window(from: currentStart, to: now, points: 20, cost: 800),
+            previous: [
+                window(from: currentStart.addingTimeInterval(-30 * day), to: currentStart, points: 40, cost: 2_400),
+            ],
             horizonStart: horizonStart
         ))
     }

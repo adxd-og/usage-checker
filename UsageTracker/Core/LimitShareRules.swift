@@ -542,6 +542,10 @@ extension LimitShareRules {
     static let changeFloorPoints: Double = 10
     /// The signal fires when this week's price falls below this share of the usual one.
     static let changeThreshold: Double = 0.75
+    /// The longest window the signal compares: a week, with a day's slack for a past
+    /// window, which runs between readings and outlasts seven days when the Mac slept
+    /// through a reset.
+    static let changeLongestWindow: TimeInterval = 8 * 24 * 3600
 
     /// Dollars per model, keyed by display name, so a model's dated and undated ids
     /// count as one model.
@@ -565,16 +569,25 @@ extension LimitShareRules {
     /// The signal fires when this week also has that many points and its price is below
     /// `changeThreshold` of the mean.
     ///
-    /// Weekly only. nil when it does not fire, or when there is no usual week to compare.
+    /// Weekly only, and only for windows of at most `changeLongestWindow`: Codex Free's
+    /// 30-day window has kind `.weekly` but is not a week. A longer previous window is
+    /// not a usual week either, so early in a 30-day window, while the one before it is
+    /// still inside the horizon, there is nothing to compare. nil when it does not fire,
+    /// or when there is no usual week to compare.
     nonisolated static func changeSignal(
         kind: BucketKind, current: LimitShare, previous: [LimitShare], horizonStart: Date
     ) -> LimitChangeSignal? {
+        func isWeekSized(_ window: LimitWindow) -> Bool {
+            window.end.timeIntervalSince(window.start) <= changeLongestWindow
+        }
         guard kind == .weekly,
+              isWeekSized(current.window),
               current.attributedPoints + pointSlack >= changeFloorPoints,
               let price = current.price?.dollars
         else { return nil }
         let usual = previous.filter {
-            $0.window.start >= horizonStart
+            isWeekSized($0.window)
+                && $0.window.start >= horizonStart
                 && $0.window.end <= current.window.start
                 && $0.attributedPoints + pointSlack >= changeFloorPoints
                 && $0.price != nil
