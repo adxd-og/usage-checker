@@ -355,3 +355,92 @@ extension LimitsCopy {
         count == 1 ? "1 chat" : "\(HistoryCopy.count(count)) chats"
     }
 }
+
+// MARK: - Period picker
+
+extension LimitsCopy {
+    /// What VoiceOver calls the period picker (the mockup's `aria-label`).
+    static let periodPickerLabel = "Period"
+
+    /// "Today", "Sat", "27 Aug": a day on the chat list's ladder (`SessionCopy.lastActive`):
+    /// today, a weekday within the last six days, a date beyond.
+    static func dayName(
+        _ date: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)
+        ).day ?? 0
+        if days >= 0, days <= 6 {
+            return date.formatted(Date.FormatStyle(
+                locale: locale, calendar: calendar, timeZone: calendar.timeZone
+            ).weekday(.abbreviated))
+        }
+        return SessionCopy.dayText(date, calendar: calendar, locale: locale)
+    }
+
+    /// "Today 10:40–15:40"; "Fri 22:30 – Sat 3:30" across midnight; "Today 14:20" for a
+    /// single moment. A span on the chat list's day ladder, in the user's clock.
+    static func timeRange(
+        from start: Date, to end: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        let day = dayName(start, now: now, calendar: calendar, locale: locale)
+        let from = HistoryCopy.time(start, calendar: calendar, locale: locale)
+        let to = HistoryCopy.time(end, calendar: calendar, locale: locale)
+        guard calendar.isDate(start, inSameDayAs: end) else {
+            return "\(day) \(from) – \(dayName(end, now: now, calendar: calendar, locale: locale)) \(to)"
+        }
+        return from == to ? "\(day) \(from)" : "\(day) \(from)–\(to)"
+    }
+
+    /// The picker's name for `period` (spec 2026-10-16 limit analytics § The tab, item 1):
+    /// - the current one: "This session", "This week", "This month" (Codex Free's 30
+    ///   days); pay as you go's "Last 7 days"; a spend limit's "This month";
+    /// - a past week or month by its first day, "Week of 2 Oct"; a past session by its
+    ///   day and hours, "Today 10:40–15:40";
+    /// - an earlier 7-day block by its days, "7–14 days ago".
+    static func periodName(
+        _ period: LimitsPeriod, mode: LimitMode, span: LimitsSpan, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        switch period {
+        case .current:
+            switch mode {
+            case .subscription:
+                switch span {
+                case .session: return "This session"
+                case .week: return "This week"
+                case .month: return "This month"
+                }
+            case .payAsYouGo:
+                return "Last 7 days"
+            case .spendLimit:
+                return "This month"
+            }
+        case .past(let window):
+            switch span {
+            case .session:
+                return timeRange(from: window.start, to: window.end, now: now, calendar: calendar, locale: locale)
+            case .week:
+                return "Week of \(SessionCopy.dayText(window.start, calendar: calendar, locale: locale))"
+            case .month:
+                return "Month of \(SessionCopy.dayText(window.start, calendar: calendar, locale: locale))"
+            }
+        case .weeksAgo(let weeks):
+            return "\(weeks * 7)–\(weeks * 7 + 7) days ago"
+        }
+    }
+
+    /// "Nothing spent in the last 7 days." for the current block; "Nothing spent 7–14 days
+    /// ago." for an earlier one.
+    static func noSpendSentence(period: LimitsPeriod) -> String {
+        guard case .weeksAgo(let weeks) = period else { return noSpend }
+        return "Nothing spent \(weeks * 7)–\(weeks * 7 + 7) days ago."
+    }
+
+    /// `message(for:providerName:)`, with "Nothing spent" naming the picked block.
+    static func message(for page: LimitsPage, providerName: String, period: LimitsPeriod) -> String? {
+        if case .noSpend = page { return noSpendSentence(period: period) }
+        return message(for: page, providerName: providerName)
+    }
+}
