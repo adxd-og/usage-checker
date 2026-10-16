@@ -661,6 +661,11 @@ actor JSONLAggregator: CostLogAggregating {
         let sessions: [String: SessionAgg]
         let titles: [String: String]
         let firstPrompts: [String: String]
+        /// Each chat's compactions and human prompts inside the turns' horizon. Optional,
+        /// with no version bump: a snapshot written before they were kept decodes with
+        /// neither.
+        let compactions: [String: [Date]]?
+        let prompts: [String: [ChatPrompt]]?
     }
 
     /// 8: a chat's days are two tiers (issue #13, `SessionAgg`). Only the folded tier is
@@ -1784,6 +1789,8 @@ actor JSONLAggregator: CostLogAggregating {
         sessionAggs = sessions
         titles = snapshot.titles
         firstPrompts = snapshot.firstPrompts
+        chatCompactions = snapshot.compactions ?? [:]
+        chatPrompts = snapshot.prompts ?? [:]
         // After `recentTurns`: every chat's recent tier is rebuilt from the turns just
         // restored, in this run's calendar — the days Activity recomputes from the same
         // turns — and its folded tier re-keyed by the midpoint rule (issue #13).
@@ -1889,7 +1896,9 @@ actor JSONLAggregator: CostLogAggregating {
             seenMessageIDs: Array(seenMessageIDs),
             sessions: sessionAggs,
             titles: titles,
-            firstPrompts: firstPrompts
+            firstPrompts: firstPrompts,
+            compactions: chatCompactions,
+            prompts: chatPrompts
         )
         do {
             let data = try encoder.encode(snapshot)
