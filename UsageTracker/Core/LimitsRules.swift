@@ -212,3 +212,65 @@ extension LimitsRules {
     /// Where the budget link opens Settings: the weekly budget is on Advanced.
     static let budgetSettingsTab: SettingsTab = .advanced
 }
+
+// MARK: - The ranked list
+
+/// One line of the ranked list: a chat or a project, or Earlier this month or Outside
+/// this Mac under them. Every string is built here; `LimitsRankedCard` lays them out.
+struct LimitsRow: Equatable, Identifiable, Sendable {
+    /// The chat id or the project slug; "earlier" and "outside" for the rows under them.
+    let id: String
+    let title: String
+    /// A chat's project, a project's chat count, or what Earlier or Outside stands for.
+    let subtitle: String
+    let share: String
+    /// Empty for Outside this Mac, which has no local dollars.
+    let dollars: String
+}
+
+/// The ranked list as drawn: the rows on screen, formatted, and how many the share ranks
+/// in all ("Show all (2,000)").
+struct LimitsRankedRows: Equatable, Sendable {
+    let rows: [LimitsRow]
+    let total: Int
+}
+
+extension LimitsRules {
+    /// The rows the list shows before "Show all" (§ The tab, item 3).
+    static let rowCap = 8
+
+    /// The window's chats in the share's own ranking (points, then dollars), the first
+    /// `rowCap` of them unless all are asked for. Only those are formatted. The project is
+    /// named by `projectName`, the provider's own decoder (`SessionCopy.projectName`, which
+    /// reads the disk for Claude). A chat with no name reads as History's does, its project
+    /// and a day: here the day of its last turn in the window.
+    nonisolated static func chatRows(
+        of share: LimitShare,
+        serviceID: String,
+        showsAll: Bool,
+        calendar: Calendar = .current,
+        locale: Locale = .current,
+        projectName: (_ providerID: String, _ slug: String) -> String = SessionCopy.projectName(providerID:projectSlug:)
+    ) -> LimitsRankedRows {
+        let shown = showsAll ? share.chats[...] : share.chats.prefix(rowCap)
+        let rows = shown.map { chat in
+            let project = projectName(serviceID, chat.projectSlug)
+            return LimitsRow(
+                id: chat.id,
+                title: SessionCopy.rowTitle(
+                    title: chat.title, project: project, firstAt: chat.lastAt,
+                    calendar: calendar, locale: locale
+                ),
+                subtitle: project,
+                share: LimitsCopy.share(chat.points),
+                dollars: LimitsCopy.dollars(chat.cost)
+            )
+        }
+        return LimitsRankedRows(rows: rows, total: share.chats.count)
+    }
+
+    /// Whether the list has more rows than it shows capped.
+    nonisolated static func canShowAll(count: Int) -> Bool {
+        count > rowCap
+    }
+}

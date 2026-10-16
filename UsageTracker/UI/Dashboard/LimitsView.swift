@@ -170,6 +170,16 @@ struct LimitsView: View {
     private func cards(_ load: DashboardState.LimitShareLoad, isWide: Bool) -> some View {
         VStack(alignment: .leading, spacing: LimitsLayout.sectionSpacing) {
             LimitsTopCard(text: LimitsCopy.topCard(for: load, now: Date()), onLink: openBudgetSettings)
+            let windowSpan = LimitsRules.span(of: load.kind, in: service)
+            LimitsRankedCard(
+                load: load,
+                title: LimitsCopy.rankedTitle(mode: load.request.mode, span: windowSpan),
+                trailing: LimitsCopy.rankedTrailing(mode: load.request.mode, percent: load.share.percent),
+                emptyText: LimitsCopy.noChats(mode: load.request.mode, span: windowSpan),
+                isWide: isWide
+            )
+            // A new provider, window or measure starts the list capped again.
+            .id(load.query)
         }
     }
 }

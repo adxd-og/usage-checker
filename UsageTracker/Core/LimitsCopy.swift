@@ -247,3 +247,58 @@ extension LimitsCopy {
         }
     }
 }
+
+// MARK: - What filled the window
+
+extension LimitsCopy {
+    /// The ranked card's title: the window, the budget, the spend or the limit it splits.
+    static func rankedTitle(mode: LimitMode, span: LimitsSpan) -> String {
+        switch mode {
+        case .subscription:
+            switch span {
+            case .session: return "What filled this session"
+            case .week: return "What filled this week"
+            case .month: return "What filled this month"
+            }
+        case .payAsYouGo(let budget):
+            return budget == nil ? "Where the spend went" : "What filled the budget"
+        case .spendLimit:
+            return "What filled this month's limit"
+        }
+    }
+
+    /// On the title's baseline: how full the window, budget or limit is, in whole points;
+    /// without a budget, what the shares are of.
+    static func rankedTrailing(mode: LimitMode, percent: Double) -> String {
+        let whole = Int(percent.rounded())
+        switch mode {
+        case .subscription:
+            return "\(whole) % so far"
+        case .payAsYouGo(let budget):
+            return budget == nil ? "% of spend in 7 days" : "\(whole) % of budget"
+        case .spendLimit:
+            return "\(whole) % of limit"
+        }
+    }
+
+    /// In place of the rows when the period has no chat on this Mac.
+    static func noChats(mode: LimitMode, span: LimitsSpan) -> String {
+        switch mode {
+        case .subscription:
+            switch span {
+            case .session: return "No chats in this session yet"
+            case .week: return "No chats this week yet"
+            case .month: return "No chats this month yet"
+            }
+        case .payAsYouGo:
+            return "No chats in the last 7 days"
+        case .spendLimit:
+            return "No chats this month yet"
+        }
+    }
+
+    /// "Show all (23)" under a capped list, "Show fewer" once it is open.
+    static func showAll(count: Int, expanded: Bool) -> String {
+        expanded ? "Show fewer" : "Show all (\(HistoryCopy.count(count)))"
+    }
+}
