@@ -11,19 +11,25 @@ import Foundation
 /// with weekly and five-hour windows; a Pro plan adds per-model pools such as Argon
 /// (`buckets(from:)`).
 ///
+/// With the app closed, Antigravity's own CLI still answers: `agy -p /usage` prints the
+/// quota groups the language server would, group names included. It runs in the
+/// background (`AgyCommand`, `startAgyRunIfDue(now:)`), and a poll shows its last reading.
 /// The same quotas also live behind Google's web API, which needs only the OAuth
-/// credentials Antigravity already wrote to `~/.antigravity/oauth_creds.json`. That is
-/// the fallback when the local server isn't there — a closed app is not a reason to
-/// tell the user nothing.
+/// credentials Antigravity already wrote to `~/.antigravity/oauth_creds.json`. That is the
+/// last fallback, behind agy — a closed app is not a reason to tell the user nothing.
 actor AntigravityProvider: UsageProvider {
-    /// Singleton so the throttle caches survive across poll cycles.
-    static let shared = AntigravityProvider()
+    /// Singleton so the throttle caches survive across poll cycles. The one instance that
+    /// runs the real agy; every other one (the tests') leaves `agyFetch` nil.
+    static let shared = AntigravityProvider(agyFetch: { try await AgyCommand.fetch() })
 
     nonisolated let serviceID = "antigravity"
 
     /// The local probe and the web API, as closures: the tests inject both, so a
     /// test run never scans for a process or opens a socket.
     typealias StatusFetch = @Sendable () async throws -> AntigravityStatusSnapshot
+    /// `agy -p /usage`'s stdout (`AgyCommand.fetch`). Injected like the two fetches, so no
+    /// test starts agy.
+    typealias AgyFetch = @Sendable () async throws -> Data
 
     /// Default for the settings toggle: on when Antigravity (app or CLI) is present.
     static var isAntigravityInstalled: Bool {
@@ -41,9 +47,19 @@ actor AntigravityProvider: UsageProvider {
     /// The web API is a round trip to Google with a refreshable token behind it, so
     /// it runs an order of magnitude less often than the local probe.
     static let remoteMinInterval: TimeInterval = 300
+    /// agy is a child process that signs in and asks Google: a run starts at most once per
+    /// this interval, and only while the local probe finds nothing. The web API's five
+    /// minutes less 20 s: with the five-minute poll setting (`RefreshInterval.m5`) a timer
+    /// that fires a few seconds early would otherwise skip a run and double the gap.
+    static let agyMinInterval: TimeInterval = remoteMinInterval - 20
+    /// How old an agy reading may be and still be shown: three of the longest polls, so one
+    /// failed or slow run does not drop the numbers.
+    static let agyReadingMaxAge: TimeInterval = 900
 
     private let localFetch: StatusFetch
     private let remoteFetch: StatusFetch
+    /// nil: no agy step.
+    private let agyFetch: AgyFetch?
 
     private var cached: (snapshot: ServiceSnapshot, at: Date)?
     /// The last remote outcome, kept for `remoteMinInterval`. A nil snapshot means
@@ -51,6 +67,15 @@ actor AntigravityProvider: UsageProvider {
     /// is what stops the tile flipping back to "Not running" 45 seconds after a
     /// perfectly good web reading.
     private var remoteCache: (snapshot: ServiceSnapshot?, at: Date)?
+    /// The agy run in flight: at most one, owned by this provider, never awaited by a poll.
+    private var agyRun: Task<Void, Never>?
+    /// When the last agy run started; the next one waits `agyMinInterval` from here.
+    private var agyStartedAt: Date?
+    /// The last good agy reading, stamped with the time of the poll that started its run.
+    private var agyReading: ServiceSnapshot?
+    /// When the local probe last answered. An agy reading older than that is never shown:
+    /// it would put older numbers over newer ones the moment the app closes.
+    private var localReadAt: Date?
 
     init(
         localFetch: @escaping StatusFetch = {
@@ -58,10 +83,12 @@ actor AntigravityProvider: UsageProvider {
         },
         remoteFetch: @escaping StatusFetch = {
             try await AntigravityRemoteUsageFetcher().fetch()
-        }
+        },
+        agyFetch: AgyFetch? = nil
     ) {
         self.localFetch = localFetch
         self.remoteFetch = remoteFetch
+        self.agyFetch = agyFetch
     }
 
     func fetch() async -> ServiceSnapshot {
@@ -82,14 +109,22 @@ actor AntigravityProvider: UsageProvider {
         do {
             let status = try await localFetch()
             let usage = try status.toUsageSnapshot()
+            localReadAt = now
             return Self.snapshot(from: usage, status: status, at: now)
         } catch {
             // The local language server is only reachable while the app/CLI/IDE is
             // up, so "not running" is the normal quiet state, not a sign-in problem.
             NSLog("[UT] Antigravity fetch failed: %@", String(describing: error))
             let isNotRunning = Self.isUnreachable(error)
-            // Only that quiet state is worth a web call. A signed-out CLI or a parse
-            // failure is a different problem, and the web API can't fix either.
+            // Only that quiet state is worth asking agy, then the web API. A signed-out
+            // probe or a parse failure is a different problem, and neither can fix it.
+            // agy runs in the background: this poll shows its last reading, never waits.
+            if isNotRunning {
+                startAgyRunIfDue(now: now)
+                if let fromAgy = agySnapshot(now: now) {
+                    return fromAgy
+                }
+            }
             if isNotRunning, let remote = await remoteSnapshot(now: now) {
                 return remote
             }
@@ -135,6 +170,78 @@ actor AntigravityProvider: UsageProvider {
             return [ECONNREFUSED, ECONNRESET, ETIMEDOUT, EHOSTUNREACH, ENETUNREACH, EPIPE].contains(Int32(nsError.code))
         }
         return false
+    }
+
+    /// Starts an agy run in the background when one is due: there is an agy step, no run is
+    /// in flight, and the last one started at least `agyMinInterval` ago. The poll that
+    /// starts it does not wait: the run stores its reading (`finishAgyRun`) and a later
+    /// poll shows it. The child's own deadline (`AgyCommand.deadline`) ends a run that hangs.
+    private func startAgyRunIfDue(now: Date) {
+        guard let agyFetch, agyRun == nil else { return }
+        if let agyStartedAt, now.timeIntervalSince(agyStartedAt) < Self.agyMinInterval { return }
+        agyStartedAt = now
+        agyRun = Task.detached(priority: .utility) { [self] in
+            let result: Result<Data, Error>
+            do {
+                let output = try await agyFetch()
+                result = .success(output)
+            } catch {
+                result = .failure(error)
+            }
+            await self.finishAgyRun(result, startedAt: now)
+        }
+    }
+
+    /// A finished agy run. A good reading is stored, stamped with `startedAt`; a failure
+    /// stores nothing, and the last good reading ages out. Every failure is quiet: agy
+    /// missing, a locked keychain, the deadline, a failed run, a status other than SUCCESS
+    /// (a signed-out agy among them), output with no row. The state chip is about the app,
+    /// which is closed; a red chip for an optional CLI the user may never run would come
+    /// back every five minutes.
+    private func finishAgyRun(_ result: Result<Data, Error>, startedAt: Date) {
+        agyRun = nil
+        do {
+            let report = try AgyUsageReport.parse(result.get())
+            let buckets = Self.named(
+                Self.buckets(from: Self.quotaSummary(from: report, at: startedAt)),
+                by: Self.poolNames(from: report)
+            )
+            guard !buckets.isEmpty else {
+                throw AgyUsageError.unreadable("no window with a known usage")
+            }
+            agyReading = ServiceSnapshot(
+                id: serviceID,
+                displayName: "Antigravity",
+                icon: Self.icon,
+                plan: "Antigravity",
+                accountLabel: nil,
+                buckets: buckets,
+                extraUsage: nil,
+                weekCost: nil,
+                state: .ok,
+                stateMessage: nil,
+                fetchedAt: startedAt
+            )
+            NSLog("[UT] Antigravity agy fetch ok: %d window(s)", buckets.count)
+        } catch {
+            NSLog("[UT] Antigravity agy fetch failed: %@", String(describing: error))
+        }
+    }
+
+    /// The last good agy reading while it is at most `agyReadingMaxAge` old and not older
+    /// than the local probe's last answer. nil sends the poll on to the web API.
+    private func agySnapshot(now: Date) -> ServiceSnapshot? {
+        guard let agyReading,
+              now.timeIntervalSince(agyReading.fetchedAt) <= Self.agyReadingMaxAge,
+              agyReading.fetchedAt >= (localReadAt ?? .distantPast)
+        else { return nil }
+        return agyReading
+    }
+
+    /// Waits for the agy run in flight, if any. A poll never does; the tests do, to see a
+    /// finished run's reading on their next poll without racing the run.
+    func settleAgyRun() async {
+        await agyRun?.value
     }
 
     /// The web API, at most once every `remoteMinInterval`. nil = no reading, either
