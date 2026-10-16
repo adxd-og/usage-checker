@@ -175,7 +175,9 @@ struct LimitsView: View {
                 load: load,
                 title: LimitsCopy.rankedTitle(mode: load.request.mode, span: windowSpan),
                 trailing: LimitsCopy.rankedTrailing(mode: load.request.mode, percent: load.share.percent),
+                tail: LimitsRules.tailRows(of: load.share, mode: load.request.mode, serviceID: load.serviceID),
                 emptyText: LimitsCopy.noChats(mode: load.request.mode, span: windowSpan),
+                footnote: LimitsCopy.rowsFootnote(mode: load.request.mode),
                 isWide: isWide
             )
             // A new provider, window or measure starts the list capped again.

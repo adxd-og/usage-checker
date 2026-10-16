@@ -302,3 +302,29 @@ extension LimitsCopy {
         expanded ? "Show fewer" : "Show all (\(HistoryCopy.count(count)))"
     }
 }
+
+// MARK: - Under the ranked rows
+
+extension LimitsCopy {
+    static let outsideTitle = "Outside this Mac"
+    static let earlierTitle = "Earlier this month"
+    static let earlierSubtitle = "This Mac, not split by chat"
+
+    /// Where Outside this Mac's use comes from, in the provider's own words.
+    static func outsideSubtitle(serviceID: String) -> String {
+        switch serviceID {
+        case "claude": return "claude.ai, the desktop app or another machine"
+        case "codex": return "another Codex client or another machine"
+        default: return "another app or another machine"
+        }
+    }
+
+    /// Under a spend limit's rows: their dollars are API-list prices, and the limit is
+    /// billed at the organisation's rate (§ Accounts without percent windows, Cost
+    /// caption). A subscription says it on its first card; pay as you go's dollars are
+    /// the bill.
+    static func rowsFootnote(mode: LimitMode) -> String? {
+        if case .spendLimit = mode { return "API-list prices; your organisation's rate may differ" }
+        return nil
+    }
+}

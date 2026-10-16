@@ -12,8 +12,12 @@ struct LimitsRankedCard: View {
     let title: String
     /// On the title's baseline: how far the window is, or what the shares are of.
     let trailing: String
+    /// Earlier this month and Outside this Mac, under the ranked rows.
+    let tail: [LimitsRow]
     /// In place of the rows when the window has none.
     let emptyText: String
+    /// Under everything: what the rows' dollars are, where the first card does not say it.
+    let footnote: String?
     let isWide: Bool
 
     @State private var showsAll = false
@@ -26,6 +30,16 @@ struct LimitsRankedCard: View {
                 .padding(.bottom, LimitsLayout.rankedHeaderBottom)
             if let ranked {
                 rowsSection(ranked)
+            }
+            ForEach(tail) { row in
+                tailRow(row)
+            }
+            if let footnote {
+                Text(footnote)
+                    .font(.system(size: LimitsLayout.figureCaptionSize))
+                    .foregroundStyle(.om(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, LimitsLayout.rowVerticalPadding)
             }
         }
         .padding(LimitsLayout.rankedCardPadding)
@@ -116,6 +130,22 @@ struct LimitsRankedCard: View {
         }
         .padding(.vertical, LimitsLayout.rowVerticalPadding)
         .help(row.title)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// Earlier this month and Outside this Mac: what each stands for under its name at any
+    /// width (the mockup's `minmax(0, 1fr) 96px 80px`), a hairline above.
+    private func tailRow(_ row: LimitsRow) -> some View {
+        HStack(alignment: .center, spacing: LimitsLayout.columnGap) {
+            VStack(alignment: .leading, spacing: LimitsLayout.rowLineSpacing) {
+                nameText(row.title)
+                subtitleText(row.subtitle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            figures(row)
+        }
+        .padding(.vertical, LimitsLayout.tailRowVerticalPadding)
+        .overlay(alignment: .top) { hairline }
         .accessibilityElement(children: .combine)
     }
 

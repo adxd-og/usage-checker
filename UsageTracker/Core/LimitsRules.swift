@@ -274,3 +274,35 @@ extension LimitsRules {
         count > rowCap
     }
 }
+
+extension LimitsRules {
+    /// The rows under the ranked ones, in order:
+    /// - Earlier this month: a spend limit's local dollars from before the 31-day turn
+    ///   horizon, one row, not split by chat;
+    /// - Outside this Mac, when above 0, with no local dollars. On a Claude subscription
+    ///   it is whole points: whole half hours of whole-number percents. A spend limit's
+    ///   Outside is dollars over the limit and keeps its decimal.
+    nonisolated static func tailRows(of share: LimitShare, mode: LimitMode, serviceID: String) -> [LimitsRow] {
+        var rows: [LimitsRow] = []
+        if let earlier = share.earlier {
+            rows.append(LimitsRow(
+                id: "earlier",
+                title: LimitsCopy.earlierTitle,
+                subtitle: LimitsCopy.earlierSubtitle,
+                share: LimitsCopy.share(earlier.points),
+                dollars: LimitsCopy.dollars(earlier.cost)
+            ))
+        }
+        if share.outside > 0 {
+            let wholePoints = serviceID == "claude" && mode == .subscription
+            rows.append(LimitsRow(
+                id: "outside",
+                title: LimitsCopy.outsideTitle,
+                subtitle: LimitsCopy.outsideSubtitle(serviceID: serviceID),
+                share: wholePoints ? LimitsCopy.wholeShare(share.outside) : LimitsCopy.share(share.outside),
+                dollars: ""
+            ))
+        }
+        return rows
+    }
+}
