@@ -88,9 +88,11 @@ extension LimitsLayout {
     static let shareWidth: CGFloat = 96
     static let dollarsWidth: CGFloat = 80
 
-    /// The width the wide row needs: its four columns and three gaps.
+    /// The width the widest row needs: a chat's, its chevron (`chatIndent`) before its four
+    /// columns and three gaps. A project's row has no chevron and folds with the chats', so
+    /// the list keeps one decision.
     static var wideRowsMinWidth: CGFloat {
-        titleMinWidth + projectWidth + shareWidth + dollarsWidth + 3 * columnGap
+        chatIndent + titleMinWidth + projectWidth + shareWidth + dollarsWidth + 3 * columnGap
     }
 
     /// The rows' width inside a detail column this wide: the column's gutters and the
@@ -151,4 +153,19 @@ extension LimitsLayout {
     static let timelineLegendColumnSpacing: CGFloat = 18
     /// The narrowest legend entry before its name truncates.
     static let timelineLegendItemWidth: CGFloat = 120
+}
+
+// MARK: - Stretches
+
+extension LimitsLayout {
+    /// A chat row's chevron (History's 22 pt) and the gap after it.
+    static let chevronWidth: CGFloat = 22
+    static let chevronGap: CGFloat = 8
+    static let chevronSize: CGFloat = 11
+    /// A stretch's prompt, a step under a chat's name; its row tighter than a chat's.
+    static let stretchTitleSize: CGFloat = 12.5
+    static let stretchRowVerticalPadding: CGFloat = 7
+    /// How far stretch rows, and the rows under the list, stand in while chats can open:
+    /// past the chevrons, under the chats' names.
+    static var chatIndent: CGFloat { chevronWidth + chevronGap }
 }

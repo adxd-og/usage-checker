@@ -6,9 +6,9 @@ import XCTest
 /// under the name where it does not, one decision for every row. The dashboard must stay
 /// usable at its narrowest window.
 final class LimitsLayoutTests: XCTestCase {
-    func testTheWideRowNeedsItsFourColumnsAndThreeGaps() {
-        // 160 + 280 + 96 + 80 = 616, plus three 18 pt gaps.
-        XCTAssertEqual(LimitsLayout.wideRowsMinWidth, 670)
+    func testTheWideRowNeedsTheChevronItsFourColumnsAndThreeGaps() {
+        // A chat's chevron, 22 + 8, then 160 + 280 + 96 + 80 = 616, plus three 18 pt gaps.
+        XCTAssertEqual(LimitsLayout.wideRowsMinWidth, 700)
         // 1036 − 30 − 32 − 2 × 24.
         XCTAssertEqual(LimitsLayout.rowsWidth(detailWidth: 1036), 926)
     }
@@ -20,8 +20,8 @@ final class LimitsLayoutTests: XCTestCase {
     }
 
     func testTheSwitchIsAtExactlyTheWideWidth() {
-        // 670 + 30 + 32 + 48.
-        XCTAssertTrue(LimitsLayout.isWideRows(detailWidth: 780))
-        XCTAssertFalse(LimitsLayout.isWideRows(detailWidth: 779.5))
+        // 700 + 30 + 32 + 48.
+        XCTAssertTrue(LimitsLayout.isWideRows(detailWidth: 810))
+        XCTAssertFalse(LimitsLayout.isWideRows(detailWidth: 809.5))
     }
 }

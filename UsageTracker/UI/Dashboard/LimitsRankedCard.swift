@@ -25,6 +25,12 @@ struct LimitsRankedCard: View {
     @State private var showsAll = false
     /// The rows on screen, formatted; nil until the first build.
     @State private var ranked: LimitsRankedRows?
+    /// The chats open on their stretches. Per card: a new provider, window, period or
+    /// measure is a new card (`.id(load.query)`), with every chat closed.
+    @State private var expandedChatIDs: Set<String> = []
+    /// The open chats' stretch rows, by chat id, formatted off the main actor
+    /// (`stretchRowsKey`).
+    @State private var stretchRows: [String: [LimitsRow]] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,6 +57,9 @@ struct LimitsRankedCard: View {
                 of: load.share, grouping: grouping, serviceID: load.serviceID, showsAll: showsAll
             )
         }
+        .task(id: stretchRowsKey) {
+            await buildStretchRows()
+        }
     }
 
     /// What the rows are built from: the load (what it answered, and the share itself, so a re-cut of an expired window with the same query still rebuilds), the
@@ -66,6 +75,30 @@ struct LimitsRankedCard: View {
         RowsKey(query: load.query, share: load.share, showsAll: showsAll, grouping: grouping)
     }
 
+    /// What the stretch rows are built from: the load's stretches and which chats are
+    /// open. A share cut again comes with its stretches cut again.
+    private struct StretchRowsKey: Equatable {
+        let stretches: [String: [ChatStretch]]
+        let open: Set<String>
+    }
+
+    private var stretchRowsKey: StretchRowsKey {
+        StretchRowsKey(stretches: load.stretches, open: expandedChatIDs)
+    }
+
+    /// The open chats' stretch rows, formatted on a detached task: a long chat has dozens
+    /// of stretches, and a month thousands. A newer key's build cancels this one, which
+    /// then publishes nothing.
+    private func buildStretchRows() async {
+        let stretches = load.stretches
+        let open = expandedChatIDs
+        let rows = await Task.detached(priority: .userInitiated) {
+            LimitsRules.stretchRows(chatIDs: open, stretches: stretches, now: Date())
+        }.value
+        guard !Task.isCancelled else { return }
+        stretchRows = rows
+    }
+
     /// The ranked rows and "Show all", or the sentence for a window with none.
     @ViewBuilder
     private func rowsSection(_ ranked: LimitsRankedRows) -> some View {
@@ -76,10 +109,21 @@ struct LimitsRankedCard: View {
                 .padding(.vertical, LimitsLayout.rowVerticalPadding)
         } else {
             ForEach(Array(ranked.rows.enumerated()), id: \.element.id) { index, row in
-                rankedRow(row)
-                    .overlay(alignment: .top) {
-                        if index > 0 { hairline }
+                VStack(alignment: .leading, spacing: 0) {
+                    if grouping == .chats {
+                        chatRow(row)
+                        if expandedChatIDs.contains(row.id) {
+                            ForEach(stretchRows[row.id] ?? []) { stretch in
+                                stretchRow(stretch)
+                            }
+                        }
+                    } else {
+                        rankedRow(row)
                     }
+                }
+                .overlay(alignment: .top) {
+                    if index > 0 { hairline }
+                }
             }
             if LimitsRules.canShowAll(count: ranked.total) {
                 Button(LimitsCopy.showAll(count: ranked.total, expanded: showsAll)) {
@@ -171,8 +215,69 @@ struct LimitsRankedCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             figures(row)
         }
+        .padding(.leading, chatIndent)
         .padding(.vertical, LimitsLayout.tailRowVerticalPadding)
         .overlay(alignment: .top) { hairline }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// How far the rows under the list stand in: past the chevrons, while chats can open.
+    private var chatIndent: CGFloat {
+        grouping == .chats ? LimitsLayout.chatIndent : 0
+    }
+
+    private func toggle(_ chatID: String) {
+        if expandedChatIDs.contains(chatID) {
+            expandedChatIDs.remove(chatID)
+        } else {
+            expandedChatIDs.insert(chatID)
+        }
+    }
+
+    /// A chat's row with the chevron that opens its stretches (spec 2026-10-16 limit
+    /// analytics § The tab, item 5). The whole line answers a click; the chevron is the one
+    /// control Tab and VoiceOver reach.
+    private func chatRow(_ row: LimitsRow) -> some View {
+        let isExpanded = expandedChatIDs.contains(row.id)
+        return HStack(alignment: .center, spacing: LimitsLayout.chevronGap) {
+            Button {
+                toggle(row.id)
+            } label: {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: LimitsLayout.chevronSize, weight: .semibold))
+                    .foregroundStyle(.om(.secondary))
+                    .rotationEffect(.degrees(isExpanded ? 90 : 0))
+                    .frame(width: LimitsLayout.chevronWidth, height: LimitsLayout.chevronWidth)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(row.title)
+            .accessibilityHint(LimitsCopy.stretchToggle(expanded: isExpanded))
+            .help(LimitsCopy.stretchToggle(expanded: isExpanded))
+            rankedRow(row)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggle(row.id) }
+    }
+
+    /// One stretch under its open chat: its prompt over its hours, how it began and its
+    /// cold start, then its share and dollars in the chat's columns.
+    private func stretchRow(_ row: LimitsRow) -> some View {
+        HStack(alignment: .center, spacing: LimitsLayout.columnGap) {
+            VStack(alignment: .leading, spacing: LimitsLayout.rowLineSpacing) {
+                Text(row.title)
+                    .font(.system(size: LimitsLayout.stretchTitleSize, weight: .medium))
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                subtitleText(row.subtitle)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            figures(row)
+        }
+        .padding(.leading, chatIndent)
+        .padding(.vertical, LimitsLayout.stretchRowVerticalPadding)
+        .help(row.title)
         .accessibilityElement(children: .combine)
     }
 
