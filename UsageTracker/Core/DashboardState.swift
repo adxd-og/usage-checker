@@ -545,6 +545,9 @@ final class DashboardState: ObservableObject {
         let kind: BucketKind
         let request: LimitShareRequest
         let share: LimitShare
+        /// The period the picker had on screen when it was asked for (spec 2026-10-16
+        /// limit analytics § The tab, item 1).
+        var period: LimitsPeriod = .current
     }
 
     /// Bumped by every `refreshLimitShare(kind:)`. If the window switch is clicked twice

@@ -16,6 +16,9 @@ struct LimitsQuery: Hashable, Sendable {
     let kind: BucketKind
     /// nil when the account has nothing to measure for `kind`: no mode, or no open window.
     let measure: LimitsMeasure?
+    /// The period picked (spec 2026-10-16 limit analytics § The tab, item 1): the current
+    /// one unless a past window or an earlier week is on screen.
+    var period: LimitsPeriod = .current
 }
 
 /// Which window or period a share covers, and against what (§ Accounts without percent
@@ -39,10 +42,12 @@ extension LimitsRules {
         Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / 60).rounded() * 60)
     }
 
-    /// The query `request` answers: what `DashboardState` publishes with each load. With no
-    /// request there is nothing to measure.
-    nonisolated static func query(serviceID: String, kind: BucketKind, request: LimitShareRequest?) -> LimitsQuery {
-        guard let request else { return LimitsQuery(serviceID: serviceID, kind: kind, measure: nil) }
+    /// The query `request` answers for `period`: what `DashboardState` publishes with each
+    /// load. With no request there is nothing to measure.
+    nonisolated static func query(
+        serviceID: String, kind: BucketKind, request: LimitShareRequest?, period: LimitsPeriod = .current
+    ) -> LimitsQuery {
+        guard let request else { return LimitsQuery(serviceID: serviceID, kind: kind, measure: nil, period: period) }
         let measure: LimitsMeasure
         switch request.mode {
         case .subscription:
@@ -52,32 +57,34 @@ extension LimitsRules {
         case .spendLimit(let limit, _):
             measure = .spendLimit(monthStart: request.period.start, limit: limit)
         }
-        return LimitsQuery(serviceID: serviceID, kind: kind, measure: measure)
+        return LimitsQuery(serviceID: serviceID, kind: kind, measure: measure, period: period)
     }
 
-    /// The query the live snapshot and settings ask for now: the request
-    /// `DashboardState.refreshLimitShare(kind:)` would make (`LimitShareRules.request`).
+    /// The query the live snapshot and settings ask for now, for the period picked: the
+    /// request `DashboardState.refreshLimitShare(kind:period:)` would make
+    /// (`request(for:kind:period:…)`).
     nonisolated static func query(
         serviceID: String,
         service: ServiceSnapshot?,
         kind: BucketKind,
+        period: LimitsPeriod = .current,
         weeklyBudgetUSD: Double,
         now: Date,
         calendar: Calendar
     ) -> LimitsQuery {
         let request = service.flatMap {
-            LimitShareRules.request(
-                for: $0, kind: kind, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+            LimitsRules.request(
+                for: $0, kind: kind, period: period, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
             )
         }
-        return query(serviceID: serviceID, kind: kind, request: request)
+        return query(serviceID: serviceID, kind: kind, request: request, period: period)
     }
 }
 
 extension DashboardState.LimitShareLoad {
-    /// The query this load answered.
+    /// The query this load answered, its period included.
     var query: LimitsQuery {
-        LimitsRules.query(serviceID: serviceID, kind: kind, request: request)
+        LimitsRules.query(serviceID: serviceID, kind: kind, request: request, period: period)
     }
 }
 
@@ -90,12 +97,15 @@ extension LimitsRules {
         serviceID: String,
         kind: BucketKind,
         request: LimitShareRequest?,
-        share: LimitShare?
+        share: LimitShare?,
+        period: LimitsPeriod = .current
     ) -> (load: DashboardState.LimitShareLoad?, answer: LimitsQuery) {
         let load = request.flatMap { request in
-            share.map { DashboardState.LimitShareLoad(serviceID: serviceID, kind: kind, request: request, share: $0) }
+            share.map {
+                DashboardState.LimitShareLoad(serviceID: serviceID, kind: kind, request: request, share: $0, period: period)
+            }
         }
-        return (load, query(serviceID: serviceID, kind: kind, request: request))
+        return (load, query(serviceID: serviceID, kind: kind, request: request, period: period))
     }
 }
 
@@ -155,7 +165,8 @@ extension LimitsRules {
     /// The page for the selected provider and window kind:
     /// 1. a provider whose log names no chat gets the empty state (§ The tab);
     /// 2. an account with no mode has nothing to measure (`LimitShareRules.mode`);
-    /// 3. a subscription needs its window of `kind` open now;
+    /// 3. a subscription needs its window of `kind` open now, unless a past window is
+    ///    picked;
     /// 4. a share is shown when it answered the query asked now (`query(serviceID:service:…)`):
     ///    same provider, kind, window or period, and budget or limit. A share of last week,
     ///    or against the budget set before, is not;
@@ -167,6 +178,7 @@ extension LimitsRules {
     nonisolated static func page(
         serviceID: String,
         kind: BucketKind,
+        period: LimitsPeriod = .current,
         service: ServiceSnapshot?,
         weeklyBudgetUSD: Double,
         load: DashboardState.LimitShareLoad?,
@@ -177,13 +189,13 @@ extension LimitsRules {
         guard DashboardState.hasSessionLog(for: serviceID) else { return .unsupported }
         guard let service, let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD)
         else { return .nothingToMeasure }
-        if mode == .subscription {
+        if mode == .subscription, period == .current {
             guard let bucket = LimitShareRules.coreBucket(kind: kind, in: service),
                   LimitShareRules.currentWindow(of: bucket, now: now) != nil
             else { return .noOpenWindow(span(of: kind, in: service)) }
         }
         let current = query(
-            serviceID: serviceID, service: service, kind: kind,
+            serviceID: serviceID, service: service, kind: kind, period: period,
             weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
         )
         if let load, load.query == current { return .ready(load) }
