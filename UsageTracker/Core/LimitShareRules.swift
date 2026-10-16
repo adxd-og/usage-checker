@@ -283,6 +283,9 @@ struct LimitShare: Equatable, Sendable {
     /// What one point cost. nil below `LimitShareRules.minimumAttributedPoints` ("Not
     /// enough use yet") and outside the Subscription mode.
     let price: PercentPrice?
+    /// Local dollars per model, keyed by display name. The change signal reads the
+    /// costliest model from here.
+    let costByModel: [String: Double]
 
     /// The points local turns explain: the window's percent minus Outside.
     var attributedPoints: Double { percent - outside }
@@ -377,7 +380,8 @@ extension LimitShareRules {
             bins: binShares,
             cost: cost,
             tokens: tokens,
-            price: price(cost: cost, tokens: tokens, attributedPoints: percent - outside)
+            price: price(cost: cost, tokens: tokens, attributedPoints: percent - outside),
+            costByModel: costByModel(turns)
         )
     }
 
@@ -495,5 +499,89 @@ extension LimitShareRules {
     nonisolated static func price(cost: Double, tokens: Int, attributedPoints: Double) -> PercentPrice? {
         guard attributedPoints + pointSlack >= minimumAttributedPoints else { return nil }
         return PercentPrice(dollars: cost / attributedPoints, tokens: Double(tokens) / attributedPoints)
+    }
+}
+
+// MARK: - Change signal
+
+/// "A percent buys about N % less than usual" (§ Design, Change signal).
+struct LimitChangeSignal: Equatable, Sendable {
+    /// This week's dollars per point.
+    let price: Double
+    /// The mean of the usual weeks' dollars per point.
+    let usualPrice: Double
+    /// N: how much less a point buys than usual, in whole percent.
+    let percentLess: Int
+    /// Set when this week's costliest model is not the one the usual weeks spent most
+    /// on. The API price only stands in for how a limit is charged, and a model change
+    /// moves it.
+    let modelChange: ModelChange?
+
+    struct ModelChange: Equatable, Sendable {
+        let usual: String
+        let now: String
+    }
+}
+
+extension LimitShareRules {
+    /// The attributed points a week needs before its price is compared.
+    static let changeFloorPoints: Double = 10
+    /// The signal fires when this week's price falls below this share of the usual one.
+    static let changeThreshold: Double = 0.75
+
+    /// Dollars per model, keyed by display name, so a model's dated and undated ids
+    /// count as one model.
+    static func costByModel(_ turns: [TurnCost]) -> [String: Double] {
+        var out: [String: Double] = [:]
+        for turn in turns {
+            out[ModelPricing.displayName(for: turn.model) ?? turn.model, default: 0] += turn.cost
+        }
+        return out
+    }
+
+    /// The model with the most dollars. A tie goes to the name that sorts first.
+    static func costliest(_ costs: [String: Double]) -> String? {
+        costs.max { lhs, rhs in lhs.value == rhs.value ? lhs.key > rhs.key : lhs.value < rhs.value }?.key
+    }
+
+    /// This week's price against the usual weeks' mean.
+    ///
+    /// The usual weeks are the previous complete weeks (`pastWindows`) that start inside
+    /// the 31-day turn horizon and have at least `changeFloorPoints` attributed points.
+    /// The signal fires when this week also has that many points and its price is below
+    /// `changeThreshold` of the mean.
+    ///
+    /// Weekly only. nil when it does not fire, or when there is no usual week to compare.
+    nonisolated static func changeSignal(
+        kind: BucketKind, current: LimitShare, previous: [LimitShare], horizonStart: Date
+    ) -> LimitChangeSignal? {
+        guard kind == .weekly,
+              current.attributedPoints + pointSlack >= changeFloorPoints,
+              let price = current.price?.dollars
+        else { return nil }
+        let usual = previous.filter {
+            $0.window.start >= horizonStart
+                && $0.window.end <= current.window.start
+                && $0.attributedPoints + pointSlack >= changeFloorPoints
+                && $0.price != nil
+        }
+        guard !usual.isEmpty else { return nil }
+        let usualPrice = usual.compactMap { $0.price?.dollars }.reduce(0, +) / Double(usual.count)
+        guard usualPrice > 0, price < changeThreshold * usualPrice else { return nil }
+
+        var usualModels: [String: Double] = [:]
+        for week in usual { usualModels.merge(week.costByModel, uniquingKeysWith: +) }
+        let modelChange: LimitChangeSignal.ModelChange?
+        if let was = costliest(usualModels), let now = costliest(current.costByModel), was != now {
+            modelChange = LimitChangeSignal.ModelChange(usual: was, now: now)
+        } else {
+            modelChange = nil
+        }
+        return LimitChangeSignal(
+            price: price,
+            usualPrice: usualPrice,
+            percentLess: Int(((1 - price / usualPrice) * 100).rounded()),
+            modelChange: modelChange
+        )
     }
 }
