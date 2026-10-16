@@ -199,3 +199,42 @@ extension PublishedShareRules {
         return out
     }
 }
+
+// MARK: - The last gate
+
+extension PublishedShareRules {
+    /// The chats' fields `shares` may still publish for `service` at `now`.
+    ///
+    /// The shares may be a poll old: the writes between polls reuse them. A field is
+    /// kept only while two things hold:
+    /// - the requests re-derived from the very services being written still name the
+    ///   window it was cut for (the same key and the same reset);
+    /// - that window, when it has a reset, resets after `now`.
+    ///
+    /// So a share never outlives its window's reset. A share of a window the snapshot now
+    /// reports with another reset is dropped. A key the account's current mode does not
+    /// publish is dropped: session and week after a switch to pay as you go, the budget
+    /// once it is cleared.
+    nonisolated static func current(
+        _ shares: PublishedShares,
+        for service: ServiceSnapshot,
+        weeklyBudgetUSD: Double,
+        now: Date,
+        calendar: Calendar
+    ) -> [String: ChatShareFields] {
+        let named = Set(
+            requests(for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar).map(\.window)
+        )
+        let live = Set(shares.windows.filter { window in
+            named.contains(window) && (window.resetsAt.map { $0 > now } ?? true)
+        }.map(\.field))
+        guard !live.isEmpty else { return [:] }
+        return shares.chats.mapValues { chat in
+            ChatShareFields(
+                sessionShare: live.contains(.session) ? chat.sessionShare : nil,
+                weekShare: live.contains(.week) ? chat.weekShare : nil,
+                budgetShare: live.contains(.budget) ? chat.budgetShare : nil
+            )
+        }
+    }
+}
