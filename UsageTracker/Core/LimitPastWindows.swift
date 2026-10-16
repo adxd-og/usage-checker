@@ -47,9 +47,10 @@ extension LimitShareRules {
     /// one window's reset-bearing readings lie on both sides of it (that would be a limit
     /// restored inside it). It begins the next window at the reset a window named between
     /// its two readings, or else at the reading before it. Seen up to a bin before
-    /// `currentStart`, it is the open window's own reset: the windows before it end on that
-    /// reading instead. After a window's reset another began even where no reading named
-    /// it.
+    /// `currentStart`, it is the open window's own reset: a window found by the held-drop
+    /// rule before it ends on that reading instead. A window whose readings named a reset
+    /// still ends at the highest reset they named. After a window's reset another began
+    /// even where no reading named it.
     ///
     /// Each window ends where the next one began, at `currentStart`, and at its own reset.
     /// These are left out, as by `pastWindows(series:before:horizonStart:)`:
@@ -144,7 +145,11 @@ extension LimitShareRules {
             var end = starts.filter { $0 > candidate.start }.min() ?? currentStart
             end = min(end, currentStart)
             if let ownEnd = candidate.ownEnd { end = min(end, ownEnd) }
-            if let ownResetSeenEarly, ownResetSeenEarly > candidate.start { end = min(end, ownResetSeenEarly) }
+            // The open window's own drop seen early clips only a window the held-drop rule
+            // found; one whose readings named a reset ends at that reset.
+            if candidate.ownEnd == nil, let ownResetSeenEarly, ownResetSeenEarly > candidate.start {
+                end = min(end, ownResetSeenEarly)
+            }
             guard candidate.start >= horizonStart, candidate.start < end else { continue }
             let span = LimitWindow(start: candidate.start, end: end)
             let leftZero = candidate.leftZero || readings.contains {
