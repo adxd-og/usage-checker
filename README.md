@@ -211,7 +211,7 @@ Mac.
 |---|---|---|
 | `get_usage` | none | every provider's windows, resets and costs |
 | `get_agents` | none | which sessions are working or waiting on you |
-| `get_sessions` | `provider` (`claude` or `codex`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count |
+| `get_sessions` | `provider` (`claude` or `codex`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count, and each chat's share of the current limit windows (`sessionShare`, `weekShare`) or of the budget or spend limit (`budgetShare`) |
 
 - One-click install for Claude Code (adds `omelette` to `~/.claude.json`)
   and Codex (adds an `[mcp_servers.omelette]` table to
