@@ -3,8 +3,8 @@ import XCTest
 
 /// How the Limits tab spells its figures: spec
 /// `docs/superpowers/specs/2026-10-16-limit-analytics.md` § The tab ("≈ 4.2 %", "Shares
-/// under 0.1 % read '< 0.1 %'", "1 % ≈ $62 · 130 M tokens") and the ruling that Outside
-/// this Mac is whole points on Claude.
+/// under 0.1 % read '< 0.1 %'", "1 % ≈ $62 · 130 M tokens"; Outside this Mac is whole
+/// points on Claude).
 final class LimitsCopyTests: XCTestCase {
     func testAShareReadsOneDecimalAfterAnApproximateSign() {
         XCTAssertEqual(LimitsCopy.share(21.9), "≈ 21.9 %")
