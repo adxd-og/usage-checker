@@ -349,6 +349,13 @@ final class AppState: ObservableObject {
         }.value
         AgentSessionStore.shared.mergePassive(scanned)
         AgentSessionStore.shared.pruneStale()
+        // Which repository each worktree a session runs in belongs to, looked up while the
+        // worktree is on disk, so the Limits tab still counts its chats under that
+        // repository once it is removed (`WorktreeStore`). The poll does not wait for it.
+        let paths = AgentSessionStore.shared.sessions.compactMap(\.cwd)
+        Task.detached(priority: .utility) {
+            await WorktreeStore.shared.learn(paths: paths)
+        }
     }
 
     /// `status.json` for the `omelette` CLI: the numbers this poll produced, plus the
