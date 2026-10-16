@@ -246,13 +246,15 @@ actor AntigravityProvider: UsageProvider {
         )
     }
 
+    /// The probe's quota-summary window id prefix; agy's buckets take it too (`agyWindow`).
+    private static let summaryWindowPrefix = "antigravity-quota-summary-"
+
     /// A summary window's bucket id without the cadence, lowercased and with `_` read as
     /// `-` (as CodexBarCore reads it for the cadence): `antigravity-quota-summary-3p-weekly`
     /// → `3p`. nil outside the quota summary.
     private static func summaryStem(_ id: String) -> String? {
-        let prefix = "antigravity-quota-summary-"
-        guard AntigravityStatusSnapshot.isQuotaSummaryWindowID(id), id.hasPrefix(prefix) else { return nil }
-        let stem = String(id.dropFirst(prefix.count))
+        guard AntigravityStatusSnapshot.isQuotaSummaryWindowID(id), id.hasPrefix(summaryWindowPrefix) else { return nil }
+        let stem = String(id.dropFirst(summaryWindowPrefix.count))
             .lowercased()
             .replacingOccurrences(of: "_", with: "-")
         guard let cadence = ["-weekly", "-5h"].first(where: { stem.hasSuffix($0) }) else { return stem }
@@ -423,5 +425,163 @@ actor AntigravityProvider: UsageProvider {
     private static func kind(for w: CodexBarCore.RateWindow) -> BucketKind {
         guard let minutes = w.windowMinutes else { return .other }
         return minutes <= 24 * 60 ? .session : .weekly
+    }
+
+    // MARK: - agy /usage
+
+    /// agy's reading as the probe's quota summary would hand it over: one window per bucket,
+    /// id `antigravity-quota-summary-<bucket id>`, titled and ordered as the probe titles and
+    /// orders them, its length read as the probe reads it (`agyMinutes`). `buckets(from:)`
+    /// then maps it as it maps the local reading, so both paths publish the same ids, kinds
+    /// and lengths and History keeps one line per window.
+    nonisolated static func quotaSummary(from report: AgyUsageReport, at now: Date) -> CodexBarCore.UsageSnapshot {
+        let groups = report.groups.enumerated()
+            .map { (rank: familyRank($0.element.name), offset: $0.offset, group: $0.element) }
+            .sorted { ($0.rank, $0.offset) < ($1.rank, $1.offset) }
+            .map { $0.group }
+        let windows = groups.flatMap { group in
+            let family = familyTitle(group.name)
+            return group.buckets.enumerated()
+                .map { (rank: cadenceRank(agyMinutes($0.element)), offset: $0.offset, bucket: $0.element) }
+                .sorted { ($0.rank, $0.offset) < ($1.rank, $1.offset) }
+                .map { agyWindow($0.bucket, family: family) }
+        }
+        return CodexBarCore.UsageSnapshot(
+            primary: nil,
+            secondary: nil,
+            tertiary: nil,
+            extraRateWindows: windows,
+            updatedAt: now
+        )
+    }
+
+    /// The row name of each per-model pool in an agy reading, by bucket id: its group's own
+    /// name, which the probe never passes on (it titles such a group after its family). A
+    /// name with no letter or digit, or one that two pools in the reading share, is left
+    /// out; those rows keep the stem name `buckets(from:)` gives them.
+    nonisolated static func poolNames(from report: AgyUsageReport) -> [String: String] {
+        var stemsByName: [String: Set<String>] = [:]
+        var candidates: [(id: String, name: String)] = []
+        for group in report.groups where group.name.contains(where: { $0.isLetter || $0.isNumber }) {
+            for bucket in group.buckets {
+                let windowID = summaryWindowPrefix + bucket.id
+                guard let stem = summaryStem(windowID), !poolStems.contains(stem) else { continue }
+                stemsByName[group.name, default: []].insert(stem)
+                candidates.append((id: "antigravity_" + windowID, name: group.name))
+            }
+        }
+        var names: [String: String] = [:]
+        for candidate in candidates where stemsByName[candidate.name]?.count == 1 {
+            names[candidate.id] = candidate.name
+        }
+        return names
+    }
+
+    /// `buckets` with each per-model pool row under the name `names` holds for its id. Pool
+    /// rows, and rows without an entry, are unchanged.
+    nonisolated static func named(_ buckets: [UsageBucket], by names: [String: String]) -> [UsageBucket] {
+        buckets.map { bucket in
+            guard bucket.kind == .modelSpecific, let name = names[bucket.id] else { return bucket }
+            return UsageBucket(
+                id: bucket.id,
+                label: name,
+                utilization: bucket.utilization,
+                resetsAt: bucket.resetsAt,
+                kind: bucket.kind,
+                windowLength: bucket.windowLength,
+                credit: bucket.credit
+            )
+        }
+    }
+
+    /// The probe's family order: the Gemini models family first, Claude/GPT next, any other
+    /// group last.
+    private static func familyRank(_ group: String) -> Int {
+        let name = group.lowercased()
+        if name.contains("gemini") { return 0 } // the Gemini models family
+        if name.contains("claude") || name.contains("gpt") { return 1 }
+        return 2
+    }
+
+    /// The probe's family title: "Claude/GPT", the Gemini models family's short title, or
+    /// the group's own name ("Quota" when it has none).
+    private static func familyTitle(_ group: String) -> String {
+        let name = group.lowercased()
+        if name.contains("gemini") { return "Gemini" } // the Gemini models family's title
+        if name.contains("claude") || name.contains("gpt") { return "Claude/GPT" }
+        return group.isEmpty ? "Quota" : group
+    }
+
+    /// A bucket's length in minutes, read as the probe reads a quota-summary bucket's
+    /// cadence (CodexBarCore's `quotaBucketKind`), so a bucket gets the same kind and length
+    /// whichever path read it: its id and its name decide. agy's `window` ("5h", "weekly")
+    /// decides only when neither names a cadence; the probe never sees that field. nil for
+    /// any other window.
+    private static func agyMinutes(_ bucket: AgyUsageReport.Bucket) -> Int? {
+        cadenceMinutes([bucket.id, bucket.name]) ?? cadenceMinutes([bucket.window ?? ""])
+    }
+
+    /// The probe's names for the five-hour window; "weekly" is the week.
+    private static let sessionCadenceAliases: Set<String> = ["session", "5h", "5-hour", "five hour", "five-hour"]
+
+    /// The probe's cadence rule over `values`: each trimmed, lowercased, `_` read as `-`,
+    /// and also without a trailing " limit"; a value equal to an alias, or ending in `-`
+    /// and an alias, names it. A five-hour alias wins over "weekly". 300 for five hours,
+    /// 10080 for the week, nil when no value names either.
+    private static func cadenceMinutes(_ values: [String]) -> Int? {
+        var candidates: Set<String> = []
+        for value in values {
+            let normalized = value
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased()
+                .replacingOccurrences(of: "_", with: "-")
+            guard !normalized.isEmpty else { continue }
+            var forms = [normalized]
+            if normalized.hasSuffix(" limit") {
+                forms.append(String(normalized.dropLast(" limit".count)))
+            }
+            for form in forms {
+                candidates.insert(form)
+                for alias in sessionCadenceAliases.union(["weekly"]) where form.hasSuffix("-" + alias) {
+                    candidates.insert(alias)
+                }
+            }
+        }
+        if !candidates.isDisjoint(with: sessionCadenceAliases) { return 300 }
+        if candidates.contains("weekly") { return 10080 }
+        return nil
+    }
+
+    /// The probe's order inside a group: 5-hour, weekly, then any other window.
+    private static func cadenceRank(_ minutes: Int?) -> Int {
+        switch minutes {
+        case 300?: return 0
+        case 10080?: return 1
+        default: return 2
+        }
+    }
+
+    /// One agy bucket as the probe's quota-summary window: used = 100 − left. A bucket with
+    /// nothing reported, or disabled, is `usageKnown: false` and becomes no row.
+    private static func agyWindow(_ bucket: AgyUsageReport.Bucket, family: String) -> NamedRateWindow {
+        let minutes = agyMinutes(bucket)
+        let cadence: String
+        switch minutes {
+        case 300?: cadence = "5-hour"
+        case 10080?: cadence = "weekly"
+        default: cadence = bucket.name
+        }
+        let left = bucket.remainingFraction.map { max(0, min(100, $0 * 100)) }
+        return NamedRateWindow(
+            id: summaryWindowPrefix + bucket.id,
+            title: family + " " + cadence,
+            window: RateWindow(
+                usedPercent: left.map { 100 - $0 } ?? 0,
+                windowMinutes: minutes,
+                resetsAt: bucket.resetTime,
+                resetDescription: nil
+            ),
+            usageKnown: !bucket.disabled && bucket.remainingFraction != nil
+        )
     }
 }
