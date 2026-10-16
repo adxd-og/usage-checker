@@ -119,6 +119,28 @@ final class AntigravityBucketsTests: XCTestCase {
         XCTAssertEqual(buckets.map(\.kind), [.modelSpecific, .modelSpecific])
     }
 
+    /// A title that is empty, blank or punctuation only names no model either: the row is
+    /// "Unnamed model" under its wire id, never an empty label or a lone "—" (session
+    /// ruling, fix round 1).
+    func testAWindowWithABlankOrPunctuationOnlyTitleIsAnUnnamedModelRow() {
+        let usage = F.usage(primary: nil, secondary: nil, windows: [
+            F.modelWindow(id: "MODEL_PLACEHOLDER_M430", title: "", percent: 2, resetsAt: F.argonWeeklyReset),
+            F.modelWindow(id: "MODEL_PLACEHOLDER_M431", title: "   ", percent: 3, resetsAt: F.argonWeeklyReset),
+            F.modelWindow(id: "MODEL_PLACEHOLDER_M432", title: "—", percent: 4, resetsAt: F.argonWeeklyReset),
+            F.modelWindow(id: "MODEL_PLACEHOLDER_M433", title: "(…)", percent: 5, resetsAt: F.argonWeeklyReset),
+        ])
+        XCTAssertEqual(AntigravityProvider.buckets(from: usage), [
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M430", label: "Unnamed model", percent: 2,
+                           resetsAt: F.argonWeeklyReset, kind: .modelSpecific),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M431", label: "Unnamed model", percent: 3,
+                           resetsAt: F.argonWeeklyReset, kind: .modelSpecific),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M432", label: "Unnamed model", percent: 4,
+                           resetsAt: F.argonWeeklyReset, kind: .modelSpecific),
+            Fixture.bucket(id: "antigravity_MODEL_PLACEHOLDER_M433", label: "Unnamed model", percent: 5,
+                           resetsAt: F.argonWeeklyReset, kind: .modelSpecific),
+        ])
+    }
+
     /// One reading never carries two buckets with one id, whatever the titles (session
     /// ruling F2): aggregates, variants in several spellings, a bare title, titles with no
     /// letter, and windows with no human name.

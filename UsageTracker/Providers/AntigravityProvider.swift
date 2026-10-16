@@ -297,7 +297,7 @@ actor AntigravityProvider: UsageProvider {
     ]
     private static let compactFallbackPrefix = "antigravity-compact-fallback-"
 
-    /// The row name of a model window that carries no name of its own (`hasNoHumanName`).
+    /// The row name of a model window that carries no name of its own (`modelRow`).
     private static let unnamedModelLabel = "Unnamed model"
 
     /// The per-model path's named windows. The probe lists a model apart only when it is
@@ -337,14 +337,16 @@ actor AntigravityProvider: UsageProvider {
     }
 
     /// One model window as a row, before its variants collapse. The wire ids are
-    /// placeholders, so the id comes from the name (`modelBucketID`). A window with no
-    /// human name is "Unnamed model" under its own wire id and collapses with nothing.
+    /// placeholders, so the id comes from the name (`modelSlug`). A window with no human
+    /// name, or whose name has no letter or digit (empty, blank, punctuation only), is
+    /// "Unnamed model" under its own wire id and collapses with nothing.
     private static func modelRow(_ named: NamedRateWindow) -> UsageBucket {
-        let unnamed = hasNoHumanName(named)
-        let name = unnamed ? unnamedModelLabel : modelStem(named.title)
+        let stem = modelStem(named.title)
+        let slug = modelSlug(stem)
+        let unnamed = hasNoHumanName(named) || slug.isEmpty
         return UsageBucket(
-            id: unnamed ? "antigravity_\(named.id)" : modelBucketID(name, wireID: named.id),
-            label: name,
+            id: unnamed ? "antigravity_\(named.id)" : "antigravity_model-" + slug,
+            label: unnamed ? unnamedModelLabel : stem,
             utilization: named.window.usedPercent,
             resetsAt: named.window.resetsAt ?? .distantFuture,
             kind: .modelSpecific,
@@ -383,11 +385,11 @@ actor AntigravityProvider: UsageProvider {
         return trimmed
     }
 
-    /// A model row's id from its name, stable across polls: lowercased, each run of other
-    /// characters as one `-`, so "Model 4.1 Pro" → `antigravity_model-model-4-1-pro`. A
-    /// name with no letter or digit would leave a bare `antigravity_model-`, so its row
-    /// keeps the wire id instead.
-    private static func modelBucketID(_ name: String, wireID: String) -> String {
+    /// The slug of a model row's id, stable across polls: the name lowercased, each run of
+    /// other characters as one `-`, so "Model 4.1 Pro" → `antigravity_model-model-4-1-pro`.
+    /// Empty for a name with no letter or digit, whose row then keeps its wire id rather
+    /// than a bare `antigravity_model-`.
+    private static func modelSlug(_ name: String) -> String {
         var slug = ""
         for character in name.lowercased() {
             if character.isLetter || character.isNumber {
@@ -397,7 +399,7 @@ actor AntigravityProvider: UsageProvider {
             }
         }
         if slug.hasSuffix("-") { slug.removeLast() }
-        return slug.isEmpty ? "antigravity_\(wireID)" : "antigravity_model-" + slug
+        return slug
     }
 
     private static func bucket(from window: CodexBarCore.RateWindow?, id: String, label: String) -> UsageBucket? {
