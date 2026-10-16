@@ -86,3 +86,19 @@ extension LimitsCopy {
         }
     }
 }
+
+// MARK: - Window switch
+
+extension LimitsCopy {
+    /// What VoiceOver calls the Session / Week switch.
+    static let windowPickerLabel = "Limit window"
+
+    /// A segment of the switch: "Session", "Week", or "Month" for Codex Free's 30 days.
+    static func windowName(_ span: LimitsSpan) -> String {
+        switch span {
+        case .session: return "Session"
+        case .week: return "Week"
+        case .month: return "Month"
+        }
+    }
+}

@@ -179,3 +179,29 @@ extension LimitsRules {
         key.ingestedAt != nil && DashboardState.hasSessionLog(for: key.query.serviceID)
     }
 }
+
+// MARK: - Window switch
+
+extension LimitsRules {
+    /// The `UserDefaults` key the window switch keeps its choice under, as a `BucketKind`
+    /// raw value.
+    static let windowKey = "limitsWindow"
+
+    /// The windows the switch offers: the account's own, Session before Week
+    /// (`LimitShareRules.windowKinds`); Codex Prolite has its Week alone. None for a
+    /// provider the tab cannot measure, nor for an account with no window (pay as you go,
+    /// a spend limit).
+    nonisolated static func switchKinds(serviceID: String, service: ServiceSnapshot?) -> [BucketKind] {
+        guard DashboardState.hasSessionLog(for: serviceID), let service else { return [] }
+        return LimitShareRules.windowKinds(of: service)
+    }
+
+    /// The window on screen: the stored one while the account has it, else the week (the
+    /// mockup's default), else the one window the account has. With no window at all the
+    /// week stands in: the spend modes ignore the kind.
+    nonisolated static func selectedKind(stored: String, offered: [BucketKind]) -> BucketKind {
+        if let kind = BucketKind(rawValue: stored), offered.contains(kind) { return kind }
+        if offered.isEmpty || offered.contains(.weekly) { return .weekly }
+        return offered[0]
+    }
+}
