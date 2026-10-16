@@ -409,3 +409,94 @@ extension LimitsRules {
         }
     }
 }
+
+// MARK: - Period picker
+
+/// One entry of the period picker (spec 2026-10-16 limit analytics § The tab, item 1;
+/// § Accounts without percent windows, Periods).
+enum LimitsPeriod: Hashable, Sendable {
+    /// The window or spend period open now.
+    case current
+    /// A finished window of a subscription, as `LimitShareRules.pastWindows(records:…)`
+    /// found it, with the resets its readings named.
+    case past(LimitPastWindow)
+    /// Pay as you go's 7-day block this many weeks before the last 7 days: 1 is 7–14 days
+    /// ago.
+    case weeksAgo(Int)
+}
+
+extension LimitsRules {
+    /// Pay as you go's earlier 7-day blocks that lie wholly inside the 31-day turn horizon.
+    static var earlierWeeks: Int {
+        Int(LimitShareRules.turnHorizon / LimitShareRules.payAsYouGoPeriod) - 1
+    }
+
+    /// The periods the picker offers, the current one first, then newest to oldest:
+    /// - Subscription: the finished windows (`pastWindows`);
+    /// - Pay as you go: the earlier 7-day blocks;
+    /// - Spend limit: the month so far alone, since the turn horizon cannot cover a past
+    ///   month; and so for an account with no mode.
+    nonisolated static func periods(mode: LimitMode?, pastWindows: [LimitPastWindow]) -> [LimitsPeriod] {
+        switch mode {
+        case .some(.subscription):
+            return [.current] + pastWindows.map { LimitsPeriod.past($0) }
+        case .some(.payAsYouGo(_)):
+            return [.current] + (1...earlierWeeks).map { LimitsPeriod.weeksAgo($0) }
+        case .some(.spendLimit(_, _)), .none:
+            return [.current]
+        }
+    }
+
+    /// Whether the picker shows: only with something besides the current period to pick.
+    nonisolated static func canPickPeriod(_ periods: [LimitsPeriod]) -> Bool {
+        periods.count > 1
+    }
+
+    /// The picked period while it is on offer, else the current one: a window that left
+    /// the horizon, or a period of another mode, is not shown.
+    nonisolated static func selectedPeriod(_ chosen: LimitsPeriod, offered: [LimitsPeriod]) -> LimitsPeriod {
+        offered.contains(chosen) ? chosen : .current
+    }
+
+    /// The request a load of `period` makes (§ Accounts without percent windows, Periods):
+    /// - the current period: `LimitShareRules.request`'s;
+    /// - a past window: the window itself on the bucket of `kind`, cut by the readings that
+    ///   named its reset, with no live percent (`LimitShareRules.request(for:bucketID:)`);
+    /// - an earlier week: the 7 days that many weeks before the last 7, against the same
+    ///   budget.
+    ///
+    /// nil when the account has nothing to measure, or `period` is not its mode's.
+    nonisolated static func request(
+        for service: ServiceSnapshot,
+        kind: BucketKind,
+        period: LimitsPeriod,
+        weeklyBudgetUSD: Double,
+        now: Date,
+        calendar: Calendar
+    ) -> LimitShareRequest? {
+        switch period {
+        case .current:
+            return LimitShareRules.request(
+                for: service, kind: kind, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+            )
+        case .past(let window):
+            guard window.start < window.end,
+                  LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD) == .subscription,
+                  let bucket = LimitShareRules.coreBucket(kind: kind, in: service)
+            else { return nil }
+            return LimitShareRules.request(for: window, bucketID: bucket.id)
+        case .weeksAgo(let weeks):
+            guard weeks >= 1,
+                  let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD),
+                  case .payAsYouGo = mode
+            else { return nil }
+            let end = now.addingTimeInterval(-Double(weeks) * LimitShareRules.payAsYouGoPeriod)
+            return LimitShareRequest(
+                mode: mode,
+                period: LimitWindow(start: end.addingTimeInterval(-LimitShareRules.payAsYouGoPeriod), end: end),
+                bucketID: nil,
+                livePercent: nil
+            )
+        }
+    }
+}
