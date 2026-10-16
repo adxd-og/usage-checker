@@ -67,4 +67,13 @@ final class MCPSessionSharesTests: XCTestCase {
             )
         )
     }
+
+    func testGetSessionsSaysWhichShareKeysAChatCarries() throws {
+        let tool = try XCTUnwrap(MCPServer.toolDefinitions.first { $0["name"] as? String == "get_sessions" })
+        let description = try XCTUnwrap(tool["description"] as? String)
+
+        XCTAssertTrue(description.contains("sessionShare"), description)
+        XCTAssertTrue(description.contains("weekShare"), description)
+        XCTAssertTrue(description.contains("budgetShare"), description)
+    }
 }
