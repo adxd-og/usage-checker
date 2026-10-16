@@ -163,38 +163,47 @@ actor AntigravityProvider: UsageProvider {
         status: AntigravityStatusSnapshot,
         at now: Date
     ) -> ServiceSnapshot {
-        var buckets: [UsageBucket] = []
-        if let b = bucket(from: usage.primary, id: "antigravity_gemini", label: "Gemini models") {
-            buckets.append(b)
-        }
-        if let b = bucket(from: usage.secondary, id: "antigravity_claude_gpt", label: "Claude & GPT models") {
-            buckets.append(b)
-        }
-        for named in usage.extraRateWindows ?? [] {
-            guard named.usageKnown, !named.window.isSyntheticPlaceholder else { continue }
-            buckets.append(UsageBucket(
-                id: "antigravity_\(named.id)",
-                label: named.title,
-                utilization: named.window.usedPercent,
-                resetsAt: named.window.resetsAt ?? .distantFuture,
-                kind: kind(for: named.window),
-                windowLength: windowLength(for: named.window)
-            ))
-        }
-
-        NSLog("[UT] Antigravity fetch ok: %d window(s), plan=%@", buckets.count, status.accountPlan ?? "?")
+        let mapped = buckets(from: usage)
+        NSLog("[UT] Antigravity fetch ok: %d window(s), plan=%@", mapped.count, status.accountPlan ?? "?")
         return ServiceSnapshot(
             id: "antigravity",
             displayName: "Antigravity",
             icon: icon,
             plan: status.accountPlan.map { "Antigravity \($0.capitalized)" } ?? "Antigravity",
             accountLabel: status.accountEmail,
-            buckets: buckets,
+            buckets: mapped,
             extraUsage: nil,
             weekCost: nil,
             state: .ok,
             stateMessage: nil,
             fetchedAt: now
+        )
+    }
+
+    /// The probe's reading as the app's buckets: the two pool aggregates (`primary`,
+    /// `secondary`), then every named window with known usage, as CodexBarCore titles
+    /// it. Pure, so the tests hand it the `UsageSnapshot` the probe would.
+    nonisolated static func buckets(from usage: CodexBarCore.UsageSnapshot) -> [UsageBucket] {
+        var aggregates: [UsageBucket] = []
+        if let b = bucket(from: usage.primary, id: "antigravity_gemini", label: "Gemini models") {
+            aggregates.append(b)
+        }
+        if let b = bucket(from: usage.secondary, id: "antigravity_claude_gpt", label: "Claude & GPT models") {
+            aggregates.append(b)
+        }
+        let reported = (usage.extraRateWindows ?? []).filter { $0.usageKnown && !$0.window.isSyntheticPlaceholder }
+        return aggregates + reported.map { windowBucket($0) }
+    }
+
+    /// A named window as CodexBarCore reports it: its title, its kind from its length.
+    private static func windowBucket(_ named: NamedRateWindow) -> UsageBucket {
+        UsageBucket(
+            id: "antigravity_\(named.id)",
+            label: named.title,
+            utilization: named.window.usedPercent,
+            resetsAt: named.window.resetsAt ?? .distantFuture,
+            kind: kind(for: named.window),
+            windowLength: windowLength(for: named.window)
         )
     }
 
