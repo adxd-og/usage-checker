@@ -97,6 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // (ECONNREFUSED on a stale path would still be within budget, but a
         // missing file is the cleaner signal).
         AgentChannel.shared.stop()
+        // A background agy run (Antigravity closed) must not outlive the app.
+        AgyChildRegistry.shared.terminateAll()
         flushCostCache()
     }
 

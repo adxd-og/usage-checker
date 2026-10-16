@@ -90,7 +90,8 @@ enum AgyCommand {
     /// `outputLimit` (the child is stopped then), and `.timedOut` when it is still running,
     /// or its stdout still open, at `deadline`: the caller is answered then, the stdout
     /// reader is closed, the child gets SIGTERM, and SIGKILL `killGrace` later if it is
-    /// still there.
+    /// still there. The child is in `registry` from its start to its exit, so quitting
+    /// Omelette stops it.
     static func run(
         executable: String,
         arguments: [String],
@@ -98,7 +99,8 @@ enum AgyCommand {
         directory: URL,
         deadline: TimeInterval,
         killGrace: TimeInterval,
-        outputLimit: Int = AgyCommand.outputLimit
+        outputLimit: Int = AgyCommand.outputLimit,
+        registry: AgyChildRegistry = .shared
     ) async throws -> Data {
         let child = AgyChild(
             executable: executable,
@@ -106,7 +108,8 @@ enum AgyCommand {
             environment: environment,
             directory: directory,
             outputLimit: outputLimit,
-            killGrace: killGrace
+            killGrace: killGrace,
+            registry: registry
         )
         return try await withCheckedThrowingContinuation { continuation in
             child.start(continuation, deadline: deadline)
@@ -138,6 +141,48 @@ enum AgyCommand {
     }
 }
 
+/// The agy children running now (session ruling A4): a background run must not outlive
+/// the app that started it, so Omelette stops them as it quits. A child is registered
+/// before it starts and leaves when it exits; one that could not start leaves at once.
+final class AgyChildRegistry: @unchecked Sendable {
+    /// The app's registry; `AppDelegate.applicationWillTerminate` empties it.
+    static let shared = AgyChildRegistry()
+
+    private let lock = NSLock()
+    private var children: [ObjectIdentifier: Process] = [:]
+
+    func register(_ process: Process) {
+        lock.lock()
+        children[ObjectIdentifier(process)] = process
+        lock.unlock()
+    }
+
+    func unregister(_ process: Process) {
+        lock.lock()
+        children[ObjectIdentifier(process)] = nil
+        lock.unlock()
+    }
+
+    /// The children registered and not yet exited.
+    var runningCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return children.count
+    }
+
+    /// SIGTERM, through `Process.terminate()`, to every registered child still running.
+    /// Called as Omelette quits; nothing waits for the children to go, and nothing is
+    /// left to send SIGKILL, so agy's own clean shutdown on SIGTERM is what ends them.
+    func terminateAll() {
+        lock.lock()
+        let running = Array(children.values)
+        lock.unlock()
+        for process in running where process.isRunning {
+            process.terminate()
+        }
+    }
+}
+
 /// One agy run: the child, its stdout, and the caller waiting on them. The end of the
 /// output, the cap and the deadline race to answer the caller; the lock lets exactly one
 /// of them do it, and every later answer is dropped.
@@ -151,6 +196,7 @@ private final class AgyChild: @unchecked Sendable {
     private let queue = DispatchQueue(label: "omelette.agy-run", qos: .utility)
     private let outputLimit: Int
     private let killGrace: TimeInterval
+    private let registry: AgyChildRegistry
     private let lock = NSLock()
     // Guarded by `lock`.
     private var continuation: CheckedContinuation<Data, Error>?
@@ -165,10 +211,12 @@ private final class AgyChild: @unchecked Sendable {
         environment: [String: String],
         directory: URL,
         outputLimit: Int,
-        killGrace: TimeInterval
+        killGrace: TimeInterval,
+        registry: AgyChildRegistry
     ) {
         self.outputLimit = outputLimit
         self.killGrace = killGrace
+        self.registry = registry
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
         process.environment = environment
@@ -184,13 +232,17 @@ private final class AgyChild: @unchecked Sendable {
         lock.lock()
         self.continuation = continuation
         lock.unlock()
-        process.terminationHandler = { [weak self] _ in
+        process.terminationHandler = { [weak self, registry] exited in
+            registry.unregister(exited)
             self?.childExited()
         }
+        // Registered before it starts, so no exit can come before the registration.
+        registry.register(process)
         do {
             try process.run()
         } catch {
             process.terminationHandler = nil
+            registry.unregister(process)
             try? stdout.fileHandleForReading.close()
             settle(.failure(AgyUsageError.launchFailed(error.localizedDescription)))
             return
