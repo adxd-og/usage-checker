@@ -168,3 +168,74 @@ extension Fixture {
         )
     }
 }
+
+/// Builders for what the Limits tab reads (spec 2026-10-16 § The tab): one chat of a
+/// window's share, the share as `LimitShareRules` hands it over, and the load
+/// `DashboardState.refreshLimitShare(kind:)` publishes.
+extension Fixture {
+    static func chatShare(
+        id: String,
+        title: String? = nil,
+        project: String = "-Users-tester-Projects-alpha",
+        points: Double,
+        cost: Double,
+        tokens: Int = 1_000,
+        lastAt: Date
+    ) -> ChatShare {
+        ChatShare(
+            id: id, title: title, projectSlug: project, points: points,
+            cost: cost, tokens: tokens, lastAt: lastAt
+        )
+    }
+
+    /// A window's share, its chats in the order given (the rule's ranking). Its projects
+    /// are its chats summed, as `LimitShareRules` sums them. Its percent is the chats,
+    /// Outside and Earlier added up, as every mode's total is, and its cost the chats',
+    /// unless given.
+    static func limitShare(
+        window: LimitWindow,
+        chats: [ChatShare] = [],
+        outside: Double = 0,
+        earlier: EarlierLocalShare? = nil,
+        price: PercentPrice? = nil,
+        cost: Double? = nil,
+        percent: Double? = nil
+    ) -> LimitShare {
+        LimitShare(
+            window: window,
+            percent: percent ?? (chats.reduce(0) { $0 + $1.points } + outside + (earlier?.points ?? 0)),
+            chats: chats,
+            projects: LimitShareRules.projectShares(chats),
+            outside: outside,
+            bins: [],
+            cost: cost ?? chats.reduce(0) { $0 + $1.cost },
+            tokens: chats.reduce(0) { $0 + $1.tokens },
+            price: price,
+            costByModel: [:],
+            unbinnedOutside: 0,
+            earlier: earlier
+        )
+    }
+
+    /// What the dashboard publishes for `share`: the request it was cut for, with the
+    /// session or weekly bucket's id and the live percent on a subscription.
+    static func limitLoad(
+        serviceID: String = "claude",
+        kind: BucketKind = .weekly,
+        mode: LimitMode = .subscription,
+        share: LimitShare
+    ) -> DashboardState.LimitShareLoad {
+        let isSubscription = mode == .subscription
+        return DashboardState.LimitShareLoad(
+            serviceID: serviceID,
+            kind: kind,
+            request: LimitShareRequest(
+                mode: mode,
+                period: share.window,
+                bucketID: isSubscription ? (kind == .session ? "five_hour" : "seven_day") : nil,
+                livePercent: isSubscription ? share.percent : nil
+            ),
+            share: share
+        )
+    }
+}
