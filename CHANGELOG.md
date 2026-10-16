@@ -39,6 +39,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pools, Codex and Grok weeklies); only untouched per-model limits fold under
   "N unused windows".
 
+### Dashboard
+- New Limits tab for Claude and Codex: what filled the current session or
+  weekly window, by chat or project, in percent points with API-list
+  dollars. Use on claude.ai, the desktop app or another machine shows as
+  Outside this Mac.
+- The Limits tab's first card prices one percent of the window in dollars
+  and tokens. A pay-as-you-go account sees its last 7 days against the
+  weekly budget; an Enterprise or Team spend limit, its month against the
+  limit.
+- Grok and Antigravity say why the Limits tab is empty: they keep no
+  chat-level cost log.
+
 ## [3.0.2] — 2026-10-04
 
 ### Claude

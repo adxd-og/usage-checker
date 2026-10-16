@@ -258,6 +258,12 @@ the popover footer or ⌘D.
   model today, and what filled the current session window by project. A
   quota-only provider shows its average daily peak, quota used per day and
   busiest day and hour instead
+- **Limits**: Claude and Codex. What filled the current session or weekly
+  window, by chat or project, in percent points with their dollars; use
+  from claude.ai, the desktop app or another machine is Outside this Mac.
+  The first card prices one percent in dollars and tokens. A pay-as-you-go
+  account sees its spend against the weekly budget, a spend-limit account
+  its month against the limit
 - **Agents tab**: the Sessions figure and the Live card (the same rows as
   the popover, full width), with a link to History's chats
 - The sidebar footer says when the numbers were last updated, with a status
