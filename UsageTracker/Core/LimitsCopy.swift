@@ -328,3 +328,23 @@ extension LimitsCopy {
         return nil
     }
 }
+
+// MARK: - Chats or projects
+
+extension LimitsCopy {
+    /// What VoiceOver calls the Chats / Projects switch.
+    static let groupingPickerLabel = "Group by"
+
+    /// A segment of the switch.
+    static func groupingName(_ grouping: LimitsGrouping) -> String {
+        switch grouping {
+        case .chats: return "Chats"
+        case .projects: return "Projects"
+        }
+    }
+
+    /// Under a project's name: "1 chat", "3 chats".
+    static func chatCount(_ count: Int) -> String {
+        count == 1 ? "1 chat" : "\(HistoryCopy.count(count)) chats"
+    }
+}

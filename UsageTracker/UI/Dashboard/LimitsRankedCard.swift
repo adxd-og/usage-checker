@@ -19,6 +19,8 @@ struct LimitsRankedCard: View {
     /// Under everything: what the rows' dollars are, where the first card does not say it.
     let footnote: String?
     let isWide: Bool
+    /// Chats or Projects; the page keeps it per provider.
+    @Binding var grouping: LimitsGrouping
 
     @State private var showsAll = false
     /// The rows on screen, formatted; nil until the first build.
@@ -45,20 +47,23 @@ struct LimitsRankedCard: View {
         .padding(LimitsLayout.rankedCardPadding)
         .dashboardCard(padding: 0)
         .task(id: rowsKey) {
-            ranked = LimitsRules.chatRows(of: load.share, serviceID: load.serviceID, showsAll: showsAll)
+            ranked = LimitsRules.rows(
+                of: load.share, grouping: grouping, serviceID: load.serviceID, showsAll: showsAll
+            )
         }
     }
 
-    /// What the rows are built from: the load (what it answered, and the share itself, so a re-cut of an expired window with the same query still rebuilds) and
-    /// the cap.
+    /// What the rows are built from: the load (what it answered, and the share itself, so a re-cut of an expired window with the same query still rebuilds), the
+    /// cap and the grouping.
     private struct RowsKey: Equatable {
         let query: LimitsQuery
         let share: LimitShare
         let showsAll: Bool
+        let grouping: LimitsGrouping
     }
 
     private var rowsKey: RowsKey {
-        RowsKey(query: load.query, share: load.share, showsAll: showsAll)
+        RowsKey(query: load.query, share: load.share, showsAll: showsAll, grouping: grouping)
     }
 
     /// The ranked rows and "Show all", or the sentence for a window with none.
@@ -88,12 +93,34 @@ struct LimitsRankedCard: View {
         }
     }
 
-    /// The title with its caption on one baseline.
+    /// The title with its caption, and the Chats / Projects switch at the trailing edge.
+    /// The switch goes under the title before either is clipped.
     private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: LimitsLayout.titleSpacing) {
-            titleBlock
-            Spacer(minLength: 0)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: LimitsLayout.titleSpacing) {
+                titleBlock
+                Spacer(minLength: LimitsLayout.titleSpacing)
+                groupingSwitch
+            }
+            VStack(alignment: .leading, spacing: LimitsLayout.titleSpacing) {
+                titleBlock
+                groupingSwitch
+            }
         }
+    }
+
+    private var groupingSwitch: some View {
+        OMSegmentedControl(
+            items: LimitsGrouping.allCases.map { OMSegmentItem(id: $0.rawValue, title: LimitsCopy.groupingName($0)) },
+            selection: Binding(
+                get: { grouping.rawValue },
+                set: { grouping = LimitsGrouping(rawValue: $0) ?? grouping }
+            ),
+            alwaysShowsTitles: true,
+            keyboardShortcuts: false,
+            accessibilityLabel: LimitsCopy.groupingPickerLabel
+        )
+        .fixedSize()
     }
 
     private var titleBlock: some View {

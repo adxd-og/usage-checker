@@ -15,6 +15,8 @@ struct LimitsView: View {
     @ObservedObject private var settings = SettingsStore.shared
 
     @AppStorage(LimitsRules.windowKey) private var storedWindow: String = BucketKind.weekly.rawValue
+    /// The Chats / Projects choice of every provider in one string ("claude=projects").
+    @AppStorage(LimitsRules.groupingKey) private var storedGrouping: String = ""
     /// Opens the Settings window; `openBudgetSettings()` parks its tab first.
     @Environment(\.openSettings) private var openSettings
 
@@ -98,6 +100,15 @@ struct LimitsView: View {
         openSettings()
     }
 
+    /// The list's grouping for `serviceID`, written back without touching another
+    /// provider's (`LimitsRules.storing`).
+    private func grouping(for serviceID: String) -> Binding<LimitsGrouping> {
+        Binding(
+            get: { LimitsRules.grouping(for: serviceID, stored: storedGrouping) },
+            set: { storedGrouping = LimitsRules.storing($0, for: serviceID, in: storedGrouping) }
+        )
+    }
+
     // MARK: - Controls
 
     /// The provider on the left, the window switch on the right, as History's controls
@@ -171,6 +182,7 @@ struct LimitsView: View {
         VStack(alignment: .leading, spacing: LimitsLayout.sectionSpacing) {
             LimitsTopCard(text: LimitsCopy.topCard(for: load, now: Date()), onLink: openBudgetSettings)
             let windowSpan = LimitsRules.span(of: load.kind, in: service)
+            let listGrouping = grouping(for: load.serviceID)
             LimitsRankedCard(
                 load: load,
                 title: LimitsCopy.rankedTitle(mode: load.request.mode, span: windowSpan),
@@ -178,7 +190,8 @@ struct LimitsView: View {
                 tail: LimitsRules.tailRows(of: load.share, mode: load.request.mode, serviceID: load.serviceID),
                 emptyText: LimitsCopy.noChats(mode: load.request.mode, span: windowSpan),
                 footnote: LimitsCopy.rowsFootnote(mode: load.request.mode),
-                isWide: isWide
+                isWide: isWide,
+                grouping: listGrouping
             )
             // A new provider, window or measure starts the list capped again.
             .id(load.query)

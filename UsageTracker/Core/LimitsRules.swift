@@ -306,3 +306,86 @@ extension LimitsRules {
         return rows
     }
 }
+
+// MARK: - Chats or projects
+
+/// How the ranked list groups the window (§ The tab, item 3).
+enum LimitsGrouping: String, CaseIterable, Sendable {
+    case chats, projects
+}
+
+extension LimitsRules {
+    /// The `UserDefaults` key the Chats / Projects choice is kept under: one string for
+    /// every provider, "claude=projects,codex=chats".
+    static let groupingKey = "limitsGrouping"
+
+    /// The grouping `serviceID` was left on; Chats until one is chosen.
+    nonisolated static func grouping(for serviceID: String, stored: String) -> LimitsGrouping {
+        storedGroupings(stored)[serviceID] ?? .chats
+    }
+
+    /// `stored` with `serviceID` on `choice`, every other provider's choice kept, in id
+    /// order. A pair that no longer reads is dropped.
+    nonisolated static func storing(_ choice: LimitsGrouping, for serviceID: String, in stored: String) -> String {
+        var groupings = storedGroupings(stored)
+        groupings[serviceID] = choice
+        return groupings
+            .sorted { $0.key < $1.key }
+            .map { "\($0.key)=\($0.value.rawValue)" }
+            .joined(separator: ",")
+    }
+
+    /// Every readable "provider=grouping" pair in `stored`.
+    private static func storedGroupings(_ stored: String) -> [String: LimitsGrouping] {
+        var groupings: [String: LimitsGrouping] = [:]
+        for pair in stored.split(separator: ",") {
+            let parts = pair.split(separator: "=", maxSplits: 1)
+            guard parts.count == 2, let value = LimitsGrouping(rawValue: String(parts[1])) else { continue }
+            groupings[String(parts[0])] = value
+        }
+        return groupings
+    }
+
+    /// The window's projects in the share's own ranking, each the sum of its chats, the
+    /// first `rowCap` unless all are asked for. Only those are formatted, each named by
+    /// the provider's own decoder.
+    nonisolated static func projectRows(
+        of share: LimitShare,
+        serviceID: String,
+        showsAll: Bool,
+        projectName: (_ providerID: String, _ slug: String) -> String = SessionCopy.projectName(providerID:projectSlug:)
+    ) -> LimitsRankedRows {
+        let shown = showsAll ? share.projects[...] : share.projects.prefix(rowCap)
+        let rows = shown.map { project in
+            LimitsRow(
+                id: project.id,
+                title: projectName(serviceID, project.id),
+                subtitle: LimitsCopy.chatCount(project.chats),
+                share: LimitsCopy.share(project.points),
+                dollars: LimitsCopy.dollars(project.cost)
+            )
+        }
+        return LimitsRankedRows(rows: rows, total: share.projects.count)
+    }
+
+    /// The ranked rows of `grouping`.
+    nonisolated static func rows(
+        of share: LimitShare,
+        grouping: LimitsGrouping,
+        serviceID: String,
+        showsAll: Bool,
+        calendar: Calendar = .current,
+        locale: Locale = .current,
+        projectName: (_ providerID: String, _ slug: String) -> String = SessionCopy.projectName(providerID:projectSlug:)
+    ) -> LimitsRankedRows {
+        switch grouping {
+        case .chats:
+            return chatRows(
+                of: share, serviceID: serviceID, showsAll: showsAll,
+                calendar: calendar, locale: locale, projectName: projectName
+            )
+        case .projects:
+            return projectRows(of: share, serviceID: serviceID, showsAll: showsAll, projectName: projectName)
+        }
+    }
+}
