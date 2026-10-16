@@ -39,6 +39,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pools, Codex and Grok weeklies); only untouched per-model limits fold under
   "N unused windows".
 
+### Command line and MCP
+- `status.json` and MCP `get_sessions` give each Claude and Codex chat its
+  share of the current limits: `sessionShare` and `weekShare` in percentage
+  points on a subscription, `budgetShare` of the weekly budget or the monthly
+  spend limit otherwise. `omelette status` prints what it printed before.
+
 ## [3.0.2] — 2026-10-04
 
 ### Claude
