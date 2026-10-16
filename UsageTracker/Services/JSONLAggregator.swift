@@ -112,15 +112,19 @@ extension CLITurn {
     }
 }
 
-/// What one transcript line says. Claude Code's log is not only turns — the chat's
-/// name and the user's first prompt live in it too — and one JSON parse per line has
-/// to answer for all three.
+/// What one transcript line says. Claude Code's log is not only turns — the chat's name,
+/// the user's prompts and the chat's compactions live in it too — and one JSON parse per
+/// line has to answer for all of them.
 enum ParsedRecord {
     case turn(CLITurn)
     /// `{"type":"ai-title","aiTitle":…,"sessionId":…}`. A chat carries many; the last wins.
     case title(sessionID: String, title: String)
-    /// The first human prompt of a chat, already collapsed and cut.
-    case prompt(sessionID: String, text: String)
+    /// A human prompt of a chat, already collapsed and cut, and when it was typed (nil for
+    /// a line whose time does not read). The first one names a chat with no `ai-title`.
+    case prompt(sessionID: String, text: String, at: Date?)
+    /// `{"type":"system","subtype":"compact_boundary",…}` on the chat's own thread: its
+    /// context was compacted here.
+    case compaction(sessionID: String, at: Date)
 }
 
 /// One `String` instance per distinct value in a transcript.
@@ -735,6 +739,13 @@ actor JSONLAggregator: CostLogAggregating {
     /// The first human prompt per chat, already collapsed and cut — the name a chat
     /// with no `ai-title` goes by.
     private var firstPrompts: [String: String] = [:]
+    /// When each chat's own context was compacted, oldest first, for the turns' horizon
+    /// (`recentWindow`): the Limits tab cuts a chat into stretches there (spec 2026-10-16
+    /// limit analytics § The tab, item 5).
+    private var chatCompactions: [String: [Date]] = [:]
+    /// Every human prompt of each chat, oldest first, for the same horizon: a stretch is
+    /// named by the first one typed for it.
+    private var chatPrompts: [String: [ChatPrompt]] = [:]
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     /// Same format without the fractional-seconds requirement. Real Claude Code logs
@@ -1163,7 +1174,8 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     /// Every turn in `[start, end]` that belongs to a chat, oldest first, with the names
-    /// of those chats. The limit-share rule gives a window's percent to these turns.
+    /// of those chats and their compactions and prompts (spec 2026-10-16 limit analytics
+    /// § The tab, item 5). The limit-share rule gives a window's percent to these turns.
     ///
     /// Read straight from `recentTurns`. So a turn carries its final counters (the last
     /// record for its message id, see `ingest`), and the 31-day horizon is this query's
@@ -1192,6 +1204,12 @@ actor JSONLAggregator: CostLogAggregating {
             }
         }
         log.turns.sort { $0.timestamp < $1.timestamp }
+        // Each chat's compactions and prompts the log keeps, not cut to the range: the
+        // prompt that opened a stretch can come a minute before the range does.
+        for chat in Set(log.turns.map(\.chatID)) {
+            if let times = chatCompactions[chat] { log.compactions[chat] = times }
+            if let typed = chatPrompts[chat] { log.prompts[chat] = typed }
+        }
         return log
     }
 
@@ -1284,11 +1302,24 @@ actor JSONLAggregator: CostLogAggregating {
                     dirty = true
                 }
                 continue
-            case .prompt(let sessionID, let text):
-                // The first one wins: a transcript is read in order, and every later
-                // prompt is the same chat still going.
+            case .prompt(let sessionID, let text, let at):
+                // The first one names the chat: a transcript is read in order, and every
+                // later prompt is the same chat still going.
                 if firstPrompts[sessionID] == nil {
                     firstPrompts[sessionID] = text
+                    dirty = true
+                }
+                // Every one inside the turns' horizon names a stretch of the chat.
+                if let at, at >= recentCutoff,
+                   chatPrompts[sessionID, default: []].insertKeepingOrder(
+                       ChatPrompt(at: TurnCostLog.eventTime(at), text: text)
+                   ) {
+                    dirty = true
+                }
+                continue
+            case .compaction(let sessionID, let at):
+                if at >= recentCutoff,
+                   chatCompactions[sessionID, default: []].insertKeepingOrder(TurnCostLog.eventTime(at)) {
                     dirty = true
                 }
                 continue
@@ -1466,6 +1497,23 @@ actor JSONLAggregator: CostLogAggregating {
 
     private func pruneAndFold() {
         foldTurns(olderThan: Date().addingTimeInterval(-recentWindow))
+        // A chat's compactions and prompts are kept as long as its turns. Each list is
+        // oldest first, so its first entry says whether anything has aged out.
+        let eventCutoff = Date().addingTimeInterval(-recentWindow)
+        if chatCompactions.values.contains(where: { ($0.first ?? .distantFuture) < eventCutoff }) {
+            chatCompactions = chatCompactions.compactMapValues { times in
+                let kept = times.filter { $0 >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+            dirty = true
+        }
+        if chatPrompts.values.contains(where: { ($0.first?.at ?? .distantFuture) < eventCutoff }) {
+            chatPrompts = chatPrompts.compactMapValues { prompts in
+                let kept = prompts.filter { $0.at >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+            dirty = true
+        }
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
@@ -1891,10 +1939,31 @@ actor JSONLAggregator: CostLogAggregating {
                   let message = any["message"] as? [String: Any],
                   let text = SessionTitle.firstPrompt(from: message["content"])
             else { return nil }
-            return .prompt(sessionID: pool.intern(sessionID), text: text)
+            return .prompt(
+                sessionID: pool.intern(sessionID), text: text,
+                at: timestamp(of: any, iso: iso, isoNoFraction: isoNoFraction)
+            )
+        case "system":
+            // A compaction of the chat's own context. A sub-agent's (`isSidechain`) is the
+            // agent's context, not the chat's.
+            guard any["subtype"] as? String == "compact_boundary",
+                  (any["isSidechain"] as? Bool) != true,
+                  let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let at = timestamp(of: any, iso: iso, isoNoFraction: isoNoFraction)
+            else { return nil }
+            return .compaction(sessionID: pool.intern(sessionID), at: at)
         default:
             return nil
         }
+    }
+
+    /// A record's `timestamp`: with fractions, as Claude Code writes it, else plain ISO
+    /// 8601. nil when it does not read.
+    private static func timestamp(
+        of any: [String: Any], iso: ISO8601DateFormatter, isoNoFraction: ISO8601DateFormatter
+    ) -> Date? {
+        guard let text = any["timestamp"] as? String else { return nil }
+        return iso.date(from: text) ?? isoNoFraction.date(from: text)
     }
 
     private static func parseTurn(
