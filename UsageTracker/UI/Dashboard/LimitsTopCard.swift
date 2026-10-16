@@ -44,6 +44,20 @@ struct LimitsTopCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            // Primary text with a `.warning` icon (spec § The tab, item 2): the warning
+            // orange on a light card reads about 2:1.
+            if let change = text.change {
+                HStack(alignment: .firstTextBaseline, spacing: LimitsLayout.changeIconSpacing) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: LimitsLayout.changeLineSize, weight: .semibold))
+                        .foregroundStyle(.om(.warning))
+                        .accessibilityHidden(true)
+                    Text(change)
+                        .font(.system(size: LimitsLayout.changeLineSize, weight: .semibold))
+                        .foregroundStyle(.om(.text))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             if let link = text.link {
                 Button(link, action: onLink)
                     .buttonStyle(.omLink)

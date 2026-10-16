@@ -120,3 +120,12 @@ extension LimitsLayout {
     static let periodPickerTextSize: CGFloat = 12.5
     static let periodPickerChevronSize: CGFloat = 10
 }
+
+// MARK: - The change line
+
+extension LimitsLayout {
+    /// "A percent buys about 31 % less …": 12.5 px 600 under the caption, its warning icon
+    /// 6 pt before it.
+    static let changeLineSize: CGFloat = 12.5
+    static let changeIconSpacing: CGFloat = 6
+}

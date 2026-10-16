@@ -136,6 +136,9 @@ struct LimitsTopCardText: Equatable, Sendable {
     let caption: String?
     /// Under everything: the weekly budget in Settings, on Claude pay as you go.
     let link: String?
+    /// Under the caption when a percent buys clearly less than in the usual weeks (spec
+    /// § Design, Change signal): primary text with a warning icon.
+    var change: String? = nil
 }
 
 extension LimitsCopy {
@@ -236,7 +239,8 @@ extension LimitsCopy {
                 valueIsFigure: share.price != nil,
                 detail: share.price.map { priceTokens($0) },
                 caption: apiListCaption,
-                link: nil
+                link: nil,
+                change: load.change.map { changeLine($0) }
             )
         case .payAsYouGo(let budget):
             return LimitsTopCardText(
@@ -491,5 +495,22 @@ extension LimitsCopy {
         case .weeksAgo(let weeks):
             return "No chats \(weeks * 7)–\(weeks * 7 + 7) days ago"
         }
+    }
+}
+
+// MARK: - The change line
+
+extension LimitsCopy {
+    /// "A percent buys about 31 % less than your last 3 weeks. Costliest model this week:
+    /// Fable 5.1 (was Opus 5.5)." (`Dashboard-Limits.dc.html`). The second sentence comes
+    /// when the costliest model changed: API prices only stand in for how a limit is
+    /// charged, and a model change moves them.
+    static func changeLine(_ signal: LimitChangeSignal) -> String {
+        let usual = signal.usualWeeks == 1 ? "the week before" : "your last \(signal.usualWeeks) weeks"
+        var line = "A percent buys about \(signal.percentLess) % less than \(usual)."
+        if let model = signal.modelChange {
+            line += " Costliest model this week: \(model.now) (was \(model.usual))."
+        }
+        return line
     }
 }
