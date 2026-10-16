@@ -92,6 +92,11 @@ final class DashboardState: ObservableObject {
     /// tab tells "nothing spent" from a load still running. A call that a newer refresh
     /// supersedes publishes neither.
     @Published private(set) var limitShareAnswer: LimitsQuery?
+    /// The finished windows the Limits tab's period picker offers for the selected
+    /// provider and the window kind last loaded (spec 2026-10-16 limit analytics § The
+    /// tab, item 1). nil outside a subscription, before its first load and after a
+    /// provider switch.
+    @Published private(set) var limitPastWindows: LimitPastWindows?
     /// The selected provider's chartable quota windows, named from the live snapshot
     /// wherever it is still reporting them. Published next to `history` because the
     /// quota views need both at once: a record stores bucket ids and percentages, and
@@ -139,6 +144,7 @@ final class DashboardState: ObservableObject {
         sessionWindow = nil
         limitShare = nil
         limitShareAnswer = nil
+        limitPastWindows = nil
         sessionBurn = nil
         burnBucket = nil
         history = []
@@ -548,6 +554,20 @@ final class DashboardState: ObservableObject {
         /// The period the picker had on screen when it was asked for (spec 2026-10-16
         /// limit analytics § The tab, item 1).
         var period: LimitsPeriod = .current
+        /// Each chat's stretches in the period, by chat id (§ The tab, item 5).
+        var stretches: [String: [ChatStretch]] = [:]
+        /// "A percent buys about N % less than usual", on the current week only (§ Design,
+        /// Change signal).
+        var change: LimitChangeSignal? = nil
+    }
+
+    /// The finished windows a load found for the period picker (§ The tab, item 1), and
+    /// the provider and window kind they are of.
+    struct LimitPastWindows: Equatable, Sendable {
+        let serviceID: String
+        let kind: BucketKind
+        /// Newest first, inside the 31-day turn horizon.
+        let windows: [LimitPastWindow]
     }
 
     /// Bumped by every `refreshLimitShare(kind:)`. If the window switch is clicked twice
@@ -555,65 +575,104 @@ final class DashboardState: ObservableObject {
     private var limitShareGeneration = 0
 
     /// Loads the selected provider's limit share for the Limits tab (spec 2026-10-16
-    /// § Packages 1). On a subscription that is the current window of `kind`; otherwise
-    /// it is the current spend period.
+    /// § Packages 1 and 3): the period `period` of the window of `kind` on a subscription,
+    /// of the spend period otherwise, with its chats' stretches, the finished windows the
+    /// period picker offers, and on the current week the change signal. All of it is
+    /// `LimitShareRules.loadResult`'s; this method fetches, and publishes through
+    /// `LimitsRules.published`, which always answers the query, period included.
     ///
-    /// The turns come from the cost log's actor and the readings from `HistoryStore`'s.
-    /// The rule runs on a detached task, and only the result comes back to the main
-    /// actor.
+    /// The turns come from the cost log's actor: the period's, or for the current week the
+    /// whole turn horizon, whose usual weeks the change signal prices
+    /// (`LimitShareRules.turnSpan`). The readings come from `HistoryStore`'s, for the turn
+    /// horizon, so the past windows are found from them too. The worktree links come from
+    /// `WorktreeStore`'s, so a worktree's chats count under its repository. The rule runs
+    /// on a detached task, and only the result comes back to the main actor.
     ///
     /// Guarded like `refreshSessionWindow()`: a pass started for another provider or
     /// another refresh generation publishes nothing, and neither does an older call of
     /// this method. It reads what `refreshCLI()` has already ingested. The dashboard's
     /// Limits tab (`LimitsView`) calls it.
-    func refreshLimitShare(kind: BucketKind) async {
+    func refreshLimitShare(kind: BucketKind, period: LimitsPeriod = .current) async {
         limitShareGeneration &+= 1
         let generation = limitShareGeneration
         let pass = begin()
         func isCurrent() -> Bool { canPublish(pass) && limitShareGeneration == generation }
 
+        let now = Date()
+        let weeklyBudget = SettingsStore.shared.claudeWeeklyBudgetUSD
         guard Self.hasSessionLog(for: pass.service),
               let aggregator = Self.costAggregator(for: pass.service),
-              let service = AppState.shared.snapshot.services.first(where: { $0.id == pass.service }),
-              let request = LimitShareRules.request(
-                for: service,
-                kind: kind,
-                weeklyBudgetUSD: SettingsStore.shared.claudeWeeklyBudgetUSD,
-                now: Date(),
-                calendar: .current
-              )
+              let service = AppState.shared.snapshot.services.first(where: { $0.id == pass.service })
         else {
             if isCurrent() {
-                let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: nil, share: nil)
+                let published = LimitsRules.published(
+                    serviceID: pass.service, kind: kind, request: nil, share: nil, period: period
+                )
                 limitShare = published.load
                 limitShareAnswer = published.answer
+                limitPastWindows = nil
             }
             return
         }
-        let log = await aggregator.turnCosts(from: request.period.start, to: request.period.end)
-        guard isCurrent() else { return }
+        let request = LimitsRules.request(
+            for: service, kind: kind, period: period, weeklyBudgetUSD: weeklyBudget, now: now, calendar: .current
+        )
+        // The window the readings are of: a subscription's core bucket of `kind`, open or
+        // not, so its past windows are listed while none is open.
+        let bucket = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudget) == .subscription
+            ? LimitShareRules.coreBucket(kind: kind, in: service)
+            : nil
+
+        let log: TurnCostLog
+        if let request {
+            let span = LimitShareRules.turnSpan(
+                request: request, kind: kind, isCurrent: period == .current,
+                windowLength: bucket?.windowDuration, now: now
+            )
+            log = await aggregator.turnCosts(from: span.start, to: span.end)
+            guard isCurrent() else { return }
+        } else {
+            log = .empty
+        }
         let readings: [HistoryRecord]
-        if request.bucketID != nil {
-            readings = await HistoryStore.shared.records(since: request.period.start, service: pass.service)
+        if bucket != nil {
+            readings = await HistoryStore.shared.records(
+                since: now.addingTimeInterval(-LimitShareRules.turnHorizon), service: pass.service
+            )
             guard isCurrent() else { return }
         } else {
             readings = []
         }
         let dailySpend: [CLIDailySummary]
-        if case .spendLimit = request.mode {
+        if let request, case .spendLimit = request.mode {
             // The month's local spend from the day totals, which outlive the turns.
             dailySpend = await aggregator.breakdown().daily
             guard isCurrent() else { return }
         } else {
             dailySpend = []
         }
-        let share = await Task.detached(priority: .userInitiated) {
-            LimitShareRules.share(for: request, log: log, readings: readings, dailySpend: dailySpend)
+        let links = await WorktreeStore.shared.links()
+        guard isCurrent() else { return }
+        let folds = ProjectWorktrees.folds(links, serviceID: pass.service)
+        let serviceID = pass.service
+        let isCurrentPeriod = period == .current
+        let result = await Task.detached(priority: .userInitiated) {
+            LimitShareRules.loadResult(
+                request: request, kind: kind, isCurrent: isCurrentPeriod, bucket: bucket,
+                serviceID: serviceID, log: log, records: readings, dailySpend: dailySpend,
+                projectFolds: folds, now: now
+            )
         }.value
         guard isCurrent() else { return }
-        let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: request, share: share)
+        let published = LimitsRules.published(
+            serviceID: pass.service, kind: kind, request: request, share: result.share,
+            period: period, stretches: result.stretches, change: result.change
+        )
         limitShare = published.load
         limitShareAnswer = published.answer
+        limitPastWindows = bucket == nil
+            ? nil
+            : LimitPastWindows(serviceID: pass.service, kind: kind, windows: result.pastWindows)
     }
 
     /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation

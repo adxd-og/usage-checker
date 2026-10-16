@@ -98,11 +98,16 @@ extension LimitsRules {
         kind: BucketKind,
         request: LimitShareRequest?,
         share: LimitShare?,
-        period: LimitsPeriod = .current
+        period: LimitsPeriod = .current,
+        stretches: [String: [ChatStretch]] = [:],
+        change: LimitChangeSignal? = nil
     ) -> (load: DashboardState.LimitShareLoad?, answer: LimitsQuery) {
         let load = request.flatMap { request in
             share.map {
-                DashboardState.LimitShareLoad(serviceID: serviceID, kind: kind, request: request, share: $0, period: period)
+                DashboardState.LimitShareLoad(
+                    serviceID: serviceID, kind: kind, request: request, share: $0,
+                    period: period, stretches: stretches, change: change
+                )
             }
         }
         return (load, query(serviceID: serviceID, kind: kind, request: request, period: period))
@@ -510,5 +515,17 @@ extension LimitsRules {
                 livePercent: nil
             )
         }
+    }
+}
+
+extension LimitsRules {
+    /// The finished windows the picker offers for `serviceID`'s window of `kind`: those
+    /// the dashboard's last load found for exactly that provider and kind; none before one
+    /// has.
+    nonisolated static func pastWindows(
+        _ list: DashboardState.LimitPastWindows?, serviceID: String, kind: BucketKind
+    ) -> [LimitPastWindow] {
+        guard let list, list.serviceID == serviceID, list.kind == kind else { return [] }
+        return list.windows
     }
 }
