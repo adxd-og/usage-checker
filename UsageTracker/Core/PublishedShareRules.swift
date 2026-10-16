@@ -120,3 +120,82 @@ extension PublishedShareRules {
         return out
     }
 }
+
+// MARK: - From the sources
+
+/// One provider's chat shares, and the windows they were cut for. The windows never reach
+/// `status.json`. `StatusFileWriter.build` uses them to write a share only next to the
+/// window it was cut for (`current(_:for:weeklyBudgetUSD:now:calendar:)`).
+struct PublishedShares: Equatable, Sendable {
+    var windows: Set<PublishedShareWindow> = []
+    var chats: [String: ChatShareFields] = [:]
+}
+
+extension PublishedShareRules {
+    /// Where one provider's turns and percent readings come from. The app hands in its
+    /// cost log's actor and `HistoryStore`'s (`StatusCosts.shareSources`). A test hands
+    /// in fixtures.
+    struct Sources: Sendable {
+        let turns: @Sendable (_ from: Date, _ to: Date) async -> TurnCostLog
+        let readings: @Sendable (_ since: Date) async -> [HistoryRecord]
+    }
+
+    /// One provider's chats and their fields, keyed by chat id, with the windows they were
+    /// cut for. Empty when the provider publishes no share
+    /// (`requests(for:weeklyBudgetUSD:now:calendar:)`), and then its sources are not asked
+    /// at all.
+    ///
+    /// The turns are read once, over the widest period the requests name. The readings
+    /// are read once from that period's start, and only when a window needs them. Each
+    /// share is then cut by `LimitShareRules.share(for:log:readings:dailySpend:)`, the
+    /// rule the Limits tab runs, so the file and the tab agree on every chat. No day
+    /// totals are passed: they feed only a spend limit's Earlier row and Outside, and a
+    /// chat's points read neither.
+    nonisolated static func shares(
+        for service: ServiceSnapshot,
+        weeklyBudgetUSD: Double,
+        now: Date,
+        calendar: Calendar,
+        sources: Sources
+    ) async -> PublishedShares {
+        let wanted = requests(for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar)
+        guard let start = wanted.map(\.request.period.start).min(),
+              let end = wanted.map(\.request.period.end).max()
+        else { return PublishedShares() }
+        let log = await sources.turns(start, end)
+        var readings: [HistoryRecord] = []
+        if wanted.contains(where: { $0.request.bucketID != nil }) {
+            readings = await sources.readings(start)
+        }
+        var cut: [PublishedShareField: LimitShare] = [:]
+        var windows: Set<PublishedShareWindow> = []
+        for item in wanted {
+            guard let share = LimitShareRules.share(for: item.request, log: log, readings: readings) else { continue }
+            cut[item.window.field] = share
+            windows.insert(item.window)
+        }
+        return PublishedShares(windows: windows, chats: fields(cut))
+    }
+
+    /// Every provider's shares, keyed by service id. These are left out:
+    /// - a provider with no entry in `sources`, because its log names no chat (Grok,
+    ///   Antigravity);
+    /// - a provider with no chat to publish a share for.
+    nonisolated static func shares(
+        services: [ServiceSnapshot],
+        weeklyBudgetUSD: Double,
+        now: Date,
+        calendar: Calendar,
+        sources: [String: Sources]
+    ) async -> [String: PublishedShares] {
+        var out: [String: PublishedShares] = [:]
+        for service in services {
+            guard let source = sources[service.id] else { continue }
+            let provider = await shares(
+                for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar, sources: source
+            )
+            if !provider.chats.isEmpty { out[service.id] = provider }
+        }
+        return out
+    }
+}
