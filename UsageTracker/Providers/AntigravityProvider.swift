@@ -340,7 +340,7 @@ actor AntigravityProvider: UsageProvider {
         let windows = usage.extraRateWindows ?? []
         let reported = windows.filter { $0.usageKnown && !$0.window.isSyntheticPlaceholder }
         if windows.contains(where: { AntigravityStatusSnapshot.isQuotaSummaryWindowID($0.id) }) {
-            let labels = poolLabels(reported)
+            let labels = poolLabels(reported.map(\.id))
             return reported.map { summaryBucket($0, labels: labels) }
         }
         var aggregates: [UsageBucket] = []
@@ -418,9 +418,10 @@ actor AntigravityProvider: UsageProvider {
     /// loses the wire's "wtu". Two pools in the reading that would share a name both keep
     /// every word of their stems, so neither row reads as the other. No model table: a
     /// pool that appears next month is named by the same rule. A stem with no word at all
-    /// has no entry; its row keeps CodexBarCore's title, the only name left.
-    private static func poolLabels(_ windows: [NamedRateWindow]) -> [String: String] {
-        let stems = Set(windows.compactMap { summaryStem($0.id) }).subtracting(poolStems)
+    /// has no entry; its row keeps CodexBarCore's title, the only name left. Takes window
+    /// ids, so a stored reading (`restoredBuckets`) is named by the same rule.
+    private static func poolLabels(_ windowIDs: [String]) -> [String: String] {
+        let stems = Set(windowIDs.compactMap { summaryStem($0) }).subtracting(poolStems)
         var labels: [String: String] = [:]
         for (label, sharing) in Dictionary(grouping: stems, by: { poolLabel($0, everyWord: false) })
         where !label.isEmpty {
@@ -735,5 +736,51 @@ actor AntigravityProvider: UsageProvider {
             ),
             usageKnown: !bucket.disabled && bucket.remainingFraction != nil
         )
+    }
+
+    // MARK: - Stored readings
+
+    /// A stored Antigravity reading in the shape `buckets(from:)` gives it now. Builds before
+    /// the per-model pools stored a quota-summary reading with the two aggregates beside the
+    /// pool windows and each per-model pool as a weekly titled after its family, so a closed
+    /// app's tab, restored from `last-known.json`, showed Argon twice until the next good
+    /// reading. When any bucket is a quota-summary window, the aggregates go, and each
+    /// per-model pool that is not `.modelSpecific` yet becomes one under its stem name
+    /// (`poolLabels`). A row already `.modelSpecific` keeps its name, which may be agy's. A
+    /// per-model reading (no summary window) is left as it is. This build's own readings
+    /// come back unchanged.
+    nonisolated static func restoredBuckets(_ buckets: [UsageBucket]) -> [UsageBucket] {
+        let windowIDs = buckets.compactMap { summaryWindowID($0) }
+        guard !windowIDs.isEmpty else { return buckets }
+        let labels = poolLabels(windowIDs)
+        return buckets.compactMap { bucket in
+            if aggregateBucketIDs.contains(bucket.id) { return nil }
+            guard bucket.kind != .modelSpecific,
+                  let windowID = summaryWindowID(bucket),
+                  let stem = summaryStem(windowID),
+                  !poolStems.contains(stem)
+            else { return bucket }
+            return UsageBucket(
+                id: bucket.id,
+                label: labels[stem] ?? bucket.label,
+                utilization: bucket.utilization,
+                resetsAt: bucket.resetsAt,
+                kind: .modelSpecific,
+                windowLength: bucket.windowLength,
+                credit: bucket.credit
+            )
+        }
+    }
+
+    /// The two pool aggregates of the per-model path, `antigravity_gemini` and its Claude/GPT twin.
+    private static let aggregateBucketIDs: Set<String> = ["antigravity_gemini", "antigravity_claude_gpt"]
+
+    /// A bucket's quota-summary window id (its id without `antigravity_`), nil for any
+    /// other bucket.
+    private static func summaryWindowID(_ bucket: UsageBucket) -> String? {
+        let prefix = "antigravity_"
+        guard bucket.id.hasPrefix(prefix) else { return nil }
+        let windowID = String(bucket.id.dropFirst(prefix.count))
+        return AntigravityStatusSnapshot.isQuotaSummaryWindowID(windowID) ? windowID : nil
     }
 }

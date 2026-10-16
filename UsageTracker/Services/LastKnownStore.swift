@@ -39,6 +39,13 @@ struct LastKnownService: Codable, Equatable, Sendable {
         return copy
     }
 
+    /// The same reading with its buckets put through `transform`.
+    func mappingBuckets(_ transform: ([UsageBucket]) -> [UsageBucket]) -> LastKnownService {
+        var copy = self
+        copy.buckets = transform(buckets)
+        return copy
+    }
+
     /// The throttle's comparison: everything the file holds except `fetchedAt`,
     /// which moves on every poll and is not by itself a reason to rewrite. The
     /// labels are in here too — a renamed provider, a new icon or a signed-in
@@ -119,12 +126,21 @@ actor LastKnownStore {
     /// it drove the headline to 92 % and showed "Iguana Necktie". A bucket under a
     /// known credit-pool key that carries no `credit` is dropped; the next good poll
     /// writes it back with its dollars.
+    ///
+    /// An Antigravity reading stored before Argon had its own row (3.0.2 and earlier)
+    /// comes back in this build's shape (`AntigravityProvider.restoredBuckets`): as
+    /// stored, a closed app's tab showed Argon twice beside the two aggregates.
     static func restorable(
         _ entries: [String: LastKnownService], creditPoolIDs: Set<String>
     ) -> [String: LastKnownService] {
-        entries.mapValues { entry in
-            entry.removingBuckets { creditPoolIDs.contains($0.id) && $0.credit == nil }
+        var restored: [String: LastKnownService] = [:]
+        for (serviceID, entry) in entries {
+            let kept = entry.removingBuckets { creditPoolIDs.contains($0.id) && $0.credit == nil }
+            restored[serviceID] = serviceID == "antigravity"
+                ? kept.mappingBuckets(AntigravityProvider.restoredBuckets)
+                : kept
         }
+        return restored
     }
 
     /// Stores every service that actually reported something. A failing service is
