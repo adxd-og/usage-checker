@@ -103,7 +103,7 @@ never catches you mid-task.
 |---|---|
 | **Claude** | 5-hour session and weekly limits per model, decoded dynamically so a new model appears without an update; extra usage credits; Enterprise spend limits; Cloud session credits: shown as dollars, never drives the menu bar |
 | **Codex (OpenAI)** | session and weekly limits from the local Codex CLI; local dollar cost accounting from its session logs, now including compaction calls and sessions moved to `~/.codex/archived_sessions` |
-| **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts |
+| **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts; per-model limits such as Gemini 4 Argon get their own row |
 | **Grok (xAI)** | billing-period credit usage from the local Grok CLI, falling back to grok.com web billing when the CLI is unavailable |
 
 - Costs come from local logs at models.dev list prices, never invented
