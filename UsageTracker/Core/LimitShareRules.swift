@@ -280,6 +280,9 @@ struct LimitShare: Equatable, Sendable {
     /// The window's local API-list dollars and tokens.
     let cost: Double
     let tokens: Int
+    /// What one point cost. nil below `LimitShareRules.minimumAttributedPoints` ("Not
+    /// enough use yet") and outside the Subscription mode.
+    let price: PercentPrice?
 
     /// The points local turns explain: the window's percent minus Outside.
     var attributedPoints: Double { percent - outside }
@@ -373,7 +376,8 @@ extension LimitShareRules {
             outside: outside,
             bins: binShares,
             cost: cost,
-            tokens: tokens
+            tokens: tokens,
+            price: price(cost: cost, tokens: tokens, attributedPoints: percent - outside)
         )
     }
 
@@ -462,5 +466,34 @@ extension LimitShareRules {
                 if lhs.cost != rhs.cost { return lhs.cost > rhs.cost }
                 return lhs.id < rhs.id
             }
+    }
+}
+
+// MARK: - Price of a percent
+
+/// What one percent point of a window cost, at API-list prices.
+struct PercentPrice: Equatable, Sendable {
+    let dollars: Double
+    let tokens: Double
+}
+
+extension LimitShareRules {
+    /// Below this many attributed points there is no price: "Not enough use yet".
+    static let minimumAttributedPoints: Double = 1
+    /// Points are sums of fractions. A comparison against a threshold allows this much.
+    static let pointSlack: Double = 1e-9
+
+    /// The local cost in the window divided by the attributed points, and the tokens
+    /// the same way (§ Design, Price of a percent; ruling C5).
+    ///
+    /// The cost covers every bin with local turns, including those whose percent did
+    /// not move. With whole-number percents, a bin whose Δp is 0 still spent quota that
+    /// shows in a later step.
+    ///
+    /// Outside this Mac has no local cost and is not in the points. nil below
+    /// `minimumAttributedPoints`.
+    nonisolated static func price(cost: Double, tokens: Int, attributedPoints: Double) -> PercentPrice? {
+        guard attributedPoints + pointSlack >= minimumAttributedPoints else { return nil }
+        return PercentPrice(dollars: cost / attributedPoints, tokens: Double(tokens) / attributedPoints)
     }
 }
