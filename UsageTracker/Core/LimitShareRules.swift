@@ -121,8 +121,8 @@ extension LimitShareRules {
     ///   poll. The provider's clock and the poll's differ by seconds, and a laptop asleep
     ///   at the reset sees the drop later;
     /// - a held drop later inside the current window, such as a limit restored with
-    ///   `resetsAt` unchanged, restarts the current window's readings
-    ///   (`readingsSinceLastReset(_:in:)`).
+    ///   `resetsAt` unchanged, scales the current window's readings before it
+    ///   (`restoredReadings(_:in:)`).
     ///
     /// These spans are left out:
     /// - a window that began before `horizonStart`: turns older than the 31-day horizon

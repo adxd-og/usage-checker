@@ -9,7 +9,7 @@ import XCTest
 ///   percent. Per § Design, Totals, "the live bucket's percent is the
 ///   final reading when it is newer or higher than the last recorded one".
 /// - Subscription, Totals: "Chat shares plus Outside equal the window's percent now",
-///   so a held drop inside the current window restarts its readings there.
+///   so a held drop inside the current window scales the readings before it.
 /// - Pay as you go: the last 7 days.
 /// - Spend limit: the calendar month so far.
 ///
@@ -212,9 +212,10 @@ final class LimitShareRequestTests: XCTestCase {
         XCTAssertEqual(share.outside, 6, accuracy: 1e-9, "the live 9 % moved the last half hour, where no local turn ran")
     }
 
-    func testALimitRestoredMidWeekRestartsTheWindowsReadingsAtTheRestore() throws {
-        // The weekly percent falls from 94 to 36 with `resetsAt` unchanged, and stays
-        // down: the readings before the restore are no longer the window's.
+    func testALimitRestoredMidWeekLeavesEachChatItsPartOfWhatStillCounts() throws {
+        // The weekly percent falls from 94 to 36 with `resetsAt` unchanged, and stays down:
+        // the provider gave 58 of 94 points back and nothing says whose, so every point
+        // before the restore counts 36/94.
         let request = try XCTUnwrap(
             LimitShareRules.request(for: claudeMax, kind: .weekly, weeklyBudgetUSD: 0, now: now, calendar: utc)
         )
@@ -234,10 +235,11 @@ final class LimitShareRequestTests: XCTestCase {
         XCTAssertEqual(share.percent, 40, "the live bucket's 40 %, not the 94 held before the restore")
         XCTAssertEqual(share.chats.reduce(0) { $0 + $1.points } + share.outside, 40, accuracy: 1e-9)
         XCTAssertEqual(
-            share.chats.first { $0.id == "chat-before" }?.points ?? -1, 0, accuracy: 1e-9,
-            "its percent rose before the restore, in readings the window no longer counts"
+            share.chats.first { $0.id == "chat-before" }?.points ?? -1, 36 - 30 * 36 / 94.0, accuracy: 1e-9,
+            "its half hour took the week from 30 to 94, which now counts as 30·36/94 to 36"
         )
         XCTAssertEqual(share.chats.first { $0.id == "chat-after" }?.points ?? -1, 2, accuracy: 1e-9)
+        XCTAssertEqual(share.outside, 30 * 36 / 94.0 + 2, accuracy: 1e-9, "day 1's rise and the last half hour ran no local turn")
     }
 
     func testAnOldWindowsReadingExactlyOnTheWindowsStartIsLeftToTheOldWindow() throws {
