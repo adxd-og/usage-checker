@@ -60,6 +60,23 @@ final class StatusCostsTests: XCTestCase {
         XCTAssertEqual(Set(StatusCosts.shareSources.keys), withChatLog)
     }
 
+    func testEachProviderSplitsItsChatsByItsOwnPercentHistory() async {
+        // Claude's chats split by Claude's readings, Codex's by Codex's: a swap would cut
+        // one provider's turns by the other's percent.
+        actor Asked { var services: [String] = []; func add(_ s: String) { services.append(s) } }
+        let asked = Asked()
+        let sources = StatusCosts.shareSources(readings: { _, service in
+            await asked.add(service)
+            return []
+        })
+
+        _ = await sources["claude"]?.readings(day)
+        _ = await sources["codex"]?.readings(day)
+
+        let services = await asked.services
+        XCTAssertEqual(services, ["claude", "codex"])
+    }
+
     func testAProviderWithoutAChatLogGetsNoShares() async {
         // A weekly window would make it a subscription; with no chat log there is
         // nothing to split it by. Antigravity reaches no aggregator in `gather`.

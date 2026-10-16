@@ -38,8 +38,8 @@ enum StatusCosts {
     /// moves only when a poll lands, and the turns only when `refresh()` has ingested
     /// new ones. The writes between polls reuse them (`AppState.lastShares`), and
     /// `StatusFileWriter.build` drops any whose window has gone by then. The turns are
-    /// already in memory and the rule is linear in turns and readings, so this adds
-    /// milliseconds to a task the poll does not wait for.
+    /// already in memory and the rule is linear in turns and readings, and it runs in a
+    /// task the poll does not wait for.
     static func gather(
         serviceIDs: Set<String>,
         services: [ServiceSnapshot] = [],
@@ -80,14 +80,21 @@ enum StatusCosts {
     /// readings: its cost log's actor, and `HistoryStore`'s. Claude and Codex, the
     /// providers `DashboardState.hasSessionLog` names.
     static var shareSources: [String: PublishedShareRules.Sources] {
+        shareSources(readings: { await HistoryStore.shared.records(since: $0, service: $1) })
+    }
+
+    /// The same, with the percent history passed in: `readings(since, serviceID)`.
+    static func shareSources(
+        readings: @escaping @Sendable (Date, String) async -> [HistoryRecord]
+    ) -> [String: PublishedShareRules.Sources] {
         [
             "claude": PublishedShareRules.Sources(
                 turns: { await JSONLAggregator.shared.turnCosts(from: $0, to: $1) },
-                readings: { await HistoryStore.shared.records(since: $0, service: "claude") }
+                readings: { await readings($0, "claude") }
             ),
             "codex": PublishedShareRules.Sources(
                 turns: { await CodexUsageAggregator.shared.turnCosts(from: $0, to: $1) },
-                readings: { await HistoryStore.shared.records(since: $0, service: "codex") }
+                readings: { await readings($0, "codex") }
             ),
         ]
     }
