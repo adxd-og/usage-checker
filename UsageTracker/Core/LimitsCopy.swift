@@ -40,14 +40,19 @@ extension LimitsCopy {
     }
 
     /// "130 M", "9.5 M", "2.5 B", "84 k": a token count and its unit, whole from ten of a
-    /// unit, one decimal below.
+    /// unit, one decimal below, both measured after rounding ("10 k" for 9,999). A figure
+    /// that rounds to a thousand of a unit steps up to the next ("1.0 M", not "1000 k").
     static func tokens(_ count: Double) -> String {
-        func scaled(_ value: Double, _ unit: String) -> String {
-            String(format: value >= 10 ? "%.0f" : "%.1f", value) + " " + unit
+        guard count.rounded() >= 1_000 else { return String(format: "%.0f", count) }
+        let units: [(scale: Double, name: String)] = [(1_000, "k"), (1_000_000, "M"), (1_000_000_000, "B")]
+        for (index, unit) in units.enumerated() {
+            let value = count / unit.scale
+            let tenths = (value * 10).rounded() / 10
+            let isWhole = tenths >= 10
+            let figure = isWhole ? value.rounded() : tenths
+            if figure >= 1_000, index < units.count - 1 { continue }
+            return String(format: isWhole ? "%.0f" : "%.1f", figure) + " " + unit.name
         }
-        if count >= 1_000_000_000 { return scaled(count / 1_000_000_000, "B") }
-        if count >= 1_000_000 { return scaled(count / 1_000_000, "M") }
-        if count >= 1_000 { return scaled(count / 1_000, "k") }
         return String(format: "%.0f", count)
     }
 }
