@@ -565,4 +565,31 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(buckets.first { $0.kind == .modelSpecific }?.label, "Gemini 4 Argon",
                        "a reading with no known window is no reading, for the names too")
     }
+
+    /// agy prints no plan and no account. Without this the tile's plan line would read
+    /// "Antigravity" instead of "Antigravity Pro" every time the app closed.
+    func testAnAgyReadingKeepsThePlanAndAccountOfTheLastReading() async {
+        let localCalls = Calls()
+        let ok = status(remaining: 0.38)
+        let output = AgyUsageFixture.proOutput
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                if localCalls.count == 1 { return ok }
+                throw AntigravityStatusProbeError.notRunning
+            },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { output }
+        )
+
+        let open = await provider.fetch(now: t0)
+        XCTAssertEqual(open.plan, "Antigravity Pro")
+
+        _ = await provider.fetch(now: t0.addingTimeInterval(46)) // closed: a run starts
+        await provider.settleAgyRun()
+        let closed = await provider.fetch(now: t0.addingTimeInterval(92))
+        XCTAssertEqual(closed.buckets, AgyUsageFixture.proBuckets)
+        XCTAssertEqual(closed.plan, "Antigravity Pro")
+        XCTAssertEqual(closed.accountLabel, "owner@example.com")
+    }
 }

@@ -82,6 +82,9 @@ actor AntigravityProvider: UsageProvider {
     /// them, and every path borrows the name (`publishedBuckets(from:)`), so a row keeps it
     /// when the app opens. In memory only: a relaunch starts from the stem names again.
     private var rememberedPoolNames: [String: String] = [:]
+    /// The plan and account of the last probe or web reading. agy prints neither, so its
+    /// reading borrows them; before any, the plan is plain "Antigravity".
+    private var identity: (plan: String?, accountLabel: String?)?
 
     init(
         localFetch: @escaping StatusFetch = {
@@ -127,6 +130,7 @@ actor AntigravityProvider: UsageProvider {
             localReadAt = now
             let snapshot = self.snapshot(from: usage, status: status, at: now)
             cached = (snapshot, now)
+            identity = (snapshot.plan, snapshot.accountLabel)
             return snapshot
         } catch {
             // The local language server is only reachable while the app/CLI/IDE is
@@ -242,8 +246,8 @@ actor AntigravityProvider: UsageProvider {
                 id: serviceID,
                 displayName: "Antigravity",
                 icon: Self.icon,
-                plan: "Antigravity",
-                accountLabel: nil,
+                plan: identity?.plan ?? "Antigravity",
+                accountLabel: identity?.accountLabel,
                 buckets: buckets,
                 extraUsage: nil,
                 weekCost: nil,
@@ -290,6 +294,7 @@ actor AntigravityProvider: UsageProvider {
             let usage = try status.toUsageSnapshot()
             let snapshot = self.snapshot(from: usage, status: status, at: now)
             remoteCache = (snapshot, now)
+            identity = (snapshot.plan, snapshot.accountLabel)
             NSLog("[UT] Antigravity remote fetch ok: %d window(s)", snapshot.buckets.count)
             return snapshot
         } catch {
