@@ -110,3 +110,140 @@ extension LimitsCopy {
     static let title = "Limits"
     static let subtitle = "Limit analytics"
 }
+
+// MARK: - The first card
+
+/// The Limits tab's first card as `LimitsTopCard` draws it (`Dashboard-Limits.dc.html`,
+/// "Price of a percent").
+struct LimitsTopCardText: Equatable, Sendable {
+    let title: String
+    /// On the title's baseline: when the period began.
+    let trailing: String
+    /// The figure ("1 % ≈ $62", "$412 of $500 budget"), or a sentence in its place.
+    let value: String
+    /// True for a figure, drawn large; false for "Not enough use yet".
+    let valueIsFigure: Bool
+    /// Beside the figure: "≈ 130 M tokens".
+    let detail: String?
+    /// Under the figure: what the dollars are. nil where they are the bill.
+    let caption: String?
+    /// Under everything: the weekly budget in Settings, on Claude pay as you go.
+    let link: String?
+}
+
+extension LimitsCopy {
+    static let priceTitle = "Price of a percent"
+    static let notEnoughUse = "Not enough use yet"
+    /// What a subscription's dollars are (§ Accounts without percent windows, Cost
+    /// caption). Said once, on this card; the rows' dollars are the same kind.
+    static let apiListCaption = "API-list prices, not your bill"
+    static let budgetTitle = "Weekly budget"
+    static let spendTitle = "Spend"
+    static let spendLimitTitle = "Spend limit"
+    static let lastSevenDays = "last 7 days"
+    static let setBudget = "Set a weekly budget"
+    static let changeBudget = "Change the budget"
+
+    /// The link to the weekly budget in Settings: Claude's only, since Codex has no budget
+    /// setting. "Set" when none is set, "Change" when one is.
+    static func budgetLink(serviceID: String, budget: Double?) -> String? {
+        guard serviceID == "claude" else { return nil }
+        return budget == nil ? setBudget : changeBudget
+    }
+
+    /// The link under a page's sentence: on Claude pay as you go with nothing spent and no
+    /// budget, the budget to set. nil on every other page.
+    static func messageLink(for page: LimitsPage, serviceID: String) -> String? {
+        guard case .noSpend = page else { return nil }
+        return budgetLink(serviceID: serviceID, budget: nil)
+    }
+
+    /// "1 % ≈ $62"
+    static func priceValue(_ price: PercentPrice) -> String {
+        "1 % ≈ \(dollars(price.dollars))"
+    }
+
+    /// "≈ 130 M tokens"
+    static func priceTokens(_ price: PercentPrice) -> String {
+        "≈ \(tokens(price.tokens)) tokens"
+    }
+
+    /// "since Tue 12:00", "since today 8:00": when the window began, on History's ladder
+    /// (`SessionCopy.lastActive`), to the nearest minute (`LimitsRules.toMinute`). A reset
+    /// at 12:59:59 opened its session at 8:00, not 7:59.
+    static func since(
+        _ start: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        "since " + SessionCopy.lastActive(
+            LimitsRules.toMinute(start), now: now, style: .sentence, calendar: calendar, locale: locale
+        )
+    }
+
+    /// "since 1 Sep": a spend limit's month, which starts on a day.
+    static func sinceDay(_ start: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        "since " + SessionCopy.dayText(start, calendar: calendar, locale: locale)
+    }
+
+    /// "$412 of $500 budget"
+    static func budgetValue(spent: Double, budget: Double) -> String {
+        "\(dollars(spent)) of \(dollars(budget)) budget"
+    }
+
+    /// "$412 in 7 days"
+    static func spendValue(_ spent: Double) -> String {
+        "\(dollars(spent)) in 7 days"
+    }
+
+    /// "$1,240 of $2,000 this month": the server's used credits against the limit.
+    static func spendLimitValue(used: Double, limit: Double) -> String {
+        "\(dollars(used)) of \(dollars(limit)) this month"
+    }
+
+    /// The first card of `load`'s mode (§ Accounts without percent windows, Top card):
+    /// - Subscription: the price of a percent in API-list dollars and tokens, or "Not
+    ///   enough use yet" below one attributed point;
+    /// - Pay as you go: the last 7 days' spend, against the weekly budget when one is set.
+    ///   The dollars are the bill, so there is no caption. On Claude the card links to the
+    ///   budget in Settings (`budgetLink`);
+    /// - Spend limit: the server's dollars this month against the limit.
+    static func topCard(
+        for load: DashboardState.LimitShareLoad,
+        now: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> LimitsTopCardText {
+        let share = load.share
+        switch load.request.mode {
+        case .subscription:
+            return LimitsTopCardText(
+                title: priceTitle,
+                trailing: since(share.window.start, now: now, calendar: calendar, locale: locale),
+                value: share.price.map { priceValue($0) } ?? notEnoughUse,
+                valueIsFigure: share.price != nil,
+                detail: share.price.map { priceTokens($0) },
+                caption: apiListCaption,
+                link: nil
+            )
+        case .payAsYouGo(let budget):
+            return LimitsTopCardText(
+                title: budget == nil ? spendTitle : budgetTitle,
+                trailing: lastSevenDays,
+                value: budget.map { budgetValue(spent: share.cost, budget: $0) } ?? spendValue(share.cost),
+                valueIsFigure: true,
+                detail: nil,
+                caption: nil,
+                link: budgetLink(serviceID: load.serviceID, budget: budget)
+            )
+        case .spendLimit(let limit, let used):
+            return LimitsTopCardText(
+                title: spendLimitTitle,
+                trailing: sinceDay(share.window.start, calendar: calendar, locale: locale),
+                value: spendLimitValue(used: used, limit: limit),
+                valueIsFigure: true,
+                detail: nil,
+                caption: nil,
+                link: nil
+            )
+        }
+    }
+}

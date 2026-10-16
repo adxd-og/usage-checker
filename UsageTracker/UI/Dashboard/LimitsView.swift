@@ -15,6 +15,8 @@ struct LimitsView: View {
     @ObservedObject private var settings = SettingsStore.shared
 
     @AppStorage(LimitsRules.windowKey) private var storedWindow: String = BucketKind.weekly.rawValue
+    /// Opens the Settings window; `openBudgetSettings()` parks its tab first.
+    @Environment(\.openSettings) private var openSettings
 
     /// The selected provider as the last poll saw it.
     private var service: ServiceSnapshot? {
@@ -88,6 +90,14 @@ struct LimitsView: View {
         }
     }
 
+    /// Settings on its Advanced tab, where the weekly budget is
+    /// (`LimitsRules.budgetSettingsTab`).
+    private func openBudgetSettings() {
+        SettingsRoute.shared.pendingTab = LimitsRules.budgetSettingsTab.rawValue
+        NSApp.activate()
+        openSettings()
+    }
+
     // MARK: - Controls
 
     /// The provider on the left, the window switch on the right, as History's controls
@@ -140,11 +150,18 @@ struct LimitsView: View {
             if let message = LimitsCopy.message(
                 for: page, providerName: dashboard.displayName(for: dashboard.selectedService)
             ) {
-                Text(message)
-                    .font(.system(size: LimitsLayout.messageSize))
-                    .foregroundStyle(.om(.secondary))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .dashboardCard(padding: LimitsLayout.messagePadding)
+                VStack(alignment: .leading, spacing: LimitsLayout.messageSpacing) {
+                    Text(message)
+                        .font(.system(size: LimitsLayout.messageSize))
+                        .foregroundStyle(.om(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Claude pay as you go with nothing spent: the budget is what to set.
+                    if let link = LimitsCopy.messageLink(for: page, serviceID: dashboard.selectedService) {
+                        Button(link, action: openBudgetSettings)
+                            .buttonStyle(.omLink)
+                    }
+                }
+                .dashboardCard(padding: LimitsLayout.messagePadding)
             }
         }
     }
@@ -152,7 +169,7 @@ struct LimitsView: View {
     /// The mode's cards, top to bottom as the mockup stacks them.
     private func cards(_ load: DashboardState.LimitShareLoad, isWide: Bool) -> some View {
         VStack(alignment: .leading, spacing: LimitsLayout.sectionSpacing) {
-            EmptyView()
+            LimitsTopCard(text: LimitsCopy.topCard(for: load, now: Date()), onLink: openBudgetSettings)
         }
     }
 }

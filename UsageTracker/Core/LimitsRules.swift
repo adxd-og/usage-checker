@@ -205,3 +205,10 @@ extension LimitsRules {
         return offered[0]
     }
 }
+
+// MARK: - The first card
+
+extension LimitsRules {
+    /// Where the budget link opens Settings: the weekly budget is on Advanced.
+    static let budgetSettingsTab: SettingsTab = .advanced
+}
