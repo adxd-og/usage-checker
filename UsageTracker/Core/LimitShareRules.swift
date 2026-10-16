@@ -286,6 +286,10 @@ struct LimitShare: Equatable, Sendable {
     /// Local dollars per model, keyed by display name. The change signal reads the
     /// costliest model from here.
     let costByModel: [String: Double]
+    /// The part of `outside` no bin carries. A spend limit's Outside is the server's
+    /// month total, which has no time to bin it by. It is 0 in the Subscription mode,
+    /// whose Outside lives in the bins. The bins' deltas plus this add up to `percent`.
+    let unbinnedOutside: Double
 
     /// The points local turns explain: the window's percent minus Outside.
     var attributedPoints: Double { percent - outside }
@@ -381,7 +385,8 @@ extension LimitShareRules {
             cost: cost,
             tokens: tokens,
             price: price(cost: cost, tokens: tokens, attributedPoints: percent - outside),
-            costByModel: costByModel(turns)
+            costByModel: costByModel(turns),
+            unbinnedOutside: 0
         )
     }
 
