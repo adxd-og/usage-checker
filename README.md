@@ -264,7 +264,8 @@ the popover footer or ⌘D.
   the current window or a past one from the last 31 days; a timeline shows
   each half hour by project; a chat opens into its stretches between
   compactions and cold starts, with what each cold start cost; a chat run
-  in a git worktree counts under the repository. The first card prices
+  in a git worktree counts under the repository once Omelette has seen a
+  session there. The first card prices
   one percent in dollars and tokens and says when a percent buys less than
   in recent weeks. A pay-as-you-go account sees its last 7 days of spend
   (on Claude, against the weekly budget when one is set), a spend-limit

@@ -52,9 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   chat-level cost log.
 - The Limits tab's period picker reaches back through the past sessions
   and weeks of the last 31 days (pay as you go: the earlier 7-day blocks).
-  Windows are told apart by the reset time each reading reported, so a
-  session that ended under 5 % is a window of its own and a limit restored
-  mid-week no longer splits the week.
+  Claude's windows (Codex's from this update on) are told apart by the
+  reset time each reading reported, so a session that ended under 5 % is a
+  window of its own and a limit restored mid-week no longer splits the
+  week.
 - A Limits timeline: one bar per half hour, stacked by the five largest
   projects, Other and Outside this Mac.
 - A chat in the Limits list opens into its stretches, cut at compactions
@@ -64,7 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the previous weeks, and when the costliest model changed.
 - On the Limits tab, a chat run in a git worktree counts under the
   repository the worktree belongs to, also after the worktree is removed,
-  once Omelette has seen a session run in it.
+  once Omelette has seen a session run in that folder while the worktree
+  existed.
+- The first launch after this update reads the last 31 days of Claude
+  transcripts once more in the background, to find their compactions and
+  prompts.
 - A limit restored mid-window keeps each chat's part of what still counts,
   on the Limits tab and in the shares `status.json` publishes, instead of
   landing in one half hour.
