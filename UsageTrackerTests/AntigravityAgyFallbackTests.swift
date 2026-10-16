@@ -356,6 +356,65 @@ final class AntigravityAgyFallbackTests: XCTestCase {
         XCTAssertEqual(closedAgain.state, .notRunning, "agy's reading from t0 is older than the app's from t0+46")
     }
 
+    // MARK: - The 45 s cache holds local answers only (ruling A1)
+
+    /// A run that finished ten seconds after the poll that started it is shown by the
+    /// next poll, inside the 45 s that a local answer would be cached for.
+    func testAFinishedRunIsShownByThePollRightAfterIt() async {
+        let agy = HeldAgy()
+        let provider = AntigravityProvider(
+            localFetch: { throw AntigravityStatusProbeError.notRunning },
+            remoteFetch: { throw AntigravityRemoteFetchError.notLoggedIn },
+            agyFetch: { try await agy.fetch() }
+        )
+        let first = await provider.fetch(now: t0)
+        XCTAssertEqual(first.state, .notRunning)
+        agy.release(.success(AgyUsageFixture.proOutput))
+        await provider.settleAgyRun()
+
+        let next = await provider.fetch(now: t0.addingTimeInterval(10))
+        XCTAssertEqual(next.state, .ok)
+        XCTAssertEqual(next.buckets, AgyUsageFixture.proBuckets)
+    }
+
+    /// The fifteen-minute cap holds on every poll: a reading shown at 14:50 old is not
+    /// served again twenty seconds later, at 15:10.
+    func testTheFifteenMinuteCapHoldsOnEveryPoll() async {
+        let agyCalls = Calls()
+        let provider = provider(firstRunOnly: agyCalls)
+        _ = await provider.fetch(now: t0)
+        await provider.settleAgyRun()
+        let at1450 = await provider.fetch(now: t0.addingTimeInterval(890))
+        await provider.settleAgyRun()
+        XCTAssertEqual(at1450.state, .ok)
+
+        let at1510 = await provider.fetch(now: t0.addingTimeInterval(910))
+        XCTAssertEqual(at1510.state, .notRunning, "15:10 old is not shown, cached or not")
+        XCTAssertEqual(agyCalls.count, 2, "no run was due at 15:10")
+    }
+
+    /// A web reading is not held for 45 s either: the app opened ten seconds after it is
+    /// read at once. The web API keeps its own five-minute throttle.
+    func testAWebReadingDoesNotHideTheAppOpeningAgain() async {
+        let localCalls = Calls()
+        let web = status(remaining: 0.38)
+        let local = status(remaining: 0.9)
+        let provider = AntigravityProvider(
+            localFetch: {
+                localCalls.count += 1
+                if localCalls.count == 1 { throw AntigravityStatusProbeError.notRunning }
+                return local
+            },
+            remoteFetch: { web }
+        )
+        let closed = await provider.fetch(now: t0)
+        XCTAssertEqual(closed.buckets.first?.utilization ?? 0, 62, accuracy: 0.0001, "the web API's reading")
+
+        let opened = await provider.fetch(now: t0.addingTimeInterval(10))
+        XCTAssertEqual(opened.buckets.first?.utilization ?? 0, 10, accuracy: 0.0001, "the app's own reading")
+        XCTAssertEqual(localCalls.count, 2)
+    }
+
     func testTheStartIntervalAndTheMaximumAgeAreWhatTheySay() {
         XCTAssertEqual(AntigravityProvider.agyMinInterval, 280)
         XCTAssertEqual(AntigravityProvider.agyReadingMaxAge, 900)

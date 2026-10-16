@@ -42,7 +42,8 @@ actor AntigravityProvider: UsageProvider {
     private static let icon = "circle.grid.cross"
 
     /// Local port-scan probe is cheap, but there's no point re-probing on rapid
-    /// re-polls; concurrent callers serialize on the actor.
+    /// re-polls; concurrent callers serialize on the actor. Holds the probe's own answers
+    /// only (`fetch(now:)`).
     private let minFetchInterval: TimeInterval = 45
     /// The web API is a round trip to Google with a refreshable token behind it, so
     /// it runs an order of magnitude less often than the local probe.
@@ -95,14 +96,17 @@ actor AntigravityProvider: UsageProvider {
         await fetch(now: Date())
     }
 
-    /// Injectable clock: the two throttles are the behaviour worth testing.
+    /// Injectable clock: the throttles are the behaviour worth testing. Only the local
+    /// probe's answer is served from `cached` (`fetchFresh` stores it). An agy or web
+    /// reading, or no reading at all, is worked out again on every poll, so a run that just
+    /// finished shows at once, the fifteen-minute cap on an agy reading holds on every
+    /// poll, and an app opened again is read at once; agy and the web API keep their own
+    /// throttles (`agyMinInterval`, `remoteMinInterval`).
     func fetch(now: Date) async -> ServiceSnapshot {
         if let cached, now.timeIntervalSince(cached.at) < minFetchInterval {
             return cached.snapshot
         }
-        let snapshot = await fetchFresh(now: now)
-        cached = (snapshot, now)
-        return snapshot
+        return await fetchFresh(now: now)
     }
 
     private func fetchFresh(now: Date) async -> ServiceSnapshot {
@@ -110,7 +114,9 @@ actor AntigravityProvider: UsageProvider {
             let status = try await localFetch()
             let usage = try status.toUsageSnapshot()
             localReadAt = now
-            return Self.snapshot(from: usage, status: status, at: now)
+            let snapshot = Self.snapshot(from: usage, status: status, at: now)
+            cached = (snapshot, now)
+            return snapshot
         } catch {
             // The local language server is only reachable while the app/CLI/IDE is
             // up, so "not running" is the normal quiet state, not a sign-in problem.
