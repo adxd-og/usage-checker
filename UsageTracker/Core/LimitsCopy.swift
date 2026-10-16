@@ -213,9 +213,14 @@ extension LimitsCopy {
     ///   The dollars are the bill, so there is no caption. On Claude the card links to the
     ///   budget in Settings (`budgetLink`);
     /// - Spend limit: the server's dollars this month against the limit.
+    ///
+    /// A past window or an earlier week is named on the title's baseline in the period
+    /// picker's own words (`periodName`), so the card says which period it prices; `span`
+    /// names a window by its length.
     static func topCard(
         for load: DashboardState.LimitShareLoad,
         now: Date,
+        span: LimitsSpan = .week,
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> LimitsTopCardText {
@@ -224,7 +229,9 @@ extension LimitsCopy {
         case .subscription:
             return LimitsTopCardText(
                 title: priceTitle,
-                trailing: since(share.window.start, now: now, calendar: calendar, locale: locale),
+                trailing: load.period == .current
+                    ? since(share.window.start, now: now, calendar: calendar, locale: locale)
+                    : periodName(load.period, mode: load.request.mode, span: span, now: now, calendar: calendar, locale: locale),
                 value: share.price.map { priceValue($0) } ?? notEnoughUse,
                 valueIsFigure: share.price != nil,
                 detail: share.price.map { priceTokens($0) },
@@ -234,7 +241,9 @@ extension LimitsCopy {
         case .payAsYouGo(let budget):
             return LimitsTopCardText(
                 title: budget == nil ? spendTitle : budgetTitle,
-                trailing: lastSevenDays,
+                trailing: load.period == .current
+                    ? lastSevenDays
+                    : periodName(load.period, mode: load.request.mode, span: span, now: now, calendar: calendar, locale: locale),
                 value: budget.map { budgetValue(spent: share.cost, budget: $0) } ?? spendValue(share.cost),
                 valueIsFigure: true,
                 detail: nil,
@@ -442,5 +451,45 @@ extension LimitsCopy {
     static func message(for page: LimitsPage, providerName: String, period: LimitsPeriod) -> String? {
         if case .noSpend = page { return noSpendSentence(period: period) }
         return message(for: page, providerName: providerName)
+    }
+}
+
+// MARK: - A past period on the cards
+
+extension LimitsCopy {
+    /// The ranked card's title for the period on screen: a past window is "that" one,
+    /// "What filled that week"; every other period keeps `rankedTitle(mode:span:)`.
+    static func rankedTitle(mode: LimitMode, span: LimitsSpan, period: LimitsPeriod) -> String {
+        guard case .past = period, mode == .subscription else { return rankedTitle(mode: mode, span: span) }
+        switch span {
+        case .session: return "What filled that session"
+        case .week: return "What filled that week"
+        case .month: return "What filled that month"
+        }
+    }
+
+    /// Beside the title: how full a past window got, "64 % used", where the window open
+    /// now says "so far"; every other period keeps `rankedTrailing(mode:percent:)`.
+    static func rankedTrailing(mode: LimitMode, percent: Double, period: LimitsPeriod) -> String {
+        guard case .past = period, mode == .subscription else {
+            return rankedTrailing(mode: mode, percent: percent)
+        }
+        return "\(Int(percent.rounded())) % used"
+    }
+
+    /// In place of the rows when the period had no chat on this Mac.
+    static func noChats(mode: LimitMode, span: LimitsSpan, period: LimitsPeriod) -> String {
+        switch period {
+        case .current:
+            return noChats(mode: mode, span: span)
+        case .past:
+            switch span {
+            case .session: return "No chats in that session"
+            case .week: return "No chats that week"
+            case .month: return "No chats that month"
+            }
+        case .weeksAgo(let weeks):
+            return "No chats \(weeks * 7)–\(weeks * 7 + 7) days ago"
+        }
     }
 }

@@ -19,6 +19,9 @@ struct LimitsView: View {
     @AppStorage(LimitsRules.groupingKey) private var storedGrouping: String = ""
     /// Opens the Settings window; `openBudgetSettings()` parks its tab first.
     @Environment(\.openSettings) private var openSettings
+    /// The period picked: the current one until another is, and again after a provider or
+    /// window change. `period` checks it is still on offer.
+    @State private var chosenPeriod: LimitsPeriod = .current
 
     /// The selected provider as the last poll saw it.
     private var service: ServiceSnapshot? {
@@ -33,11 +36,32 @@ struct LimitsView: View {
         LimitsRules.selectedKind(stored: storedWindow, offered: offeredKinds)
     }
 
+    /// The account's mode, as the page measures it.
+    private var mode: LimitMode? {
+        service.flatMap { LimitShareRules.mode(of: $0, weeklyBudgetUSD: settings.claudeWeeklyBudgetUSD) }
+    }
+
+    /// What the period picker offers: the current period, then the finished windows the
+    /// last load found or the earlier weeks.
+    private var offeredPeriods: [LimitsPeriod] {
+        LimitsRules.periods(
+            mode: mode,
+            pastWindows: LimitsRules.pastWindows(
+                dashboard.limitPastWindows, serviceID: dashboard.selectedService, kind: kind
+            )
+        )
+    }
+
+    /// The period on screen.
+    private var period: LimitsPeriod {
+        LimitsRules.selectedPeriod(chosenPeriod, offered: offeredPeriods)
+    }
+
     var body: some View {
         let now = Date()
         let key = LimitsLoadKey(
             query: LimitsRules.query(
-                serviceID: dashboard.selectedService, service: service, kind: kind,
+                serviceID: dashboard.selectedService, service: service, kind: kind, period: period,
                 weeklyBudgetUSD: settings.claudeWeeklyBudgetUSD, now: now, calendar: .current
             ),
             ingestedAt: dashboard.cliBreakdown?.updatedAt
@@ -50,6 +74,10 @@ struct LimitsView: View {
         .task(id: key) {
             await load(key)
         }
+        // Another provider's or window's past periods are not this one's: start again on
+        // the current period.
+        .onChange(of: dashboard.selectedService) { chosenPeriod = .current }
+        .onChange(of: storedWindow) { chosenPeriod = .current }
     }
 
     /// Loads the share once this provider's cost log is in (`LimitsRules.loads`). Whether
@@ -57,7 +85,7 @@ struct LimitsView: View {
     /// each load answered.
     private func load(_ key: LimitsLoadKey) async {
         guard LimitsRules.loads(key) else { return }
-        await dashboard.refreshLimitShare(kind: key.query.kind)
+        await dashboard.refreshLimitShare(kind: key.query.kind, period: key.query.period)
     }
 
     private func scrollBody(isWide: Bool, now: Date) -> some View {
@@ -65,6 +93,7 @@ struct LimitsView: View {
         let page = LimitsRules.page(
             serviceID: dashboard.selectedService,
             kind: kind,
+            period: period,
             service: service,
             weeklyBudgetUSD: settings.claudeWeeklyBudgetUSD,
             load: dashboard.limitShare,
@@ -111,19 +140,41 @@ struct LimitsView: View {
 
     // MARK: - Controls
 
-    /// The provider on the left, the window switch on the right, as History's controls
-    /// row. They stack before they clip: the page never forces the window wider.
+    /// The provider on the left; the window switch and the period picker on the right, as
+    /// the mockup sets them. They stack before they clip: the page never forces the window
+    /// wider.
     private func controls(kind: BucketKind) -> some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: LimitsLayout.controlSpacing) {
                 ServicePicker(dashboard: dashboard)
                 Spacer(minLength: LimitsLayout.controlSpacing)
                 windowSwitch(kind: kind)
+                periodPicker(kind: kind)
             }
             VStack(alignment: .leading, spacing: LimitsLayout.controlSpacing) {
                 ServicePicker(dashboard: dashboard)
-                windowSwitch(kind: kind)
+                HStack(spacing: LimitsLayout.controlSpacing) {
+                    windowSwitch(kind: kind)
+                    periodPicker(kind: kind)
+                }
             }
+        }
+    }
+
+    /// The current period and the past ones (spec § The tab, item 1), named for the
+    /// window's length; none while the current period is the only one.
+    @ViewBuilder
+    private func periodPicker(kind: BucketKind) -> some View {
+        let periods = offeredPeriods
+        if LimitsRules.canPickPeriod(periods), let mode {
+            let span = LimitsRules.span(of: kind, in: service)
+            let now = Date()
+            LimitsPeriodPicker(
+                entries: periods.map {
+                    LimitsPeriodEntry(period: $0, name: LimitsCopy.periodName($0, mode: mode, span: span, now: now))
+                },
+                selection: Binding(get: { period }, set: { chosenPeriod = $0 })
+            )
         }
     }
 
@@ -159,7 +210,7 @@ struct LimitsView: View {
             cards(load, isWide: isWide)
         default:
             if let message = LimitsCopy.message(
-                for: page, providerName: dashboard.displayName(for: dashboard.selectedService)
+                for: page, providerName: dashboard.displayName(for: dashboard.selectedService), period: period
             ) {
                 VStack(alignment: .leading, spacing: LimitsLayout.messageSpacing) {
                     Text(message)
@@ -177,23 +228,29 @@ struct LimitsView: View {
         }
     }
 
-    /// The mode's cards, top to bottom as the mockup stacks them.
+    /// The mode's cards, top to bottom as the mockup stacks them, worded for the period the
+    /// load answered (spec § The tab, items 1–3).
     private func cards(_ load: DashboardState.LimitShareLoad, isWide: Bool) -> some View {
         VStack(alignment: .leading, spacing: LimitsLayout.sectionSpacing) {
-            LimitsTopCard(text: LimitsCopy.topCard(for: load, now: Date()), onLink: openBudgetSettings)
             let windowSpan = LimitsRules.span(of: load.kind, in: service)
             let listGrouping = grouping(for: load.serviceID)
+            LimitsTopCard(
+                text: LimitsCopy.topCard(for: load, now: Date(), span: windowSpan),
+                onLink: openBudgetSettings
+            )
             LimitsRankedCard(
                 load: load,
-                title: LimitsCopy.rankedTitle(mode: load.request.mode, span: windowSpan),
-                trailing: LimitsCopy.rankedTrailing(mode: load.request.mode, percent: load.share.percent),
+                title: LimitsCopy.rankedTitle(mode: load.request.mode, span: windowSpan, period: load.period),
+                trailing: LimitsCopy.rankedTrailing(
+                    mode: load.request.mode, percent: load.share.percent, period: load.period
+                ),
                 tail: LimitsRules.tailRows(of: load.share, mode: load.request.mode, serviceID: load.serviceID),
-                emptyText: LimitsCopy.noChats(mode: load.request.mode, span: windowSpan),
+                emptyText: LimitsCopy.noChats(mode: load.request.mode, span: windowSpan, period: load.period),
                 footnote: LimitsCopy.rowsFootnote(mode: load.request.mode),
                 isWide: isWide,
                 grouping: listGrouping
             )
-            // A new provider, window or measure starts the list capped again.
+            // A new provider, window, period or measure starts the list capped again.
             .id(load.query)
         }
     }

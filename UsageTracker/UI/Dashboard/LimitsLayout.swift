@@ -106,3 +106,17 @@ extension LimitsLayout {
         rowsWidth(detailWidth: detailWidth) >= wideRowsMinWidth
     }
 }
+
+// MARK: - Period picker
+
+extension LimitsLayout {
+    /// The mockup's period capsule: as tall as the window switch's track (30 pt segments in
+    /// 3 pt of padding), `padding: 0 10px 0 14px`, `gap: 6px`, 12.5 px 600 text and a small
+    /// up-and-down chevron.
+    static let periodPickerHeight: CGFloat = 36
+    static let periodPickerLeading: CGFloat = 14
+    static let periodPickerTrailing: CGFloat = 10
+    static let periodPickerSpacing: CGFloat = 6
+    static let periodPickerTextSize: CGFloat = 12.5
+    static let periodPickerChevronSize: CGFloat = 10
+}
