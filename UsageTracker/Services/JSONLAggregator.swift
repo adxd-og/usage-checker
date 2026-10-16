@@ -1162,6 +1162,39 @@ actor JSONLAggregator: CostLogAggregating {
         return summaries.sorted { $0.lastAt == $1.lastAt ? $0.id < $1.id : $0.lastAt > $1.lastAt }
     }
 
+    /// Every turn in `[start, end]` that belongs to a chat, oldest first, with the names
+    /// of those chats. The limit-share rule gives a window's percent to these turns.
+    ///
+    /// Read straight from `recentTurns`. So a turn carries its final counters (the last
+    /// record for its message id, see `ingest`), and the 31-day horizon is this query's
+    /// horizon too. A sub-agent's turn already carries its parent's `sessionId` and
+    /// lands under that chat. A turn with no `sessionId` comes from a build old enough
+    /// to omit it. It belongs to no chat and is left out.
+    ///
+    /// Spelled `async` to match `CostLogAggregating.turnCosts(from:to:)`, for the reason
+    /// `CodexUsageAggregator.sessions(from:to:)` gives.
+    func turnCosts(from start: Date, to end: Date) async -> TurnCostLog {
+        var log = TurnCostLog()
+        for t in recentTurns
+        where t.timestamp >= start && t.timestamp <= end && !t.sessionID.isEmpty {
+            log.turns.append(TurnCost(
+                timestamp: t.timestamp,
+                chatID: t.sessionID,
+                projectSlug: t.projectSlug,
+                model: t.model,
+                tokens: t.tokens,
+                cost: t.cost,
+                isMainThread: t.agentID == nil
+            ))
+            if log.titles[t.sessionID] == nil,
+               let title = titles[t.sessionID] ?? firstPrompts[t.sessionID] {
+                log.titles[t.sessionID] = title
+            }
+        }
+        log.turns.sort { $0.timestamp < $1.timestamp }
+        return log
+    }
+
     // MARK: - Day tiers
 
     /// The zone moved: `calendar` bins every day from now on. The bin cache forgets its
