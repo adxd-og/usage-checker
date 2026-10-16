@@ -140,6 +140,22 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         let agents: Int
         /// Codex `originator` (`codex-tui`, `codex_exec`, …); nil for Claude.
         var origin: String?
+        /// The chat's part of the account's current limit windows on a subscription, in
+        /// percent points to one decimal, as the Limits tab cuts them (spec 2026-10-16
+        /// § Published data): `sessionShare` of the session window, `weekShare` of the
+        /// weekly one. Each is absent when the chat did not run in that window, when the
+        /// account has no such window, and on every account that is not a subscription.
+        var sessionShare: Double?
+        var weekShare: Double?
+        /// The chat's dollars as a percent of the weekly budget (pay as you go) or of the
+        /// monthly spend limit, to one decimal. Absent on a subscription and when no
+        /// budget is set.
+        ///
+        /// All three are optional and come last. A file written before them decodes as
+        /// it did, a reader that does not know them ignores them, a share that does not
+        /// apply is an absent key rather than `null`, and none of it is a new
+        /// `currentVersion`.
+        var budgetShare: Double?
     }
 
     /// The agent sessions Omelette can see, and the two counts the CLI shows.
