@@ -154,6 +154,10 @@ struct LimitShareRequest: Equatable, Sendable {
     /// The live bucket's percent, clamped to 0...100. `share(for:log:readings:)` ends the
     /// readings on it at the period's end. nil outside the Subscription mode.
     let livePercent: Double?
+    /// A past window's resets, as its readings named them (`LimitPastWindow.resets`): its
+    /// readings are then the ones that named them, not the ones stamped inside the period
+    /// (spec 2026-10-16 limit analytics § Design, Window bounds). nil cuts by time.
+    var resets: ClosedRange<Date>? = nil
 }
 
 extension LimitShareRules {
@@ -221,29 +225,41 @@ extension LimitShareRules {
         return series + [live]
     }
 
-    /// The current window's readings from its last reset on, so the shares total the
-    /// window's percent now (spec 2026-10-16 limit analytics § Design, Totals). The last
-    /// held drop inside `window`, by `resets(in:)`, ends what came before it:
-    /// - the old window's last readings, stamped after the computed start: `resetsAt` is
-    ///   rounded to the second, the poll's clock differs, and the old percent can still
-    ///   be reported minutes into the new window;
-    /// - a limit restored mid-window: the percent falls and `resetsAt` stays.
+    /// The window's readings, every held drop inside it (`resets(in:)`) taken as points the
+    /// provider gave back (spec 2026-10-16 limit analytics § Design, Readings and Totals).
+    /// Nothing says whose points they were, so every reading before the drop is scaled by
+    /// the level the percent fell to over the level it fell from: each chat keeps its part
+    /// of what still counts, the drop's own reading moves nothing, and the shares total the
+    /// window's percent. Two causes:
+    /// - a limit restored mid-window: the percent falls and `resetsAt` stays;
+    /// - the old window's last readings, stamped after the computed start (`resetsAt` is
+    ///   rounded to the second, the poll's clock differs): they fall to the new window's
+    ///   first percent, about nothing, and so count about nothing.
     ///
-    /// The running maximum restarts at the drop's reading. A lone dip is still noise.
-    /// Past windows are not cut: each ends at a reset (`pastWindows`), and the newest can
-    /// hold the current window's own drop seen up to a bin early.
-    nonisolated static func readingsSinceLastReset(
+    /// A lone dip is still noise. Drops are taken oldest first, so a later one scales an
+    /// earlier one's result too. A past window is read the same way: its bounds come from
+    /// its reset (`pastWindows(records:…)`), so no drop of the next window is inside it.
+    nonisolated static func restoredReadings(
         _ series: [LimitReading], in window: LimitWindow
     ) -> [LimitReading] {
-        let inside = series.filter { window.containsReading(at: $0.time) }
-        guard let reset = resets(in: inside).last else { return inside }
-        return inside.filter { $0.time >= reset.firstAfter }
+        var inside = series.filter { window.containsReading(at: $0.time) }
+        for reset in resets(in: inside) {
+            guard let drop = inside.firstIndex(where: { $0.time == reset.firstAfter }), drop > 0 else { continue }
+            let level = inside[..<drop].map(\.percent).max() ?? 0
+            guard level > 0 else { continue }
+            let factor = inside[drop].percent / level
+            for index in 0..<drop {
+                inside[index] = LimitReading(time: inside[index].time, percent: inside[index].percent * factor)
+            }
+        }
+        return inside
     }
 
     /// The share `request` asks for:
-    /// - Subscription: the half-hour-bin rule over the bucket's readings since the
-    ///   window's last held reset (`readingsSinceLastReset(_:in:)`), ending on the live
-    ///   percent at the period's end, so the shares total the percent now;
+    /// - Subscription: the half-hour-bin rule over the bucket's readings, scaled at every
+    ///   held drop inside the window (`restoredReadings(_:in:)`), ending on the live
+    ///   percent at the period's end when the request has one, so the shares total the
+    ///   percent now;
     /// - Pay as you go and Spend limit: the period's dollars against the mode's
     ///   denominator. A spend limit's Outside is the server's used credits minus the
     ///   period's local spend.
@@ -258,11 +274,12 @@ extension LimitShareRules {
         switch request.mode {
         case .subscription:
             guard let bucketID = request.bucketID else { return nil }
-            let readingsToNow = endingOnLive(
-                series(readings, bucketID: bucketID), percent: request.livePercent, at: request.period.end
-            )
+            let own = request.resets.map {
+                series(readings, bucketID: bucketID, resets: $0, in: request.period)
+            } ?? series(readings, bucketID: bucketID)
+            let readingsToNow = endingOnLive(own, percent: request.livePercent, at: request.period.end)
             return share(
-                window: request.period, series: readingsSinceLastReset(readingsToNow, in: request.period), log: log
+                window: request.period, series: restoredReadings(readingsToNow, in: request.period), log: log
             )
         case .payAsYouGo, .spendLimit:
             let spend = log.turns

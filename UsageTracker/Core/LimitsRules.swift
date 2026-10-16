@@ -16,6 +16,9 @@ struct LimitsQuery: Hashable, Sendable {
     let kind: BucketKind
     /// nil when the account has nothing to measure for `kind`: no mode, or no open window.
     let measure: LimitsMeasure?
+    /// The period picked (spec 2026-10-16 limit analytics § The tab, item 1): the current
+    /// one unless a past window or an earlier week is on screen.
+    var period: LimitsPeriod = .current
 }
 
 /// Which window or period a share covers, and against what (§ Accounts without percent
@@ -39,10 +42,12 @@ extension LimitsRules {
         Date(timeIntervalSinceReferenceDate: (date.timeIntervalSinceReferenceDate / 60).rounded() * 60)
     }
 
-    /// The query `request` answers: what `DashboardState` publishes with each load. With no
-    /// request there is nothing to measure.
-    nonisolated static func query(serviceID: String, kind: BucketKind, request: LimitShareRequest?) -> LimitsQuery {
-        guard let request else { return LimitsQuery(serviceID: serviceID, kind: kind, measure: nil) }
+    /// The query `request` answers for `period`: what `DashboardState` publishes with each
+    /// load. With no request there is nothing to measure.
+    nonisolated static func query(
+        serviceID: String, kind: BucketKind, request: LimitShareRequest?, period: LimitsPeriod = .current
+    ) -> LimitsQuery {
+        guard let request else { return LimitsQuery(serviceID: serviceID, kind: kind, measure: nil, period: period) }
         let measure: LimitsMeasure
         switch request.mode {
         case .subscription:
@@ -52,32 +57,34 @@ extension LimitsRules {
         case .spendLimit(let limit, _):
             measure = .spendLimit(monthStart: request.period.start, limit: limit)
         }
-        return LimitsQuery(serviceID: serviceID, kind: kind, measure: measure)
+        return LimitsQuery(serviceID: serviceID, kind: kind, measure: measure, period: period)
     }
 
-    /// The query the live snapshot and settings ask for now: the request
-    /// `DashboardState.refreshLimitShare(kind:)` would make (`LimitShareRules.request`).
+    /// The query the live snapshot and settings ask for now, for the period picked: the
+    /// request `DashboardState.refreshLimitShare(kind:period:)` would make
+    /// (`request(for:kind:period:…)`).
     nonisolated static func query(
         serviceID: String,
         service: ServiceSnapshot?,
         kind: BucketKind,
+        period: LimitsPeriod = .current,
         weeklyBudgetUSD: Double,
         now: Date,
         calendar: Calendar
     ) -> LimitsQuery {
         let request = service.flatMap {
-            LimitShareRules.request(
-                for: $0, kind: kind, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+            LimitsRules.request(
+                for: $0, kind: kind, period: period, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
             )
         }
-        return query(serviceID: serviceID, kind: kind, request: request)
+        return query(serviceID: serviceID, kind: kind, request: request, period: period)
     }
 }
 
 extension DashboardState.LimitShareLoad {
-    /// The query this load answered.
+    /// The query this load answered, its period included.
     var query: LimitsQuery {
-        LimitsRules.query(serviceID: serviceID, kind: kind, request: request)
+        LimitsRules.query(serviceID: serviceID, kind: kind, request: request, period: period)
     }
 }
 
@@ -90,12 +97,20 @@ extension LimitsRules {
         serviceID: String,
         kind: BucketKind,
         request: LimitShareRequest?,
-        share: LimitShare?
+        share: LimitShare?,
+        period: LimitsPeriod = .current,
+        stretches: [String: [ChatStretch]] = [:],
+        change: LimitChangeSignal? = nil
     ) -> (load: DashboardState.LimitShareLoad?, answer: LimitsQuery) {
         let load = request.flatMap { request in
-            share.map { DashboardState.LimitShareLoad(serviceID: serviceID, kind: kind, request: request, share: $0) }
+            share.map {
+                DashboardState.LimitShareLoad(
+                    serviceID: serviceID, kind: kind, request: request, share: $0,
+                    period: period, stretches: stretches, change: change
+                )
+            }
         }
-        return (load, query(serviceID: serviceID, kind: kind, request: request))
+        return (load, query(serviceID: serviceID, kind: kind, request: request, period: period))
     }
 }
 
@@ -155,7 +170,8 @@ extension LimitsRules {
     /// The page for the selected provider and window kind:
     /// 1. a provider whose log names no chat gets the empty state (§ The tab);
     /// 2. an account with no mode has nothing to measure (`LimitShareRules.mode`);
-    /// 3. a subscription needs its window of `kind` open now;
+    /// 3. a subscription needs its window of `kind` open now, unless a past window is
+    ///    picked;
     /// 4. a share is shown when it answered the query asked now (`query(serviceID:service:…)`):
     ///    same provider, kind, window or period, and budget or limit. A share of last week,
     ///    or against the budget set before, is not;
@@ -167,6 +183,7 @@ extension LimitsRules {
     nonisolated static func page(
         serviceID: String,
         kind: BucketKind,
+        period: LimitsPeriod = .current,
         service: ServiceSnapshot?,
         weeklyBudgetUSD: Double,
         load: DashboardState.LimitShareLoad?,
@@ -177,13 +194,13 @@ extension LimitsRules {
         guard DashboardState.hasSessionLog(for: serviceID) else { return .unsupported }
         guard let service, let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD)
         else { return .nothingToMeasure }
-        if mode == .subscription {
+        if mode == .subscription, period == .current {
             guard let bucket = LimitShareRules.coreBucket(kind: kind, in: service),
                   LimitShareRules.currentWindow(of: bucket, now: now) != nil
             else { return .noOpenWindow(span(of: kind, in: service)) }
         }
         let current = query(
-            serviceID: serviceID, service: service, kind: kind,
+            serviceID: serviceID, service: service, kind: kind, period: period,
             weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
         )
         if let load, load.query == current { return .ready(load) }
@@ -407,5 +424,311 @@ extension LimitsRules {
         case .projects:
             return projectRows(of: share, serviceID: serviceID, showsAll: showsAll, projectName: projectName)
         }
+    }
+}
+
+// MARK: - Period picker
+
+/// One entry of the period picker (spec 2026-10-16 limit analytics § The tab, item 1;
+/// § Accounts without percent windows, Periods).
+enum LimitsPeriod: Hashable, Sendable {
+    /// The window or spend period open now.
+    case current
+    /// A finished window of a subscription, as `LimitShareRules.pastWindows(records:…)`
+    /// found it, with the resets its readings named.
+    case past(LimitPastWindow)
+    /// Pay as you go's 7-day block this many weeks before the last 7 days: 1 is 7–14 days
+    /// ago.
+    case weeksAgo(Int)
+}
+
+extension LimitsRules {
+    /// Pay as you go's earlier 7-day blocks that lie wholly inside the 31-day turn horizon.
+    static var earlierWeeks: Int {
+        Int(LimitShareRules.turnHorizon / LimitShareRules.payAsYouGoPeriod) - 1
+    }
+
+    /// The periods the picker offers, the current one first, then newest to oldest:
+    /// - Subscription: the finished windows (`pastWindows`);
+    /// - Pay as you go: the earlier 7-day blocks;
+    /// - Spend limit: the month so far alone, since the turn horizon cannot cover a past
+    ///   month; and so for an account with no mode.
+    nonisolated static func periods(mode: LimitMode?, pastWindows: [LimitPastWindow]) -> [LimitsPeriod] {
+        switch mode {
+        case .some(.subscription):
+            return [.current] + pastWindows.map { LimitsPeriod.past($0) }
+        case .some(.payAsYouGo(_)):
+            return [.current] + (1...earlierWeeks).map { LimitsPeriod.weeksAgo($0) }
+        case .some(.spendLimit(_, _)), .none:
+            return [.current]
+        }
+    }
+
+    /// Whether the picker shows: only with something besides the current period to pick.
+    nonisolated static func canPickPeriod(_ periods: [LimitsPeriod]) -> Bool {
+        periods.count > 1
+    }
+
+    /// The picked period while it is on offer, else the current one: a window that left
+    /// the horizon, or a period of another mode, is not shown.
+    nonisolated static func selectedPeriod(_ chosen: LimitsPeriod, offered: [LimitsPeriod]) -> LimitsPeriod {
+        offered.contains(chosen) ? chosen : .current
+    }
+
+    /// The request a load of `period` makes (§ Accounts without percent windows, Periods):
+    /// - the current period: `LimitShareRules.request`'s;
+    /// - a past window: the window itself on the bucket of `kind`, cut by the readings that
+    ///   named its reset, with no live percent (`LimitShareRules.request(for:bucketID:)`);
+    /// - an earlier week: the 7 days that many weeks before the last 7, against the same
+    ///   budget.
+    ///
+    /// nil when the account has nothing to measure, or `period` is not its mode's.
+    nonisolated static func request(
+        for service: ServiceSnapshot,
+        kind: BucketKind,
+        period: LimitsPeriod,
+        weeklyBudgetUSD: Double,
+        now: Date,
+        calendar: Calendar
+    ) -> LimitShareRequest? {
+        switch period {
+        case .current:
+            return LimitShareRules.request(
+                for: service, kind: kind, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar
+            )
+        case .past(let window):
+            guard window.start < window.end,
+                  LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD) == .subscription,
+                  let bucket = LimitShareRules.coreBucket(kind: kind, in: service)
+            else { return nil }
+            return LimitShareRules.request(for: window, bucketID: bucket.id)
+        case .weeksAgo(let weeks):
+            guard weeks >= 1,
+                  let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD),
+                  case .payAsYouGo = mode
+            else { return nil }
+            let end = now.addingTimeInterval(-Double(weeks) * LimitShareRules.payAsYouGoPeriod)
+            return LimitShareRequest(
+                mode: mode,
+                period: LimitWindow(start: end.addingTimeInterval(-LimitShareRules.payAsYouGoPeriod), end: end),
+                bucketID: nil,
+                livePercent: nil
+            )
+        }
+    }
+}
+
+extension LimitsRules {
+    /// The finished windows the picker offers for `serviceID`'s window of `kind`: those
+    /// the dashboard's last load found for exactly that provider and kind; none before one
+    /// has.
+    nonisolated static func pastWindows(
+        _ list: DashboardState.LimitPastWindows?, serviceID: String, kind: BucketKind
+    ) -> [LimitPastWindow] {
+        guard let list, list.serviceID == serviceID, list.kind == kind else { return [] }
+        return list.windows
+    }
+}
+
+// MARK: - Timeline
+
+/// The timeline card as `LimitsTimelineCard` draws it (spec 2026-10-16 limit analytics
+/// § The tab, item 4).
+struct LimitsTimeline: Equatable, Sendable {
+    /// Bottom of the stack first: up to five projects, then Other, then Outside this Mac.
+    /// Other and Outside appear only when some half hour has them.
+    let series: [LimitsTimelineSeries]
+    /// One per half hour that moved, oldest first.
+    let bars: [LimitsTimelineBar]
+    /// The y axis' marks in points, 0 first; the last is the axis' top.
+    let axis: [Double]
+}
+
+/// One colour of the stack and its legend entry.
+struct LimitsTimelineSeries: Equatable, Sendable, Identifiable {
+    /// A project slug, or `LimitsRules.otherSeriesID` / `outsideSeriesID`.
+    let id: String
+    let name: String
+    let token: OMColorToken
+}
+
+/// One half hour's bar.
+struct LimitsTimelineBar: Equatable, Sendable, Identifiable {
+    let start: Date
+    /// The half hour's end; the last one ends with the window.
+    let end: Date
+    /// In `series` order, the empty ones left out.
+    let parts: [LimitsTimelinePart]
+
+    var id: Date { start }
+    /// The bar's height: how far the percent moved in the half hour.
+    var total: Double { parts.last?.top ?? 0 }
+}
+
+/// One series' piece of a bar.
+struct LimitsTimelinePart: Equatable, Sendable {
+    let seriesID: String
+    let points: Double
+    /// Where the piece starts in the stack.
+    let base: Double
+
+    var top: Double { base + points }
+}
+
+/// What a card built from a load is built again for (`.task(id:)`): the query the load
+/// answered and the share itself. A share cut again after an ingest under the same query
+/// and period (the window open now, a past week whose late turns arrived) is a new key,
+/// so a card never keeps what it drew from the cut before.
+struct LimitsCardKey: Equatable, Sendable {
+    let query: LimitsQuery
+    let share: LimitShare
+}
+
+extension DashboardState.LimitShareLoad {
+    /// What a card drawn from this load is keyed on (`LimitsCardKey`).
+    var cardKey: LimitsCardKey { LimitsCardKey(query: query, share: share) }
+}
+
+extension LimitsRules {
+    /// How many projects get a colour of their own; the rest are Other.
+    static let timelineProjectCount = 5
+    /// The five projects' colours, largest first: the mockup's, from the series tokens.
+    static let timelineProjectTokens: [OMColorToken] = [
+        .seriesAllModels, .seriesPerModel, .seriesCredits, .seriesSession, .tokenOutput,
+    ]
+    static let otherSeriesID = "other"
+    static let outsideSeriesID = "outside"
+    static let otherSeriesToken: OMColorToken = .muted
+    static let outsideSeriesToken: OMColorToken = .seriesQuota
+    /// A bar's share of its half hour; the rest is the gap beside it.
+    static let timelineBarFraction = 0.7
+
+    /// The window's half hours as stacked bars (spec § The tab, item 4): a chat's points go
+    /// to its project when that project is one of the window's five largest (by points),
+    /// otherwise to Other; Outside this Mac is the half hour's own. A half hour that moved
+    /// nothing has no bar. A spend limit's Outside has no time and is not drawn.
+    nonisolated static func timeline(
+        of share: LimitShare,
+        serviceID: String,
+        projectName: (_ providerID: String, _ slug: String) -> String = SessionCopy.projectName(providerID:projectSlug:)
+    ) -> LimitsTimeline {
+        let projectIDs = Array(
+            share.projects.filter { $0.points > LimitShareRules.pointSlack }.prefix(timelineProjectCount).map(\.id)
+        )
+        let projectOfChat = Dictionary(share.chats.map { ($0.id, $0.projectSlug) }, uniquingKeysWith: { first, _ in first })
+        var hasOther = false
+        var hasOutside = false
+        var bars: [LimitsTimelineBar] = []
+        for bin in share.bins where bin.delta > LimitShareRules.pointSlack {
+            var byProject: [String: Double] = [:]
+            var other = 0.0
+            for (chat, points) in bin.chats {
+                if let project = projectOfChat[chat], projectIDs.contains(project) {
+                    byProject[project, default: 0] += points
+                } else {
+                    other += points
+                }
+            }
+            var pieces: [(String, Double)] = projectIDs.map { ($0, byProject[$0] ?? 0) }
+            pieces.append((otherSeriesID, other))
+            pieces.append((outsideSeriesID, bin.outside))
+            var parts: [LimitsTimelinePart] = []
+            var base = 0.0
+            for (id, points) in pieces where points > LimitShareRules.pointSlack {
+                parts.append(LimitsTimelinePart(seriesID: id, points: points, base: base))
+                base += points
+            }
+            guard !parts.isEmpty else { continue }
+            if other > LimitShareRules.pointSlack { hasOther = true }
+            if bin.outside > LimitShareRules.pointSlack { hasOutside = true }
+            bars.append(LimitsTimelineBar(
+                start: bin.start,
+                end: min(bin.start.addingTimeInterval(LimitShareRules.binLength), share.window.end),
+                parts: parts
+            ))
+        }
+        var series = projectIDs.enumerated().map { index, id in
+            LimitsTimelineSeries(id: id, name: projectName(serviceID, id), token: timelineProjectTokens[index])
+        }
+        if hasOther {
+            series.append(LimitsTimelineSeries(id: otherSeriesID, name: LimitsCopy.otherProjects, token: otherSeriesToken))
+        }
+        if hasOutside {
+            series.append(LimitsTimelineSeries(id: outsideSeriesID, name: LimitsCopy.outsideTitle, token: outsideSeriesToken))
+        }
+        return LimitsTimeline(series: series, bars: bars, axis: timelineAxis(top: bars.map(\.total).max() ?? 0))
+    }
+
+    /// The y axis: whole points from 0 up to the tallest bar rounded up, at least 1, in at
+    /// most four steps (the mockup's 0 % to 3 %).
+    nonisolated static func timelineAxis(top: Double) -> [Double] {
+        let ceiling = max(1, (top - LimitShareRules.pointSlack).rounded(.up))
+        let step = max(1, (ceiling / 4).rounded(.up))
+        let marks = Int((ceiling / step).rounded(.up))
+        return (0...marks).map { Double($0) * step }
+    }
+
+    /// How far a bar stands in from each edge of its half hour.
+    nonisolated static func barInset(_ bar: LimitsTimelineBar) -> TimeInterval {
+        bar.end.timeIntervalSince(bar.start) * (1 - timelineBarFraction) / 2
+    }
+
+    /// What hovering a bar shows: its half hour, how far the percent rose, and each
+    /// series' points in stack order.
+    nonisolated static func timelineTooltip(
+        for bar: LimitsTimelineBar, in timeline: LimitsTimeline, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> HistoryTooltip {
+        let named = Dictionary(timeline.series.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return HistoryTooltip(
+            title: LimitsCopy.timeRange(from: bar.start, to: bar.end, now: now, calendar: calendar, locale: locale),
+            headline: LimitsCopy.binRise(bar.total),
+            rows: bar.parts.map { part in
+                HistoryTooltipRow(
+                    label: named[part.seriesID]?.name ?? part.seriesID,
+                    value: LimitsCopy.binPoints(part.points),
+                    token: named[part.seriesID]?.token
+                )
+            }
+        )
+    }
+
+    /// Where the x axis is marked: every hour of a session, every day of a week, every
+    /// fifth day of a month.
+    nonisolated static func timelineStride(span: LimitsSpan) -> HistoryAxisStride {
+        switch span {
+        case .session: return HistoryAxisStride(component: .hour, count: 1)
+        case .week: return HistoryAxisStride(component: .day, count: 1)
+        case .month: return HistoryAxisStride(component: .day, count: 5)
+        }
+    }
+}
+
+// MARK: - Stretches
+
+extension LimitsRules {
+    /// The rows under each open chat (spec 2026-10-16 limit analytics § The tab, item 5), by
+    /// chat id: its stretches in the period, oldest first, each named by the first prompt
+    /// typed for it, with its hours, how it began and what its cold start cost, its share
+    /// and its dollars. Only the chats in `chatIDs` are formatted, and only those with
+    /// stretches get an entry.
+    nonisolated static func stretchRows(
+        chatIDs: Set<String>, stretches: [String: [ChatStretch]], now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> [String: [LimitsRow]] {
+        var rows: [String: [LimitsRow]] = [:]
+        for chatID in chatIDs {
+            guard let chatStretches = stretches[chatID], !chatStretches.isEmpty else { continue }
+            rows[chatID] = chatStretches.enumerated().map { index, stretch in
+                LimitsRow(
+                    id: "\(chatID)#\(index)",
+                    title: stretch.prompt ?? LimitsCopy.noPrompt,
+                    subtitle: LimitsCopy.stretchSubtitle(stretch, now: now, calendar: calendar, locale: locale),
+                    share: LimitsCopy.share(stretch.points),
+                    dollars: LimitsCopy.dollars(stretch.cost)
+                )
+            }
+        }
+        return rows
     }
 }

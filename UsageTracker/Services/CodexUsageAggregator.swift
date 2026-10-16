@@ -122,8 +122,8 @@ actor CodexUsageAggregator: CostLogAggregating {
         var isSubagent = false
         var agentKind: String?
         var origin: String?
-        /// Set once this file has contributed a first prompt, so the rest of its
-        /// `response_item` lines are skipped instead of re-examined.
+        /// Set once this file has given its chat a first prompt. Every later prompt is
+        /// still read, for the chat's stretches.
         var sawPrompt = false
     }
 
@@ -217,6 +217,13 @@ actor CodexUsageAggregator: CostLogAggregating {
     /// writes no index entry for `codex exec` sessions. Kept with the timestamp so the
     /// earliest wins when a session spans two rollouts.
     private var firstPrompts: [String: (text: String, at: Date)] = [:]
+    /// When each chat's own thread was compacted (`compacted`), oldest first, for the
+    /// turns' horizon (`recentWindow`): the Limits tab cuts a chat into stretches there
+    /// (spec 2026-10-16 limit analytics § The tab, item 5).
+    private var chatCompactions: [String: [Date]] = [:]
+    /// Every prompt the user typed in each chat, oldest first, for the same horizon: a
+    /// stretch is named by the first one typed for it.
+    private var chatPrompts: [String: [ChatPrompt]] = [:]
     /// A rollout untouched for longer than this is outside every figure we show, so it
     /// is never parsed. A year and a day, to match `dayRetention` below: the Activity
     /// cards reach back 365 days, and a file must still be readable on the last day it
@@ -564,7 +571,8 @@ actor CodexUsageAggregator: CostLogAggregating {
             .sorted { $0.lastAt > $1.lastAt }
     }
 
-    /// Every response in `[start, end]`, oldest first, with the names of their chats.
+    /// Every response in `[start, end]`, oldest first, with the names of their chats and
+    /// their compactions and prompts (spec 2026-10-16 limit analytics § The tab, item 5).
     /// The limit-share rule gives a window's percent to these turns. A sub-agent's
     /// response carries its parent's `session_id`, so it lands under that chat. Reads
     /// what `refresh()` has already ingested, from `recentTurns`, so the 31-day horizon
@@ -587,6 +595,12 @@ actor CodexUsageAggregator: CostLogAggregating {
             }
         }
         log.turns.sort { $0.timestamp < $1.timestamp }
+        // Each chat's compactions and prompts, not cut to the range: the prompt that
+        // opened a stretch can come a minute before the range does.
+        for chat in Set(log.turns.map(\.chatID)) {
+            if let times = chatCompactions[chat] { log.compactions[chat] = times }
+            if let typed = chatPrompts[chat] { log.prompts[chat] = typed }
+        }
         return log
     }
 
@@ -776,14 +790,17 @@ actor CodexUsageAggregator: CostLogAggregating {
         return best.mapValues(\.name)
     }
 
-    /// A chat Codex never named is still recognisable by what it was asked to do.
-    /// § Facts: the first user message whose `content_item_kinds` says `user.text`;
-    /// failing that the first `input_text` that does not open with `<` or `#`, which is
-    /// how the AGENTS.md and environment preambles arrive under the user role. A
+    /// A prompt the user typed (§ Facts): the user message whose `content_item_kinds` says
+    /// `user.text`; failing that an `input_text` that does not open with `<` or `#`, which
+    /// is how the AGENTS.md and environment preambles arrive under the user role. A
     /// sub-agent's log opens with the task it was handed, which is not what the user
     /// typed, so those files are never asked.
-    private func captureFirstPrompt(_ obj: [String: Any], state: inout FileState) {
-        guard !state.sawPrompt, !state.isSubagent, let sessionID = state.sessionID else { return }
+    ///
+    /// Each one inside the turns' horizon is kept for the chat's stretches (spec
+    /// 2026-10-16 limit analytics § The tab, item 5). The first one names a chat Codex
+    /// never named: Codex writes no index entry for `codex exec` sessions.
+    private func capturePrompt(_ obj: [String: Any], state: inout FileState) {
+        guard !state.isSubagent, let sessionID = state.sessionID else { return }
         guard let payload = obj["payload"] as? [String: Any],
               payload["role"] as? String == "user",
               let content = payload["content"] as? [[String: Any]] else { return }
@@ -804,9 +821,25 @@ actor CodexUsageAggregator: CostLogAggregating {
         // `.distantFuture` for a line we cannot date: it fills an empty slot and never
         // displaces a prompt that knows when it was typed.
         let at = (obj["timestamp"] as? String).flatMap { isoFormatter.date(from: $0) } ?? .distantFuture
+        if at < .distantFuture, at >= Date().addingTimeInterval(-recentWindow) {
+            chatPrompts[sessionID, default: []].insertKeepingOrder(
+                ChatPrompt(at: TurnCostLog.eventTime(at), text: title)
+            )
+        }
+        guard !state.sawPrompt else { return }
         state.sawPrompt = true
         if let existing = firstPrompts[sessionID], existing.at <= at { return }
         firstPrompts[sessionID] = (title, at)
+    }
+
+    /// A `compacted` line on the chat's own thread: its context was compacted here. A
+    /// sub-agent's compaction is the agent's context, not the chat's.
+    private func captureCompaction(_ obj: [String: Any], state: FileState) {
+        guard !state.isSubagent, let sessionID = state.sessionID,
+              let at = (obj["timestamp"] as? String).flatMap({ isoFormatter.date(from: $0) }),
+              at >= Date().addingTimeInterval(-recentWindow)
+        else { return }
+        chatCompactions[sessionID, default: []].insertKeepingOrder(TurnCostLog.eventTime(at))
     }
 
     /// Whitespace-collapsed and cut at 80 characters — the same shape § 2 gives
@@ -939,6 +972,21 @@ actor CodexUsageAggregator: CostLogAggregating {
 
     private func pruneAndFold() {
         foldTurns(olderThan: Date().addingTimeInterval(-recentWindow))
+        // A chat's compactions and prompts are kept as long as its turns. Each list is
+        // oldest first, so its first entry says whether anything has aged out.
+        let eventCutoff = Date().addingTimeInterval(-recentWindow)
+        if chatCompactions.values.contains(where: { ($0.first ?? .distantFuture) < eventCutoff }) {
+            chatCompactions = chatCompactions.compactMapValues { times in
+                let kept = times.filter { $0 >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+        }
+        if chatPrompts.values.contains(where: { ($0.first?.at ?? .distantFuture) < eventCutoff }) {
+            chatPrompts = chatPrompts.compactMapValues { prompts in
+                let kept = prompts.filter { $0.at >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+        }
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
@@ -1132,16 +1180,21 @@ actor CodexUsageAggregator: CostLogAggregating {
                         at: ts, state: state, fallbackSlug: fallbackSlug, fileKey: fileKey)
         }
 
-        // The authoritative per-response bill, when the file writes one. `compacted`
-        // embeds a copy of the latest record under `payload.latest_token_usage_record`
-        // and is deliberately not parsed at all: it is not a `token_usage_record` at
-        // top level, so it falls through every branch here.
+        // `compacted` embeds a copy of the latest record under
+        // `payload.latest_token_usage_record`, which is never billed: only when the
+        // compaction happened is kept.
+        if type == "compacted" {
+            captureCompaction(obj, state: state)
+            return nil
+        }
+
+        // The authoritative per-response bill, when the file writes one.
         if type == "token_usage_record" {
             return recordTurn(obj, state: &state, fallbackSlug: fallbackSlug, fileKey: fileKey)
         }
 
         if type == "response_item" {
-            captureFirstPrompt(obj, state: &state)
+            capturePrompt(obj, state: &state)
             return nil
         }
 

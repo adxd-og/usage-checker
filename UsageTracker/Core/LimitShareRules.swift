@@ -121,8 +121,8 @@ extension LimitShareRules {
     ///   poll. The provider's clock and the poll's differ by seconds, and a laptop asleep
     ///   at the reset sees the drop later;
     /// - a held drop later inside the current window, such as a limit restored with
-    ///   `resetsAt` unchanged, restarts the current window's readings
-    ///   (`readingsSinceLastReset(_:in:)`).
+    ///   `resetsAt` unchanged, scales the current window's readings before it
+    ///   (`restoredReadings(_:in:)`).
     ///
     /// These spans are left out:
     /// - a window that began before `horizonStart`: turns older than the 31-day horizon
@@ -527,6 +527,8 @@ struct LimitChangeSignal: Equatable, Sendable {
     let usualPrice: Double
     /// N: how much less a point buys than usual, in whole percent.
     let percentLess: Int
+    /// How many usual weeks `usualPrice` is the mean of.
+    let usualWeeks: Int
     /// Set when this week's costliest model is not the one the usual weeks spent most
     /// on. The API price only stands in for how a limit is charged, and a model change
     /// moves it.
@@ -573,15 +575,20 @@ extension LimitShareRules {
     /// Weekly only, and only for windows of at most `changeLongestWindow`: Codex Free's
     /// 30-day window has kind `.weekly` but is not a week. A longer previous window is
     /// not a usual week either, so early in a 30-day window, while the one before it is
-    /// still inside the horizon, there is nothing to compare. nil when it does not fire,
-    /// or when there is no usual week to compare.
+    /// still inside the horizon, there is nothing to compare. `windowLength` is the
+    /// bucket's own length when the caller knows it (`UsageBucket.windowDuration`): a
+    /// 30-day window is no week however short its spans, even when early resets left
+    /// windows of a few days. nil when it does not fire, or when there is no usual week
+    /// to compare.
     nonisolated static func changeSignal(
-        kind: BucketKind, current: LimitShare, previous: [LimitShare], horizonStart: Date
+        kind: BucketKind, current: LimitShare, previous: [LimitShare], horizonStart: Date,
+        windowLength: TimeInterval? = nil
     ) -> LimitChangeSignal? {
         func isWeekSized(_ window: LimitWindow) -> Bool {
             window.end.timeIntervalSince(window.start) <= changeLongestWindow
         }
         guard kind == .weekly,
+              (windowLength ?? 0) <= changeLongestWindow,
               isWeekSized(current.window),
               current.attributedPoints + pointSlack >= changeFloorPoints,
               let price = current.price?.dollars
@@ -609,6 +616,7 @@ extension LimitShareRules {
             price: price,
             usualPrice: usualPrice,
             percentLess: Int(((1 - price / usualPrice) * 100).rounded()),
+            usualWeeks: usual.count,
             modelChange: modelChange
         )
     }

@@ -136,6 +136,9 @@ struct LimitsTopCardText: Equatable, Sendable {
     let caption: String?
     /// Under everything: the weekly budget in Settings, on Claude pay as you go.
     let link: String?
+    /// Under the caption when a percent buys clearly less than in the usual weeks (spec
+    /// § Design, Change signal): primary text with a warning icon.
+    var change: String? = nil
 }
 
 extension LimitsCopy {
@@ -213,9 +216,14 @@ extension LimitsCopy {
     ///   The dollars are the bill, so there is no caption. On Claude the card links to the
     ///   budget in Settings (`budgetLink`);
     /// - Spend limit: the server's dollars this month against the limit.
+    ///
+    /// A past window or an earlier week is named on the title's baseline in the period
+    /// picker's own words (`periodName`), so the card says which period it prices; `span`
+    /// names a window by its length.
     static func topCard(
         for load: DashboardState.LimitShareLoad,
         now: Date,
+        span: LimitsSpan = .week,
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> LimitsTopCardText {
@@ -224,17 +232,22 @@ extension LimitsCopy {
         case .subscription:
             return LimitsTopCardText(
                 title: priceTitle,
-                trailing: since(share.window.start, now: now, calendar: calendar, locale: locale),
+                trailing: load.period == .current
+                    ? since(share.window.start, now: now, calendar: calendar, locale: locale)
+                    : periodName(load.period, mode: load.request.mode, span: span, now: now, calendar: calendar, locale: locale),
                 value: share.price.map { priceValue($0) } ?? notEnoughUse,
                 valueIsFigure: share.price != nil,
                 detail: share.price.map { priceTokens($0) },
                 caption: apiListCaption,
-                link: nil
+                link: nil,
+                change: load.change.map { changeLine($0) }
             )
         case .payAsYouGo(let budget):
             return LimitsTopCardText(
                 title: budget == nil ? spendTitle : budgetTitle,
-                trailing: lastSevenDays,
+                trailing: load.period == .current
+                    ? lastSevenDays
+                    : periodName(load.period, mode: load.request.mode, span: span, now: now, calendar: calendar, locale: locale),
                 value: budget.map { budgetValue(spent: share.cost, budget: $0) } ?? spendValue(share.cost),
                 valueIsFigure: true,
                 detail: nil,
@@ -353,5 +366,228 @@ extension LimitsCopy {
     /// Under a project's name: "1 chat", "3 chats".
     static func chatCount(_ count: Int) -> String {
         count == 1 ? "1 chat" : "\(HistoryCopy.count(count)) chats"
+    }
+}
+
+// MARK: - Period picker
+
+extension LimitsCopy {
+    /// What VoiceOver calls the period picker (the mockup's `aria-label`).
+    static let periodPickerLabel = "Period"
+
+    /// "Today", "Sat", "27 Aug": a day on the chat list's ladder (`SessionCopy.lastActive`):
+    /// today, a weekday within the last six days, a date beyond.
+    static func dayName(
+        _ date: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        if calendar.isDate(date, inSameDayAs: now) { return "Today" }
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)
+        ).day ?? 0
+        if days >= 0, days <= 6 {
+            return date.formatted(Date.FormatStyle(
+                locale: locale, calendar: calendar, timeZone: calendar.timeZone
+            ).weekday(.abbreviated))
+        }
+        return SessionCopy.dayText(date, calendar: calendar, locale: locale)
+    }
+
+    /// "Today 10:40–15:40"; "Fri 22:30 – Sat 3:30" across midnight; "Today 14:20" for a
+    /// single moment. A span on the chat list's day ladder, in the user's clock.
+    static func timeRange(
+        from start: Date, to end: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        let day = dayName(start, now: now, calendar: calendar, locale: locale)
+        let from = HistoryCopy.time(start, calendar: calendar, locale: locale)
+        let to = HistoryCopy.time(end, calendar: calendar, locale: locale)
+        guard calendar.isDate(start, inSameDayAs: end) else {
+            return "\(day) \(from) – \(dayName(end, now: now, calendar: calendar, locale: locale)) \(to)"
+        }
+        return from == to ? "\(day) \(from)" : "\(day) \(from)–\(to)"
+    }
+
+    /// The picker's name for `period` (spec 2026-10-16 limit analytics § The tab, item 1):
+    /// - the current one: "This session", "This week", "This month" (Codex Free's 30
+    ///   days); pay as you go's "Last 7 days"; a spend limit's "This month";
+    /// - a past week or month by its first day, "Week of 2 Oct"; a past session by its
+    ///   day and hours, "Today 10:40–15:40";
+    /// - an earlier 7-day block by its days, "7–14 days ago".
+    static func periodName(
+        _ period: LimitsPeriod, mode: LimitMode, span: LimitsSpan, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        switch period {
+        case .current:
+            switch mode {
+            case .subscription:
+                switch span {
+                case .session: return "This session"
+                case .week: return "This week"
+                case .month: return "This month"
+                }
+            case .payAsYouGo:
+                return "Last 7 days"
+            case .spendLimit:
+                return "This month"
+            }
+        case .past(let window):
+            switch span {
+            case .session:
+                return timeRange(from: window.start, to: window.end, now: now, calendar: calendar, locale: locale)
+            case .week:
+                return "Week of \(SessionCopy.dayText(window.start, calendar: calendar, locale: locale))"
+            case .month:
+                return "Month of \(SessionCopy.dayText(window.start, calendar: calendar, locale: locale))"
+            }
+        case .weeksAgo(let weeks):
+            return "\(weeks * 7)–\(weeks * 7 + 7) days ago"
+        }
+    }
+
+    /// "Nothing spent in the last 7 days." for the current block; "Nothing spent 7–14 days
+    /// ago." for an earlier one.
+    static func noSpendSentence(period: LimitsPeriod) -> String {
+        guard case .weeksAgo(let weeks) = period else { return noSpend }
+        return "Nothing spent \(weeks * 7)–\(weeks * 7 + 7) days ago."
+    }
+
+    /// `message(for:providerName:)`, with "Nothing spent" naming the picked block.
+    static func message(for page: LimitsPage, providerName: String, period: LimitsPeriod) -> String? {
+        if case .noSpend = page { return noSpendSentence(period: period) }
+        return message(for: page, providerName: providerName)
+    }
+}
+
+// MARK: - A past period on the cards
+
+extension LimitsCopy {
+    /// The ranked card's title for the period on screen: a past window is "that" one,
+    /// "What filled that week"; every other period keeps `rankedTitle(mode:span:)`.
+    static func rankedTitle(mode: LimitMode, span: LimitsSpan, period: LimitsPeriod) -> String {
+        guard case .past = period, mode == .subscription else { return rankedTitle(mode: mode, span: span) }
+        switch span {
+        case .session: return "What filled that session"
+        case .week: return "What filled that week"
+        case .month: return "What filled that month"
+        }
+    }
+
+    /// Beside the title: how full a past window got, "64 % used", where the window open
+    /// now says "so far"; every other period keeps `rankedTrailing(mode:percent:)`.
+    static func rankedTrailing(mode: LimitMode, percent: Double, period: LimitsPeriod) -> String {
+        guard case .past = period, mode == .subscription else {
+            return rankedTrailing(mode: mode, percent: percent)
+        }
+        return "\(Int(percent.rounded())) % used"
+    }
+
+    /// In place of the rows when the period had no chat on this Mac.
+    static func noChats(mode: LimitMode, span: LimitsSpan, period: LimitsPeriod) -> String {
+        switch period {
+        case .current:
+            return noChats(mode: mode, span: span)
+        case .past:
+            switch span {
+            case .session: return "No chats in that session"
+            case .week: return "No chats that week"
+            case .month: return "No chats that month"
+            }
+        case .weeksAgo(let weeks):
+            return "No chats \(weeks * 7)–\(weeks * 7 + 7) days ago"
+        }
+    }
+}
+
+// MARK: - The change line
+
+extension LimitsCopy {
+    /// "A percent buys about 31 % less than your last 3 weeks. Costliest model this week:
+    /// Fable 5.1 (was Opus 5.5)." (`Dashboard-Limits.dc.html`). The second sentence comes
+    /// when the costliest model changed: API prices only stand in for how a limit is
+    /// charged, and a model change moves them.
+    static func changeLine(_ signal: LimitChangeSignal) -> String {
+        let usual = signal.usualWeeks == 1 ? "the week before" : "your last \(signal.usualWeeks) weeks"
+        var line = "A percent buys about \(signal.percentLess) % less than \(usual)."
+        if let model = signal.modelChange {
+            line += " Costliest model this week: \(model.now) (was \(model.usual))."
+        }
+        return line
+    }
+}
+
+// MARK: - Timeline
+
+extension LimitsCopy {
+    static let timelineTitle = "Timeline"
+    /// Beside the title: what one bar is (the mockup's caption).
+    static let timelineCaption = "30-minute steps"
+    /// The projects past the five largest, in the legend and the tooltip.
+    static let otherProjects = "Other"
+
+    /// "3 %" on the y axis.
+    static func timelineAxisLabel(_ points: Double) -> String {
+        "\(Int(points.rounded())) %"
+    }
+
+    /// "+1 %", "+1.4 %": how far the percent rose in a half hour, to one decimal, a whole
+    /// point without one.
+    static func binRise(_ points: Double) -> String {
+        let text = String(format: "%.1f", points)
+        return "+" + (text.hasSuffix(".0") ? String(text.dropLast(2)) : text) + " %"
+    }
+
+    /// "0.7": one series' points in a half hour.
+    static func binPoints(_ points: Double) -> String {
+        String(format: "%.1f", points)
+    }
+
+    /// Under the bars: "14:00" for a session, "Mon 12 Oct" for a week, "12 Oct" for a
+    /// month.
+    static func timelineAxisDate(
+        _ date: Date, span: LimitsSpan, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        switch span {
+        case .session:
+            return HistoryCopy.time(date, calendar: calendar, locale: locale)
+        case .week:
+            let weekday = date.formatted(Date.FormatStyle(
+                locale: locale, calendar: calendar, timeZone: calendar.timeZone
+            ).weekday(.abbreviated))
+            return "\(weekday) \(SessionCopy.dayText(date, calendar: calendar, locale: locale))"
+        case .month:
+            return SessionCopy.dayText(date, calendar: calendar, locale: locale)
+        }
+    }
+}
+
+// MARK: - Stretches
+
+extension LimitsCopy {
+    /// A stretch no prompt was typed for: a cold start in the middle of a run, or a chat
+    /// carried over from before the period.
+    static let noPrompt = "No prompt in this stretch"
+    static let afterCompaction = "after a compaction"
+    /// Below this a cold start's dollars round to nothing, and it is not named.
+    static let coldStartFloor = 0.005
+
+    /// "cold start $1.20": what rebuilding the context cost in the stretch.
+    static func coldStart(_ amount: Double) -> String {
+        "cold start \(dollars(amount))"
+    }
+
+    /// "Sat 13:00–14:20 · after a compaction · cold start $1.20": the stretch's hours, a
+    /// compaction when that is how it began, and its cold start when it had one.
+    static func stretchSubtitle(
+        _ stretch: ChatStretch, now: Date, calendar: Calendar = .current, locale: Locale = .current
+    ) -> String {
+        var parts = [timeRange(from: stretch.firstAt, to: stretch.lastAt, now: now, calendar: calendar, locale: locale)]
+        if stretch.opening == .compaction { parts.append(afterCompaction) }
+        if stretch.coldStartCost >= coldStartFloor { parts.append(coldStart(stretch.coldStartCost)) }
+        return parts.joined(separator: " · ")
+    }
+
+    /// What VoiceOver and the tooltip say on a chat's chevron.
+    static func stretchToggle(expanded: Bool) -> String {
+        expanded ? "Hide stretches" : "Show stretches"
     }
 }

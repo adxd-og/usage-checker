@@ -88,9 +88,11 @@ extension LimitsLayout {
     static let shareWidth: CGFloat = 96
     static let dollarsWidth: CGFloat = 80
 
-    /// The width the wide row needs: its four columns and three gaps.
+    /// The width the widest row needs: a chat's, its chevron (`chatIndent`) before its four
+    /// columns and three gaps. A project's row has no chevron and folds with the chats', so
+    /// the list keeps one decision.
     static var wideRowsMinWidth: CGFloat {
-        titleMinWidth + projectWidth + shareWidth + dollarsWidth + 3 * columnGap
+        chatIndent + titleMinWidth + projectWidth + shareWidth + dollarsWidth + 3 * columnGap
     }
 
     /// The rows' width inside a detail column this wide: the column's gutters and the
@@ -105,4 +107,65 @@ extension LimitsLayout {
     static func isWideRows(detailWidth: CGFloat) -> Bool {
         rowsWidth(detailWidth: detailWidth) >= wideRowsMinWidth
     }
+}
+
+// MARK: - Period picker
+
+extension LimitsLayout {
+    /// The mockup's period capsule: as tall as the window switch's track (30 pt segments in
+    /// 3 pt of padding), `padding: 0 10px 0 14px`, `gap: 6px`, 12.5 px 600 text and a small
+    /// up-and-down chevron.
+    static let periodPickerHeight: CGFloat = 36
+    static let periodPickerLeading: CGFloat = 14
+    static let periodPickerTrailing: CGFloat = 10
+    static let periodPickerSpacing: CGFloat = 6
+    static let periodPickerTextSize: CGFloat = 12.5
+    static let periodPickerChevronSize: CGFloat = 10
+}
+
+// MARK: - The change line
+
+extension LimitsLayout {
+    /// "A percent buys about 31 % less …": 12.5 px 600 under the caption, its warning icon
+    /// 6 pt before it.
+    static let changeLineSize: CGFloat = 12.5
+    static let changeIconSpacing: CGFloat = 6
+}
+
+// MARK: - Timeline
+
+extension LimitsLayout {
+    /// `padding: 20px 24px 14px; gap: 10px`.
+    static var timelineCardPadding: EdgeInsets { EdgeInsets(top: 20, leading: 24, bottom: 14, trailing: 24) }
+    static let timelineCardSpacing: CGFloat = 10
+    /// The chart's 176 px.
+    static let timelineHeight: CGFloat = 176
+    /// The y axis' 11 px; the dates' 11.5 px, 500.
+    static let timelineAxisSize: CGFloat = 11
+    static let timelineDateSize: CGFloat = 11.5
+    /// The hover bubble, 184 px wide.
+    static let timelineTooltipWidth: CGFloat = 184
+    /// The legend: 8 px dots 7 px before 12 px names, `gap: 8px 18px`, wrapping.
+    static let timelineLegendDotSize: CGFloat = 8
+    static let timelineLegendDotSpacing: CGFloat = 7
+    static let timelineLegendSize: CGFloat = 12
+    static let timelineLegendRowSpacing: CGFloat = 8
+    static let timelineLegendColumnSpacing: CGFloat = 18
+    /// The narrowest legend entry before its name truncates.
+    static let timelineLegendItemWidth: CGFloat = 120
+}
+
+// MARK: - Stretches
+
+extension LimitsLayout {
+    /// A chat row's chevron (History's 22 pt) and the gap after it.
+    static let chevronWidth: CGFloat = 22
+    static let chevronGap: CGFloat = 8
+    static let chevronSize: CGFloat = 11
+    /// A stretch's prompt, a step under a chat's name; its row tighter than a chat's.
+    static let stretchTitleSize: CGFloat = 12.5
+    static let stretchRowVerticalPadding: CGFloat = 7
+    /// How far stretch rows, and the rows under the list, stand in while chats can open:
+    /// past the chevrons, under the chats' names.
+    static var chatIndent: CGFloat { chevronWidth + chevronGap }
 }

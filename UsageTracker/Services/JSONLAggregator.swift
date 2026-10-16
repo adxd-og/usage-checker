@@ -112,15 +112,19 @@ extension CLITurn {
     }
 }
 
-/// What one transcript line says. Claude Code's log is not only turns — the chat's
-/// name and the user's first prompt live in it too — and one JSON parse per line has
-/// to answer for all three.
+/// What one transcript line says. Claude Code's log is not only turns — the chat's name,
+/// the user's prompts and the chat's compactions live in it too — and one JSON parse per
+/// line has to answer for all of them.
 enum ParsedRecord {
     case turn(CLITurn)
     /// `{"type":"ai-title","aiTitle":…,"sessionId":…}`. A chat carries many; the last wins.
     case title(sessionID: String, title: String)
-    /// The first human prompt of a chat, already collapsed and cut.
-    case prompt(sessionID: String, text: String)
+    /// A human prompt of a chat, already collapsed and cut, and when it was typed (nil for
+    /// a line whose time does not read). The first one names a chat with no `ai-title`.
+    case prompt(sessionID: String, text: String, at: Date?)
+    /// `{"type":"system","subtype":"compact_boundary",…}` on the chat's own thread: its
+    /// context was compacted here.
+    case compaction(sessionID: String, at: Date)
 }
 
 /// One `String` instance per distinct value in a transcript.
@@ -657,6 +661,14 @@ actor JSONLAggregator: CostLogAggregating {
         let sessions: [String: SessionAgg]
         let titles: [String: String]
         let firstPrompts: [String: String]
+        /// Each chat's compactions and human prompts inside the turns' horizon. Optional,
+        /// with no version bump: a snapshot written before they were kept decodes with
+        /// neither.
+        let compactions: [String: [Date]]?
+        let prompts: [String: [ChatPrompt]]?
+        /// The main transcripts still owed a read-back of their compactions and prompts,
+        /// and how far each was read for turns (`chatEventsToReadBack`). nil when none is.
+        let chatEventsPending: [String: UInt64]?
     }
 
     /// 8: a chat's days are two tiers (issue #13, `SessionAgg`). Only the folded tier is
@@ -735,6 +747,21 @@ actor JSONLAggregator: CostLogAggregating {
     /// The first human prompt per chat, already collapsed and cut — the name a chat
     /// with no `ai-title` goes by.
     private var firstPrompts: [String: String] = [:]
+    /// When each chat's own context was compacted, oldest first, for the turns' horizon
+    /// (`recentWindow`): the Limits tab cuts a chat into stretches there (spec 2026-10-16
+    /// limit analytics § The tab, item 5).
+    private var chatCompactions: [String: [Date]] = [:]
+    /// Every human prompt of each chat, oldest first, for the same horizon: a stretch is
+    /// named by the first one typed for it.
+    private var chatPrompts: [String: [ChatPrompt]] = [:]
+    /// The main transcripts whose compactions and prompts are still owed a read-back, and
+    /// how far each was read for turns: those a cache from before chats' events were kept
+    /// never read for them (`loadCache()`), and those a read-back could not open yet. Saved
+    /// with the cache, so what one launch could not finish, a later one does.
+    private var chatEventsToReadBack: [String: UInt64] = [:]
+    /// This launch's read-back, once started: a detached task at utility priority, off the
+    /// main actor and off this one.
+    private(set) var chatEventsReadBack: Task<Void, Never>?
     private var initialized = false
     private let isoFormatter: ISO8601DateFormatter
     /// Same format without the fractional-seconds requirement. Real Claude Code logs
@@ -872,6 +899,7 @@ actor JSONLAggregator: CostLogAggregating {
         initialized = true
         pruneAndFold()
         saveIfDue()
+        startChatEventsReadBack()
     }
 
     /// A turn priced by a guess (`CLITurn.pricedByFallback`) is priced again whenever the
@@ -1163,7 +1191,8 @@ actor JSONLAggregator: CostLogAggregating {
     }
 
     /// Every turn in `[start, end]` that belongs to a chat, oldest first, with the names
-    /// of those chats. The limit-share rule gives a window's percent to these turns.
+    /// of those chats and their compactions and prompts (spec 2026-10-16 limit analytics
+    /// § The tab, item 5). The limit-share rule gives a window's percent to these turns.
     ///
     /// Read straight from `recentTurns`. So a turn carries its final counters (the last
     /// record for its message id, see `ingest`), and the 31-day horizon is this query's
@@ -1192,6 +1221,12 @@ actor JSONLAggregator: CostLogAggregating {
             }
         }
         log.turns.sort { $0.timestamp < $1.timestamp }
+        // Each chat's compactions and prompts the log keeps, not cut to the range: the
+        // prompt that opened a stretch can come a minute before the range does.
+        for chat in Set(log.turns.map(\.chatID)) {
+            if let times = chatCompactions[chat] { log.compactions[chat] = times }
+            if let typed = chatPrompts[chat] { log.prompts[chat] = typed }
+        }
         return log
     }
 
@@ -1284,11 +1319,24 @@ actor JSONLAggregator: CostLogAggregating {
                     dirty = true
                 }
                 continue
-            case .prompt(let sessionID, let text):
-                // The first one wins: a transcript is read in order, and every later
-                // prompt is the same chat still going.
+            case .prompt(let sessionID, let text, let at):
+                // The first one names the chat: a transcript is read in order, and every
+                // later prompt is the same chat still going.
                 if firstPrompts[sessionID] == nil {
                     firstPrompts[sessionID] = text
+                    dirty = true
+                }
+                // Every one inside the turns' horizon names a stretch of the chat.
+                if let at, at >= recentCutoff,
+                   chatPrompts[sessionID, default: []].insertKeepingOrder(
+                       ChatPrompt(at: TurnCostLog.eventTime(at), text: text)
+                   ) {
+                    dirty = true
+                }
+                continue
+            case .compaction(let sessionID, let at):
+                if at >= recentCutoff,
+                   chatCompactions[sessionID, default: []].insertKeepingOrder(TurnCostLog.eventTime(at)) {
                     dirty = true
                 }
                 continue
@@ -1466,6 +1514,23 @@ actor JSONLAggregator: CostLogAggregating {
 
     private func pruneAndFold() {
         foldTurns(olderThan: Date().addingTimeInterval(-recentWindow))
+        // A chat's compactions and prompts are kept as long as its turns. Each list is
+        // oldest first, so its first entry says whether anything has aged out.
+        let eventCutoff = Date().addingTimeInterval(-recentWindow)
+        if chatCompactions.values.contains(where: { ($0.first ?? .distantFuture) < eventCutoff }) {
+            chatCompactions = chatCompactions.compactMapValues { times in
+                let kept = times.filter { $0 >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+            dirty = true
+        }
+        if chatPrompts.values.contains(where: { ($0.first?.at ?? .distantFuture) < eventCutoff }) {
+            chatPrompts = chatPrompts.compactMapValues { prompts in
+                let kept = prompts.filter { $0.at >= eventCutoff }
+                return kept.isEmpty ? nil : kept
+            }
+            dirty = true
+        }
         let dayCutoff = dayStart(for: Date().addingTimeInterval(-dayRetention))
         if oldDays.keys.contains(where: { $0 < dayCutoff }) {
             oldDays = oldDays.filter { $0.key >= dayCutoff }
@@ -1680,7 +1745,118 @@ actor JSONLAggregator: CostLogAggregating {
         return records
     }
 
+    // MARK: - Reading back chats' compactions and prompts
+
+    /// What a read-back found, by chat id, and which transcripts it finished.
+    struct ReadBackChatEvents: Sendable {
+        var compactions: [String: [Date]] = [:]
+        var prompts: [String: [ChatPrompt]] = [:]
+        /// Read as far as asked, or gone: nothing more is owed from them.
+        var done: Set<String> = []
+    }
+
+    /// Starts reading back the compactions and prompts owed (`chatEventsToReadBack`), once
+    /// per launch (spec 2026-10-16 limit analytics § The tab, item 5: a long chat is cut
+    /// where it was compacted). About a gigabyte of transcripts on a busy Mac the first
+    /// time, so it runs on a detached task at utility priority, and the poll that started
+    /// it does not wait. It reads events only: no turn is read twice, so the dedupe of
+    /// message ids is not leaned on, nor emptied under it. What it owes stays owed, and
+    /// saved, until it has been read.
+    private func startChatEventsReadBack() {
+        guard !chatEventsToReadBack.isEmpty, chatEventsReadBack == nil else { return }
+        let files = chatEventsToReadBack
+        let cutoff = Date().addingTimeInterval(-recentWindow)
+        chatEventsReadBack = Task.detached(priority: .utility) { [self] in
+            let found = Self.chatEvents(inTranscripts: files, since: cutoff)
+            await self.keepReadBack(found)
+        }
+    }
+
+    /// Adds what a read-back found to what the scans since have kept, each event once, and
+    /// strikes the transcripts it finished from what is owed. One it could not open or
+    /// read stays owed, for a later launch.
+    private func keepReadBack(_ found: ReadBackChatEvents) {
+        let cutoff = Date().addingTimeInterval(-recentWindow)
+        for (chat, times) in found.compactions {
+            for time in times where time >= cutoff {
+                chatCompactions[chat, default: []].insertKeepingOrder(time)
+            }
+        }
+        for (chat, typed) in found.prompts {
+            for prompt in typed where prompt.at >= cutoff {
+                chatPrompts[chat, default: []].insertKeepingOrder(prompt)
+            }
+        }
+        for path in found.done {
+            chatEventsToReadBack[path] = nil
+        }
+        dirty = true
+    }
+
+    /// The compactions and human prompts in the first `offset` bytes of each transcript,
+    /// from `cutoff` on. Only the lines that name a `compact_boundary` or a human `origin`
+    /// are parsed (`parseRecord`), and only those two records are kept: never a turn. A
+    /// transcript that is gone is done; one that cannot be opened or read is not.
+    private static func chatEvents(
+        inTranscripts files: [String: UInt64], since cutoff: Date
+    ) -> ReadBackChatEvents {
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+        let markers = [Data("compact_boundary".utf8), Data("\"human\"".utf8)]
+        var found = ReadBackChatEvents()
+        for (path, offset) in files {
+            autoreleasepool {
+                guard FileManager.default.fileExists(atPath: path) else {
+                    found.done.insert(path)
+                    return
+                }
+                guard let handle = FileHandle(forReadingAtPath: path) else { return }
+                defer { try? handle.close() }
+                let data: Data
+                do {
+                    data = try handle.read(upToCount: Int(offset)) ?? Data()
+                } catch {
+                    return
+                }
+                found.done.insert(path)
+                // The lines that hold a marker, each once.
+                var lines = Set<Range<Int>>()
+                for marker in markers {
+                    var from = data.startIndex
+                    while from < data.endIndex, let hit = data.range(of: marker, in: from..<data.endIndex) {
+                        let start = data[..<hit.lowerBound].lastIndex(of: 0x0A).map { $0 + 1 } ?? data.startIndex
+                        let end = data[hit.upperBound...].firstIndex(of: 0x0A) ?? data.endIndex
+                        lines.insert(start..<end)
+                        from = end
+                    }
+                }
+                var pool = StringPool()
+                for line in lines {
+                    switch parseRecord(Data(data[line]), projectSlug: "", iso: iso, isoNoFraction: plain, pool: &pool) {
+                    case .compaction(let chat, let at) where at >= cutoff:
+                        found.compactions[chat, default: []].insertKeepingOrder(TurnCostLog.eventTime(at))
+                    case .prompt(let chat, let text, let at?) where at >= cutoff:
+                        found.prompts[chat, default: []].insertKeepingOrder(
+                            ChatPrompt(at: TurnCostLog.eventTime(at), text: text)
+                        )
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+        return found
+    }
+
     // MARK: - The on-disk cache
+
+    /// Whether `path` is a sub-agent's transcript: Claude Code writes those under
+    /// `<project>/<session>/subagents/`.
+    private static func isSubAgentTranscript(_ path: String) -> Bool {
+        URL(fileURLWithPath: path).deletingLastPathComponent().lastPathComponent == "subagents"
+    }
 
     /// Whole seconds — see `FileMark.mtime`.
     private static func markTime(_ date: Date) -> Date {
@@ -1736,6 +1912,23 @@ actor JSONLAggregator: CostLogAggregating {
         sessionAggs = sessions
         titles = snapshot.titles
         firstPrompts = snapshot.firstPrompts
+        chatCompactions = snapshot.compactions ?? [:]
+        chatPrompts = snapshot.prompts ?? [:]
+        // What is owed a read-back of its compactions and prompts, as far as its turns were
+        // read. A snapshot from before chats' events were kept owes the main transcripts
+        // written within the turns' horizon (a sub-agent's transcript holds neither event,
+        // an older one nothing inside the horizon); a later one owes what it saved as
+        // owed, less any transcript whose mark is gone with its file. No mark changes: no
+        // turn is read again.
+        if snapshot.compactions == nil || snapshot.prompts == nil {
+            let horizon = Self.markTime(Date().addingTimeInterval(-recentWindow))
+            for (path, mark) in fileMarks
+            where mark.offset > 0 && mark.mtime >= horizon && !Self.isSubAgentTranscript(path) {
+                chatEventsToReadBack[path] = mark.offset
+            }
+        } else if let pending = snapshot.chatEventsPending {
+            chatEventsToReadBack = pending.filter { fileMarks[$0.key] != nil }
+        }
         // After `recentTurns`: every chat's recent tier is rebuilt from the turns just
         // restored, in this run's calendar — the days Activity recomputes from the same
         // turns — and its folded tier re-keyed by the midpoint rule (issue #13).
@@ -1841,7 +2034,10 @@ actor JSONLAggregator: CostLogAggregating {
             seenMessageIDs: Array(seenMessageIDs),
             sessions: sessionAggs,
             titles: titles,
-            firstPrompts: firstPrompts
+            firstPrompts: firstPrompts,
+            compactions: chatCompactions,
+            prompts: chatPrompts,
+            chatEventsPending: chatEventsToReadBack.isEmpty ? nil : chatEventsToReadBack
         )
         do {
             let data = try encoder.encode(snapshot)
@@ -1891,10 +2087,31 @@ actor JSONLAggregator: CostLogAggregating {
                   let message = any["message"] as? [String: Any],
                   let text = SessionTitle.firstPrompt(from: message["content"])
             else { return nil }
-            return .prompt(sessionID: pool.intern(sessionID), text: text)
+            return .prompt(
+                sessionID: pool.intern(sessionID), text: text,
+                at: timestamp(of: any, iso: iso, isoNoFraction: isoNoFraction)
+            )
+        case "system":
+            // A compaction of the chat's own context. A sub-agent's (`isSidechain`) is the
+            // agent's context, not the chat's.
+            guard any["subtype"] as? String == "compact_boundary",
+                  (any["isSidechain"] as? Bool) != true,
+                  let sessionID = any["sessionId"] as? String, !sessionID.isEmpty,
+                  let at = timestamp(of: any, iso: iso, isoNoFraction: isoNoFraction)
+            else { return nil }
+            return .compaction(sessionID: pool.intern(sessionID), at: at)
         default:
             return nil
         }
+    }
+
+    /// A record's `timestamp`: with fractions, as Claude Code writes it, else plain ISO
+    /// 8601. nil when it does not read.
+    private static func timestamp(
+        of any: [String: Any], iso: ISO8601DateFormatter, isoNoFraction: ISO8601DateFormatter
+    ) -> Date? {
+        guard let text = any["timestamp"] as? String else { return nil }
+        return iso.date(from: text) ?? isoNoFraction.date(from: text)
     }
 
     private static func parseTurn(
