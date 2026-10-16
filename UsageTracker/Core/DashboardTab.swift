@@ -1,13 +1,14 @@
 import Foundation
 
-/// The dashboard's screens, in sidebar order (liquid-glass spec § Packages P2). 2.x had
-/// a fifth, Activity; its heatmap folds into History in 3.0 (§ Removals), so a window
-/// last left on Activity reopens on History.
+/// The dashboard's screens, in sidebar order (liquid-glass spec § Packages P2; Limits,
+/// limit-analytics spec 2026-10-16 § The tab). 2.x also had Activity; its heatmap folds
+/// into History in 3.0 (§ Removals), so a window last left on Activity reopens on History.
 enum DashboardTab: String, CaseIterable, Identifiable, Sendable {
     case overview = "Overview"
     case agents = "Agents"
     case history = "History"
     case insights = "Insights"
+    case limits = "Limits"
 
     var id: String { rawValue }
 
@@ -19,13 +20,15 @@ enum DashboardTab: String, CaseIterable, Identifiable, Sendable {
     static let retiredActivityValue = "Activity"
 
     /// The SF Symbol beside the tab's name in the sidebar: the mockups' glyphs
-    /// (`Dashboard-Overview(-Light).dc.html`), a 2×2 grid, a person, a clock, a bulb.
+    /// (`Dashboard-Overview(-Light).dc.html`), a 2×2 grid, a person, a clock, a bulb, and
+    /// Limits' gauge (`Dashboard-Limits(-Light).dc.html`).
     var icon: String {
         switch self {
         case .overview: return "square.grid.2x2"
         case .agents: return "person"
         case .history: return "clock"
         case .insights: return "lightbulb"
+        case .limits: return "gauge.with.dots.needle.50percent"
         }
     }
 

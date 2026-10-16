@@ -168,7 +168,7 @@ extension LimitShareRules {
     /// - Spend limit: the calendar month so far.
     ///
     /// nil when the account has no mode, or a subscription has no current window of
-    /// `kind`. Past periods are Package 3's period picker.
+    /// `kind`. Past periods belong to the period picker (§ The tab, item 1).
     nonisolated static func request(
         for service: ServiceSnapshot,
         kind: BucketKind,

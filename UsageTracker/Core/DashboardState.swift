@@ -87,6 +87,11 @@ final class DashboardState: ObservableObject {
     /// Loaded by `refreshLimitShare(kind:)`. nil before the first load, for a provider
     /// with no chat log, and for an account with nothing to measure.
     @Published private(set) var limitShare: LimitShareLoad?
+    /// What the last finished `refreshLimitShare(kind:)` answered (`LimitsQuery`): set with
+    /// every published load, and also when a load found nothing to measure, so the Limits
+    /// tab tells "nothing spent" from a load still running. A call that a newer refresh
+    /// supersedes publishes neither.
+    @Published private(set) var limitShareAnswer: LimitsQuery?
     /// The selected provider's chartable quota windows, named from the live snapshot
     /// wherever it is still reporting them. Published next to `history` because the
     /// quota views need both at once: a record stores bucket ids and percentages, and
@@ -133,6 +138,7 @@ final class DashboardState: ObservableObject {
         sessions = []
         sessionWindow = nil
         limitShare = nil
+        limitShareAnswer = nil
         sessionBurn = nil
         burnBucket = nil
         history = []
@@ -555,8 +561,8 @@ final class DashboardState: ObservableObject {
     ///
     /// Guarded like `refreshSessionWindow()`: a pass started for another provider or
     /// another refresh generation publishes nothing, and neither does an older call of
-    /// this method. It reads what `refreshCLI()` has already ingested. The Limits tab
-    /// (Package 2) calls it.
+    /// this method. It reads what `refreshCLI()` has already ingested. The dashboard's
+    /// Limits tab (`LimitsView`) calls it.
     func refreshLimitShare(kind: BucketKind) async {
         limitShareGeneration &+= 1
         let generation = limitShareGeneration
@@ -574,7 +580,11 @@ final class DashboardState: ObservableObject {
                 calendar: .current
               )
         else {
-            if isCurrent() { limitShare = nil }
+            if isCurrent() {
+                let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: nil, share: nil)
+                limitShare = published.load
+                limitShareAnswer = published.answer
+            }
             return
         }
         let log = await aggregator.turnCosts(from: request.period.start, to: request.period.end)
@@ -598,9 +608,9 @@ final class DashboardState: ObservableObject {
             LimitShareRules.share(for: request, log: log, readings: readings, dailySpend: dailySpend)
         }.value
         guard isCurrent() else { return }
-        limitShare = share.map {
-            LimitShareLoad(serviceID: pass.service, kind: kind, request: request, share: $0)
-        }
+        let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: request, share: share)
+        limitShare = published.load
+        limitShareAnswer = published.answer
     }
 
     /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation

@@ -132,12 +132,13 @@ final class DashboardRefreshPassTests: XCTestCase {
     }
 }
 
-/// Liquid-glass spec § Packages P2 and § Removals: the dashboard has four tabs, and a
+/// Liquid-glass spec § Packages P2 and § Removals, and the limit-analytics spec
+/// (2026-10-16) § The tab: the dashboard has five tabs, Limits after Insights, and a
 /// window last left on 2.x's Activity tab reopens on History, where its heatmap went.
 final class DashboardTabTests: XCTestCase {
-    func testTheDashboardHasFourTabsInSidebarOrder() {
-        XCTAssertEqual(DashboardTab.allCases, [.overview, .agents, .history, .insights])
-        XCTAssertEqual(DashboardTab.allCases.map(\.rawValue), ["Overview", "Agents", "History", "Insights"],
+    func testTheDashboardHasFiveTabsInSidebarOrder() {
+        XCTAssertEqual(DashboardTab.allCases, [.overview, .agents, .history, .insights, .limits])
+        XCTAssertEqual(DashboardTab.allCases.map(\.rawValue), ["Overview", "Agents", "History", "Insights", "Limits"],
                        "2.x stored these raw values; an update must read them back")
     }
 
@@ -161,18 +162,24 @@ final class DashboardTabTests: XCTestCase {
     }
 
     func testTheSidebarIconsAreTheMockups() {
-        // Dashboard-Overview(-Light).dc.html: a 2×2 grid, a person, a clock, a bulb.
-        XCTAssertEqual(DashboardTab.allCases.map(\.icon), ["square.grid.2x2", "person", "clock", "lightbulb"])
+        // Dashboard-Overview(-Light).dc.html: a 2×2 grid, a person, a clock, a bulb;
+        // Dashboard-Limits(-Light).dc.html: a gauge.
+        XCTAssertEqual(
+            DashboardTab.allCases.map(\.icon),
+            ["square.grid.2x2", "person", "clock", "lightbulb", "gauge.with.dots.needle.50percent"]
+        )
     }
 
     func testDownAndUpArrowsStepThroughTheTabsInSidebarOrder() {
         XCTAssertEqual(DashboardTab.step(from: .overview, by: 1), .agents)
         XCTAssertEqual(DashboardTab.step(from: .agents, by: 1), .history)
         XCTAssertEqual(DashboardTab.step(from: .insights, by: -1), .history)
+        XCTAssertEqual(DashboardTab.step(from: .insights, by: 1), .limits)
+        XCTAssertEqual(DashboardTab.step(from: .limits, by: -1), .insights)
     }
 
     func testTheArrowsStopAtTheFirstAndLastTabAsAListDoes() {
         XCTAssertEqual(DashboardTab.step(from: .overview, by: -1), .overview)
-        XCTAssertEqual(DashboardTab.step(from: .insights, by: 1), .insights)
+        XCTAssertEqual(DashboardTab.step(from: .limits, by: 1), .limits)
     }
 }
