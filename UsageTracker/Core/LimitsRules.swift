@@ -81,6 +81,24 @@ extension DashboardState.LimitShareLoad {
     }
 }
 
+extension LimitsRules {
+    /// What a finished `DashboardState.refreshLimitShare(kind:)` publishes: the load when
+    /// there is a share, and always the query it answered. No request means nothing to
+    /// measure; a request with no share is pay as you go with no budget and nothing spent,
+    /// which the page reads as "Nothing spent" from this answer.
+    nonisolated static func published(
+        serviceID: String,
+        kind: BucketKind,
+        request: LimitShareRequest?,
+        share: LimitShare?
+    ) -> (load: DashboardState.LimitShareLoad?, answer: LimitsQuery) {
+        let load = request.flatMap { request in
+            share.map { DashboardState.LimitShareLoad(serviceID: serviceID, kind: kind, request: request, share: $0) }
+        }
+        return (load, query(serviceID: serviceID, kind: kind, request: request))
+    }
+}
+
 /// What the tab's `.task(id:)` watches: the query the live snapshot and settings ask, and
 /// the cost log's ingest stamp (`CLIBreakdown.updatedAt`, new on every `refreshCLI()`). A
 /// new query (a reset, a mode change, a new budget) loads at once; a new stamp loads the

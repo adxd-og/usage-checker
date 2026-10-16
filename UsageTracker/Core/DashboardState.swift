@@ -581,8 +581,9 @@ final class DashboardState: ObservableObject {
               )
         else {
             if isCurrent() {
-                limitShare = nil
-                limitShareAnswer = LimitsRules.query(serviceID: pass.service, kind: kind, request: nil)
+                let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: nil, share: nil)
+                limitShare = published.load
+                limitShareAnswer = published.answer
             }
             return
         }
@@ -607,10 +608,9 @@ final class DashboardState: ObservableObject {
             LimitShareRules.share(for: request, log: log, readings: readings, dailySpend: dailySpend)
         }.value
         guard isCurrent() else { return }
-        limitShare = share.map {
-            LimitShareLoad(serviceID: pass.service, kind: kind, request: request, share: $0)
-        }
-        limitShareAnswer = LimitsRules.query(serviceID: pass.service, kind: kind, request: request)
+        let published = LimitsRules.published(serviceID: pass.service, kind: kind, request: request, share: share)
+        limitShare = published.load
+        limitShareAnswer = published.answer
     }
 
     /// Reads `agent-sessions.jsonl` off the main actor. Guarded by the generation
