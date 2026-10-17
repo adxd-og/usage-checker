@@ -129,7 +129,7 @@ final class PublishedSharesTests: XCTestCase {
         )
 
         XCTAssertEqual(shares, PublishedShares(
-            windows: [PublishedShareWindow(field: .budget, resetsAt: nil)],
+            windows: [PublishedShareWindow(field: .budget, resetsAt: nil, denominatorUSD: 500)],
             chats: [
                 "chat-d": ChatShareFields(budgetShare: 5),
                 "chat-e": ChatShareFields(budgetShare: 2.5),

@@ -273,7 +273,9 @@ final class PublishedShareRulesVerificationTests: XCTestCase {
             for: team(), weeklyBudgetUSD: 0, now: late, calendar: utc, sources: sources
         )
 
-        XCTAssertEqual(shares.windows, [PublishedShareWindow(field: .budget, resetsAt: firstSecondOfOctober)])
+        XCTAssertEqual(
+            shares.windows, [PublishedShareWindow(field: .budget, resetsAt: firstSecondOfOctober, denominatorUSD: 2_000)]
+        )
         XCTAssertEqual(shares.chats["chat-d"], ChatShareFields(budgetShare: 1.3), "$25 of $2,000 is 1.25 %")
         XCTAssertEqual(shares.chats["chat-e"], ChatShareFields(budgetShare: 0.6), "$12.34 of $2,000 is 0.617 %")
         XCTAssertNil(shares.chats["chat-old"])
