@@ -74,6 +74,8 @@ extension LimitShareRules {
     /// to the next beginning merges into the next one. A turn belongs to the stretch it ran
     /// in, sub-agents' turns included. Its cold-start cost is `rebuildCost` of its cold-start
     /// turns, except the chat's first main-thread turn in the log, which builds the context.
+    /// The log reaches back to the turn horizon for every window (`turnSpan`), so a chat
+    /// resumed cold in a later window is charged its rebuild there too.
     ///
     /// A stretch's points are what the bin rule gave the chat in its half hours (spec § The
     /// rule): a half hour's points for the chat are split between its stretches the way

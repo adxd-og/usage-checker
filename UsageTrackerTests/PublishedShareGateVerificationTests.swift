@@ -126,7 +126,7 @@ final class PublishedShareGateVerificationTests: XCTestCase {
 
     private func septemberShares() -> PublishedShares {
         PublishedShares(
-            windows: [PublishedShareWindow(field: .budget, resetsAt: octoberStart)],
+            windows: [PublishedShareWindow(field: .budget, resetsAt: octoberStart, denominatorUSD: 2_000)],
             chats: ["s1": ChatShareFields(budgetShare: 1.3)]
         )
     }
@@ -159,7 +159,7 @@ final class PublishedShareGateVerificationTests: XCTestCase {
 
     func testAnOctoberShareIsWrittenOnceOctoberHasBegunAndNotBefore() {
         let october = PublishedShares(
-            windows: [PublishedShareWindow(field: .budget, resetsAt: novemberStart)],
+            windows: [PublishedShareWindow(field: .budget, resetsAt: novemberStart, denominatorUSD: 2_000)],
             chats: ["s1": ChatShareFields(budgetShare: 0.4)]
         )
 
@@ -170,19 +170,22 @@ final class PublishedShareGateVerificationTests: XCTestCase {
         XCTAssertEqual(entry("s1", of: "claude", in: later)?.budgetShare, 0.4)
     }
 
-    // MARK: - The budget amount is not part of the window
+    // MARK: - The budget amount is part of the window
 
-    func testChangingTheBudgetAmountDoesNotDropAShareAndClearingItDoes() {
+    /// A share cut against $500 is not a percent of $1,000: it waits for the next cut.
+    func testChangingTheBudgetAmountDropsAShareAndSoDoesClearingIt() {
         let api = Fixture.snapshot(id: "claude", plan: nil, buckets: [], weekCost: 400, at: now)
         let shares = PublishedShares(
-            windows: [PublishedShareWindow(field: .budget, resetsAt: nil)],
+            windows: [PublishedShareWindow(field: .budget, resetsAt: nil, denominatorUSD: 500)],
             chats: ["s1": ChatShareFields(budgetShare: 5)]
         )
 
+        let same = build(services: [api], shares: ["claude": shares], budget: 500)
         let raised = build(services: [api], shares: ["claude": shares], budget: 1_000)
         let cleared = build(services: [api], shares: ["claude": shares], budget: 0)
 
-        XCTAssertEqual(entry("s1", of: "claude", in: raised)?.budgetShare, 5)
+        XCTAssertEqual(entry("s1", of: "claude", in: same)?.budgetShare, 5)
+        XCTAssertNil(entry("s1", of: "claude", in: raised)?.budgetShare)
         XCTAssertNil(entry("s1", of: "claude", in: cleared)?.budgetShare)
     }
 

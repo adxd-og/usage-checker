@@ -94,7 +94,7 @@ final class PublishedShareRequestTests: XCTestCase {
         XCTAssertEqual(requests(api, budget: 500), [
             PublishedShareRequest(
                 // The seven days roll: no reset to tag the share with.
-                window: PublishedShareWindow(field: .budget, resetsAt: nil),
+                window: PublishedShareWindow(field: .budget, resetsAt: nil, denominatorUSD: 500),
                 request: LimitShareRequest(
                     mode: .payAsYouGo(weeklyBudget: 500),
                     period: LimitWindow(start: now.addingTimeInterval(-7 * day), end: now),
@@ -122,7 +122,9 @@ final class PublishedShareRequestTests: XCTestCase {
         XCTAssertEqual(requests(team), [
             PublishedShareRequest(
                 // The limit starts over on 2026-10-01 00:00 UTC.
-                window: PublishedShareWindow(field: .budget, resetsAt: Date(timeIntervalSince1970: 1_790_812_800)),
+                window: PublishedShareWindow(
+                    field: .budget, resetsAt: Date(timeIntervalSince1970: 1_790_812_800), denominatorUSD: 2_000
+                ),
                 request: LimitShareRequest(
                     mode: .spendLimit(monthlyLimit: 2_000, usedCredits: 1_240),
                     // 2026-09-01 00:00 UTC.

@@ -4,9 +4,21 @@ import Foundation
 /// started without a shell: a menu-bar app started by launchd does not inherit the login
 /// shell's PATH.
 enum AgyCommand {
-    /// `agy -p /usage --output-format json`: the quota as one JSON object, no model turn.
-    /// No `--print-timeout`: it does not bound `/usage` (measured), the deadline does.
-    static let arguments = ["-p", "/usage", "--output-format", "json"]
+    /// `agy --log-file <logFile> -p /usage --output-format json`: the quota as one JSON
+    /// object, no model turn. Without `--log-file` every run leaves a new
+    /// `~/.gemini/antigravity-cli/log/cli-<time>.log` (about 29 KB) that agy never prunes,
+    /// and points agy's `cli.log` link at it; with it, agy writes only `logFile`, starts it
+    /// over on each run, and leaves its log folder and the link alone (measured on
+    /// 2026-10-17). No `--print-timeout`: it does not bound `/usage` (measured), the
+    /// deadline does.
+    static func arguments(logFile: URL) -> [String] {
+        ["--log-file", logFile.path, "-p", "/usage", "--output-format", "json"]
+    }
+    /// The file agy logs a run to, in the log folder `fetch` is given.
+    static let logFileName = "agy-usage.log"
+    /// Omelette's own Application Support folder, the one `HistoryStore` and the status
+    /// file use: where agy's log goes unless a test says otherwise.
+    static var defaultLogDirectory: URL { AgentPaths.appSupportURL }
     /// The variables agy gets from Omelette's environment, when set there.
     static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG"]
     /// agy's PATH before its own folder: the system's folders only.
@@ -33,12 +45,14 @@ enum AgyCommand {
     /// run, and a locked keychain answers with a password panel that a background poll
     /// must never raise (`KeychainNoUI`), so agy starts only while `keychainState` says
     /// unlocked: `.keychainLocked`, or `.keychainStateUnknown` when the state could not be
-    /// read, and agy is not started.
+    /// read, and agy is not started. agy logs to `logFileName` in `logDirectory`, made
+    /// when missing just before agy starts.
     static func fetch(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         homeDirectory: String = NSHomeDirectory(),
         keychainState: () -> KeychainNoUI.LockState = { KeychainNoUI.defaultKeychainLockState },
-        directory: URL = FileManager.default.temporaryDirectory
+        directory: URL = FileManager.default.temporaryDirectory,
+        logDirectory: URL = AgyCommand.defaultLogDirectory
     ) async throws -> Data {
         guard let path = executablePath(
             environment: environment,
@@ -52,9 +66,10 @@ enum AgyCommand {
         case .locked: throw AgyUsageError.keychainLocked
         case .unknown: throw AgyUsageError.keychainStateUnknown
         }
+        try? FileManager.default.createDirectory(at: logDirectory, withIntermediateDirectories: true)
         return try await run(
             executable: path,
-            arguments: arguments,
+            arguments: arguments(logFile: logDirectory.appendingPathComponent(logFileName)),
             environment: childEnvironment(from: environment, executable: path, homeDirectory: homeDirectory),
             directory: directory,
             deadline: deadline,
@@ -92,7 +107,8 @@ enum AgyCommand {
     /// or its stdout still open, at `deadline`: the caller is answered then, the stdout
     /// reader is closed, the child gets SIGTERM, and SIGKILL `killGrace` later if it is
     /// still there. The child is in `registry` from its start to its exit, so quitting
-    /// Omelette stops it.
+    /// Omelette stops it; once the registry is closed (`terminateAll()`), no child starts
+    /// and the answer is `.launchFailed`.
     static func run(
         executable: String,
         arguments: [String],
@@ -148,20 +164,39 @@ enum AgyCommand {
     }
 }
 
-/// The agy children running now (session ruling A4): a background run must not outlive
-/// the app that started it, so Omelette stops them as it quits. A child is registered
-/// before it starts and leaves when it exits; one that could not start leaves at once.
+/// The agy children running now (spec 2026-10-16-antigravity-argon, Package 2 Design): a
+/// background run must not outlive the app that started it, so Omelette stops them as it
+/// quits. A child is registered before it starts and leaves when it exits; one that could
+/// not start leaves at once.
+/// `terminateAll()` closes the registry for good: no child starts after the quit.
 final class AgyChildRegistry: @unchecked Sendable {
-    /// The app's registry; `AppDelegate.applicationWillTerminate` empties it.
+    /// The app's registry; `AppDelegate.applicationWillTerminate` stops its children and
+    /// closes it.
     static let shared = AgyChildRegistry()
 
     private let lock = NSLock()
+    // Guarded by `lock`.
     private var children: [ObjectIdentifier: Process] = [:]
+    private var closed = false
 
-    func register(_ process: Process) {
+    /// Takes `process` in before it starts. False once `terminateAll()` has run: Omelette
+    /// is quitting, and the child must not start.
+    func register(_ process: Process) -> Bool {
         lock.lock()
+        defer { lock.unlock() }
+        guard !closed else { return false }
         children[ObjectIdentifier(process)] = process
+        return true
+    }
+
+    /// Called right after `process` started. `terminateAll()` signals only a running
+    /// child, so one registered before it and started after it was passed by: it is
+    /// stopped here, through `Process.terminate()`.
+    func didStart(_ process: Process) {
+        lock.lock()
+        let quitting = closed
         lock.unlock()
+        if quitting { process.terminate() }
     }
 
     func unregister(_ process: Process) {
@@ -177,11 +212,14 @@ final class AgyChildRegistry: @unchecked Sendable {
         return children.count
     }
 
-    /// SIGTERM, through `Process.terminate()`, to every registered child still running.
-    /// Called as Omelette quits; nothing waits for the children to go, and nothing is
-    /// left to send SIGKILL, so agy's own clean shutdown on SIGTERM is what ends them.
+    /// SIGTERM, through `Process.terminate()`, to every registered child still running,
+    /// and the registry closed: a later `register` is refused, and a child registered but
+    /// not yet started is stopped by `didStart` once it is. Called as Omelette quits;
+    /// nothing waits for the children to go, and nothing is left to send SIGKILL, so agy's
+    /// own clean shutdown on SIGTERM is what ends them.
     func terminateAll() {
         lock.lock()
+        closed = true
         let running = Array(children.values)
         lock.unlock()
         for process in running where process.isRunning {
@@ -244,7 +282,12 @@ private final class AgyChild: @unchecked Sendable {
             self?.childExited()
         }
         // Registered before it starts, so no exit can come before the registration.
-        registry.register(process)
+        guard registry.register(process) else {
+            process.terminationHandler = nil
+            try? stdout.fileHandleForReading.close()
+            settle(.failure(AgyUsageError.launchFailed("Omelette is quitting")))
+            return
+        }
         do {
             try process.run()
         } catch {
@@ -254,6 +297,8 @@ private final class AgyChild: @unchecked Sendable {
             settle(.failure(AgyUsageError.launchFailed(error.localizedDescription)))
             return
         }
+        // A quit between the registration and the start passed this child by.
+        registry.didStart(process)
         startReading()
         queue.asyncAfter(deadline: .now() + deadline) { [self] in
             if settle(.failure(AgyUsageError.timedOut)) { stop() }

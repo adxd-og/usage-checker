@@ -581,12 +581,13 @@ final class DashboardState: ObservableObject {
     /// `LimitShareRules.loadResult`'s; this method fetches, and publishes through
     /// `LimitsRules.published`, which always answers the query, period included.
     ///
-    /// The turns come from the cost log's actor: the period's, or for the current week the
-    /// whole turn horizon, whose usual weeks the change signal prices
-    /// (`LimitShareRules.turnSpan`). The readings come from `HistoryStore`'s, for the turn
-    /// horizon, so the past windows are found from them too. The worktree links come from
-    /// `WorktreeStore`'s, so a worktree's chats count under its repository. The rule runs
-    /// on a detached task, and only the result comes back to the main actor.
+    /// The turns come from the cost log's actor, back to the turn horizon for every period:
+    /// the change signal prices the usual weeks with them, and the stretches find each
+    /// chat's first turn among them (`LimitShareRules.turnSpan`). The readings come from
+    /// `HistoryStore`'s, for the turn horizon, so the past windows are found from them
+    /// too. The worktree links come from `WorktreeStore`'s, so a worktree's chats count
+    /// under its repository. The rule runs on a detached task, and only the result comes
+    /// back to the main actor.
     ///
     /// Guarded like `refreshSessionWindow()`: a pass started for another provider or
     /// another refresh generation publishes nothing, and neither does an older call of
@@ -625,10 +626,7 @@ final class DashboardState: ObservableObject {
 
         let log: TurnCostLog
         if let request {
-            let span = LimitShareRules.turnSpan(
-                request: request, kind: kind, isCurrent: period == .current,
-                windowLength: bucket?.windowDuration, now: now
-            )
+            let span = LimitShareRules.turnSpan(request: request, now: now)
             log = await aggregator.turnCosts(from: span.start, to: span.end)
             guard isCurrent() else { return }
         } else {

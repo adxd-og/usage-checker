@@ -213,10 +213,13 @@ final class AgyCommandRunTests: XCTestCase {
             environment: ["PATH": stub.deletingLastPathComponent().path],
             homeDirectory: directory.path,
             keychainState: { .unlocked },
-            directory: directory
+            directory: directory,
+            logDirectory: directory
         )
-        XCTAssertEqual(String(decoding: output, as: UTF8.self), "-p /usage --output-format json|true")
-        XCTAssertEqual(AgyCommand.arguments, ["-p", "/usage", "--output-format", "json"])
+        XCTAssertEqual(
+            String(decoding: output, as: UTF8.self),
+            "--log-file \(directory.path)/agy-usage.log -p /usage --output-format json|true"
+        )
     }
 
     func testFetchWithNoAgyAnywhereIsNotInstalled() async {
@@ -289,7 +292,8 @@ final class AgyCommandRunTests: XCTestCase {
             ],
             homeDirectory: directory.path,
             keychainState: { .unlocked },
-            directory: directory
+            directory: directory,
+            logDirectory: directory
         )
         var seen: [String: String] = [:]
         for line in String(decoding: output, as: UTF8.self).split(separator: "\n") {

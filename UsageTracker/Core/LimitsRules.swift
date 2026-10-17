@@ -470,9 +470,30 @@ extension LimitsRules {
     }
 
     /// The picked period while it is on offer, else the current one: a window that left
-    /// the horizon, or a period of another mode, is not shown.
+    /// the horizon, or a period of another mode, is not shown. Every load finds the past
+    /// windows again, and the newest one ends at the current window's start, which moves
+    /// with the live reset's drift: a picked window is on offer while one matches it
+    /// (`isSamePeriod`). The picked instance is kept, not the one on offer, so the query
+    /// that carries it (`LimitsQuery.period`) holds still and the tab does not reload on a
+    /// drift; its bounds differ from the ones found now by that drift alone.
     nonisolated static func selectedPeriod(_ chosen: LimitsPeriod, offered: [LimitsPeriod]) -> LimitsPeriod {
-        offered.contains(chosen) ? chosen : .current
+        offered.contains { isSamePeriod($0, chosen) } ? chosen : .current
+    }
+
+    /// The entry of `offered` the period picker marks for `selected`, which it finds by
+    /// equality: the one `isSamePeriod` matches, else `selected` itself.
+    nonisolated static func pickerEntry(for selected: LimitsPeriod, offered: [LimitsPeriod]) -> LimitsPeriod {
+        offered.first { isSamePeriod($0, selected) } ?? selected
+    }
+
+    /// Whether two periods are one: equal, or two past windows whose starts, and whose
+    /// ends, are less than `LimitShareRules.resetDrift` apart. Two windows' resets are at
+    /// least that far apart; one window's bounds move by its reset's drift.
+    nonisolated static func isSamePeriod(_ lhs: LimitsPeriod, _ rhs: LimitsPeriod) -> Bool {
+        if lhs == rhs { return true }
+        guard case .past(let one) = lhs, case .past(let other) = rhs else { return false }
+        return abs(one.start.timeIntervalSince(other.start)) < LimitShareRules.resetDrift
+            && abs(one.end.timeIntervalSince(other.end)) < LimitShareRules.resetDrift
     }
 
     /// The request a load of `period` makes (§ Accounts without percent windows, Periods):

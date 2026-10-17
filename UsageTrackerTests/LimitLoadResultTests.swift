@@ -102,27 +102,19 @@ final class LimitLoadResultTests: XCTestCase {
         )
     }
 
-    func testOnlyTheCurrentWeekAsksForTurnsBackToTheHorizon() throws {
-        let request = try XCTUnwrap(LimitShareRules.request(
-            for: Fixture.snapshot(id: "claude", buckets: [weekly]), kind: .weekly, weeklyBudgetUSD: 0, now: now, calendar: utc
+    func testOnlyTheCurrentWeekPricesTheChangeSignal() {
+        XCTAssertTrue(LimitShareRules.pricesChange(
+            mode: .subscription, kind: .weekly, isCurrent: true, windowLength: 7 * day
         ))
-        XCTAssertEqual(
-            LimitShareRules.turnSpan(request: request, kind: .weekly, isCurrent: true, windowLength: 7 * day, now: now),
-            LimitWindow(start: now.addingTimeInterval(-31 * day), end: now),
-            "the usual weeks the change signal prices"
-        )
-        XCTAssertEqual(
-            LimitShareRules.turnSpan(request: request, kind: .weekly, isCurrent: false, windowLength: 7 * day, now: now),
-            request.period
-        )
-        XCTAssertEqual(
-            LimitShareRules.turnSpan(request: request, kind: .session, isCurrent: true, windowLength: 5 * hour, now: now),
-            request.period
-        )
-        XCTAssertEqual(
-            LimitShareRules.turnSpan(request: request, kind: .weekly, isCurrent: true, windowLength: 30 * day, now: now),
-            request.period, "a 30-day window has no change signal"
-        )
+        XCTAssertFalse(LimitShareRules.pricesChange(
+            mode: .subscription, kind: .weekly, isCurrent: false, windowLength: 7 * day
+        ))
+        XCTAssertFalse(LimitShareRules.pricesChange(
+            mode: .subscription, kind: .session, isCurrent: true, windowLength: 5 * hour
+        ))
+        XCTAssertFalse(LimitShareRules.pricesChange(
+            mode: .subscription, kind: .weekly, isCurrent: true, windowLength: 30 * day
+        ), "a 30-day window has no change signal")
         XCTAssertFalse(LimitShareRules.pricesChange(
             mode: .payAsYouGo(weeklyBudget: nil), kind: .weekly, isCurrent: true, windowLength: 7 * day
         ))

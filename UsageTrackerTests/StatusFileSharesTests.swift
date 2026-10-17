@@ -165,7 +165,7 @@ final class StatusFileSharesTests: XCTestCase {
     func testABudgetShareIsWrittenWhileTheBudgetIsSetAndDroppedOnceItIsCleared() throws {
         let api = Fixture.snapshot(id: "claude", plan: nil, buckets: [], weekCost: 400, at: now)
         let budgetShares = PublishedShares(
-            windows: [PublishedShareWindow(field: .budget, resetsAt: nil)],
+            windows: [PublishedShareWindow(field: .budget, resetsAt: nil, denominatorUSD: 500)],
             chats: ["s1": ChatShareFields(budgetShare: 5)]
         )
 

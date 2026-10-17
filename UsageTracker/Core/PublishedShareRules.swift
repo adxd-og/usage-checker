@@ -12,10 +12,11 @@ enum PublishedShareField: Hashable, Sendable {
     case budget
 }
 
-/// The window a share was cut for: the key it fills, and the instant that window resets.
-/// It stays the same from poll to poll while the window does. So `StatusFileWriter.build`
-/// can tell whether a share cut on an earlier poll still belongs to the services it
-/// writes (`PublishedShareRules.current`). It never reaches `status.json`.
+/// The window a share was cut for: the key it fills, the instant that window resets, and
+/// for a budget share what it was measured against. It names the same window from poll to
+/// poll while the window lasts (`isSameWindow(as:)`). So `StatusFileWriter.build` can tell
+/// whether a share cut on an earlier poll still belongs to the services it writes
+/// (`PublishedShareRules.current`). It never reaches `status.json`.
 struct PublishedShareWindow: Hashable, Sendable {
     let field: PublishedShareField
     /// When the window or period resets:
@@ -23,6 +24,23 @@ struct PublishedShareWindow: Hashable, Sendable {
     /// - on a spend limit, the first instant of the next calendar month;
     /// - on pay as you go, nil, because its seven days roll and never reset.
     let resetsAt: Date?
+    /// The dollars a budget share is a percent of: the weekly budget on pay as you go, the
+    /// monthly limit on a spend limit. nil for a session or week share, which is measured
+    /// by its window's percent.
+    var denominatorUSD: Double? = nil
+
+    /// Whether `other` names this window: the same key and denominator, and resets less
+    /// than `LimitShareRules.resetDrift` apart, or neither with a reset. A provider reports
+    /// a window's reset a second either side from poll to poll, and two windows' resets
+    /// are at least that far apart.
+    func isSameWindow(as other: PublishedShareWindow) -> Bool {
+        guard field == other.field, denominatorUSD == other.denominatorUSD else { return false }
+        switch (resetsAt, other.resetsAt) {
+        case (nil, nil): return true
+        case let (mine?, theirs?): return abs(mine.timeIntervalSince(theirs)) < LimitShareRules.resetDrift
+        default: return false
+        }
+    }
 }
 
 /// One share the file publishes for a provider's chats: the window it fills, and the
@@ -75,9 +93,19 @@ enum PublishedShareRules {
             // A spend limit starts over with the calendar month; pay as you go's seven
             // days roll and never reset.
             var resetsAt: Date?
-            if case .spendLimit = mode { resetsAt = calendar.dateInterval(of: .month, for: now)?.end }
+            var denominator: Double?
+            switch mode {
+            case .spendLimit(let limit, _):
+                resetsAt = calendar.dateInterval(of: .month, for: now)?.end
+                denominator = limit
+            case .payAsYouGo(let budget):
+                denominator = budget
+            case .subscription:
+                break
+            }
             return [PublishedShareRequest(
-                window: PublishedShareWindow(field: .budget, resetsAt: resetsAt), request: request
+                window: PublishedShareWindow(field: .budget, resetsAt: resetsAt, denominatorUSD: denominator),
+                request: request
             )]
         }
     }
@@ -208,11 +236,13 @@ extension PublishedShareRules {
     /// The shares may be a poll old: the writes between polls reuse them. A field is
     /// kept only while two things hold:
     /// - the requests re-derived from the very services being written still name the
-    ///   window it was cut for (the same key and the same reset);
+    ///   window it was cut for (`PublishedShareWindow.isSameWindow(as:)`: the same key,
+    ///   the same reset give or take a provider's drift, the same budget or limit);
     /// - that window, when it has a reset, resets after `now`.
     ///
     /// So a share never outlives its window's reset. A share of a window the snapshot now
-    /// reports with another reset is dropped. A key the account's current mode does not
+    /// reports with another reset is dropped, and so is a budget share once the budget or
+    /// the limit it was cut against changes. A key the account's current mode does not
     /// publish is dropped: session and week after a switch to pay as you go, the budget
     /// once it is cleared.
     nonisolated static func current(
@@ -222,11 +252,10 @@ extension PublishedShareRules {
         now: Date,
         calendar: Calendar
     ) -> [String: ChatShareFields] {
-        let named = Set(
-            requests(for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar).map(\.window)
-        )
+        let named = requests(for: service, weeklyBudgetUSD: weeklyBudgetUSD, now: now, calendar: calendar)
+            .map(\.window)
         let live = Set(shares.windows.filter { window in
-            named.contains(window) && (window.resetsAt.map { $0 > now } ?? true)
+            named.contains { $0.isSameWindow(as: window) } && (window.resetsAt.map { $0 > now } ?? true)
         }.map(\.field))
         guard !live.isEmpty else { return [:] }
         return shares.chats.mapValues { chat in

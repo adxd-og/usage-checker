@@ -256,10 +256,11 @@ extension LimitShareRules {
     }
 
     /// The share `request` asks for:
-    /// - Subscription: the half-hour-bin rule over the bucket's readings, scaled at every
-    ///   held drop inside the window (`restoredReadings(_:in:)`), ending on the live
-    ///   percent at the period's end when the request has one, so the shares total the
-    ///   percent now;
+    /// - Subscription: the half-hour-bin rule over the bucket's readings (a past window's
+    ///   by the resets they named, the current one's without the window before's late
+    ///   readings: `series(_:bucketID:openSince:)`), scaled at every held drop inside the
+    ///   window (`restoredReadings(_:in:)`), ending on the live percent at the period's
+    ///   end when the request has one, so the shares total the percent now;
     /// - Pay as you go and Spend limit: the period's dollars against the mode's
     ///   denominator. A spend limit's Outside is the server's used credits minus the
     ///   period's local spend.
@@ -276,7 +277,7 @@ extension LimitShareRules {
             guard let bucketID = request.bucketID else { return nil }
             let own = request.resets.map {
                 series(readings, bucketID: bucketID, resets: $0, in: request.period)
-            } ?? series(readings, bucketID: bucketID)
+            } ?? series(readings, bucketID: bucketID, openSince: request.period.start)
             let readingsToNow = endingOnLive(own, percent: request.livePercent, at: request.period.end)
             return share(
                 window: request.period, series: restoredReadings(readingsToNow, in: request.period), log: log
