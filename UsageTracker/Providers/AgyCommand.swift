@@ -164,9 +164,10 @@ enum AgyCommand {
     }
 }
 
-/// The agy children running now (session ruling A4): a background run must not outlive
-/// the app that started it, so Omelette stops them as it quits. A child is registered
-/// before it starts and leaves when it exits; one that could not start leaves at once.
+/// The agy children running now (spec 2026-10-16-antigravity-argon, Package 2 Design): a
+/// background run must not outlive the app that started it, so Omelette stops them as it
+/// quits. A child is registered before it starts and leaves when it exits; one that could
+/// not start leaves at once.
 /// `terminateAll()` closes the registry for good: no child starts after the quit.
 final class AgyChildRegistry: @unchecked Sendable {
     /// The app's registry; `AppDelegate.applicationWillTerminate` stops its children and

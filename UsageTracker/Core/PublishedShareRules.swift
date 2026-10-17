@@ -32,7 +32,7 @@ struct PublishedShareWindow: Hashable, Sendable {
     /// Whether `other` names this window: the same key and denominator, and resets less
     /// than `LimitShareRules.resetDrift` apart, or neither with a reset. A provider reports
     /// a window's reset a second either side from poll to poll, and two windows' resets
-    /// are hours apart.
+    /// are at least that far apart.
     func isSameWindow(as other: PublishedShareWindow) -> Bool {
         guard field == other.field, denominatorUSD == other.denominatorUSD else { return false }
         switch (resetsAt, other.resetsAt) {
