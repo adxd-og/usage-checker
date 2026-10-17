@@ -173,7 +173,10 @@ struct LimitsView: View {
                 entries: periods.map {
                     LimitsPeriodEntry(period: $0, name: LimitsCopy.periodName($0, mode: mode, span: span, now: now))
                 },
-                selection: Binding(get: { period }, set: { chosenPeriod = $0 })
+                selection: Binding(
+                    get: { LimitsRules.pickerEntry(for: period, offered: periods) },
+                    set: { chosenPeriod = $0 }
+                )
             )
         }
     }
