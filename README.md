@@ -362,9 +362,10 @@ to keep a year of them:
 - While Antigravity is closed or not answering, runs its CLI as
   `agy -p /usage` in the background about every five minutes and stops it
   after 45 s or on a normal quit. agy gets none of Omelette's environment
-  beyond HOME, USER, LOGNAME, TMPDIR, LANG and a system PATH; Omelette reads
-  only the quota it prints, and skips the run unless the login keychain is
-  unlocked
+  beyond HOME, USER, LOGNAME, TMPDIR, LANG and a system PATH, and logs the run
+  to one file, `agy-usage.log` in Omelette's Application Support folder;
+  Omelette reads only the quota it prints, and skips the run unless the login
+  keychain is unlocked
 - Agent status comes from a tiny `omelette-hook` helper inside the app that
   Claude Code and Codex run on their hook events. It talks to Omelette over
   a local Unix socket (0600, 64 KB cap) and forwards only the session id,
