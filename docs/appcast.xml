@@ -6,6 +6,52 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v3.1.0</title>
+      <pubDate>Sat, 17 Oct 2026 13:52:03 +0300</pubDate>
+      <sparkle:version>53</sparkle:version>
+      <sparkle:shortVersionString>3.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Antigravity</h3>
+<ul>
+<li>Gemini 4 Argon's weekly limit on Pro plans has its own row instead of showing twice as "Gemini models" and "Gemini weekly". It no longer drives the Antigravity headline, the menu bar or alerts.</li>
+<li>While Antigravity is running, the "Gemini models" and "Claude &amp; GPT models" rows are gone: each pool's 5-hour and weekly limits already have their own rows.</li>
+<li><code>status.json</code> and MCP <code>get_usage</code> no longer publish <code>antigravity_gemini</code> / <code>antigravity_claude_gpt</code> while Antigravity is running; read the per-pool windows instead.</li>
+<li>With Antigravity closed, Argon's Low, Medium and High variants show as one row and no longer drive the headline.</li>
+<li>While Antigravity is closed or not answering and the <code>agy</code> CLI is installed, its limits stay current: Omelette asks <code>agy -p /usage</code> in the background about every five minutes, 5-hour and weekly limits apart, and stops it after 45 s or on a normal quit, instead of keeping the numbers from when the app was last open. A slow agy never holds the other providers' update. agy signs in by itself; Omelette never reads its credentials and skips the run unless the login keychain is unlocked. These runs log to one file, <code>agy-usage.log</code> in Omelette's Application Support folder, instead of adding a file to agy's own log folder each time.</li>
+<li>Argon's row takes the name Antigravity gives it, "Gemini 4 Argon", once agy has answered, and keeps it, the app open or not, after a relaunch too.</li>
+<li>Numbers kept from before this release come back in this release's shape while Antigravity is closed: Argon no longer shows twice or drives the headline, and the "Gemini models" and "Claude &amp; GPT models" rows go where each pool has its own rows. After a relaunch, agy's readings keep the stored plan and account.</li>
+</ul>
+<h3>Popover</h3>
+<ul>
+<li>Weekly limits keep their row at 0 % (Antigravity's Gemini and Claude/GPT pools, Codex and Grok weeklies); only untouched per-model limits fold under "N unused windows".</li>
+</ul>
+<h3>Dashboard</h3>
+<ul>
+<li>New Limits tab for Claude and Codex: what filled the current session or weekly window, by chat or project, in percent points with API-list dollars. Use on claude.ai, the desktop app or another machine shows as Outside this Mac.</li>
+<li>The Limits tab's first card prices one percent of the window in dollars and tokens. A pay-as-you-go account sees its last 7 days (on Claude, against the weekly budget when one is set); an account with a monthly spend limit, its month against the limit.</li>
+<li>Grok and Antigravity say why the Limits tab is empty: they keep no chat-level cost log.</li>
+<li>The Limits tab's period picker reaches back through the past sessions and weeks of the last 31 days (pay as you go: the earlier 7-day blocks). Claude's windows (Codex's from this update on) are told apart by the reset time each reading reported, so a session that ended under 5 % is a window of its own and a limit restored mid-week no longer splits the week.</li>
+<li>A Limits timeline: one bar per half hour, stacked by the five largest projects, Other and Outside this Mac.</li>
+<li>A chat in the Limits list opens into its stretches, cut at compactions and cold starts, each with its first prompt, hours, share, dollars and what rebuilding the context cost.</li>
+<li>The price of a percent says when a percent buys clearly less than in the previous weeks, and when the costliest model changed.</li>
+<li>On the Limits tab, a chat run in a git worktree counts under the repository the worktree belongs to, also after the worktree is removed, once Omelette has seen a session run in that folder while the worktree existed.</li>
+<li>The first launch after this update reads the last 31 days of Claude transcripts once more in the background, to find their compactions and prompts.</li>
+<li>A limit restored mid-window keeps each chat's part of what still counts, on the Limits tab and in the shares <code>status.json</code> publishes, instead of landing in one half hour.</li>
+</ul>
+<h3>Command line and MCP</h3>
+<ul>
+<li><code>status.json</code> and MCP <code>get_sessions</code> give each Claude and Codex chat its share of the current limits: <code>sessionShare</code> and <code>weekShare</code> in percentage points on a subscription, <code>budgetShare</code> of a set weekly budget or of the monthly spend limit. An estimate; a key is absent where the chat did not run in that window, 0 where it ran and moved nothing. <code>omelette status</code> prints what it printed before.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v3.1.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v3.1.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="UHgZcZKT8/LVFdk8vYSGsnIprsN+OXRObcgefxm4R+lpCLNjQuT+kWtuUQJgDE11xdkk6YZd18ZFnxwi06LaAw=="
+        length="25462655"/>
+    </item>
+    <item>
       <title>Omelette v3.0.2</title>
       <pubDate>Sun, 04 Oct 2026 17:44:19 +0300</pubDate>
       <sparkle:version>52</sparkle:version>
