@@ -93,6 +93,26 @@ extension LimitShareRules {
             .sorted { $0.time < $1.time }
     }
 
+    /// The readings of the window open since `start`, in time order (spec § Design, Window
+    /// bounds): every reading of the bucket but one whose record reported a reset at or
+    /// before `start + resetDrift`, which is the window before's. Its last readings can be
+    /// stamped after the computed start (`resetsAt` is rounded to the second, the poll's
+    /// clock differs), and one less than `resetDrop` above the new percent is no held drop
+    /// for `restoredReadings(_:in:)` to scale: the running maximum would keep it. A reading
+    /// that reported no reset stays, read by its time.
+    nonisolated static func series(
+        _ records: [HistoryRecord], bucketID: String, openSince start: Date
+    ) -> [LimitReading] {
+        let earlierResets = start.addingTimeInterval(resetDrift)
+        return series(
+            records.filter { record in
+                guard let reported = record.resetsAt(for: bucketID) else { return true }
+                return reported > earlierResets
+            },
+            bucketID: bucketID
+        )
+    }
+
     /// Every reset in `series` (which must be in time order), oldest first.
     ///
     /// A drop must hold: the reading after it, when there is one, is also at least
