@@ -43,7 +43,7 @@ extension ProjectWorktrees {
     ///   directory's `commondir` the repository's (`<repo>/.git/worktrees/<name>` and
     ///   `../..`). The main working tree is the directory holding that `.git`; the answer is
     ///   the place inside it that `path` is inside the worktree. A relative path in either
-    ///   file is read from the directory that holds the file;
+    ///   file is read from the directory that holds the file, as the file system has it;
     /// - a directory, no `.git` below the root, a git directory with no `commondir` (a
     ///   submodule's) or a common one not named `.git` (a bare repository's): `unlinked`.
     nonisolated static func lookup(_ path: String) -> WorktreeLookup {
@@ -64,16 +64,22 @@ extension ProjectWorktrees {
     }
 
     /// The main working tree a linked worktree's `.git` file leads to, as the file system
-    /// has it, or nil.
+    /// has it, or nil. The git directory is followed on disk (`onDisk`) before its
+    /// `commondir` is read from it, and so is the common directory before it is checked:
+    /// `..` worked out on a path through a symbolic link would climb the link's own
+    /// parents, and could land on another repository's `.git`.
     private static func mainWorkingTree(of worktree: String) -> String? {
         guard let text = try? String(contentsOfFile: worktree + "/.git", encoding: .utf8),
               let line = text.split(whereSeparator: \.isNewline).first,
-              line.hasPrefix("gitdir:")
+              line.hasPrefix("gitdir:"),
+              let gitDir = onDisk(
+                joined(line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces), to: worktree)
+              ),
+              let common = try? String(contentsOfFile: gitDir + "/commondir", encoding: .utf8),
+              let commonDir = onDisk(joined(common.trimmingCharacters(in: .whitespacesAndNewlines), to: gitDir)),
+              commonDir.hasSuffix("/.git")
         else { return nil }
-        let gitDir = absolute(line.dropFirst("gitdir:".count).trimmingCharacters(in: .whitespaces), from: worktree)
-        guard let common = try? String(contentsOfFile: gitDir + "/commondir", encoding: .utf8) else { return nil }
-        let commonDir = absolute(common.trimmingCharacters(in: .whitespacesAndNewlines), from: gitDir)
-        guard commonDir.hasSuffix("/.git"), let main = onDisk(parent(of: commonDir)) else { return nil }
+        let main = parent(of: commonDir)
         return main == worktree ? nil : main
     }
 
@@ -91,19 +97,10 @@ extension ProjectWorktrees {
         return String(path[..<slash])
     }
 
-    /// `path`, read from `directory` when relative, with `.` and `..` worked out on the
-    /// string.
-    private static func absolute(_ path: String, from directory: String) -> String {
-        let joined = path.hasPrefix("/") ? path : directory + "/" + path
-        var parts: [Substring] = []
-        for part in joined.split(separator: "/") {
-            switch part {
-            case ".": continue
-            case "..": _ = parts.popLast()
-            default: parts.append(part)
-            }
-        }
-        return "/" + parts.joined(separator: "/")
+    /// `path`, read from `directory` when relative. Its `.` and `..` are left to
+    /// `realpath(3)`, which works them out on disk.
+    private static func joined(_ path: String, to directory: String) -> String {
+        path.hasPrefix("/") ? path : directory + "/" + path
     }
 
     /// Claude Code's name for a directory's project folder (`~/.claude/projects/<slug>`):
