@@ -24,15 +24,15 @@ extension LimitShareRules {
         return windowLength <= changeLongestWindow
     }
 
-    /// The turns a load asks the cost log for: the period's; for the current week, every
-    /// turn back to the turn horizon, which prices the usual weeks the change signal
-    /// compares.
-    nonisolated static func turnSpan(
-        request: LimitShareRequest, kind: BucketKind, isCurrent: Bool, windowLength: TimeInterval?, now: Date
-    ) -> LimitWindow {
-        guard pricesChange(mode: request.mode, kind: kind, isCurrent: isCurrent, windowLength: windowLength)
-        else { return request.period }
-        return LimitWindow(
+    /// The turns a load asks the cost log for, whatever the period and mode: every turn
+    /// back to the turn horizon, or to the period's start when that is earlier (a calendar
+    /// month can be), up to the period's end. The current week's change signal prices the
+    /// usual weeks with them, and a chat's stretches find its first main-thread turn among
+    /// them, so a chat resumed cold in a later window is charged its rebuild there as in
+    /// the week (§ The tab, item 5). The shares, the change signal and the timeline count
+    /// only the turns inside their own window.
+    nonisolated static func turnSpan(request: LimitShareRequest, now: Date) -> LimitWindow {
+        LimitWindow(
             start: min(request.period.start, now.addingTimeInterval(-turnHorizon)),
             end: request.period.end
         )
