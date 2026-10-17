@@ -26,6 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from when the app was last open. A slow agy never holds the other
   providers' update. agy signs in by itself; Omelette never reads its
   credentials and skips the run unless the login keychain is unlocked.
+  These runs log to one file, `agy-usage.log` in Omelette's Application
+  Support folder, instead of adding a file to agy's own log folder each time.
 - Argon's row takes the name Antigravity gives it, "Gemini 4 Argon", once
   agy has answered, and keeps it, the app open or not, after a relaunch too.
 - Numbers kept from before this release come back in this release's shape
