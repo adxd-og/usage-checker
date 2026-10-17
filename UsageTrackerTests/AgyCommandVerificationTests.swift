@@ -187,9 +187,12 @@ final class AgyCommandVerificationTests: XCTestCase {
 
     // MARK: - Quitting the app
 
-    /// The app's own registry: a child started the way the provider starts one is stopped
-    /// by `terminateAll()`, which is what `applicationWillTerminate` calls.
-    func testTerminateAllOnTheSharedRegistryStopsAChildStartedByRun() async throws {
+    /// The app's own registry: a child started the way the provider starts one is in it
+    /// while it runs, so `terminateAll()`, which is what `applicationWillTerminate` calls,
+    /// reaches it. `terminateAll()` also closes a registry for good, so it is not called on
+    /// the app's one here: the child ends at its deadline, and `AgyChildRegistryTests`
+    /// stops one through `terminateAll()` on a registry of its own.
+    func testARunStartedTheWayTheProviderStartsOneIsInTheSharedRegistry() async throws {
         let shared = AgyChildRegistry.shared
         let baseline = shared.runningCount
         let folder: URL = directory
@@ -200,8 +203,8 @@ final class AgyCommandVerificationTests: XCTestCase {
                     arguments: ["-c", "echo $$ > child.pid; exec /bin/sleep 30"],
                     environment: ["PATH": "/usr/bin:/bin"],
                     directory: folder,
-                    deadline: 30,
-                    killGrace: 5
+                    deadline: 1,
+                    killGrace: 0.3
                 ))
             } catch {
                 return .failure(error)
@@ -210,13 +213,13 @@ final class AgyCommandVerificationTests: XCTestCase {
         let pid = try await pid(in: "child.pid")
         XCTAssertEqual(shared.runningCount, baseline + 1)
 
-        shared.terminateAll()
-
         let result = await child.value
-        guard case .failure(let error) = result else { return XCTFail("a terminated run is no reading") }
-        XCTAssertEqual(error as? AgyUsageError, .exitStatus(SIGTERM))
+        guard case .failure(let error) = result else { return XCTFail("a stopped run is no reading") }
+        XCTAssertEqual(error as? AgyUsageError, .timedOut)
         let gone = await isGone(pid, within: 3)
         XCTAssertTrue(gone)
+        let left = Date().addingTimeInterval(3)
+        while shared.runningCount > baseline, Date() < left { try await Task.sleep(nanoseconds: 50_000_000) }
         XCTAssertEqual(shared.runningCount, baseline)
     }
 
