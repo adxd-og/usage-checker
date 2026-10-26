@@ -62,6 +62,10 @@ targets:
       # StatusSnapshot, StatusText and friends without importing the app, and the app's
       # test bundle must cover them — a framework would buy neither.
       - path: CLICore
+      # The keep-awake engine, its state and the XPC contract, shared with the
+      # omelette-keepawake daemon the way CLICore is shared with the CLI: one folder,
+      # two `sources` entries, two modules, and the app's test bundle covers it.
+      - path: KeepAwakeCore
     resources:
       - path: UsageTracker/Resources
     dependencies:
