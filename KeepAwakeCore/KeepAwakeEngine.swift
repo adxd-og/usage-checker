@@ -20,6 +20,8 @@ struct KeepAwakeEngine: Equatable, Sendable {
     }
 
     private(set) var state: KeepAwakeState = .idle
+    /// The last battery reading; nil until the first.
+    private(set) var power: KeepAwakePower?
 
     init() {}
 
@@ -52,16 +54,40 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return output(wasArmed: wasArmed, lidClosed: lidClosed)
     }
 
+    /// The floor switch moved (spec § Behaviour, floor switch while armed): an armed mode takes
+    /// the new value, and turning it on while already low ends the mode at once. Idle and
+    /// ended stay as they are.
+    mutating func setFloor(enabled: Bool, now: Date, lidClosed: Bool) -> Output {
+        let wasArmed = state.isArmed
+        if case .armed(let deadline, _) = state {
+            state = .armed(deadline: deadline, floorEnabled: enabled)
+        }
+        settle(now: now)
+        return output(wasArmed: wasArmed, lidClosed: lidClosed)
+    }
+
+    /// A battery reading (spec § Behaviour, Battery floor): on battery below 25 % with the floor
+    /// on, an armed mode ends. It settles the deadline too.
+    mutating func power(onBattery: Bool, percent: Int, now: Date, lidClosed: Bool) -> Output {
+        power = KeepAwakePower(onBattery: onBattery, percent: percent)
+        let wasArmed = state.isArmed
+        settle(now: now)
+        return output(wasArmed: wasArmed, lidClosed: lidClosed)
+    }
+
     /// The next tick while armed: a minute from now, or the deadline if that comes first.
     func nextTick(now: Date) -> Date? {
         guard case .armed(let deadline, _) = state else { return nil }
         return min(now + KeepAwakeRules.tickInterval, deadline)
     }
 
-    /// Ends an armed mode whose deadline has passed.
+    /// Ends an armed mode whose deadline has passed, then one below the battery floor.
     private mutating func settle(now: Date) {
         if case .armed(let deadline, _) = state, now >= deadline {
             state = .ended(at: now, reason: .deadline)
+        }
+        if case .armed(_, true) = state, let power, KeepAwakeRules.isBelowFloor(power) {
+            state = .ended(at: now, reason: .batteryFloor)
         }
     }
 

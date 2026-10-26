@@ -116,4 +116,77 @@ final class KeepAwakeEngineTests: XCTestCase {
         _ = engine.tick(now: t0 + 60, lidClosed: false)
         XCTAssertNil(engine.nextTick(now: t0 + 60))
     }
+
+    // MARK: - § Behaviour › Battery floor, § Behaviour › Floor switch while armed
+
+    func testBelowTwentyFivePercentOnBatteryTheModeEnds() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertEqual(
+            engine.power(onBattery: true, percent: 24, now: t0 + 600, lidClosed: false),
+            Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0 + 600, reason: .batteryFloor), failure: nil)
+        )
+    }
+
+    func testTwentyFivePercentIsNotBelowTheFloor() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertEqual(
+            engine.power(onBattery: true, percent: 25, now: t0 + 600, lidClosed: false),
+            Out(sleepDisabled: true, sleepNow: false, state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil)
+        )
+    }
+
+    func testOnTheChargerALowBatteryDoesNotEndTheMode() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertEqual(engine.power(onBattery: false, percent: 10, now: t0 + 600, lidClosed: false).state, .armed(deadline: t0 + 7_200, floorEnabled: true))
+    }
+
+    func testWithTheFloorOffTheBatteryDoesNotEndTheMode() {
+        var engine = engineArmed(for: 7_200, floor: false)
+        XCTAssertEqual(engine.power(onBattery: true, percent: 5, now: t0 + 600, lidClosed: false).state, .armed(deadline: t0 + 7_200, floorEnabled: false))
+    }
+
+    func testTurningTheFloorOnWhileLowOnBatteryEndsTheModeAtOnce() {
+        var engine = engineArmed(for: 7_200, floor: false)
+        _ = engine.power(onBattery: true, percent: 20, now: t0 + 600, lidClosed: false)
+        XCTAssertEqual(
+            engine.setFloor(enabled: true, now: t0 + 900, lidClosed: false),
+            Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0 + 900, reason: .batteryFloor), failure: nil)
+        )
+    }
+
+    func testTurningTheFloorOffKeepsTheDeadline() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertEqual(
+            engine.setFloor(enabled: false, now: t0 + 60, lidClosed: false),
+            Out(sleepDisabled: true, sleepNow: false, state: .armed(deadline: t0 + 7_200, floorEnabled: false), failure: nil)
+        )
+    }
+
+    func testTheFloorSwitchWhileIdleChangesNothing() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.setFloor(enabled: true, now: t0, lidClosed: false),
+            Out(sleepDisabled: false, sleepNow: false, state: .idle, failure: nil)
+        )
+    }
+
+    /// The flag was never on, so there is nothing to sleep from.
+    func testApplyingBelowTheFloorEndsAtOnceAndNeverSleeps() {
+        var engine = KeepAwakeEngine()
+        _ = engine.power(onBattery: true, percent: 20, now: t0, lidClosed: true)
+        XCTAssertEqual(
+            engine.arm(duration: 7_200, floorEnabled: true, now: t0, lidClosed: true),
+            Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0, reason: .batteryFloor), failure: nil)
+        )
+    }
+
+    func testALowBatteryWithTheLidClosedPutsTheMacToSleep() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertTrue(engine.power(onBattery: true, percent: 24, now: t0 + 600, lidClosed: true).sleepNow)
+    }
+
+    func testAPowerReadingAfterTheDeadlineEndsTheModeForTheDeadline() {
+        var engine = engineArmed(for: 60)
+        XCTAssertEqual(engine.power(onBattery: true, percent: 10, now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 90, reason: .deadline))
+    }
 }
