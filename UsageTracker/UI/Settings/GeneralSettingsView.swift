@@ -11,6 +11,9 @@ enum GeneralSettingsCopy {
     static let autoCheckTitle = "Check for updates automatically"
     static let checkNowButton = "Check now"
     static let githubTitle = AppVersion.githubLabel
+    static let keepAwakeHeader = "Keep awake"
+    static let keepAwakeFloorTitle = "End below \(KeepAwakeRules.batteryFloorPercent) % on battery"
+    static let keepAwakeFooter = "Keep awake with the lid closed ends on time even when Omelette is not running."
 
     /// "Omelette 2.7.1 (38)": the version label the popover used, plus the build a bug
     /// report needs (2.x's row printed "2.7.1 (38)"). With no build, or no version, the
@@ -51,6 +54,7 @@ struct GeneralSettingsView: View {
         SettingsPage(tab: .general) {
             startup
             refresh
+            keepAwake
             updates
         }
     }
@@ -87,6 +91,23 @@ struct GeneralSettingsView: View {
                     AppState.shared.restartTimer()
                 }
             }
+        }
+    }
+
+    /// Spec 2026-10-26 § UI. The switch is a preference read at every Apply, and an armed
+    /// helper hears a change at once (§ Behaviour, floor switch while armed).
+    private var keepAwake: some View {
+        SettingsSection(header: GeneralSettingsCopy.keepAwakeHeader, footer: GeneralSettingsCopy.keepAwakeFooter) {
+            SettingsSwitchRow(
+                title: GeneralSettingsCopy.keepAwakeFloorTitle,
+                isOn: Binding(
+                    get: { settings.keepAwakeFloorEnabled },
+                    set: { newValue in
+                        settings.keepAwakeFloorEnabled = newValue
+                        Task { await KeepAwakeModel.shared.floorChanged(newValue) }
+                    }
+                )
+            )
         }
     }
 

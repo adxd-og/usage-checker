@@ -306,6 +306,9 @@ struct AdvancedSettingsView: View {
 
     private func resetEverything() {
         settings.resetToDefaults()
+        // The floor switch just went back on; an armed helper hears it at once, as it would
+        // from the switch itself (keep-awake spec 2026-10-26, floor switch while armed).
+        Task { await KeepAwakeModel.shared.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled) }
         // Launch at login is OS state, not a stored preference, so `resetToDefaults()`
         // deliberately can't reach it. General reads it again when it next opens.
         LaunchAtLogin.isEnabled = false
