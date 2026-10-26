@@ -69,6 +69,10 @@ final class SettingsStore: ObservableObject {
         static let agentsAnswerPermissions = true
         static let agentsHooksPromptDismissed = false
         static let agentsHooksPromptNotified = false
+        /// Keep awake ends by itself on battery below 25 % (spec 2026-10-26, Battery floor).
+        static let keepAwakeFloorEnabled = true
+        /// The last duration Apply used, in minutes; one hour until the first Apply.
+        static let keepAwakeDurationMinutes = 60
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -159,6 +163,12 @@ final class SettingsStore: ObservableObject {
     /// The launch notification for that prompt has been delivered. One per install,
     /// ever — separate from the row, which the popover can show until it is answered.
     @AppStorage("agentsHooksPromptNotified") var agentsHooksPromptNotified: Bool = Defaults.agentsHooksPromptNotified
+    /// Read at every Apply, and sent to an armed helper the moment it changes
+    /// (`KeepAwakeModel.floorChanged`).
+    @AppStorage("keepAwakeFloorEnabled") var keepAwakeFloorEnabled: Bool = Defaults.keepAwakeFloorEnabled
+    /// The last duration Apply used, in minutes; the popover's steppers start from
+    /// `KeepAwakeRules.parts(totalMinutes:)` of it.
+    @AppStorage("keepAwakeDurationMinutes") var keepAwakeDurationMinutes: Int = Defaults.keepAwakeDurationMinutes
 
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
@@ -199,6 +209,7 @@ final class SettingsStore: ObservableObject {
         agentsAnswerPermissions = Defaults.agentsAnswerPermissions
         agentsHooksPromptDismissed = Defaults.agentsHooksPromptDismissed
         agentsHooksPromptNotified = Defaults.agentsHooksPromptNotified
+        resetKeepAwake()
 
         // Choices that live in the views and state objects rather than in a property
         // here. They are still preferences, so a reset that leaves them behind isn't
@@ -212,6 +223,12 @@ final class SettingsStore: ObservableObject {
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
         // the new ones should be able to speak.
         UsageNotifier.shared.forgetFiredState()
+    }
+
+    /// Settings › Advanced › Reset keep awake puts these two back, and nothing else.
+    func resetKeepAwake() {
+        keepAwakeFloorEnabled = Defaults.keepAwakeFloorEnabled
+        keepAwakeDurationMinutes = Defaults.keepAwakeDurationMinutes
     }
 
     /// PopoverView's persisted tab. Owned by the view, reset here.

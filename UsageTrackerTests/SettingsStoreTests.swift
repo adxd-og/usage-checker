@@ -56,6 +56,8 @@ final class SettingsStoreTests: XCTestCase {
         s.agentsAnswerPermissions = !SettingsStore.Defaults.agentsAnswerPermissions
         s.agentsHooksPromptDismissed = !SettingsStore.Defaults.agentsHooksPromptDismissed
         s.agentsHooksPromptNotified = !SettingsStore.Defaults.agentsHooksPromptNotified
+        s.keepAwakeFloorEnabled = !SettingsStore.Defaults.keepAwakeFloorEnabled
+        s.keepAwakeDurationMinutes = 1_470
 
         // Preferences that live outside this object but are still preferences. Written
         // by key rather than through the state objects, so the scramble doesn't kick off
@@ -103,6 +105,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.agentsAnswerPermissions, SettingsStore.Defaults.agentsAnswerPermissions, message)
         XCTAssertEqual(s.agentsHooksPromptDismissed, SettingsStore.Defaults.agentsHooksPromptDismissed, message)
         XCTAssertEqual(s.agentsHooksPromptNotified, SettingsStore.Defaults.agentsHooksPromptNotified, message)
+        XCTAssertEqual(s.keepAwakeFloorEnabled, SettingsStore.Defaults.keepAwakeFloorEnabled, message)
+        XCTAssertEqual(s.keepAwakeDurationMinutes, SettingsStore.Defaults.keepAwakeDurationMinutes, message)
 
         XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
@@ -238,5 +242,28 @@ final class SettingsStoreTests: XCTestCase {
         UserDefaults.standard.set(true, forKey: key)
         SettingsStore.shared.resetToDefaults()
         XCTAssertEqual(UserDefaults.standard.object(forKey: key) as? Bool, true, "a stored value is left in place")
+    }
+
+    /// Keep-awake spec 2026-10-26 § Behaviour: "End below 25 % on battery", default on; the
+    /// last used duration is remembered (plan D11: one hour until the first Apply).
+    @MainActor
+    func testKeepAwakeStartsWithTheFloorOnAndOneHour() {
+        let settings = SettingsStore.shared
+        settings.resetToDefaults()
+        XCTAssertTrue(settings.keepAwakeFloorEnabled)
+        XCTAssertEqual(settings.keepAwakeDurationMinutes, 60)
+    }
+
+    /// § UI, Reset keep awake: "resets the feature's settings (floor switch on, remembered
+    /// duration cleared)" — and nothing else.
+    @MainActor
+    func testResetKeepAwakeTouchesOnlyItsOwnTwoSettings() {
+        let settings = SettingsStore.shared
+        scrambleEverything(settings)
+        settings.resetKeepAwake()
+        XCTAssertTrue(settings.keepAwakeFloorEnabled)
+        XCTAssertEqual(settings.keepAwakeDurationMinutes, 60)
+        XCTAssertEqual(settings.refreshIntervalSeconds, 300, "another setting was reset")
+        XCTAssertEqual(settings.menuBarNumberMode, .never, "another setting was reset")
     }
 }
