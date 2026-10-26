@@ -231,7 +231,7 @@ final class KeepAwakeVerificationServiceTests: XCTestCase {
         fake.with { $0.calls = []; $0.lid = closedLid }
         await service.terminate(now: t0 + 90)
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
-        XCTAssertEqual(stateFile.load(), .ended(at: t0 + 90, reason: .deadline))
+        XCTAssertEqual(stateFile.load(), .ended(at: t0 + 60, reason: .deadline))
         XCTAssertEqual(fake.with { $0.terminations }, [0])
     }
 

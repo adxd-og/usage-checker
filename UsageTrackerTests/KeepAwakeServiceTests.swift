@@ -316,7 +316,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let early = await service.state(now: t0 + 30)
         XCTAssertEqual(early.state, .armed(deadline: t0 + 120, floorEnabled: true))
         let late = await service.state(now: t0 + 125)
-        XCTAssertEqual(late.state, .ended(at: t0 + 125, reason: .deadline))
+        XCTAssertEqual(late.state, .ended(at: t0 + 120, reason: .deadline))
     }
 
     // MARK: - Idle exit (session ruling on D7; review C2): not armed, nothing owed, no open
