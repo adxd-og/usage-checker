@@ -5,6 +5,46 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Popover
+- Keep awake with the lid closed: a block above the footer keeps the Mac
+  awake with its lid closed for 1 minute to 7 days (days, hours, minutes,
+  then Apply). While on it shows "Awake until 18:40 · 4 h 52 min left" and
+  Cancel; Apply again replaces the deadline.
+- When keep awake ends, the block says when and why (time is up, battery
+  below 25 %, cancelled, a restart, the helper stopped) until you dismiss it
+  or apply again.
+- Before the first use, the block says how to approve the helper and opens
+  Login Items.
+
+### Menu bar
+- A ☾ before the bars while keep awake is on; the tooltip's first line says
+  until when.
+
+### Settings
+- General → Keep awake: "End below 25 % on battery", on by default; a change
+  reaches a running mode at once.
+- Advanced → Reset keep awake, after a confirmation, ends the mode, clears
+  the sleep flag, removes the helper from Login Items and puts its two
+  settings back. The line under it shows what `pmset -g` reports.
+
+### Helper
+- Keep awake runs a helper, `omelette-keepawake`, as root under launchd. The
+  first Apply registers it; macOS announces it as "Background Items Added",
+  and it works once Omelette is switched on in System Settings → General →
+  Login Items & Extensions.
+- The helper ends the mode on time and at the battery floor even when
+  Omelette is not running, and clears the sleep flag every time it starts, so
+  nothing resumes after a restart.
+- When the mode ends at the deadline, at the battery floor, on Cancel or
+  Reset, or through a helper restart while it was on, with the lid closed and
+  no external display keeping the Mac awake, the Mac goes to sleep; a helper
+  switched off in Login Items only clears the flag.
+- Deleting Omelette while keep awake is on leaves the Mac unable to sleep
+  until `sudo pmset -a disablesleep 0` is run in Terminal; press Reset keep
+  awake before deleting it.
+
 ## [3.1.0] — 2026-10-17
 
 ### Antigravity
