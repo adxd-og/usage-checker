@@ -188,4 +188,21 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: nil, now: now), now)
         XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: now.addingTimeInterval(-100), now: now), now.addingTimeInterval(-100))
     }
+
+    // MARK: - Menu bar
+
+    /// § UI, Menu bar: "The tooltip's first line says 'Keep awake until 18:40'".
+    func testTheTooltipLineSaysUntilWhen() {
+        XCTAssertEqual(
+            KeepAwakeCopy.tooltipLine(.armed(deadline: now.addingTimeInterval(4 * 3_600 + 52 * 60), floorEnabled: true), now: now, calendar: calendar, locale: locale),
+            "Keep awake until 18:40"
+        )
+        XCTAssertEqual(
+            KeepAwakeCopy.tooltipLine(.armed(deadline: now.addingTimeInterval(3 * 86_400 + 3 * 3_600), floorEnabled: false), now: now, calendar: calendar, locale: locale),
+            "Keep awake until Thu 16:48"
+        )
+        XCTAssertNil(KeepAwakeCopy.tooltipLine(.idle, now: now, calendar: calendar, locale: locale))
+        XCTAssertNil(KeepAwakeCopy.tooltipLine(.ended(at: now, reason: .cancelled), now: now, calendar: calendar, locale: locale))
+        XCTAssertNil(KeepAwakeCopy.tooltipLine(.armed(deadline: now, floorEnabled: true), now: now, calendar: calendar, locale: locale))
+    }
 }

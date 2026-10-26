@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Combine
 
 @MainActor
 final class StatusBarController {
@@ -7,6 +8,8 @@ final class StatusBarController {
     private let popover: NSPopover
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
+    /// The tooltip's keep-awake line follows the model, not only the snapshot.
+    private var keepAwakeObserver: AnyCancellable?
 
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -23,6 +26,7 @@ final class StatusBarController {
         // once per poll, so a wall-clock tick timer on top of it was pure waste
         // (and was never invalidated).
         observeSnapshotForTooltip()
+        observeKeepAwakeForTooltip()
         // A notification the user acted on can name a session that has already
         // ended; the popover is where the rest of them are.
         showPopoverObserver = NotificationCenter.default.addObserver(
@@ -104,10 +108,22 @@ final class StatusBarController {
         }
     }
 
-    private func updateTooltip() {
+    /// `@Published` sends before the property changes, so the tooltip is built from the
+    /// value delivered here, not from `KeepAwakeModel.shared.state` (still the old one).
+    /// The model is `@MainActor` like this controller: a plain call, as in `UsageNotifier`.
+    private func observeKeepAwakeForTooltip() {
+        keepAwakeObserver = KeepAwakeModel.shared.$state
+            .removeDuplicates()
+            .sink { [weak self] state in
+                self?.updateTooltip(keepAwake: state)
+            }
+    }
+
+    private func updateTooltip(keepAwake: KeepAwakeState? = nil) {
         statusItem.button?.toolTip = Self.tooltipText(
             snapshot: AppState.shared.snapshot,
-            mode: SettingsStore.shared.percentMode
+            mode: SettingsStore.shared.percentMode,
+            keepAwake: keepAwake ?? KeepAwakeModel.shared.state
         )
     }
 
@@ -116,13 +132,30 @@ final class StatusBarController {
     /// eyeballed on a hover.
     ///
     /// Every provider with data gets a block; a retained one is headed by the line
-    /// that says why its numbers aren't moving, a healthy one by its plan.
+    /// that says why its numbers aren't moving, a healthy one by its plan. While keep
+    /// awake is on, its line comes first (keep-awake spec 2026-10-26, § UI).
     nonisolated static func tooltipText(
         snapshot: UsageSnapshot,
         mode: PercentDisplay.Mode = .used,
+        keepAwake: KeepAwakeState = .idle,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
+    ) -> String {
+        let usage = usageTooltip(snapshot: snapshot, mode: mode, now: now, calendar: calendar, locale: locale)
+        guard let line = KeepAwakeCopy.tooltipLine(keepAwake, now: now, calendar: calendar, locale: locale) else {
+            return usage
+        }
+        return "\(line)\n\n\(usage)"
+    }
+
+    /// The tooltip's usage part: one block per provider with data, then when it was updated.
+    nonisolated private static func usageTooltip(
+        snapshot: UsageSnapshot,
+        mode: PercentDisplay.Mode,
+        now: Date,
+        calendar: Calendar,
+        locale: Locale
     ) -> String {
         let services = snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
         guard !services.isEmpty else { return "Omelette — loading…" }

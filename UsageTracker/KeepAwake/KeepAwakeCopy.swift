@@ -134,3 +134,12 @@ extension KeepAwakeCopy {
         return deadline.addingTimeInterval(-60 * (deadline.timeIntervalSince(now) / 60).rounded(.up))
     }
 }
+
+extension KeepAwakeCopy {
+    /// § UI, Menu bar: the tooltip's first line while keep awake is on, "Keep awake until
+    /// 18:40"; nil once the local countdown has passed the deadline, and when not armed.
+    static func tooltipLine(_ state: KeepAwakeState, now: Date, calendar: Calendar = .current, locale: Locale = .current) -> String? {
+        guard case .armed(let deadline, _) = KeepAwakeRules.effectiveState(state, now: now) else { return nil }
+        return "Keep awake until \(Self.clock(deadline, now: now, calendar: calendar, locale: locale))"
+    }
+}
