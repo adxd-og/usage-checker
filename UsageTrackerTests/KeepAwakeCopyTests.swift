@@ -205,4 +205,13 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertNil(KeepAwakeCopy.tooltipLine(.ended(at: now, reason: .cancelled), now: now, calendar: calendar, locale: locale))
         XCTAssertNil(KeepAwakeCopy.tooltipLine(.armed(deadline: now, floorEnabled: true), now: now, calendar: calendar, locale: locale))
     }
+
+    /// § UI, Menu bar: a marker while armed, none otherwise; the local countdown drops it
+    /// at the deadline (§ Behaviour, Visible).
+    func testTheMarkerShowsOnlyWhileArmed() {
+        XCTAssertEqual(KeepAwakeCopy.menuBarMarker(.armed(deadline: now.addingTimeInterval(60), floorEnabled: true), now: now), "☾")
+        XCTAssertNil(KeepAwakeCopy.menuBarMarker(.idle, now: now))
+        XCTAssertNil(KeepAwakeCopy.menuBarMarker(.ended(at: now, reason: .batteryFloor), now: now))
+        XCTAssertNil(KeepAwakeCopy.menuBarMarker(.armed(deadline: now, floorEnabled: true), now: now))
+    }
 }

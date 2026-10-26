@@ -143,3 +143,14 @@ extension KeepAwakeCopy {
         return "Keep awake until \(Self.clock(deadline, now: now, calendar: calendar, locale: locale))"
     }
 }
+
+extension KeepAwakeCopy {
+    /// § UI, Menu bar: the marker before the usage label while keep awake is on (plan D6).
+    static let menuBarGlyph = "☾"
+
+    /// The marker while armed and before the deadline (the local countdown drops it at the
+    /// deadline, § Behaviour, Visible); nil otherwise.
+    static func menuBarMarker(_ state: KeepAwakeState, now: Date) -> String? {
+        KeepAwakeRules.isActive(state, now: now) ? Self.menuBarGlyph : nil
+    }
+}

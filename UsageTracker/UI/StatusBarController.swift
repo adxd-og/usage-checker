@@ -222,6 +222,28 @@ private struct MenuBarHostView: View {
     @ObservedObject var state: AppState
 
     var body: some View {
-        MenuBarLabel(snapshot: state.snapshot)
+        HStack(spacing: 2) {
+            KeepAwakeMarkerSlot()
+            MenuBarLabel(snapshot: state.snapshot)
+        }
+    }
+}
+
+/// The keep-awake marker before the label (spec 2026-10-26, § UI, Menu bar). Its own view
+/// observing the model, as `AgentsPillSlot` observes the agent store, so a model change
+/// redraws this glyph and not the provider pills; outside `MenuBarLabel`, so stale usage
+/// does not dim it. VoiceOver reads the tooltip's line.
+private struct KeepAwakeMarkerSlot: View {
+    @ObservedObject private var model = KeepAwakeModel.shared
+
+    var body: some View {
+        let now = Date()
+        if let marker = KeepAwakeCopy.menuBarMarker(model.state, now: now) {
+            Text(marker)
+                .font(.system(size: 13))
+                .foregroundStyle(.primary)
+                .padding(.leading, 2)
+                .accessibilityLabel(KeepAwakeCopy.tooltipLine(model.state, now: now) ?? "")
+        }
     }
 }
