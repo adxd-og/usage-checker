@@ -64,4 +64,88 @@ final class KeepAwakeReadingsTests: XCTestCase {
         XCTAssertFalse(KeepAwakeFlagReading.set.isClear)
         XCTAssertFalse(KeepAwakeFlagReading.unreadable.isClear)
     }
+
+    // MARK: - Battery (IOPSGetPowerSourceDescription) and lid (IOPMrootDomain's two clamshell keys)
+
+    /// The internal battery's description, keys as IOPSKeys.h spells them, values as
+    /// `pmset -g batt` read on the owner's Mac on 2026-10-26 ("50%; discharging"). A
+    /// function, not a `static let`: `[String: Any]` is not Sendable under Swift 6.
+    private static func battery50() -> [String: Any] {
+        [
+            "Type": "InternalBattery",
+            "Is Present": true,
+            "Power Source State": "Battery Power",
+            "Current Capacity": 50,
+            "Max Capacity": 100,
+        ]
+    }
+
+    func testTheInternalBatteryOnBatteryPower() {
+        XCTAssertEqual(KeepAwakeReadings.power(fromDescriptions: [Self.battery50()]), KeepAwakePower(onBattery: true, percent: 50))
+    }
+
+    func testOnTheChargerTheBatteryIsNotTheSource() {
+        var charging = Self.battery50()
+        charging["Power Source State"] = "AC Power"
+        XCTAssertEqual(KeepAwakeReadings.power(fromDescriptions: [charging]), KeepAwakePower(onBattery: false, percent: 50))
+    }
+
+    func testAMacWithoutAnInternalBatteryHasNoReading() {
+        XCTAssertNil(KeepAwakeReadings.power(fromDescriptions: []))
+        var ups = Self.battery50()
+        ups["Type"] = "UPS"
+        XCTAssertNil(KeepAwakeReadings.power(fromDescriptions: [ups]))
+        var absent = Self.battery50()
+        absent["Is Present"] = false
+        XCTAssertNil(KeepAwakeReadings.power(fromDescriptions: [absent]))
+    }
+
+    func testCapacityIsScaledToAPercentRoundingDown() {
+        var raw = Self.battery50()
+        raw["Current Capacity"] = 1_499
+        raw["Max Capacity"] = 6_000
+        XCTAssertEqual(KeepAwakeReadings.power(fromDescriptions: [raw])?.percent, 24)
+    }
+
+    /// IOPMrootDomain's properties as `IORegistryEntryCreateCFProperties` bridges them (CF
+    /// booleans arrive as NSNumber). This Mac on 2026-10-26, lid open, no external display:
+    /// `"AppleClamshellState" = No`, `"AppleClamshellCausesSleep" = Yes` (ioreg).
+    private static func rootDomain(closed: Bool?, causesSleep: Bool?) -> [String: Any] {
+        var properties: [String: Any] = ["IOSleepSupported": NSNumber(value: true)]
+        if let closed { properties["AppleClamshellState"] = NSNumber(value: closed) }
+        if let causesSleep { properties["AppleClamshellCausesSleep"] = NSNumber(value: causesSleep) }
+        return properties
+    }
+
+    func testThisMacsOpenLidReadsOpenAndWouldSleepWhenClosed() {
+        let lid = KeepAwakeReadings.lid(fromRootDomain: Self.rootDomain(closed: false, causesSleep: true))
+        XCTAssertEqual(lid, KeepAwakeLid(closed: false, causesSleep: true))
+        XCTAssertFalse(lid.sleepsWhenClosed)
+    }
+
+    func testAClosedLidWithoutAnExternalDisplaySleeps() {
+        let lid = KeepAwakeReadings.lid(fromRootDomain: Self.rootDomain(closed: true, causesSleep: true))
+        XCTAssertEqual(lid, KeepAwakeLid(closed: true, causesSleep: true))
+        XCTAssertTrue(lid.sleepsWhenClosed)
+    }
+
+    /// Session ruling on D5: a Mac in clamshell mode on an external display is never put to
+    /// sleep by us.
+    func testAClosedLidOnAnExternalDisplayNeverSleeps() {
+        let lid = KeepAwakeReadings.lid(fromRootDomain: Self.rootDomain(closed: true, causesSleep: false))
+        XCTAssertEqual(lid, KeepAwakeLid(closed: true, causesSleep: false))
+        XCTAssertFalse(lid.sleepsWhenClosed)
+    }
+
+    func testAMissingKeyOrANonBooleanReadsAsNo() {
+        XCTAssertEqual(KeepAwakeReadings.lid(fromRootDomain: [:]), KeepAwakeLid(closed: false, causesSleep: false))
+        XCTAssertEqual(
+            KeepAwakeReadings.lid(fromRootDomain: Self.rootDomain(closed: true, causesSleep: nil)),
+            KeepAwakeLid(closed: true, causesSleep: false)
+        )
+        XCTAssertEqual(
+            KeepAwakeReadings.lid(fromRootDomain: ["AppleClamshellState": "Yes", "AppleClamshellCausesSleep": "Yes"]),
+            KeepAwakeLid(closed: false, causesSleep: false)
+        )
+    }
 }
