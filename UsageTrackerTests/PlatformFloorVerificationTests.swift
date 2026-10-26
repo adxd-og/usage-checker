@@ -39,9 +39,8 @@ final class PlatformFloorVerificationTests: XCTestCase {
 
     /// Every named target's explicit `deploymentTarget:` line is 26.0. The Facts
     /// pointer lines name five explicit per-target floors (app, tests, widget, hook,
-    /// CLI); this asserts there are exactly five `deploymentTarget:` lines in the file
-    /// and every one reads 26.0, so a sixth target added later without the line (and
-    /// so silently inheriting some other value) would also be caught by the count.
+    /// CLI), and the keep-awake daemon (spec 2026-10-26) adds a sixth; this asserts there
+    /// are exactly six `deploymentTarget:` lines in the file and every one reads 26.0.
     func testEveryTargetsExplicitDeploymentTargetIs26() throws {
         let yaml = try projectYAML()
         // The base `options.deploymentTarget:` (line 7) carries no value on its own
@@ -51,7 +50,7 @@ final class PlatformFloorVerificationTests: XCTestCase {
             .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { $0.hasPrefix("deploymentTarget: \"") }
-        XCTAssertEqual(targetLines.count, 5, "expected one deploymentTarget line per target (app, tests, widget, hook, CLI): \(targetLines)")
+        XCTAssertEqual(targetLines.count, 6, "expected one deploymentTarget line per target (app, tests, widget, hook, CLI, keep-awake daemon): \(targetLines)")
         for line in targetLines {
             XCTAssertEqual(line, "deploymentTarget: \"26.0\"", line)
         }
