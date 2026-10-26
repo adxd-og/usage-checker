@@ -51,6 +51,8 @@ struct PopoverView: View {
                     order: [WindowRanking.allTab] + displayedServices.map(\.id),
                     axis: .horizontal
                 )
+            // Keep awake with the lid closed (spec 2026-10-26, § UI): the same block on every tab.
+            KeepAwakeSection()
             footer
         }
         .padding(Self.padding)
