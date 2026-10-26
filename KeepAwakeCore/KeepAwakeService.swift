@@ -21,6 +21,10 @@ struct KeepAwakeMachine: Sendable {
     var power: @Sendable () -> KeepAwakePower?
     /// The next tick; nil cancels it.
     var schedule: @Sendable (Date?) -> Void
+    /// When the idle exit is due; nil cancels it.
+    var scheduleExit: @Sendable (Date?) -> Void
+    /// Live: `exit(status)`, which never returns. The fake records the status and returns.
+    var terminate: @Sendable (Int32) -> Void
 }
 
 /// The daemon's core (spec 2026-10-26, § Helper): it feeds the engine, applies each decision
@@ -45,6 +49,15 @@ struct KeepAwakeMachine: Sendable {
 ///    logged and otherwise ignored.
 /// 7. The next tick is the engine's, or a minute from now while a clear or a sleep is owed.
 /// 8. The reply is the engine's state and the first failure.
+/// 9. Idle exit (plan D7; review C2). After every input that reaches the apply step, and when a
+///    connection opens or closes: not armed, the flag read back clear, no sleep owed and no open
+///    connection is idle, and the exit is scheduled a minute later; anything else cancels it.
+///    `exitIfIdle` re-checks all of it on the actor and only then terminates with 0, with no
+///    `await` in between, so an arm that lands first always keeps the daemon. launchd starts it
+///    again on the app's next call (MachServices) or at boot (RunAtLoad).
+///    Known and accepted: a connection accepted in the same instant as the exit, whose first
+///    message has not reached the actor, loses the race; nothing was set, the app's call fails
+///    as unavailable, and its next call starts the daemon again.
 actor KeepAwakeService {
     private let machine: KeepAwakeMachine
     private let stateFile: KeepAwakeStateFile
@@ -53,6 +66,13 @@ actor KeepAwakeService {
     private var lastApplied: Bool?
     /// A `pmset sleepnow` the service still has to run (review C4).
     private var sleepOwed = false
+    /// Open XPC connections; the only count there is (review C2).
+    private var openConnections = 0
+    /// When the idle exit is due; nil while the daemon is needed.
+    private var idleExitAt: Date?
+
+    /// How long the daemon stays idle before it exits (plan D7).
+    static let idleExitDelay: TimeInterval = 60
 
     init(machine: KeepAwakeMachine, stateFile: KeepAwakeStateFile) {
         self.machine = machine
@@ -122,6 +142,34 @@ actor KeepAwakeService {
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
     }
 
+    // MARK: - Idle exit (rule 9)
+
+    func connectionOpened(now: Date) {
+        openConnections += 1
+        scheduleIdleExit(now: now)
+    }
+
+    func connectionClosed(now: Date) {
+        openConnections = max(0, openConnections - 1)
+        scheduleIdleExit(now: now)
+    }
+
+    /// The exit timer fired: re-check everything here, then exit with 0 in the same step.
+    func exitIfIdle(now: Date) {
+        guard let idleExitAt, now >= idleExitAt, isIdle else { return }
+        NSLog("[keepawake] idle: exiting")
+        machine.terminate(0)
+    }
+
+    private var isIdle: Bool {
+        !engine.state.isArmed && lastApplied == false && !sleepOwed && openConnections == 0
+    }
+
+    private func scheduleIdleExit(now: Date) {
+        idleExitAt = isIdle ? now + Self.idleExitDelay : nil
+        machine.scheduleExit(idleExitAt)
+    }
+
     // MARK: - Applying a decision
 
     private func apply(
@@ -168,6 +216,8 @@ actor KeepAwakeService {
         // Rule 7.
         let owed = lastApplied == nil || sleepOwed
         machine.schedule(engine.nextTick(now: now) ?? (owed ? now + KeepAwakeRules.tickInterval : nil))
+        // Rule 9.
+        scheduleIdleExit(now: now)
         // Rule 8.
         return KeepAwakeReply(state: engine.state, failure: firstFailure)
     }

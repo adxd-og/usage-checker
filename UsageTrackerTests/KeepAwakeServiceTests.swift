@@ -15,6 +15,8 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
         /// This Mac's reading: lid open, closing it would sleep.
         var lid = KeepAwakeLid(closed: false, causesSleep: true)
         var power: KeepAwakePower?
+        var exits: [Date?] = []
+        var terminations: [Int32] = []
     }
     private let lock = NSLock()
     private var storage = Storage()
@@ -34,7 +36,9 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
             sleepNow: { self.with { s in s.calls.append("sleepnow"); return KeepAwakeCommandResult(status: s.sleepStatus, output: "") } },
             lid: { self.with { $0.lid } },
             power: { self.with { $0.power } },
-            schedule: { date in self.with { $0.scheduled.append(date) } }
+            schedule: { date in self.with { $0.scheduled.append(date) } },
+            scheduleExit: { date in self.with { $0.exits.append(date) } },
+            terminate: { status in self.with { $0.terminations.append(status) } }
         )
     }
 }
@@ -66,7 +70,7 @@ final class KeepAwakeServiceTests: XCTestCase {
     private func started(_ fake: FakeKeepAwakeMachine) async -> KeepAwakeService {
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         _ = await service.start(now: t0)
-        fake.with { $0.calls = []; $0.scheduled = [] }
+        fake.with { $0.calls = []; $0.scheduled = []; $0.exits = [] }
         return service
     }
 
@@ -308,5 +312,109 @@ final class KeepAwakeServiceTests: XCTestCase {
         XCTAssertEqual(early.state, .armed(deadline: t0 + 120, floorEnabled: true))
         let late = await service.state(now: t0 + 125)
         XCTAssertEqual(late.state, .ended(at: t0 + 125, reason: .deadline))
+    }
+
+    // MARK: - Idle exit (session ruling on D7; review C2): not armed, nothing owed, no open
+    // connection → the actor itself exits with 0 after 60 s; launchd starts it again on demand.
+
+    func testAStartThatLeavesItIdleExitsAMinuteLater() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        _ = await service.start(now: t0)
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 60])
+        await service.exitIfIdle(now: t0 + 59)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        await service.exitIfIdle(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    func testAnArmedDaemonStaysAndTheEndLetsItGoAMinuteLater() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        XCTAssertEqual(fake.with { $0.exits }, [nil])
+        await service.exitIfIdle(now: t0 + 119)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        _ = await service.tick(now: t0 + 120)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, t0 + 180])
+        await service.exitIfIdle(now: t0 + 180)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    func testAnOwedClearHoldsTheDaemonUntilItTakes() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        fake.with { $0.exits = []; $0.setStatus = 1 }
+        _ = await service.tick(now: t0 + 120)
+        XCTAssertEqual(fake.with { $0.exits }, [nil])
+        await service.exitIfIdle(now: t0 + 600)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        fake.with { $0.setStatus = 0 }
+        _ = await service.tick(now: t0 + 180)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, t0 + 240])
+    }
+
+    /// C4's owed sleep keeps the daemon (and its tick) alive too.
+    func testAnOwedSleepHoldsTheDaemonUntilItRuns() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        fake.with { $0.sleepStatus = 1; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
+        _ = await service.tick(now: t0 + 120)
+        await service.exitIfIdle(now: t0 + 600)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        fake.with { $0.sleepStatus = 0 }
+        _ = await service.tick(now: t0 + 180)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, nil, t0 + 240])
+    }
+
+    func testAnOpenConnectionHoldsItAndClosingItStartsTheMinuteAgain() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.connectionOpened(now: t0 + 10)
+        XCTAssertEqual(fake.with { $0.exits }, [nil])
+        await service.exitIfIdle(now: t0 + 120)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        await service.connectionClosed(now: t0 + 20)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, t0 + 80])
+        await service.exitIfIdle(now: t0 + 79)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        await service.exitIfIdle(now: t0 + 80)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    func testTwoConnectionsHoldItUntilBothClose() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.connectionOpened(now: t0)
+        await service.connectionOpened(now: t0 + 1)
+        await service.connectionClosed(now: t0 + 2)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, nil, nil])
+        await service.connectionClosed(now: t0 + 3)
+        XCTAssertEqual(fake.with { $0.exits }, [nil, nil, nil, t0 + 63])
+    }
+
+    func testEveryCallWhileIdleStartsTheMinuteAgain() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.state(now: t0 + 30)
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 90])
+        await service.exitIfIdle(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+    }
+
+    /// C2: the exit timer was armed for t0 + 60; an app connection and an arm land first.
+    /// The timer still fires, and the actor, re-checking, does not exit.
+    func testAnArmThatLandsBeforeTheExitTimerFiresNeverTerminates() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.connectionOpened(now: t0 + 50)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 55)
+        await service.connectionClosed(now: t0 + 56)
+        await service.exitIfIdle(now: t0 + 60)
+        await service.exitIfIdle(now: t0 + 3_600)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
     }
 }
