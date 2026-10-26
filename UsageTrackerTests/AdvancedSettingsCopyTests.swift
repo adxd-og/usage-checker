@@ -101,4 +101,47 @@ final class AdvancedSettingsCopyTests: XCTestCase {
         XCTAssertTrue(AdvancedSettingsCopy.betaHelp.contains("Default: oauth-2025-04-20."))
         XCTAssertTrue(AdvancedSettingsCopy.messagesHelp.contains("the next prompt re-registers it"))
     }
+
+    /// Keep-awake spec 2026-10-26 § UI: "Reset keep awake … ends the mode, clears the flag,
+    /// unregisters the daemon, and resets the feature's settings".
+    func testTheKeepAwakeResetRowReadsAsTheSpec() {
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetTitle, "Reset keep awake")
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetButton, "Reset")
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeResetHelp,
+            "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
+        )
+    }
+
+    /// § UI: "The row's caption shows the current flag value so the user can see the Mac is
+    /// back to normal."
+    func testTheSleepFlagNoteSaysWhatPmsetSays() {
+        XCTAssertNil(AdvancedSettingsCopy.keepAwakeFlagNote(nil, resetIncomplete: false))
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeFlagNote(.cleared, resetIncomplete: false), SettingsCaption(text: "Sleep flag off (SleepDisabled 0)", token: .secondary))
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeFlagNote(.neverSet, resetIncomplete: false), SettingsCaption(text: "Sleep flag never set", token: .secondary))
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeFlagNote(.set, resetIncomplete: false), SettingsCaption(text: "Sleep flag on (SleepDisabled 1): this Mac does not sleep", token: .warning))
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeFlagNote(.unreadable, resetIncomplete: false), SettingsCaption(text: "Sleep flag unknown: pmset did not answer", token: .secondary))
+    }
+
+    /// Review C1: a reset that could not clear the flag, or could not remove the helper, keeps
+    /// the helper and says the Mac is not back to normal yet.
+    func testAnIncompleteResetSaysTheMacIsNotBackToNormal() {
+        XCTAssertNil(AdvancedSettingsCopy.keepAwakeFlagNote(nil, resetIncomplete: true))
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeFlagNote(.set, resetIncomplete: true),
+            SettingsCaption(text: "Sleep flag on (SleepDisabled 1): the Mac is not back to normal yet. Press Reset again.", token: .warning)
+        )
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeFlagNote(.unreadable, resetIncomplete: true),
+            SettingsCaption(text: "Sleep flag unknown: pmset did not answer. The Mac may not be back to normal yet; press Reset again.", token: .warning)
+        )
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeFlagNote(.cleared, resetIncomplete: true),
+            SettingsCaption(text: "Sleep flag off (SleepDisabled 0), but the helper is still in Login Items. Press Reset again.", token: .warning)
+        )
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeFlagNote(.neverSet, resetIncomplete: true),
+            SettingsCaption(text: "Sleep flag never set, but the helper is still in Login Items. Press Reset again.", token: .warning)
+        )
+    }
 }
