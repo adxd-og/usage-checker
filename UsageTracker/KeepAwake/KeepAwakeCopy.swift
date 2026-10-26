@@ -94,3 +94,43 @@ enum KeepAwakeCopy {
         "Ended \(Self.clock(at, now: now, calendar: calendar, locale: locale)) · \(Self.reason(reason))"
     }
 }
+
+extension KeepAwakeCopy {
+    /// The status line above the steppers.
+    enum Status: Equatable, Sendable {
+        case idle
+        case armed(deadline: Date)
+        case approval
+        case ended(at: Date, reason: KeepAwakeEndReason)
+    }
+
+    /// Which line the block shows, from the local countdown (`KeepAwakeRules.effectiveState`):
+    /// armed › ended › approval › idle. An end shows only when it is later than the moment
+    /// Dismiss or Apply last dismissed through (plan D3): the helper keeps reporting an end
+    /// across its restarts, and an app-inferred stop and the helper's own record of it carry
+    /// different moments, so a dismissal hides every end up to a moment, not one value.
+    static func status(registration: KeepAwakeRegistration, state: KeepAwakeState, dismissedThrough: TimeInterval, now: Date) -> Status {
+        switch KeepAwakeRules.effectiveState(state, now: now) {
+        case .armed(let deadline, _):
+            return .armed(deadline: deadline)
+        case .ended(let at, let reason) where at.timeIntervalSince1970 > dismissedThrough:
+            return .ended(at: at, reason: reason)
+        case .idle, .ended:
+            return registration == .requiresApproval ? .approval : .idle
+        }
+    }
+
+    /// § UI: Apply needs a duration `KeepAwakeRules.duration` accepts and no call in flight.
+    static func canApply(days: Int, hours: Int, minutes: Int, isWorking: Bool) -> Bool {
+        !isWorking && KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) != nil
+    }
+
+    /// Where the block's minute timer starts (plan D5): the latest point at or before `now` on
+    /// the deadline's minute grid, where `remaining`'s rounded-up minute changes. `now` with
+    /// no deadline; the deadline itself once it has passed.
+    static func tickAnchor(deadline: Date?, now: Date) -> Date {
+        guard let deadline else { return now }
+        guard deadline > now else { return deadline }
+        return deadline.addingTimeInterval(-60 * (deadline.timeIntervalSince(now) / 60).rounded(.up))
+    }
+}

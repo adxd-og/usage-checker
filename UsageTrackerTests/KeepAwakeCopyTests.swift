@@ -114,4 +114,78 @@ final class KeepAwakeCopyTests: XCTestCase {
             "Ended 25 Oct, 22:15 · the Mac or the helper restarted"
         )
     }
+
+    // MARK: - Which line the block shows
+
+    func testNothingArmedShowsNoLine() {
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .notRegistered, state: .idle, dismissedThrough: 0, now: now), .idle)
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .ready, state: .idle, dismissedThrough: 0, now: now), .idle)
+    }
+
+    func testAnArmedModeShowsItsDeadline() {
+        let deadline = now.addingTimeInterval(3_600)
+        XCTAssertEqual(
+            KeepAwakeCopy.status(registration: .ready, state: .armed(deadline: deadline, floorEnabled: true), dismissedThrough: 0, now: now),
+            .armed(deadline: deadline)
+        )
+    }
+
+    /// § Behaviour, Visible: the local countdown ends the mode on screen at its deadline,
+    /// before the helper's next answer.
+    func testAModePastItsDeadlineReadsAsEndedBeforeTheHelperSaysSo() {
+        let deadline = now.addingTimeInterval(-1)
+        XCTAssertEqual(
+            KeepAwakeCopy.status(registration: .ready, state: .armed(deadline: deadline, floorEnabled: true), dismissedThrough: 0, now: now),
+            .ended(at: deadline, reason: .deadline)
+        )
+    }
+
+    /// The helper keeps reporting `ended`; Dismiss (or Apply) hides every end up to that moment.
+    func testAnEndShowsUntilItIsDismissed() {
+        let at = now.addingTimeInterval(-600)
+        let ended = KeepAwakeState.ended(at: at, reason: .batteryFloor)
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .ready, state: ended, dismissedThrough: 0, now: now), .ended(at: at, reason: .batteryFloor))
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .ready, state: ended, dismissedThrough: at.timeIntervalSince1970, now: now), .idle)
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .ready, state: ended, dismissedThrough: now.addingTimeInterval(-60).timeIntervalSince1970, now: now), .idle)
+    }
+
+    func testALaterEndShowsAgainAfterADismiss() {
+        let at = now.addingTimeInterval(-600)
+        XCTAssertEqual(
+            KeepAwakeCopy.status(registration: .ready, state: .ended(at: at, reason: .deadline), dismissedThrough: now.addingTimeInterval(-1_200).timeIntervalSince1970, now: now),
+            .ended(at: at, reason: .deadline)
+        )
+    }
+
+    /// § Behaviour, One-time setup: "until it is approved, the block says so".
+    func testAHelperAwaitingApprovalSaysSo() {
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .requiresApproval, state: .idle, dismissedThrough: 0, now: now), .approval)
+    }
+
+    /// The helper switched off in Login Items while armed: why it ended first, then how to
+    /// switch it back on.
+    func testAnEndComesBeforeTheApprovalText() {
+        let at = now.addingTimeInterval(-300)
+        let stopped = KeepAwakeState.ended(at: at, reason: .stopped)
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .requiresApproval, state: stopped, dismissedThrough: 0, now: now), .ended(at: at, reason: .stopped))
+        XCTAssertEqual(KeepAwakeCopy.status(registration: .requiresApproval, state: stopped, dismissedThrough: now.timeIntervalSince1970, now: now), .approval)
+    }
+
+    /// § UI: Apply is disabled when `KeepAwakeRules.duration` has no duration, and while a
+    /// call is in flight.
+    func testApplyNeedsADurationAndNoCallInFlight() {
+        XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 0, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 1, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 1, minutes: 0, isWorking: true))
+    }
+
+    /// The rounded-up minute changes on the deadline's own minute grid; the block ticks there.
+    func testTheCountdownTicksOnTheDeadlinesMinutes() {
+        let deadline = now.addingTimeInterval(4 * 3_600 + 51 * 60 + 30)
+        XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: deadline, now: now), now.addingTimeInterval(-30))
+        XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: now.addingTimeInterval(600), now: now), now)
+        XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: nil, now: now), now)
+        XCTAssertEqual(KeepAwakeCopy.tickAnchor(deadline: now.addingTimeInterval(-100), now: now), now.addingTimeInterval(-100))
+    }
 }
