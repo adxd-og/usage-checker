@@ -10,7 +10,8 @@ import ServiceManagement
 /// loop asks the helper on every tick (`pollIfNeeded`), so a mode the helper ended (floor,
 /// restart, stop) drops off within a poll interval. A reply lost to the transport (timeout,
 /// broken connection, unreadable) leaves the state unknown, and the poll keeps asking until
-/// the helper's state lands or no helper is registered (review C7).
+/// the helper's state lands or no helper is registered (review C7). A state reply that a
+/// command overtook is dropped (`commandGeneration`).
 @MainActor
 final class KeepAwakeModel: ObservableObject {
     static let shared = KeepAwakeModel(
@@ -34,6 +35,11 @@ final class KeepAwakeModel: ObservableObject {
     @Published private(set) var isWorking = false
     /// A reply was lost: the helper's state is unknown until it answers (review C7).
     private(set) var needsReconcile = false
+    /// Bumped by every command (Apply, Cancel, the floor switch, Reset) before its call and
+    /// again when its outcome returns. A state request remembers the value it started with
+    /// and is dropped when it moved: each XPC call has its own connection, so an older
+    /// state reply can land after a newer command's (plan review P1b, plan D13).
+    private var commandGeneration = 0
 
     private let client: KeepAwakeClient
     private let floorEnabled: @MainActor () -> Bool
@@ -76,14 +82,20 @@ final class KeepAwakeModel: ObservableObject {
         rememberDuration(Int(seconds / 60))
         isWorking = true
         defer { isWorking = false }
-        await apply(await client.arm(seconds: seconds, floorEnabled: floorEnabled()), now: now)
+        commandGeneration &+= 1
+        let outcome = await client.arm(seconds: seconds, floorEnabled: floorEnabled())
+        commandGeneration &+= 1
+        await apply(outcome, now: now)
     }
 
     /// Cancel.
     func cancel(now: Date = Date()) async {
         isWorking = true
         defer { isWorking = false }
-        await apply(await client.disarm(), now: now)
+        commandGeneration &+= 1
+        let outcome = await client.disarm()
+        commandGeneration &+= 1
+        await apply(outcome, now: now)
     }
 
     /// The floor switch moved: an armed helper hears it at once, and so does one whose state
@@ -93,7 +105,10 @@ final class KeepAwakeModel: ObservableObject {
         guard state.isArmed || needsReconcile else { return }
         isWorking = true
         defer { isWorking = false }
-        await apply(await client.setFloor(enabled: enabled), now: now)
+        commandGeneration &+= 1
+        let outcome = await client.setFloor(enabled: enabled)
+        commandGeneration &+= 1
+        await apply(outcome, now: now)
     }
 
     /// The poll loop's call: asks the helper only while armed or unreconciled.
@@ -107,7 +122,9 @@ final class KeepAwakeModel: ObservableObject {
     func reset(now: Date = Date()) async {
         isWorking = true
         defer { isWorking = false }
+        commandGeneration &+= 1
         let outcome = await client.reset()
+        commandGeneration &+= 1
         resetSettings()
         registration = outcome.registration
         resetIncomplete = !outcome.isComplete
@@ -136,10 +153,14 @@ final class KeepAwakeModel: ObservableObject {
     // MARK: - Private
 
     private func ask(now: Date) async {
-        await apply(await client.state(), now: now)
+        let generation = commandGeneration
+        let outcome = await client.state()
+        // A command answered while this request was out: its outcome is the newer word.
+        guard generation == commandGeneration else { return }
+        await apply(outcome, now: now, generation: generation)
     }
 
-    private func apply(_ outcome: KeepAwakeOutcome, now: Date) async {
+    private func apply(_ outcome: KeepAwakeOutcome, now: Date, generation: Int? = nil) async {
         // 1. Reconcile bookkeeping (C7): clears only when the helper's state lands or there is
         // no helper to ask.
         if Self.leavesStateUnknown(outcome.failure) {
@@ -155,6 +176,8 @@ final class KeepAwakeModel: ObservableObject {
             // stopped it. It cleared the flag on its way out, unless it could not (P1b).
             state = .ended(at: now, reason: .stopped)
             let reading = await client.readFlag()
+            // A command (a Reset) finished during this read: its outcome is the newer word.
+            guard generation == nil || generation == commandGeneration else { return }
             flag = reading
             if reading == .set {
                 failure = .flagStillSet
