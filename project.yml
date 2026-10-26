@@ -62,6 +62,20 @@ targets:
       # StatusSnapshot, StatusText and friends without importing the app, and the app's
       # test bundle must cover them — a framework would buy neither.
       - path: CLICore
+      # The keep-awake engine, its state and the XPC contract, shared with the
+      # omelette-keepawake daemon the way CLICore is shared with the CLI: one folder,
+      # two `sources` entries, two modules, and the app's test bundle covers it.
+      - path: KeepAwakeCore
+      # The daemon's launchd plist, where SMAppService.daemon(plistName:) looks for it:
+      # Contents/Library/LaunchDaemons. A `sources` entry with a copyFiles build phase is
+      # how xcodegen 2.45.4 spells a Copy Files phase for one file (wrapper + subpath, as
+      # the helpers below); `resources:` would land it in Contents/Resources, and drops
+      # files outside the target's source roots anyway (see the logo catalog's note).
+      - path: LaunchDaemons/com.usagetracker.app.keepawake.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchDaemons
     resources:
       - path: UsageTracker/Resources
     dependencies:
@@ -84,6 +98,15 @@ targets:
       # spawn it, and link: false keeps an executable out of "Link Binary With
       # Libraries". AgentPaths.refreshCLISymlink points ~/…/bin/omelette at it.
       - target: OmeletteCLI
+        embed: true
+        link: false
+        codeSign: true
+        copy:
+          destination: wrapper
+          subpath: Contents/Helpers
+      # omelette-keepawake rides in the same Contents/Helpers, for the same reasons as the
+      # two above; the plist names it by BundleProgram, relative to the bundle.
+      - target: OmeletteKeepAwake
         embed: true
         link: false
         codeSign: true
@@ -249,6 +272,33 @@ targets:
         # Without this the tool is also installed to Products/usr/local/bin in the
         # archive, which turns it into a "Generic Xcode Archive" that
         # `xcodebuild -exportArchive` (scripts/build_dmg.sh) refuses to export.
+        SKIP_INSTALL: YES
+        SWIFT_EMIT_LOC_STRINGS: NO
+        DEAD_CODE_STRIPPING: YES
+
+  # omelette-keepawake — the privileged launchd daemon behind "keep awake with the lid
+  # closed" (spec 2026-10-26). SMAppService.daemon registers it from the app; it runs as
+  # root, owns the deadline and the battery floor, clears the sleep flag at every start,
+  # and exits a minute after it goes idle (launchd starts it on the app's next call or at
+  # boot). Foundation, IOKit and Security only.
+  OmeletteKeepAwake:
+    type: tool
+    platform: macOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: KeepAwakeHelper
+      # Shared with the app target, which compiles the same folder: the engine the tests
+      # cover is the engine the daemon runs.
+      - path: KeepAwakeCore
+    settings:
+      base:
+        PRODUCT_NAME: omelette-keepawake
+        # signing.xcconfig hands every target the app's bundle id; a nested executable
+        # needs its own. Its code-signing identifier is the product name regardless
+        # (measured on omelette-hook), which is why the app checks the daemon by team.
+        PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.keepawake
+        # Without this the tool is also installed to Products/usr/local/bin in the
+        # archive, which `xcodebuild -exportArchive` (scripts/build_dmg.sh) refuses.
         SKIP_INSTALL: YES
         SWIFT_EMIT_LOC_STRINGS: NO
         DEAD_CODE_STRIPPING: YES

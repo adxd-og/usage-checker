@@ -34,4 +34,12 @@ final class GeneralSettingsCopyTests: XCTestCase {
         XCTAssertEqual(GeneralSettingsCopy.autoCheckTitle, "Check for updates automatically")
         XCTAssertEqual(GeneralSettingsCopy.checkNowButton, "Check now")
     }
+
+    /// Keep-awake spec 2026-10-26 § UI: "Settings › General, section "Keep awake": the floor
+    /// switch"; § Behaviour: "End below 25 % on battery".
+    func testTheKeepAwakeSectionReadsAsTheSpec() {
+        XCTAssertEqual(GeneralSettingsCopy.keepAwakeHeader, "Keep awake")
+        XCTAssertEqual(GeneralSettingsCopy.keepAwakeFloorTitle, "End below 25 % on battery")
+        XCTAssertEqual(GeneralSettingsCopy.keepAwakeFooter, "Keep awake with the lid closed ends on time even when Omelette is not running, and never resumes after a restart.")
+    }
 }

@@ -76,6 +76,10 @@ final class AppState: ObservableObject {
         seedFromLastKnown()
         refreshNow()
         startTimer()
+        // Keep awake (spec 2026-10-26 § Behaviour, Visible): what the helper says, once
+        // at launch, so a mode armed before a relaunch shows at once. No XPC when the
+        // helper was never registered.
+        Task { await KeepAwakeModel.shared.refresh() }
     }
 
     /// The popover opened right after launch was empty for a second — and for a
@@ -212,6 +216,7 @@ final class AppState: ObservableObject {
         // right away instead of waiting out the remainder of the poll interval.
         if wasSuspended && !isSuspended {
             refreshNow(userInitiated: false)
+            Task { await KeepAwakeModel.shared.pollIfNeeded() }
         }
     }
 
@@ -652,6 +657,11 @@ final class AppState: ObservableObject {
                 guard !Task.isCancelled else { return }
                 guard let self, !self.isSuspended else { continue }
                 self.refreshNow(userInitiated: false)
+                // The marker must not outlive a mode the helper ended (floor, restart, stop),
+                // and an arm whose reply was lost must still show: ask the helper on every
+                // tick while armed or unreconciled. Its own task, so a slow reply never holds
+                // the loop; outside a poll's Retry-After backoff, which is about the usage API.
+                Task { await KeepAwakeModel.shared.pollIfNeeded() }
             }
         }
     }

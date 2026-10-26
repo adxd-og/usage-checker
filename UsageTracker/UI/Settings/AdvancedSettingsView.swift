@@ -57,6 +57,35 @@ enum AdvancedSettingsCopy {
     static let resetConfirmMessage = "Every preference goes back to its default — providers, thresholds, quiet hours, the menu bar and the welcome tour. Your saved Admin API key is not touched."
     static let cancelButton = "Cancel"
 
+    static let keepAwakeResetTitle = "Reset keep awake"
+    static let keepAwakeResetButton = "Reset"
+    static let keepAwakeResetHelp = "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
+
+    /// The line under Reset keep awake: what `pmset -g` says about the sleep flag (keep-awake
+    /// spec 2026-10-26, § UI), and after a reset that could not finish, that the Mac is not
+    /// back to normal yet (review C1). Nothing before the flag was read.
+    static func keepAwakeFlagNote(_ reading: KeepAwakeFlagReading?, resetIncomplete: Bool) -> SettingsCaption? {
+        guard let reading else { return nil }
+        switch (reading, resetIncomplete) {
+        case (.cleared, false):
+            return SettingsCaption(text: "Sleep flag off (SleepDisabled 0)", token: .secondary)
+        case (.neverSet, false):
+            return SettingsCaption(text: "Sleep flag never set", token: .secondary)
+        case (.set, false):
+            return SettingsCaption(text: "Sleep flag on (SleepDisabled 1): this Mac does not sleep", token: .warning)
+        case (.unreadable, false):
+            return SettingsCaption(text: "Sleep flag unknown: pmset did not answer", token: .secondary)
+        case (.set, true):
+            return SettingsCaption(text: "Sleep flag on (SleepDisabled 1): the Mac is not back to normal yet. Press Reset again.", token: .warning)
+        case (.unreadable, true):
+            return SettingsCaption(text: "Sleep flag unknown: pmset did not answer. The Mac may not be back to normal yet; press Reset again.", token: .warning)
+        case (.cleared, true):
+            return SettingsCaption(text: "Sleep flag off (SleepDisabled 0), but the helper is still in Login Items. Press Reset again.", token: .warning)
+        case (.neverSet, true):
+            return SettingsCaption(text: "Sleep flag never set, but the helper is still in Login Items. Press Reset again.", token: .warning)
+        }
+    }
+
     /// The line under the keychain row after a request: green on success, amber with the
     /// system's words on failure.
     static func keychainNote(_ request: KeychainRequest) -> SettingsCaption {
@@ -115,6 +144,8 @@ enum AdvancedSettingsCopy {
 struct AdvancedSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var sessions = AgentSessionStore.shared
+    /// Reset keep awake's caption reads the flag from here (keep-awake spec 2026-10-26, § UI).
+    @ObservedObject private var keepAwake = KeepAwakeModel.shared
 
     @State private var keychainRequest: AdvancedSettingsCopy.KeychainRequest?
     @State private var adminKeyDraft = ""
@@ -138,6 +169,7 @@ struct AdvancedSettingsView: View {
         }
         .onAppear(perform: updateMaskedKey)
         .task { await pollDiagnostics() }
+        .task { await KeepAwakeModel.shared.readFlag() }
     }
 
     // MARK: - Sections
@@ -244,6 +276,23 @@ struct AdvancedSettingsView: View {
                 }
                 .buttonStyle(.settings)
             }
+            // No confirmation dialog: the reset destroys no data and may itself ask for a
+            // password.
+            SettingsRow(
+                title: AdvancedSettingsCopy.keepAwakeResetTitle,
+                note: AdvancedSettingsCopy.keepAwakeFlagNote(keepAwake.flag, resetIncomplete: keepAwake.resetIncomplete),
+                error: keepAwake.resetFailure.map(KeepAwakeFailureCopy.text),
+                help: AdvancedSettingsCopy.keepAwakeResetHelp
+            ) {
+                Button {
+                    Task { await keepAwake.reset() }
+                } label: {
+                    Text(AdvancedSettingsCopy.keepAwakeResetButton)
+                        .foregroundStyle(.om(SettingsRowRules.destructiveLabel))
+                }
+                .buttonStyle(.settings)
+                .disabled(keepAwake.isWorking)
+            }
             SettingsRow(title: AdvancedSettingsCopy.resetTitle, caption: AdvancedSettingsCopy.resetCaption) {
                 Button {
                     showsResetConfirmation = true
@@ -306,6 +355,9 @@ struct AdvancedSettingsView: View {
 
     private func resetEverything() {
         settings.resetToDefaults()
+        // The floor switch just went back on; an armed helper hears it at once, as it would
+        // from the switch itself (keep-awake spec 2026-10-26, floor switch while armed).
+        Task { await KeepAwakeModel.shared.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled) }
         // Launch at login is OS state, not a stored preference, so `resetToDefaults()`
         // deliberately can't reach it. General reads it again when it next opens.
         LaunchAtLogin.isEnabled = false

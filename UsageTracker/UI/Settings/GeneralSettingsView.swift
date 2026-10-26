@@ -11,6 +11,9 @@ enum GeneralSettingsCopy {
     static let autoCheckTitle = "Check for updates automatically"
     static let checkNowButton = "Check now"
     static let githubTitle = AppVersion.githubLabel
+    static let keepAwakeHeader = "Keep awake"
+    static let keepAwakeFloorTitle = "End below \(KeepAwakeRules.batteryFloorPercent) % on battery"
+    static let keepAwakeFooter = "Keep awake with the lid closed ends on time even when Omelette is not running, and never resumes after a restart."
 
     /// "Omelette 2.7.1 (38)": the version label the popover used, plus the build a bug
     /// report needs (2.x's row printed "2.7.1 (38)"). With no build, or no version, the
@@ -37,6 +40,11 @@ struct GeneralSettingsView: View {
     /// OS state (`SMAppService`), not a preference: read when the page is built, so a
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    #if DEBUG
+    /// Package 1's owner check arms the helper from here; the popover block (Package 2)
+    /// is the real control. Never compiled into a Release build.
+    @ObservedObject private var keepAwakeDebug = KeepAwakeModel.shared
+    #endif
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -51,6 +59,7 @@ struct GeneralSettingsView: View {
         SettingsPage(tab: .general) {
             startup
             refresh
+            keepAwake
             updates
         }
     }
@@ -87,6 +96,40 @@ struct GeneralSettingsView: View {
                     AppState.shared.restartTimer()
                 }
             }
+        }
+    }
+
+    /// Spec 2026-10-26 § UI. The switch is a preference read at every Apply, and an armed
+    /// helper hears a change at once (§ Behaviour, floor switch while armed).
+    private var keepAwake: some View {
+        SettingsSection(header: GeneralSettingsCopy.keepAwakeHeader, footer: GeneralSettingsCopy.keepAwakeFooter) {
+            SettingsSwitchRow(
+                title: GeneralSettingsCopy.keepAwakeFloorTitle,
+                isOn: Binding(
+                    get: { settings.keepAwakeFloorEnabled },
+                    set: { newValue in
+                        settings.keepAwakeFloorEnabled = newValue
+                        Task { await KeepAwakeModel.shared.floorChanged(newValue) }
+                    }
+                )
+            )
+            #if DEBUG
+            SettingsRow(
+                title: "Debug: keep awake for 2 minutes",
+                caption: "\(keepAwakeDebug.registration) · \(keepAwakeDebug.state)",
+                error: keepAwakeDebug.failure.map(KeepAwakeFailureCopy.text)
+            ) {
+                if keepAwakeDebug.registration == .requiresApproval {
+                    Button("Open Login Items") { keepAwakeDebug.openLoginItems() }
+                        .buttonStyle(.settings)
+                }
+                Button("Arm") { Task { await keepAwakeDebug.arm(days: 0, hours: 0, minutes: 2) } }
+                    .buttonStyle(.settings)
+                    .disabled(keepAwakeDebug.isWorking)
+                Button("Cancel") { Task { await keepAwakeDebug.cancel() } }
+                    .buttonStyle(.settings)
+            }
+            #endif
         }
     }
 
