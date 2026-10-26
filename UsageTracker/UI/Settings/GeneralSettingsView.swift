@@ -13,7 +13,7 @@ enum GeneralSettingsCopy {
     static let githubTitle = AppVersion.githubLabel
     static let keepAwakeHeader = "Keep awake"
     static let keepAwakeFloorTitle = "End below \(KeepAwakeRules.batteryFloorPercent) % on battery"
-    static let keepAwakeFooter = "Keep awake with the lid closed ends on time even when Omelette is not running."
+    static let keepAwakeFooter = "Keep awake with the lid closed ends on time even when Omelette is not running, and never resumes after a restart."
 
     /// "Omelette 2.7.1 (38)": the version label the popover used, plus the build a bug
     /// report needs (2.x's row printed "2.7.1 (38)"). With no build, or no version, the
