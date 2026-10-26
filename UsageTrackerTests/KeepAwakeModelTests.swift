@@ -270,4 +270,42 @@ final class KeepAwakeModelTests: XCTestCase {
         XCTAssertEqual(model.failure, .flagStillSet)
         XCTAssertTrue(model.resetIncomplete)
     }
+
+    // MARK: - Fix round 2: a floor change after a lost Apply reply still reaches the helper
+
+    /// The Apply may have armed the helper even though its reply was lost (C7), so the floor
+    /// switch must not wait for the next poll to find out.
+    @MainActor func testTheFloorSwitchReachesTheHelperWhileALostApplyIsUnreconciled() async {
+        let start = t0
+        let helper = KeepAwakeFakeHelper(statuses: [.enabled]) { request in
+            switch request {
+            case .arm:
+                return .failure(.helperTimedOut)
+            case .setFloor(let enabled):
+                return .success(KeepAwakeReply(state: .armed(deadline: start + 7_200, floorEnabled: enabled), failure: nil))
+            case .disarm, .state:
+                return .success(KeepAwakeReply(state: .idle, failure: nil))
+            }
+        }
+        let model = makeModel(helper, Prefs())
+        await model.arm(days: 0, hours: 2, minutes: 0, now: start)
+        XCTAssertEqual(model.state, .idle)
+        await model.floorChanged(false, now: start + 60)
+        XCTAssertEqual(helper.requests, [.arm(seconds: 7_200, floorEnabled: true), .setFloor(enabled: false)])
+        XCTAssertEqual(model.state, .armed(deadline: start + 7_200, floorEnabled: false))
+        XCTAssertNil(model.failure)
+    }
+
+    /// Idle and reconciled, the switch stays a preference (unchanged by the fix).
+    @MainActor func testOnceReconciledAnIdleModelKeepsTheFloorSwitchInSettings() async {
+        let helper = KeepAwakeFakeHelper(statuses: [.enabled]) { request in
+            if case .arm = request { return .failure(.helperTimedOut) }
+            return .success(KeepAwakeReply(state: .idle, failure: nil))
+        }
+        let model = makeModel(helper, Prefs())
+        await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
+        await model.pollIfNeeded(now: t0 + 60)
+        await model.floorChanged(false, now: t0 + 120)
+        XCTAssertEqual(helper.requests, [.arm(seconds: 7_200, floorEnabled: true), .state])
+    }
 }

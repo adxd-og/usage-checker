@@ -86,10 +86,11 @@ final class KeepAwakeModel: ObservableObject {
         await apply(await client.disarm(), now: now)
     }
 
-    /// The floor switch moved: an armed helper hears it at once; otherwise it stays a
-    /// preference read at the next Apply.
+    /// The floor switch moved: an armed helper hears it at once, and so does one whose state
+    /// is unknown after a lost reply (it may have armed); otherwise it stays a preference read
+    /// at the next Apply.
     func floorChanged(_ enabled: Bool, now: Date = Date()) async {
-        guard state.isArmed else { return }
+        guard state.isArmed || needsReconcile else { return }
         isWorking = true
         defer { isWorking = false }
         await apply(await client.setFloor(enabled: enabled), now: now)
