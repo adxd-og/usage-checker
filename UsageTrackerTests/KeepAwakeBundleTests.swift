@@ -37,4 +37,11 @@ final class KeepAwakeBundleTests: XCTestCase {
         let url = Bundle.main.bundleURL.appendingPathComponent(program)
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: url.path), "no daemon at \(url.path)")
     }
+
+    /// Fix round 5: the stop path's worst case — three pmset calls of up to 10 s each and two
+    /// 2 s pauses — outlasts launchd's default 20 s exit timeout, after which launchd sends
+    /// SIGKILL with the flag possibly still on. The plist gives it 90 s.
+    func testTheStopPathHasNinetySecondsBeforeLaunchdKillsTheHelper() throws {
+        XCTAssertEqual(try readPlist()["ExitTimeOut"] as? Int, 90)
+    }
 }

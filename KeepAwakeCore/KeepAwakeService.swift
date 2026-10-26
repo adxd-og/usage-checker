@@ -65,7 +65,7 @@ struct KeepAwakeMachine: Sendable {
 /// 10. Stop (review C3, P1a). launchd's SIGTERM (unload, the Login Items switch, unregister) is
 ///    not followed by a restart after a clean exit, so `terminate(now:)` ends an armed mode as
 ///    stopped and, when the flag is or may be on, clears it by rule 3: up to three attempts,
-///    two seconds apart (inside launchd's 20 s exit timeout). It never sleeps: an unload is not
+///    two seconds apart (inside the plist's 90 s ExitTimeOut). It never sleeps: an unload is not
 ///    a lid closed in a bag. The state is saved (with the failure when the flag never read
 ///    clear), and the daemon exits with 0, or with 1 when the flag may still be on, so that
 ///    launchd restarts a still-loaded job and its start clears again.
