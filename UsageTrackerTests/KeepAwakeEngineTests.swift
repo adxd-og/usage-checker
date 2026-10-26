@@ -189,4 +189,76 @@ final class KeepAwakeEngineTests: XCTestCase {
         var engine = engineArmed(for: 60)
         XCTAssertEqual(engine.power(onBattery: true, percent: 10, now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 90, reason: .deadline))
     }
+
+    // MARK: - § Behaviour › Survives the app, not a reboot; § Helper › Engine, start.
+    // Review C5: whether to sleep comes from the flag as it was before the clear; the state
+    // file only supplies the ended reason.
+
+    func testADaemonStartAlwaysAsksForTheFlagCleared() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.start(persisted: nil, flagWasSet: false, now: t0, lidClosed: false),
+            Out(sleepDisabled: false, sleepNow: false, state: .idle, failure: nil)
+        )
+    }
+
+    func testAStartAfterAnArmedModeEndsItAsRestarted() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), flagWasSet: true, now: t0, lidClosed: false),
+            Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0, reason: .restarted), failure: nil)
+        )
+    }
+
+    /// The block shows "Ended … · battery below 25 %" until the next Apply, even across a
+    /// helper restart.
+    func testAStartKeepsAnEndedModesReason() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.start(persisted: .ended(at: t0 - 60, reason: .batteryFloor), flagWasSet: false, now: t0, lidClosed: false).state,
+            .ended(at: t0 - 60, reason: .batteryFloor)
+        )
+    }
+
+    /// D5: a crash with the lid closed must not leave the Mac awake in a bag.
+    func testARestartThatFindsTheFlagSetWithTheLidClosedSleeps() {
+        var engine = KeepAwakeEngine()
+        XCTAssertTrue(
+            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), flagWasSet: true, now: t0, lidClosed: true).sleepNow
+        )
+    }
+
+    func testAStartWithTheFlagClearNeverSleeps() {
+        var idle = KeepAwakeEngine()
+        XCTAssertFalse(idle.start(persisted: .idle, flagWasSet: false, now: t0, lidClosed: true).sleepNow)
+        var ended = KeepAwakeEngine()
+        XCTAssertFalse(ended.start(persisted: .ended(at: t0, reason: .deadline), flagWasSet: false, now: t0, lidClosed: true).sleepNow)
+        var armedButClear = KeepAwakeEngine()
+        let output = armedButClear.start(persisted: .armed(deadline: t0 + 60, floorEnabled: true), flagWasSet: false, now: t0, lidClosed: true)
+        XCTAssertFalse(output.sleepNow)
+        XCTAssertEqual(output.state, .ended(at: t0, reason: .restarted))
+    }
+
+    /// C5: the armed state never reached the file (a failed save, then a crash).
+    func testALostArmedStateStillSleepsWhenTheFlagWasSet() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.start(persisted: nil, flagWasSet: true, now: t0, lidClosed: true),
+            Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0, reason: .restarted), failure: nil)
+        )
+    }
+
+    /// A deadline whose clear failed, then a crash: the file's reason stays, the sleep is owed.
+    func testAFlagLeftByAFailedClearKeepsTheFilesReasonAndSleeps() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(
+            engine.start(persisted: .ended(at: t0 - 60, reason: .deadline), flagWasSet: true, now: t0, lidClosed: true),
+            Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0 - 60, reason: .deadline), failure: nil)
+        )
+    }
+
+    func testAFlagSetWithTheLidOpenNeverSleeps() {
+        var engine = KeepAwakeEngine()
+        XCTAssertFalse(engine.start(persisted: nil, flagWasSet: true, now: t0, lidClosed: false).sleepNow)
+    }
 }

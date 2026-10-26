@@ -75,6 +75,22 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return output(wasArmed: wasArmed, lidClosed: lidClosed)
     }
 
+    /// Daemon launch → always clear, regardless of the file (spec § Helper). Whether to sleep
+    /// comes from the flag as `pmset -g` read it before the start's clear, not from the file
+    /// (review C5): a crash with the lid closed is the bag case even when the armed state never
+    /// reached the file, which only supplies an ended mode's reason.
+    mutating func start(persisted: KeepAwakeState?, flagWasSet: Bool, now: Date, lidClosed: Bool) -> Output {
+        switch persisted {
+        case .armed:
+            state = .ended(at: now, reason: .restarted)
+        case .ended(let at, let reason):
+            state = .ended(at: at, reason: reason)
+        case .idle, nil:
+            state = flagWasSet ? .ended(at: now, reason: .restarted) : (persisted ?? .idle)
+        }
+        return Output(sleepDisabled: false, sleepNow: flagWasSet && lidClosed, state: state, failure: nil)
+    }
+
     /// The next tick while armed: a minute from now, or the deadline if that comes first.
     func nextTick(now: Date) -> Date? {
         guard case .armed(let deadline, _) = state else { return nil }
