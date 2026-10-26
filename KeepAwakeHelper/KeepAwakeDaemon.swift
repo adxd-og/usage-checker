@@ -44,10 +44,13 @@ final class KeepAwakeXPCHandler: NSObject, KeepAwakeXPCProtocol {
 
 /// The Mach service launchd hands the daemon. XPC checks every caller's signature against the
 /// requirement before a message is delivered (plan D2); the service keeps the only count of
-/// open connections (review C2).
+/// open connections (review C2). Each connection gets a monotonic id, because its open and
+/// its close reach the service from two unordered tasks.
 final class KeepAwakeListener: NSObject, NSXPCListenerDelegate {
     private let listener = NSXPCListener(machServiceName: KeepAwakeIdentity.machServiceName)
     private let service: KeepAwakeService
+    private let idLock = NSLock()
+    private var lastConnectionID = 0
 
     init(service: KeepAwakeService) {
         self.service = service
@@ -68,9 +71,13 @@ final class KeepAwakeListener: NSObject, NSXPCListenerDelegate {
         newConnection.exportedInterface = NSXPCInterface(with: KeepAwakeXPCProtocol.self)
         newConnection.exportedObject = KeepAwakeXPCHandler(service: service)
         let service = self.service
-        Task { await service.connectionOpened(now: Date()) }
+        let id = idLock.withLock {
+            lastConnectionID += 1
+            return lastConnectionID
+        }
+        Task { await service.connectionOpened(id: id, now: Date()) }
         newConnection.invalidationHandler = {
-            Task { await service.connectionClosed(now: Date()) }
+            Task { await service.connectionClosed(id: id, now: Date()) }
         }
         newConnection.resume()
         return true

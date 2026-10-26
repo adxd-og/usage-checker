@@ -54,6 +54,8 @@ struct KeepAwakeMachine: Sendable {
 /// 9. Idle exit (plan D7; review C2). After every input that reaches the apply step, and when a
 ///    connection opens or closes: not armed, the flag read back clear, no sleep owed and no open
 ///    connection is idle, and the exit is scheduled a minute later; anything else cancels it.
+///    Connections are counted by the listener's id, so an open and a close of the same
+///    connection may land in either order: a close that lands first makes its open a no-op.
 ///    `exitIfIdle` re-checks all of it on the actor and only then terminates with 0, with no
 ///    `await` in between, so an arm that lands first always keeps the daemon. launchd starts it
 ///    again on the app's next call (MachServices) or at boot (RunAtLoad).
@@ -75,8 +77,11 @@ actor KeepAwakeService {
     private var lastApplied: Bool?
     /// A `pmset sleepnow` the service still has to run (review C4).
     private var sleepOwed = false
-    /// Open XPC connections; the only count there is (review C2).
-    private var openConnections = 0
+    /// Open XPC connections by the listener's id; the only count there is (review C2).
+    private var openConnections: Set<Int> = []
+    /// Connections whose close landed before their open: already gone, so their late open
+    /// is ignored (the listener reports both from unordered tasks).
+    private var closedBeforeOpen: Set<Int> = []
     /// When the idle exit is due; nil while the daemon is needed.
     private var idleExitAt: Date?
 
@@ -185,13 +190,21 @@ actor KeepAwakeService {
 
     // MARK: - Idle exit (rule 9)
 
-    func connectionOpened(now: Date) {
-        openConnections += 1
+    /// The listener accepted connection `id`. An open whose close already landed is a
+    /// connection that is gone: it is not counted, and its early close is forgotten.
+    func connectionOpened(id: Int, now: Date) {
+        if closedBeforeOpen.remove(id) == nil {
+            openConnections.insert(id)
+        }
         scheduleIdleExit(now: now)
     }
 
-    func connectionClosed(now: Date) {
-        openConnections = max(0, openConnections - 1)
+    /// Connection `id` was invalidated. A close that lands before its open is remembered, so
+    /// the late open does not hold the daemon forever.
+    func connectionClosed(id: Int, now: Date) {
+        if openConnections.remove(id) == nil {
+            closedBeforeOpen.insert(id)
+        }
         scheduleIdleExit(now: now)
     }
 
@@ -203,7 +216,7 @@ actor KeepAwakeService {
     }
 
     private var isIdle: Bool {
-        !engine.state.isArmed && lastApplied == false && !sleepOwed && openConnections == 0
+        !engine.state.isArmed && lastApplied == false && !sleepOwed && openConnections.isEmpty
     }
 
     private func scheduleIdleExit(now: Date) {

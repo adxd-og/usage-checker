@@ -377,11 +377,11 @@ final class KeepAwakeServiceTests: XCTestCase {
     func testAnOpenConnectionHoldsItAndClosingItStartsTheMinuteAgain() async {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
-        await service.connectionOpened(now: t0 + 10)
+        await service.connectionOpened(id: 1, now: t0 + 10)
         XCTAssertEqual(fake.with { $0.exits }, [nil])
         await service.exitIfIdle(now: t0 + 120)
         XCTAssertEqual(fake.with { $0.terminations }, [])
-        await service.connectionClosed(now: t0 + 20)
+        await service.connectionClosed(id: 1, now: t0 + 20)
         XCTAssertEqual(fake.with { $0.exits }, [nil, t0 + 80])
         await service.exitIfIdle(now: t0 + 79)
         XCTAssertEqual(fake.with { $0.terminations }, [])
@@ -392,11 +392,11 @@ final class KeepAwakeServiceTests: XCTestCase {
     func testTwoConnectionsHoldItUntilBothClose() async {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
-        await service.connectionOpened(now: t0)
-        await service.connectionOpened(now: t0 + 1)
-        await service.connectionClosed(now: t0 + 2)
+        await service.connectionOpened(id: 1, now: t0)
+        await service.connectionOpened(id: 2, now: t0 + 1)
+        await service.connectionClosed(id: 1, now: t0 + 2)
         XCTAssertEqual(fake.with { $0.exits }, [nil, nil, nil])
-        await service.connectionClosed(now: t0 + 3)
+        await service.connectionClosed(id: 2, now: t0 + 3)
         XCTAssertEqual(fake.with { $0.exits }, [nil, nil, nil, t0 + 63])
     }
 
@@ -414,9 +414,9 @@ final class KeepAwakeServiceTests: XCTestCase {
     func testAnArmThatLandsBeforeTheExitTimerFiresNeverTerminates() async {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
-        await service.connectionOpened(now: t0 + 50)
+        await service.connectionOpened(id: 1, now: t0 + 50)
         _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 55)
-        await service.connectionClosed(now: t0 + 56)
+        await service.connectionClosed(id: 1, now: t0 + 56)
         await service.exitIfIdle(now: t0 + 60)
         await service.exitIfIdle(now: t0 + 3_600)
         XCTAssertEqual(fake.with { $0.terminations }, [])
@@ -520,5 +520,37 @@ final class KeepAwakeServiceTests: XCTestCase {
         let reply = await service.arm(seconds: 3_600, floorEnabled: true, now: t0 + 60)
         XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .batteryFloor), failure: nil))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
+    }
+
+    // MARK: - Fix round 4: connections carry an id, so an open and a close may land in any order
+
+    /// The listener reports both from unordered tasks. A close that lands before its open is a
+    /// connection already gone: once the late open lands, nothing holds the daemon.
+    func testAConnectionWhoseCloseLandsFirstHoldsNothingOnceItsOpenLands() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.connectionClosed(id: 7, now: t0 + 1)
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 61])
+        await service.connectionOpened(id: 7, now: t0 + 2)
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 61, t0 + 62])
+        await service.exitIfIdle(now: t0 + 62)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    /// The early close is remembered once: the same id opening again later is a new, live
+    /// connection and holds the daemon.
+    func testAnEarlyCloseCancelsOnlyItsOwnOpen() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.connectionClosed(id: 3, now: t0)
+        await service.connectionOpened(id: 3, now: t0 + 1)
+        await service.connectionOpened(id: 4, now: t0 + 2)
+        await service.connectionOpened(id: 3, now: t0 + 3)
+        await service.connectionClosed(id: 4, now: t0 + 4)
+        XCTAssertEqual(fake.with { $0.exits }.last ?? nil, nil, "connection 3 is open")
+        await service.exitIfIdle(now: t0 + 3_600)
+        XCTAssertEqual(fake.with { $0.terminations }, [])
+        await service.connectionClosed(id: 3, now: t0 + 5)
+        XCTAssertEqual(fake.with { $0.exits }.last ?? nil, t0 + 65)
     }
 }
