@@ -10,6 +10,9 @@ extension KeepAwakeClient.Dependencies {
             status: { SMAppService.daemon(plistName: KeepAwakeIdentity.plistName).status },
             register: { try SMAppService.daemon(plistName: KeepAwakeIdentity.plistName).register() },
             send: { await KeepAwakeXPCTransport.send($0) },
+            unregister: { try await SMAppService.daemon(plistName: KeepAwakeIdentity.plistName).unregister() },
+            readFlag: { await KeepAwakeLive.readFlag() },
+            adminClear: { await KeepAwakeLive.adminClear() },
             registeredBuild: { UserDefaults.standard.string(forKey: KeepAwakeClient.registeredBuildKey) },
             setRegisteredBuild: { build in
                 if let build {
@@ -20,6 +23,30 @@ extension KeepAwakeClient.Dependencies {
             },
             currentBuild: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
         )
+    }
+}
+
+/// The reset's two machine calls, off the caller's actor (as `TmuxJump.run` does).
+enum KeepAwakeLive {
+    /// `pmset -g` as the user: reading the flag needs no root.
+    static func readFlag() async -> KeepAwakeFlagReading {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = KeepAwakeCommand.run(KeepAwakeCommand.pmset, ["-g"], timeout: 10)
+                continuation.resume(returning: result.status == 0 ? KeepAwakeReadings.flag(fromPmset: result.output) : .unreadable)
+            }
+        }
+    }
+
+    /// One administrator prompt running `pmset -a disablesleep 0`. Five minutes: the user is
+    /// typing a password.
+    static func adminClear() async -> KeepAwakeFailure? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = KeepAwakeCommand.run(KeepAwakeCommand.osascript, ["-e", KeepAwakeClient.adminClearScript], timeout: 300)
+                continuation.resume(returning: KeepAwakeClient.adminClearFailure(status: result.status, output: result.output))
+            }
+        }
     }
 }
 
