@@ -40,6 +40,11 @@ struct GeneralSettingsView: View {
     /// OS state (`SMAppService`), not a preference: read when the page is built, so a
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    #if DEBUG
+    /// Package 1's owner check arms the helper from here; the popover block (Package 2)
+    /// is the real control. Never compiled into a Release build.
+    @ObservedObject private var keepAwakeDebug = KeepAwakeModel.shared
+    #endif
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -108,6 +113,23 @@ struct GeneralSettingsView: View {
                     }
                 )
             )
+            #if DEBUG
+            SettingsRow(
+                title: "Debug: keep awake for 2 minutes",
+                caption: "\(keepAwakeDebug.registration) · \(keepAwakeDebug.state)",
+                error: keepAwakeDebug.failure.map(KeepAwakeFailureCopy.text)
+            ) {
+                if keepAwakeDebug.registration == .requiresApproval {
+                    Button("Open Login Items") { keepAwakeDebug.openLoginItems() }
+                        .buttonStyle(.settings)
+                }
+                Button("Arm") { Task { await keepAwakeDebug.arm(days: 0, hours: 0, minutes: 2) } }
+                    .buttonStyle(.settings)
+                    .disabled(keepAwakeDebug.isWorking)
+                Button("Cancel") { Task { await keepAwakeDebug.cancel() } }
+                    .buttonStyle(.settings)
+            }
+            #endif
         }
     }
 
