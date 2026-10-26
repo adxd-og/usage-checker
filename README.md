@@ -20,6 +20,7 @@ This README is a map. Each section says what it covers and points to the next on
 - [Dashboard](#dashboard)
 - [Notifications](#notifications)
 - [Widgets and floating window](#widgets-and-floating-window)
+- [Keep awake with the lid closed](#keep-awake-with-the-lid-closed)
 - [Settings](#settings)
 - [How it works](#how-it-works)
 - [Requirements](#requirements)
@@ -132,6 +133,8 @@ on its own tab.
   ring** ("$431 of $1,500"), not a bare percentage
 - **Footer**: Dashboard, floating window, Settings and Quit. ⌘R refreshes;
   the version and the update check live in Settings → General
+- **Keep awake with the lid closed**: a block above the footer, see
+  [Keep awake with the lid closed](#keep-awake-with-the-lid-closed)
 
 Next: [Agents at a glance](#agents-at-a-glance).
 
@@ -299,14 +302,47 @@ Next: [Widgets and floating window](#widgets-and-floating-window).
 - **Floating mini window**: always-on-top, dockable to a corner, shows
   the leading window as a ring plus how many agent sessions are running
 
+Next: [Keep awake with the lid closed](#keep-awake-with-the-lid-closed).
+
+## Keep awake with the lid closed
+
+Keeps a MacBook working with its lid closed for a set time, so agents carry on
+in a bag or under a cat. Set it from the block above the popover's footer; a ☾
+in the menu bar says it is on.
+
+- **Timed only**: days, hours and minutes, 1 minute to 7 days, then **Apply**.
+  The block shows "Awake until 18:40 · 4 h 52 min left" and **Cancel**; Apply
+  again replaces the deadline. The menu bar tooltip's first line says until when
+- **Ends by itself**: at the deadline, even when Omelette is not running; on
+  battery below 25 % (Settings → General → Keep awake → **End below 25 % on
+  battery**, on by default); and at a restart, after which nothing resumes.
+  The block says when and why it ended until you dismiss it or apply again
+- **Sleep at the end**: when the mode ends at the deadline, at the battery
+  floor, on Cancel or Reset, or through a helper restart while it was on, and
+  the lid is closed with no external display keeping the Mac awake, the Mac
+  goes to sleep. A helper switched off in Login Items only clears the flag
+- **One-time approval**: the first Apply installs a helper,
+  `omelette-keepawake`, that runs as root under launchd and sets macOS's sleep
+  flag (`pmset disablesleep`). macOS announces it as **Background Items
+  Added**; switch Omelette on in System Settings → General → Login Items &
+  Extensions, then press Apply again. macOS may ask for your password there
+- **Reset**: Settings → Advanced → **Reset keep awake** asks first, then ends
+  the mode, clears the flag, removes the helper from Login Items and puts the
+  floor switch and the last duration back. It asks for an administrator
+  password only when the helper cannot clear the flag; the line under it shows
+  what `pmset -g` reports
+- **Before deleting Omelette, press Reset keep awake.** An app deleted while
+  keep awake is on leaves the flag set, and the Mac never sleeps, lid open or
+  closed, until you run `sudo pmset -a disablesleep 0` in Terminal
+
 Next: [Settings](#settings).
 
 ## Settings
 
 A sidebar window with six tabs.
 
-- **General**: launch at login, refresh interval, automatic updates and
-  Check now, the version and the GitHub link
+- **General**: launch at login, refresh interval, the keep-awake battery
+  floor, automatic updates and Check now, the version and the GitHub link
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
   providers show in the menu bar, agents in the menu bar
@@ -320,7 +356,7 @@ A sidebar window with six tabs.
 - **Advanced**: keychain access, optional Admin API key, pay-as-you-go
   weekly budget, the `anthropic-beta` flag, agent diagnostics (socket, last
   event, the pending/answered/expired counts), replay the welcome tour,
-  reset all settings
+  Reset keep awake, reset all settings
 
 Old deep links still open the right tab (Agents → Integrations, Account →
 Providers).
@@ -373,6 +409,10 @@ to keep a year of them:
   or file contents. Every hook exits within 0.8 s except a permission
   request, which the helper holds open for up to 140 s so Omelette can
   answer Allow/Deny; a helper that gets no reply always fails safe
+- Keep awake's helper, `omelette-keepawake`, runs as root under launchd once
+  you approve it in Login Items. It answers only Omelette signed by the same
+  developer team, runs nothing but `/usr/bin/pmset`, clears the sleep flag
+  every time it starts, and exits a minute after it has nothing to do
 - The `omelette` command-line tool and MCP server only ever read
   `~/Library/Application Support/UsageTracker/status.json`, written after
   every poll. They never start the app, open a socket, or touch the network

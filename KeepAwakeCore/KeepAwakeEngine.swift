@@ -108,10 +108,11 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return min(now + KeepAwakeRules.tickInterval, deadline)
     }
 
-    /// Ends an armed mode whose deadline has passed, then one below the battery floor.
+    /// Ends an armed mode whose deadline has passed, at the deadline (the moment the app's
+    /// local countdown reports too), then one below the battery floor, at `now`.
     private mutating func settle(now: Date) {
         if case .armed(let deadline, _) = state, now >= deadline {
-            state = .ended(at: now, reason: .deadline)
+            state = .ended(at: deadline, reason: .deadline)
         }
         if case .armed(_, true) = state, let power, KeepAwakeRules.isBelowFloor(power) {
             state = .ended(at: now, reason: .batteryFloor)

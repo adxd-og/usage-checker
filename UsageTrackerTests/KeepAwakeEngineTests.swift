@@ -63,7 +63,22 @@ final class KeepAwakeEngineTests: XCTestCase {
         var engine = engineArmed(for: 7_200)
         XCTAssertEqual(
             engine.tick(now: t0 + 7_230, lidClosed: true),
-            Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0 + 7_230, reason: .deadline), failure: nil)
+            Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0 + 7_200, reason: .deadline), failure: nil)
+        )
+    }
+
+    /// Plan review P2a: the helper's deadline end is the deadline, the moment the app's
+    /// local countdown (`KeepAwakeRules.effectiveState`) reports, not the tick that noticed
+    /// it; the battery floor keeps the moment it fired.
+    func testADeadlineEndCarriesTheDeadlineNotTheMomentItWasNoticed() {
+        var late = engineArmed(for: 120)
+        let output = late.tick(now: t0 + 150, lidClosed: false)
+        XCTAssertEqual(output.state, .ended(at: t0 + 120, reason: .deadline))
+        XCTAssertEqual(output.state, KeepAwakeRules.effectiveState(.armed(deadline: t0 + 120, floorEnabled: true), now: t0 + 150))
+        var low = engineArmed(for: 7_200)
+        XCTAssertEqual(
+            low.power(onBattery: true, percent: 10, now: t0 + 600, lidClosed: false).state,
+            .ended(at: t0 + 600, reason: .batteryFloor)
         )
     }
 
@@ -82,7 +97,7 @@ final class KeepAwakeEngineTests: XCTestCase {
 
     func testACancelAfterTheDeadlineIsTheDeadlinesEnd() {
         var engine = engineArmed(for: 60)
-        XCTAssertEqual(engine.disarm(now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 90, reason: .deadline))
+        XCTAssertEqual(engine.disarm(now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 60, reason: .deadline))
     }
 
     /// The reset path (spec § UI, Reset keep awake) disarms an idle helper to clear the flag.
@@ -187,7 +202,7 @@ final class KeepAwakeEngineTests: XCTestCase {
 
     func testAPowerReadingAfterTheDeadlineEndsTheModeForTheDeadline() {
         var engine = engineArmed(for: 60)
-        XCTAssertEqual(engine.power(onBattery: true, percent: 10, now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 90, reason: .deadline))
+        XCTAssertEqual(engine.power(onBattery: true, percent: 10, now: t0 + 90, lidClosed: false).state, .ended(at: t0 + 60, reason: .deadline))
     }
 
     // MARK: - § Behaviour › Survives the app, not a reboot; § Helper › Engine, start.
