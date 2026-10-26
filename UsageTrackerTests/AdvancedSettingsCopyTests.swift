@@ -144,4 +144,16 @@ final class AdvancedSettingsCopyTests: XCTestCase {
             SettingsCaption(text: "Sleep flag never set, but the helper is still in Login Items. Press Reset again.", token: .warning)
         )
     }
+
+    /// Owner, 2026-10-26 (keep-awake spec § UI): Reset keep awake asks for confirmation
+    /// first, like Reset all settings.
+    func testResetKeepAwakeAsksFirst() {
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetConfirmTitle, "Reset keep awake?")
+        XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetConfirmButton, "Reset keep awake")
+        XCTAssertEqual(
+            AdvancedSettingsCopy.keepAwakeResetConfirmMessage,
+            "Keep awake ends now, the sleep flag is cleared and the helper is removed from Login Items, so the next Apply needs its approval again. The battery floor and the last duration go back to their defaults. An administrator password is asked for only if the helper cannot clear the flag."
+        )
+        XCTAssertEqual(AdvancedSettingsCopy.cancelButton, "Cancel")
+    }
 }
