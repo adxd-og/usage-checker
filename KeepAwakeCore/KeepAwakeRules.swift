@@ -55,3 +55,19 @@ enum KeepAwakeRules {
         power.onBattery && power.percent < batteryFloorPercent
     }
 }
+
+extension KeepAwakeRules {
+    /// The app's local countdown (spec § Behaviour › Visible): an armed state past its deadline
+    /// reads as ended by the deadline, at the deadline, even before the helper says so.
+    static func effectiveState(_ state: KeepAwakeState, now: Date) -> KeepAwakeState {
+        if case .armed(let deadline, _) = state, now >= deadline {
+            return .ended(at: deadline, reason: .deadline)
+        }
+        return state
+    }
+
+    /// Armed and before its deadline.
+    static func isActive(_ state: KeepAwakeState, now: Date) -> Bool {
+        effectiveState(state, now: now).isArmed
+    }
+}

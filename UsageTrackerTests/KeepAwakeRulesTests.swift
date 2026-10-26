@@ -55,4 +55,22 @@ final class KeepAwakeRulesTests: XCTestCase {
         XCTAssertFalse(KeepAwakeRules.isBelowFloor(KeepAwakePower(onBattery: true, percent: 25)))
         XCTAssertFalse(KeepAwakeRules.isBelowFloor(KeepAwakePower(onBattery: false, percent: 5)))
     }
+
+    /// § Behaviour › Visible: the app "keeps a local countdown for the deadline".
+    func testAnArmedStatePastItsDeadlineReadsAsEndedByTheDeadline() {
+        let t0 = Date(timeIntervalSince1970: 1_793_000_000)
+        let armed = KeepAwakeState.armed(deadline: t0, floorEnabled: true)
+        XCTAssertEqual(KeepAwakeRules.effectiveState(armed, now: t0), .ended(at: t0, reason: .deadline))
+        XCTAssertEqual(KeepAwakeRules.effectiveState(armed, now: t0 - 1), armed)
+        XCTAssertEqual(KeepAwakeRules.effectiveState(.idle, now: t0), .idle)
+        XCTAssertEqual(KeepAwakeRules.effectiveState(.ended(at: t0, reason: .cancelled), now: t0 + 60), .ended(at: t0, reason: .cancelled))
+    }
+
+    func testOnlyAnArmedStateBeforeItsDeadlineIsActive() {
+        let t0 = Date(timeIntervalSince1970: 1_793_000_000)
+        XCTAssertTrue(KeepAwakeRules.isActive(.armed(deadline: t0 + 60, floorEnabled: true), now: t0))
+        XCTAssertFalse(KeepAwakeRules.isActive(.armed(deadline: t0 + 60, floorEnabled: true), now: t0 + 60))
+        XCTAssertFalse(KeepAwakeRules.isActive(.idle, now: t0))
+        XCTAssertFalse(KeepAwakeRules.isActive(.ended(at: t0, reason: .deadline), now: t0))
+    }
 }
