@@ -308,4 +308,40 @@ final class KeepAwakeModelTests: XCTestCase {
         await model.floorChanged(false, now: t0 + 120)
         XCTAssertEqual(helper.requests, [.arm(seconds: 7_200, floorEnabled: true), .state])
     }
+
+    // MARK: - Fix round 3: a helper that arms again takes back the "not back to normal" caption
+
+    /// After a reset that could not clear the flag, an Apply the helper arms puts the flag back
+    /// in its hands: the caption must not keep saying the Mac is not back to normal.
+    @MainActor func testAnApplyThatArmsAfterAnIncompleteResetClearsItsCaption() async {
+        let start = t0
+        let helper = KeepAwakeFakeHelper(statuses: [.enabled]) { _ in .failure(.helperTimedOut) }
+        helper.with { $0.flags = [.set]; $0.adminResult = .adminCancelled }
+        let model = makeModel(helper, Prefs())
+        await model.reset(now: start)
+        XCTAssertTrue(model.resetIncomplete)
+        helper.with {
+            $0.reply = { request in
+                if case .arm(let seconds, let floor) = request {
+                    return .success(KeepAwakeReply(state: .armed(deadline: start + seconds, floorEnabled: floor), failure: nil))
+                }
+                return .success(KeepAwakeReply(state: .idle, failure: nil))
+            }
+        }
+        await model.arm(days: 0, hours: 1, minutes: 0, now: start + 60)
+        XCTAssertEqual(model.state, .armed(deadline: start + 3_600, floorEnabled: true))
+        XCTAssertFalse(model.resetIncomplete)
+    }
+
+    /// A reply that is not armed says nothing about the flag: the caption stays.
+    @MainActor func testAnIdleReplyAfterAnIncompleteResetKeepsItsCaption() async {
+        let helper = KeepAwakeFakeHelper(statuses: [.enabled]) { _ in .failure(.helperTimedOut) }
+        helper.with { $0.flags = [.set]; $0.adminResult = .adminCancelled }
+        let model = makeModel(helper, Prefs())
+        await model.reset(now: t0)
+        helper.with { $0.reply = { _ in .success(KeepAwakeReply(state: .idle, failure: nil)) } }
+        await model.refresh(now: t0 + 60)
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertTrue(model.resetIncomplete)
+    }
 }

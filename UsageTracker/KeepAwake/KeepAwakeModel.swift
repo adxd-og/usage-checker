@@ -163,6 +163,11 @@ final class KeepAwakeModel: ObservableObject {
         } else {
             // 4.
             state = outcome.state ?? KeepAwakeRules.effectiveState(state, now: now)
+            // A helper that armed holds the flag again: an earlier reset's "not back to normal
+            // yet" no longer applies.
+            if outcome.state?.isArmed == true {
+                resetIncomplete = false
+            }
         }
         // 5.
         scheduleCountdown(now: now)
