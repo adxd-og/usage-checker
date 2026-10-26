@@ -104,11 +104,23 @@ actor KeepAwakeService {
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: true, alwaysSave: true)
     }
 
+    /// Apply. The battery is read afresh first, as a tick does: a low reading from before the
+    /// charger went in must not end the new mode, and a missed notification must not let it
+    /// start below the floor. A refused duration touches nothing (rule 1).
     func arm(seconds: TimeInterval, floorEnabled: Bool, now: Date) -> KeepAwakeReply {
         let lidSleeps = machine.lid().sleepsWhenClosed
+        let stateBefore = engine.state
+        guard KeepAwakeRules.accepts(duration: seconds) else {
+            let output = engine.arm(duration: seconds, floorEnabled: floorEnabled, now: now, lidClosed: lidSleeps)
+            return apply(output, stateBefore: stateBefore, now: now, lidSleeps: lidSleeps, force: true)
+        }
+        readPower(now: now, lidSleeps: lidSleeps)
+        // Rule 4 rolls back to the engine with the fresh reading, so a mode the reading ended
+        // stays ended.
         let before = engine
-        let output = engine.arm(duration: seconds, floorEnabled: floorEnabled, now: now, lidClosed: lidSleeps)
-        return apply(output, stateBefore: before.state, now: now, lidSleeps: lidSleeps, force: true, rollback: before)
+        var output = engine.arm(duration: seconds, floorEnabled: floorEnabled, now: now, lidClosed: lidSleeps)
+        output.sleepNow = endedDuringInput(wasArmed: stateBefore.isArmed, lidSleeps: lidSleeps)
+        return apply(output, stateBefore: stateBefore, now: now, lidSleeps: lidSleeps, force: true, rollback: before)
     }
 
     func disarm(now: Date) -> KeepAwakeReply {
@@ -118,11 +130,28 @@ actor KeepAwakeService {
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: true)
     }
 
+    /// The floor switch. The battery is read afresh first, as for Apply.
     func setFloor(enabled: Bool, now: Date) -> KeepAwakeReply {
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
-        let output = engine.setFloor(enabled: enabled, now: now, lidClosed: lidSleeps)
+        readPower(now: now, lidSleeps: lidSleeps)
+        var output = engine.setFloor(enabled: enabled, now: now, lidClosed: lidSleeps)
+        output.sleepNow = endedDuringInput(wasArmed: before.isArmed, lidSleeps: lidSleeps)
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
+    }
+
+    /// Feeds the engine the battery as it is now, when there is a battery. Its output is the
+    /// input's own to apply: the caller's next engine call settles on top of it.
+    private func readPower(now: Date, lidSleeps: Bool) {
+        if let power = machine.power() {
+            _ = engine.power(onBattery: power.onBattery, percent: power.percent, now: now, lidClosed: lidSleeps)
+        }
+    }
+
+    /// The engine's sleep rule over a whole input that made two engine calls: an armed mode
+    /// ended somewhere in it, and the lid is closed and causes sleep.
+    private func endedDuringInput(wasArmed: Bool, lidSleeps: Bool) -> Bool {
+        wasArmed && !engine.state.isArmed && lidSleeps
     }
 
     /// What the app asks for; it settles the deadline and the battery like a tick.

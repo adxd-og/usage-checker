@@ -484,4 +484,41 @@ final class KeepAwakeServiceTests: XCTestCase {
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
         XCTAssertEqual(fake.with { $0.terminations }, [0])
     }
+
+    // MARK: - Fix round 1: Apply and the floor switch read the battery afresh (§ Behaviour,
+    // Battery floor: "on battery and below 25 %"; a missed notification must not end them)
+
+    func testAStaleLowReadingCannotEndAnApplyMadeOnTheCharger() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        fake.with { $0.power = KeepAwakePower(onBattery: true, percent: 10) }
+        _ = await service.powerChanged(now: t0)
+        fake.with { $0.power = KeepAwakePower(onBattery: false, percent: 10); $0.calls = [] }
+        let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 60)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_260, floorEnabled: true), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1", "read"])
+    }
+
+    func testAStaleLowReadingCannotEndTheModeWhenTheFloorIsTurnedOnOnTheCharger() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: false, now: t0)
+        fake.with { $0.power = KeepAwakePower(onBattery: true, percent: 10) }
+        _ = await service.powerChanged(now: t0 + 60)
+        fake.with { $0.power = KeepAwakePower(onBattery: false, percent: 10); $0.calls = [] }
+        let reply = await service.setFloor(enabled: true, now: t0 + 120)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, [], "the flag is already on")
+    }
+
+    /// The fresh reading can still end the mode: low on battery, the floor on, the lid closed.
+    func testAnApplyBelowTheFloorOnBatteryEndsTheOldModeAndSleepsAClosedMac() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: false, now: t0)
+        fake.with { $0.calls = []; $0.lid = KeepAwakeLid(closed: true, causesSleep: true); $0.power = KeepAwakePower(onBattery: true, percent: 10) }
+        let reply = await service.arm(seconds: 3_600, floorEnabled: true, now: t0 + 60)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .batteryFloor), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
+    }
 }
