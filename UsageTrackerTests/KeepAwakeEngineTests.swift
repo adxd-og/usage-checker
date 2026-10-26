@@ -261,4 +261,19 @@ final class KeepAwakeEngineTests: XCTestCase {
         var engine = KeepAwakeEngine()
         XCTAssertFalse(engine.start(persisted: nil, flagWasSet: true, now: t0, lidClosed: false).sleepNow)
     }
+
+    // MARK: - Review C3: launchd stopped the helper
+
+    func testAStopEndsAnArmedModeWithoutEverSleeping() {
+        var engine = engineArmed(for: 7_200)
+        XCTAssertEqual(
+            engine.stop(now: t0 + 60),
+            Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0 + 60, reason: .stopped), failure: nil)
+        )
+    }
+
+    func testAStopWhileIdleChangesNothing() {
+        var engine = KeepAwakeEngine()
+        XCTAssertEqual(engine.stop(now: t0), Out(sleepDisabled: false, sleepNow: false, state: .idle, failure: nil))
+    }
 }

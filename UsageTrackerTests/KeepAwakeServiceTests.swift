@@ -17,6 +17,8 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
         var power: KeepAwakePower?
         var exits: [Date?] = []
         var terminations: [Int32] = []
+        var pauses: [TimeInterval] = []
+        var failSetsRemaining = 0
     }
     private let lock = NSLock()
     private var storage = Storage()
@@ -28,8 +30,10 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
             setSleepDisabled: { value in
                 self.with { s in
                     s.calls.append("set \(value ? 1 : 0)")
-                    if s.setStatus == 0, s.setTakes { s.flag = value ? .set : .cleared }
-                    return KeepAwakeCommandResult(status: s.setStatus, output: "")
+                    let status: Int32 = s.failSetsRemaining > 0 ? 1 : s.setStatus
+                    if s.failSetsRemaining > 0 { s.failSetsRemaining -= 1 }
+                    if status == 0, s.setTakes { s.flag = value ? .set : .cleared }
+                    return KeepAwakeCommandResult(status: status, output: "")
                 }
             },
             readSleepDisabled: { self.with { s in s.calls.append("read"); return s.flag } },
@@ -38,7 +42,8 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
             power: { self.with { $0.power } },
             schedule: { date in self.with { $0.scheduled.append(date) } },
             scheduleExit: { date in self.with { $0.exits.append(date) } },
-            terminate: { status in self.with { $0.terminations.append(status) } }
+            terminate: { status in self.with { $0.terminations.append(status) } },
+            pause: { seconds in self.with { $0.pauses.append(seconds) } }
         )
     }
 }
@@ -416,5 +421,67 @@ final class KeepAwakeServiceTests: XCTestCase {
         await service.exitIfIdle(now: t0 + 3_600)
         XCTAssertEqual(fake.with { $0.terminations }, [])
         XCTAssertEqual(fake.with { $0.flag }, .set)
+    }
+
+    // MARK: - Review C3: SIGTERM (unload, Login Items switch, unregister); P1a: retries, then exit 1
+
+    func testATerminateWhileArmedClearsSavesStoppedAndExits() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.calls = []; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
+        await service.terminate(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"], "cleared, and no sleepnow")
+        XCTAssertEqual(stateFile.load(), .ended(at: t0 + 60, reason: .stopped))
+        XCTAssertNil(stateFile.loadFailure())
+        XCTAssertEqual(fake.with { $0.pauses }, [])
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    /// P1a: the flag still reads 1 after three tries, 2 s apart — record why and exit 1, so
+    /// launchd restarts a still-loaded job and its start clears again.
+    func testATerminateWhoseClearFailsThreeTimesExitsNonZeroAndSavesTheFailure() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.calls = []; $0.setTakes = false }
+        await service.terminate(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "set 0", "read", "set 0", "read"])
+        XCTAssertEqual(fake.with { $0.pauses }, [2, 2])
+        XCTAssertEqual(stateFile.load(), .ended(at: t0 + 60, reason: .stopped))
+        XCTAssertEqual(stateFile.loadFailure(), .readBack(expected: false))
+        XCTAssertEqual(fake.with { $0.terminations }, [1])
+    }
+
+    func testATerminateWhoseClearTakesOnTheSecondTryExitsZero() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.calls = []; $0.failSetsRemaining = 1 }
+        await service.terminate(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "set 0", "read"])
+        XCTAssertEqual(fake.with { $0.pauses }, [2])
+        XCTAssertNil(stateFile.loadFailure())
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    func testATerminateWhileIdleJustExits() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        await service.terminate(now: t0)
+        XCTAssertEqual(fake.with { $0.calls }, [])
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    func testATerminateWithAClearStillOwedTriesItOnceMore() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        fake.with { $0.setStatus = 1 }
+        _ = await service.tick(now: t0 + 120)
+        fake.with { $0.calls = []; $0.setStatus = 0 }
+        await service.terminate(now: t0 + 130)
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
     }
 }

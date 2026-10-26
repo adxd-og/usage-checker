@@ -25,6 +25,8 @@ struct KeepAwakeMachine: Sendable {
     var scheduleExit: @Sendable (Date?) -> Void
     /// Live: `exit(status)`, which never returns. The fake records the status and returns.
     var terminate: @Sendable (Int32) -> Void
+    /// Live: `Thread.sleep`. Only the stop path waits between its attempts to clear.
+    var pause: @Sendable (TimeInterval) -> Void
 }
 
 /// The daemon's core (spec 2026-10-26, § Helper): it feeds the engine, applies each decision
@@ -58,6 +60,13 @@ struct KeepAwakeMachine: Sendable {
 ///    Known and accepted: a connection accepted in the same instant as the exit, whose first
 ///    message has not reached the actor, loses the race; nothing was set, the app's call fails
 ///    as unavailable, and its next call starts the daemon again.
+/// 10. Stop (review C3, P1a). launchd's SIGTERM (unload, the Login Items switch, unregister) is
+///    not followed by a restart after a clean exit, so `terminate(now:)` ends an armed mode as
+///    stopped and, when the flag is or may be on, clears it by rule 3: up to three attempts,
+///    two seconds apart (inside launchd's 20 s exit timeout). It never sleeps: an unload is not
+///    a lid closed in a bag. The state is saved (with the failure when the flag never read
+///    clear), and the daemon exits with 0, or with 1 when the flag may still be on, so that
+///    launchd restarts a still-loaded job and its start clears again.
 actor KeepAwakeService {
     private let machine: KeepAwakeMachine
     private let stateFile: KeepAwakeStateFile
@@ -73,6 +82,9 @@ actor KeepAwakeService {
 
     /// How long the daemon stays idle before it exits (plan D7).
     static let idleExitDelay: TimeInterval = 60
+    /// Rule 10: attempts to clear on the way out, and the pause between them.
+    static let stopClearAttempts = 3
+    static let stopRetryPause: TimeInterval = 2
 
     init(machine: KeepAwakeMachine, stateFile: KeepAwakeStateFile) {
         self.machine = machine
@@ -170,6 +182,33 @@ actor KeepAwakeService {
         machine.scheduleExit(idleExitAt)
     }
 
+    // MARK: - Stop (rule 10)
+
+    /// SIGTERM or SIGINT: clear, save, then exit (0 when the flag reads clear, 1 otherwise).
+    func terminate(now: Date) {
+        let before = engine.state
+        _ = engine.stop(now: now)
+        sleepOwed = false
+        var lastFailure: KeepAwakeFailure?
+        if before.isArmed || lastApplied != false {
+            for attempt in 1...Self.stopClearAttempts {
+                if attempt > 1 { machine.pause(Self.stopRetryPause) }
+                lastFailure = setFlag(false)
+                if lastApplied == false { break }
+            }
+        }
+        let cleared = lastApplied == false
+        if !cleared {
+            save(engine.state, failure: lastFailure)
+        } else if engine.state != before {
+            save(engine.state)
+        }
+        machine.schedule(nil)
+        machine.scheduleExit(nil)
+        NSLog("[keepawake] stopped by launchd; flag clear: %@", cleared ? "yes" : "no")
+        machine.terminate(cleared ? 0 : 1)
+    }
+
     // MARK: - Applying a decision
 
     private func apply(
@@ -239,9 +278,9 @@ actor KeepAwakeService {
         return nil
     }
 
-    private func save(_ state: KeepAwakeState) {
+    private func save(_ state: KeepAwakeState, failure: KeepAwakeFailure? = nil) {
         do {
-            try stateFile.save(state)
+            try stateFile.save(state, failure: failure)
         } catch {
             NSLog("[keepawake] state file: %@", String(describing: error))
         }

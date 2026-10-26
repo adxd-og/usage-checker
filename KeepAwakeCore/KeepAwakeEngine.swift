@@ -91,6 +91,17 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return Output(sleepDisabled: false, sleepNow: flagWasSet && lidClosed, state: state, failure: nil)
     }
 
+    /// launchd stopped the helper (review C3): an armed mode ends as stopped. Never sleeps: an
+    /// unload is not the bag case.
+    mutating func stop(now: Date) -> Output {
+        let wasArmed = state.isArmed
+        settle(now: now)
+        if state.isArmed {
+            state = .ended(at: now, reason: .stopped)
+        }
+        return output(wasArmed: wasArmed, lidClosed: false)
+    }
+
     /// The next tick while armed: a minute from now, or the deadline if that comes first.
     func nextTick(now: Date) -> Date? {
         guard case .armed(let deadline, _) = state else { return nil }
