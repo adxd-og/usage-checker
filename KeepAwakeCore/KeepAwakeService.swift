@@ -38,13 +38,19 @@ struct KeepAwakeMachine: Sendable {
 ///    schedule.
 /// 2. The flag is applied when the input forces it (start, arm, disarm) or when the value
 ///    differs from the last one applied. An output that leaves the flag as it is (a start that
-///    found a flag the helper did not set, rule 11) applies nothing, and the helper holds
-///    nothing: `lastApplied` is false, as after a clear.
+///    found a flag the helper did not set, rule 11; a disarm with nothing armed while the
+///    helper holds nothing, tester F1) applies nothing, and the helper holds nothing:
+///    `lastApplied` is false, as after a clear.
 /// 3. Applying `v`: `pmset -a disablesleep v`; a non-zero status is `.commandFailed` and
 ///    leaves the applied value unknown. Otherwise `pmset -g` must read `.set` for 1 and clear
 ///    for 0; a mismatch is `.readBack(expected: v)` and leaves it unknown.
 /// 4. An arm whose apply failed is rolled back to the engine as it was, and that state's flag
-///    applied again; the reply keeps the first failure.
+///    applied again; the reply keeps the first failure. Tester F2: when the helper held no
+///    flag of its own before the arm and pmset refused the set (`.commandFailed`), the
+///    rollback writes nothing. If the start found the flag another tool's (rule 11), it stays
+///    theirs and the helper holds nothing; otherwise the flag is unknown, the helper's to
+///    clear (rule 7's retry). A read-back failure may have left the flag on, so that rollback
+///    still clears.
 /// 5. Owed sleep (review C4): an output's `sleepNow` makes a sleep owed. While owed, a lid
 ///    that does not read closed-and-causing-sleep drops it; otherwise, once the flag reads
 ///    clear, `pmset sleepnow` runs and a zero status drops it. So sleepnow never runs before
@@ -94,6 +100,10 @@ actor KeepAwakeService {
     /// too when the helper holds nothing because the flag it found set was not its own
     /// (rule 2).
     private var lastApplied: Bool?
+    /// The start found the flag set and not the helper's (rule 11); true until a value the
+    /// helper applies reads back. A set pmset refuses meanwhile leaves it the other tool's
+    /// (rule 4).
+    private var flagIsAnothers = false
     /// A `pmset sleepnow` the service still has to run (review C4).
     private var sleepOwed = false
     /// Open XPC connections by the listener's id; the only count there is (review C2).
@@ -132,6 +142,7 @@ actor KeepAwakeService {
             lidClosed: lidSleeps
         )
         if output.sleepDisabled == nil {
+            flagIsAnothers = true
             NSLog("[keepawake] start: the flag is set and not the helper's; left as it is")
         }
         if let power = machine.power() {
@@ -159,10 +170,15 @@ actor KeepAwakeService {
         return apply(output, stateBefore: stateBefore, now: now, lidSleeps: lidSleeps, force: true, rollback: before)
     }
 
+    /// Cancel. With nothing armed and no flag of its own held, there is nothing to clear: the
+    /// flag, perhaps another tool's, is left as it is (rule 2, tester F1).
     func disarm(now: Date) -> KeepAwakeReply {
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
-        let output = engine.disarm(now: now, lidClosed: lidSleeps)
+        var output = engine.disarm(now: now, lidClosed: lidSleeps)
+        if !before.isArmed, lastApplied == false {
+            output.sleepDisabled = nil
+        }
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: true)
     }
 
@@ -306,6 +322,7 @@ actor KeepAwakeService {
         }
         let owedBefore = sleepOwed
         let ownedBefore = ownsFlag
+        let appliedBefore = lastApplied
         // Rule 12.
         let armedEarly = engine.state.isArmed && !stateBefore.isArmed
         if armedEarly {
@@ -322,9 +339,13 @@ actor KeepAwakeService {
             lastApplied = false
         }
         // Rule 4.
-        if firstFailure != nil, let rollback {
+        if let failure = firstFailure, let rollback {
             engine = rollback
-            _ = setFlag(engine.state.isArmed)
+            if appliedBefore != true, case .commandFailed = failure {
+                if flagIsAnothers { lastApplied = false }
+            } else {
+                _ = setFlag(engine.state.isArmed)
+            }
         }
         // Rule 5.
         if output.sleepNow { sleepOwed = true }
@@ -367,6 +388,7 @@ actor KeepAwakeService {
             return .readBack(expected: value)
         }
         lastApplied = value
+        flagIsAnothers = false
         return nil
     }
 

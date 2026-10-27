@@ -151,8 +151,8 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.setStatus = 1 }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1)))
-        XCTAssertEqual(fake.with { $0.calls }, ["set 1", "set 0"])
-        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60], "the clear failed too: retry in a minute")
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1"], "F2: the helper held nothing, the rollback writes nothing")
+        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60], "the flag is unknown: clear it in a minute")
     }
 
     func testAnInvalidDurationNeverRunsPmset() async {
@@ -251,12 +251,14 @@ final class KeepAwakeServiceTests: XCTestCase {
         XCTAssertEqual(reply.state, .armed(deadline: t0 + 7_200, floorEnabled: false))
     }
 
-    func testDisarmWhileIdleStillClearsAndReadsBack() async {
+    /// Tester F1: nothing armed and a clear that read back — the helper holds nothing, so a
+    /// disarm writes no flag and still answers the state.
+    func testDisarmWhileIdleAndHoldingNothingWritesNoFlag() async {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
         let reply = await service.disarm(now: t0)
         XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
-        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
+        XCTAssertEqual(fake.with { $0.calls }, [])
     }
 
     /// Review C4: with the lid closed, the sleep the failed clear could not deliver is owed and
@@ -703,16 +705,18 @@ final class KeepAwakeServiceTests: XCTestCase {
         XCTAssertEqual(seen.entries.last, .init(value: true, file: .armed(deadline: t0 + 7_200, floorEnabled: true)))
     }
 
-    /// A set that fails rolls the engine back, and the file with it.
+    /// A set that fails rolls the engine back, and the file with it. The helper held nothing,
+    /// so the rollback writes no flag (F2); the refused set leaves the flag unknown, the
+    /// helper's to clear.
     func testAnArmThatFailsWritesTheRolledBackStateAgain() async {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
         fake.with { $0.failSetsRemaining = 1 }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         XCTAssertEqual(reply.state, .idle)
-        XCTAssertEqual(fake.with { $0.calls }, ["set 1", "set 0", "read"])
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1"])
         XCTAssertEqual(stateFile.load(), .idle)
-        XCTAssertFalse(stateFile.loadOwnsFlag())
+        XCTAssertTrue(stateFile.loadOwnsFlag())
     }
 
     /// Rule 10: a flag the helper never set is not its to clear on the way out either.
@@ -757,5 +761,60 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.setStatus = 0 }
         _ = await service.tick(now: t0 + 180)
         XCTAssertFalse(stateFile.loadOwnsFlag(), "read back clear: let go")
+    }
+
+    // MARK: - Tester F1, F2: a flag the helper did not set survives Cancel and a failed Apply
+
+    /// F1: a Cancel that races in after a start over a flag set elsewhere writes nothing.
+    func testADisarmAfterAStartOverAFlagSetElsewhereLeavesIt() async {
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set }
+        let service = await started(fake)
+        let reply = await service.disarm(now: t0 + 10)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, [])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+    }
+
+    /// F2: pmset refuses the Apply's "set 1" over a flag set elsewhere. The helper held
+    /// nothing, so the rollback writes nothing, owns nothing and schedules no retry clear.
+    func testAnApplyPmsetRefusesOverAFlagSetElsewhereLeavesIt() async {
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set }
+        let service = await started(fake)
+        fake.with { $0.setStatus = 1 }
+        let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 10)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1"])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+        XCTAssertEqual(fake.with { $0.scheduled }, [nil], "no retry clear")
+        XCTAssertEqual(stateFile.load(), .idle)
+        XCTAssertFalse(stateFile.loadOwnsFlag())
+    }
+
+    /// Unchanged by F1: Cancel of an armed mode clears the helper's flag.
+    func testADisarmOfAnArmedModeClearsTheFlag() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.calls = [] }
+        let reply = await service.disarm(now: t0 + 60)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
+        XCTAssertEqual(fake.with { $0.flag }, .cleared)
+    }
+
+    /// Unchanged by F2: a re-arm pmset refuses over the helper's own set flag rolls back to the
+    /// old mode and sets the flag for it again.
+    func testAFailedReArmOverItsOwnFlagRollsBackAndSetsItAgain() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.calls = []; $0.failSetsRemaining = 1 }
+        let reply = await service.arm(seconds: 1_800, floorEnabled: false, now: t0 + 60)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1", "set 1", "read"])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+        XCTAssertEqual(stateFile.load(), .armed(deadline: t0 + 7_200, floorEnabled: true))
     }
 }
