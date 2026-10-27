@@ -59,6 +59,17 @@ struct KeepAwakeSection: View {
             (daysText, hoursText, minutesText) = Self.seedText
             await model.refresh()
         }
+        // Every keystroke lands in the state first and is then rewritten through
+        // `KeepAwakeCopy.fieldText`; writing the state (not a binding setter that keeps
+        // it) is what makes the field redraw with the capped or refused text.
+        .onChange(of: daysText) { old, new in cap(&daysText, old: old, new: new, unit: .days) }
+        .onChange(of: hoursText) { old, new in cap(&hoursText, old: old, new: new, unit: .hours) }
+        .onChange(of: minutesText) { old, new in cap(&minutesText, old: old, new: new, unit: .minutes) }
+    }
+
+    private func cap(_ text: inout String, old: String, new: String, unit: KeepAwakeCopy.DurationUnit) {
+        let fixed = KeepAwakeCopy.fieldText(new, previous: old, unit: unit)
+        if fixed != new { text = fixed }
     }
 
     @ViewBuilder
@@ -103,9 +114,9 @@ struct KeepAwakeSection: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
             HStack(spacing: OMSpacing.s) {
-                field(.days, text: capped($daysText, .days))
-                field(.hours, text: capped($hoursText, .hours))
-                field(.minutes, text: capped($minutesText, .minutes))
+                field(.days, text: $daysText)
+                field(.hours, text: $hoursText)
+                field(.minutes, text: $minutesText)
                 Spacer(minLength: 0)
                 if model.isWorking {
                     ProgressView().controlSize(.small)
@@ -121,14 +132,6 @@ struct KeepAwakeSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-    }
-
-    /// A field's binding that runs every keystroke through `KeepAwakeCopy.fieldText`.
-    private func capped(_ text: Binding<String>, _ unit: KeepAwakeCopy.DurationUnit) -> Binding<String> {
-        Binding(
-            get: { text.wrappedValue },
-            set: { text.wrappedValue = KeepAwakeCopy.fieldText($0, previous: text.wrappedValue, unit: unit) }
-        )
     }
 
     /// A number typed by hand and its unit, read as typed.
