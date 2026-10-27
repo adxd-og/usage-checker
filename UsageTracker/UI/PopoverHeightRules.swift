@@ -75,17 +75,21 @@ enum PopoverHeightRules {
     /// settings.
     static let fixedHeightsKey = "popoverFixedHeights"
 
+    /// The kept heights stay under this, on the way in and on the way out: a value at it
+    /// or over it is absurd for a popover, and one read back unbounded (an edited or
+    /// damaged string) would trap the next write's conversion to whole points.
+    static let keptHeightCeiling: CGFloat = 100_000
+
     /// What `tab` kept; nil when there is nothing or its entry does not read.
     static func persisted(for tab: String, in stored: String) -> Persisted? {
         storedPairs(stored)[tab]
     }
 
     /// `stored` with `tab` at `persisted` in whole points rounded up, every other tab
-    /// kept, in id order. A negative, non-finite or absurd height (100 000 pt or more) is
-    /// not stored; an entry that no longer reads is dropped.
+    /// kept, in id order. A negative, non-finite or absurd height (`keptHeightCeiling` or
+    /// more) is not stored; an entry that no longer reads is dropped.
     static func storing(_ persisted: Persisted, for tab: String, in stored: String) -> String {
-        let heights = [persisted.fixedHeight, persisted.minimumHeight]
-        guard heights.allSatisfy({ $0.isFinite && $0 >= 0 && $0 < 100_000 }) else { return stored }
+        guard isKeepable(persisted.fixedHeight), isKeepable(persisted.minimumHeight) else { return stored }
         var pairs = storedPairs(stored)
         pairs[tab] = Persisted(
             fixedHeight: persisted.fixedHeight.rounded(.up),
@@ -97,8 +101,8 @@ enum PopoverHeightRules {
             .joined(separator: ",")
     }
 
-    /// Every readable "tab=fixed/minimum" entry in `stored`: exactly two whole,
-    /// non-negative numbers.
+    /// Every readable "tab=fixed/minimum" entry in `stored`: exactly two whole numbers,
+    /// non-negative and under `keptHeightCeiling`, the bound `storing` writes with.
     private static func storedPairs(_ stored: String) -> [String: Persisted] {
         var pairs: [String: Persisted] = [:]
         for entry in stored.split(separator: ",") {
@@ -106,11 +110,16 @@ enum PopoverHeightRules {
             guard parts.count == 2 else { continue }
             let numbers = parts[1].split(separator: "/", omittingEmptySubsequences: false)
             guard numbers.count == 2,
-                  let fixed = Int(numbers[0]), fixed >= 0,
-                  let minimum = Int(numbers[1]), minimum >= 0
+                  let fixed = Int(numbers[0]).map({ CGFloat($0) }), isKeepable(fixed),
+                  let minimum = Int(numbers[1]).map({ CGFloat($0) }), isKeepable(minimum)
             else { continue }
-            pairs[String(parts[0])] = Persisted(fixedHeight: CGFloat(fixed), minimumHeight: CGFloat(minimum))
+            pairs[String(parts[0])] = Persisted(fixedHeight: fixed, minimumHeight: minimum)
         }
         return pairs
+    }
+
+    /// A height that may be stored or read back: finite, non-negative, under the ceiling.
+    private static func isKeepable(_ height: CGFloat) -> Bool {
+        height.isFinite && height >= 0 && height < keptHeightCeiling
     }
 }

@@ -202,7 +202,7 @@ final class PopoverHeightRulesTests: XCTestCase {
     }
 
     /// Ruling R3: a malformed or partial entry is ignored and dropped at the next write; an
-    /// impossible value is not stored.
+    /// impossible value is neither stored nor read back.
     func testAMalformedOrPartialEntryIsIgnored() {
         let stored = "all=812,codex=812/,grok=/161,antigravity=tall/109,claude=905/109/1,orphan"
         for tab in ["all", "codex", "grok", "antigravity", "claude", "orphan"] {
@@ -212,5 +212,11 @@ final class PopoverHeightRulesTests: XCTestCase {
         XCTAssertEqual(PopoverHeightRules.storing(kept(-5, 109), for: "all", in: "claude=905/109"), "claude=905/109")
         XCTAssertEqual(PopoverHeightRules.storing(kept(.nan, 109), for: "all", in: "claude=905/109"), "claude=905/109")
         XCTAssertEqual(PopoverHeightRules.storing(kept(760, 1_000_000), for: "all", in: "claude=905/109"), "claude=905/109")
+        // The read path holds the write path's ceiling: a height of 100 000 pt or more does
+        // not read back, so it never reaches the next write's conversion to whole points.
+        XCTAssertNil(PopoverHeightRules.persisted(for: "all", in: "all=100000/109"))
+        XCTAssertNil(PopoverHeightRules.persisted(for: "all", in: "all=760/100000"))
+        XCTAssertNil(PopoverHeightRules.persisted(for: "all", in: "all=9223372036854775807/1"))
+        XCTAssertEqual(PopoverHeightRules.persisted(for: "all", in: "all=99999/109"), kept(99_999, 109))
     }
 }
