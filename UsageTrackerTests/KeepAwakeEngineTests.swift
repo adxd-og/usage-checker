@@ -207,12 +207,14 @@ final class KeepAwakeEngineTests: XCTestCase {
 
     // MARK: - § Behaviour › Survives the app, not a reboot; § Helper › Engine, start.
     // Review C5: whether to sleep comes from the flag as it was before the clear; the state
-    // file only supplies the ended reason.
+    // file only supplies the ended reason. Reviewer V3 (supersedes C5's "always clear"): only
+    // the helper's own flag is cleared — the file says armed, or that the helper still owns
+    // the flag (a clear that never read back, a sleep still owed).
 
-    func testADaemonStartAlwaysAsksForTheFlagCleared() {
+    func testADaemonStartClearsAFlagThatDoesNotReadSet() {
         var engine = KeepAwakeEngine()
         XCTAssertEqual(
-            engine.start(persisted: nil, flagWasSet: false, now: t0, lidClosed: false),
+            engine.start(persisted: nil, ownsFlag: false, flagWasSet: false, now: t0, lidClosed: false),
             Out(sleepDisabled: false, sleepNow: false, state: .idle, failure: nil)
         )
     }
@@ -220,7 +222,7 @@ final class KeepAwakeEngineTests: XCTestCase {
     func testAStartAfterAnArmedModeEndsItAsRestarted() {
         var engine = KeepAwakeEngine()
         XCTAssertEqual(
-            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), flagWasSet: true, now: t0, lidClosed: false),
+            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), ownsFlag: false, flagWasSet: true, now: t0, lidClosed: false),
             Out(sleepDisabled: false, sleepNow: false, state: .ended(at: t0, reason: .restarted), failure: nil)
         )
     }
@@ -230,7 +232,7 @@ final class KeepAwakeEngineTests: XCTestCase {
     func testAStartKeepsAnEndedModesReason() {
         var engine = KeepAwakeEngine()
         XCTAssertEqual(
-            engine.start(persisted: .ended(at: t0 - 60, reason: .batteryFloor), flagWasSet: false, now: t0, lidClosed: false).state,
+            engine.start(persisted: .ended(at: t0 - 60, reason: .batteryFloor), ownsFlag: false, flagWasSet: false, now: t0, lidClosed: false).state,
             .ended(at: t0 - 60, reason: .batteryFloor)
         )
     }
@@ -239,42 +241,57 @@ final class KeepAwakeEngineTests: XCTestCase {
     func testARestartThatFindsTheFlagSetWithTheLidClosedSleeps() {
         var engine = KeepAwakeEngine()
         XCTAssertTrue(
-            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), flagWasSet: true, now: t0, lidClosed: true).sleepNow
+            engine.start(persisted: .armed(deadline: t0 + 3_600, floorEnabled: true), ownsFlag: false, flagWasSet: true, now: t0, lidClosed: true).sleepNow
         )
     }
 
     func testAStartWithTheFlagClearNeverSleeps() {
         var idle = KeepAwakeEngine()
-        XCTAssertFalse(idle.start(persisted: .idle, flagWasSet: false, now: t0, lidClosed: true).sleepNow)
+        XCTAssertFalse(idle.start(persisted: .idle, ownsFlag: false, flagWasSet: false, now: t0, lidClosed: true).sleepNow)
         var ended = KeepAwakeEngine()
-        XCTAssertFalse(ended.start(persisted: .ended(at: t0, reason: .deadline), flagWasSet: false, now: t0, lidClosed: true).sleepNow)
+        XCTAssertFalse(ended.start(persisted: .ended(at: t0, reason: .deadline), ownsFlag: true, flagWasSet: false, now: t0, lidClosed: true).sleepNow)
         var armedButClear = KeepAwakeEngine()
-        let output = armedButClear.start(persisted: .armed(deadline: t0 + 60, floorEnabled: true), flagWasSet: false, now: t0, lidClosed: true)
+        let output = armedButClear.start(persisted: .armed(deadline: t0 + 60, floorEnabled: true), ownsFlag: false, flagWasSet: false, now: t0, lidClosed: true)
         XCTAssertFalse(output.sleepNow)
         XCTAssertEqual(output.state, .ended(at: t0, reason: .restarted))
     }
 
-    /// C5: the armed state never reached the file (a failed save, then a crash).
-    func testALostArmedStateStillSleepsWhenTheFlagWasSet() {
+    /// V3: Sleepless or `sudo pmset -a disablesleep 1` set the flag, and the helper started on
+    /// an app launch with nothing armed on file. Not its flag: untouched, nothing ended, no
+    /// sleep, even with the lid closed.
+    func testAFlagSetWithNoModeOnFileIsNotTheHelpersAndIsLeftAlone() {
+        for persisted in [nil, .idle] as [KeepAwakeState?] {
+            var engine = KeepAwakeEngine()
+            XCTAssertEqual(
+                engine.start(persisted: persisted, ownsFlag: false, flagWasSet: true, now: t0, lidClosed: true),
+                Out(sleepDisabled: nil, sleepNow: false, state: .idle, failure: nil),
+                "\(String(describing: persisted))"
+            )
+        }
+    }
+
+    /// V3: an ended mode on file says nothing about a flag set since.
+    func testAnEndedModeOnFileKeepsItsStateAndAFlagSetElsewhere() {
         var engine = KeepAwakeEngine()
         XCTAssertEqual(
-            engine.start(persisted: nil, flagWasSet: true, now: t0, lidClosed: true),
-            Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0, reason: .restarted), failure: nil)
+            engine.start(persisted: .ended(at: t0 - 60, reason: .batteryFloor), ownsFlag: false, flagWasSet: true, now: t0, lidClosed: true),
+            Out(sleepDisabled: nil, sleepNow: false, state: .ended(at: t0 - 60, reason: .batteryFloor), failure: nil)
         )
     }
 
-    /// A deadline whose clear failed, then a crash: the file's reason stays, the sleep is owed.
+    /// A deadline whose clear failed, then a crash: the file says the helper still owns the
+    /// flag, so the file's reason stays, the flag is cleared and the sleep is owed.
     func testAFlagLeftByAFailedClearKeepsTheFilesReasonAndSleeps() {
         var engine = KeepAwakeEngine()
         XCTAssertEqual(
-            engine.start(persisted: .ended(at: t0 - 60, reason: .deadline), flagWasSet: true, now: t0, lidClosed: true),
+            engine.start(persisted: .ended(at: t0 - 60, reason: .deadline), ownsFlag: true, flagWasSet: true, now: t0, lidClosed: true),
             Out(sleepDisabled: false, sleepNow: true, state: .ended(at: t0 - 60, reason: .deadline), failure: nil)
         )
     }
 
     func testAFlagSetWithTheLidOpenNeverSleeps() {
         var engine = KeepAwakeEngine()
-        XCTAssertFalse(engine.start(persisted: nil, flagWasSet: true, now: t0, lidClosed: false).sleepNow)
+        XCTAssertFalse(engine.start(persisted: nil, ownsFlag: true, flagWasSet: true, now: t0, lidClosed: false).sleepNow)
     }
 
     // MARK: - Review C3: launchd stopped the helper

@@ -73,7 +73,9 @@ final class KeepAwakeModel: ObservableObject {
     }
 
     /// Apply: validates and remembers the duration (approved or not), then arms the helper,
-    /// registering it first when needed.
+    /// registering it first when needed. A floor switch that moved while the call was out
+    /// found no armed mode (`floorChanged`), so an armed helper is sent the setting as it is
+    /// now when it differs from the one Apply sent (whole-branch review W3).
     func arm(days: Int, hours: Int, minutes: Int, now: Date = Date()) async {
         guard let seconds = KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) else {
             failure = .invalidDuration
@@ -82,10 +84,17 @@ final class KeepAwakeModel: ObservableObject {
         rememberDuration(Int(seconds / 60))
         isWorking = true
         defer { isWorking = false }
+        let sentFloor = floorEnabled()
         commandGeneration &+= 1
-        let outcome = await client.arm(seconds: seconds, floorEnabled: floorEnabled())
+        let outcome = await client.arm(seconds: seconds, floorEnabled: sentFloor)
         commandGeneration &+= 1
         await apply(outcome, now: now)
+        let floor = floorEnabled()
+        guard outcome.state?.isArmed == true, floor != sentFloor else { return }
+        commandGeneration &+= 1
+        let corrected = await client.setFloor(enabled: floor)
+        commandGeneration &+= 1
+        await apply(corrected, now: now)
     }
 
     /// Cancel.

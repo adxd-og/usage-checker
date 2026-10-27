@@ -86,10 +86,10 @@ final class KeepAwakeListener: NSObject, NSXPCListenerDelegate {
 
 /// omelette-keepawake's life, in order: the service and its timers; the stop path (SIGTERM,
 /// SIGINT) before anything else, so a signal during the start is not lost; the start, which
-/// clears the flag, before listening; power notifications; the listener; then the run loop.
+/// clears the helper's own flag, before listening; power notifications; the listener; then the run loop.
 /// The ways out are the idle exit and the stop path (status 0 from inside the actor, not
 /// restarted; status 1 when a stop could not clear, so launchd restarts it) and a crash
-/// (restarted by `KeepAlive`, whose start clears).
+/// (restarted by `KeepAlive`, whose start clears the flag the file claims).
 enum KeepAwakeDaemon {
     static func run() -> Never {
         // 1. The service and its two wall-clock timers.

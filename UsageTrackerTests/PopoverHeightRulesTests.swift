@@ -251,4 +251,24 @@ final class PopoverHeightRulesTests: XCTestCase {
         XCTAssertNil(PopoverHeightRules.persisted(for: "all", in: "all=9223372036854775807/1"))
         XCTAssertEqual(PopoverHeightRules.persisted(for: "all", in: "all=99999/109"), kept(99_999, 109))
     }
+
+    // MARK: - Reviewer V4: an auto-hidden menu bar
+
+    /// A 982-point screen whose menu bar (33) is shown: the visible frame stops below it, and
+    /// is the height the popover has.
+    func testAVisibleFrameThatLeavesTheMenuBarOutIsTheHeight() {
+        XCTAssertEqual(
+            PopoverHeightRules.screenVisibleHeight(frameMaxY: 982, visibleFrameMaxY: 949, visibleFrameHeight: 900, menuBarHeight: 33),
+            900
+        )
+    }
+
+    /// With the menu bar set to hide, the visible frame reaches the screen's top, but the
+    /// popover still opens below the menu bar: it loses the menu bar's height.
+    func testAVisibleFrameThatReachesTheTopLosesTheMenuBar() {
+        XCTAssertEqual(
+            PopoverHeightRules.screenVisibleHeight(frameMaxY: 982, visibleFrameMaxY: 982, visibleFrameHeight: 933, menuBarHeight: 33),
+            900
+        )
+    }
 }

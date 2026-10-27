@@ -1,16 +1,18 @@
 import Foundation
 
 /// The daemon's decision maker (spec 2026-10-26, § Helper › Engine): a value with no clock and
-/// no machine. Every input returns the flag value to apply, whether to run `pmset sleepnow`
-/// after clearing it, and the state to report and persist.
+/// no machine. Every input returns the flag value to apply (only a start may leave the flag
+/// as it is), whether to run `pmset sleepnow` after clearing it, and the state to report and
+/// persist.
 ///
 /// The one output rule: `sleepNow` is true when an armed mode ended during this input and the
 /// lid is closed (plan D5); clearing the flag with the lid closed leaves the Mac awake (spike
 /// step 5), so the end of a mode in a bag has to ask for sleep itself.
 struct KeepAwakeEngine: Equatable, Sendable {
     struct Output: Equatable, Sendable {
-        /// The flag value to apply.
-        var sleepDisabled: Bool
+        /// The flag value to apply; nil leaves the flag as it is (a start that finds a flag the
+        /// helper did not set, reviewer V3).
+        var sleepDisabled: Bool?
         /// Run `pmset sleepnow` after clearing.
         var sleepNow: Bool
         /// What to report and persist.
@@ -75,18 +77,27 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return output(wasArmed: wasArmed, lidClosed: lidClosed)
     }
 
-    /// Daemon launch → always clear, regardless of the file (spec § Helper). Whether to sleep
-    /// comes from the flag as `pmset -g` read it before the start's clear, not from the file
-    /// (review C5): a crash with the lid closed is the bag case even when the armed state never
-    /// reached the file, which only supplies an ended mode's reason.
-    mutating func start(persisted: KeepAwakeState?, flagWasSet: Bool, now: Date, lidClosed: Bool) -> Output {
+    /// Daemon launch (spec § Helper; reviewer V3, which supersedes review C5's "always clear").
+    /// The flag is the helper's when the file says so: an armed mode (Apply writes it before
+    /// the flag goes on), or `ownsFlag`, a clear that never read back or a sleep still owed.
+    /// The helper's flag is cleared, and whether to sleep comes from the flag as `pmset -g`
+    /// read it before that clear (C5): set, with the lid closed, is the bag case. A flag that
+    /// reads set and is not the helper's (another app, `pmset` by hand) is left as it is, with
+    /// the state the file holds: nothing ended, nothing to sleep from. A flag that does not
+    /// read set is cleared either way; nothing is lost by it. The file supplies an ended
+    /// mode's reason.
+    mutating func start(persisted: KeepAwakeState?, ownsFlag: Bool, flagWasSet: Bool, now: Date, lidClosed: Bool) -> Output {
+        let ours = ownsFlag || persisted?.isArmed == true
         switch persisted {
         case .armed:
             state = .ended(at: now, reason: .restarted)
         case .ended(let at, let reason):
             state = .ended(at: at, reason: reason)
         case .idle, nil:
-            state = flagWasSet ? .ended(at: now, reason: .restarted) : (persisted ?? .idle)
+            state = flagWasSet && ours ? .ended(at: now, reason: .restarted) : .idle
+        }
+        guard ours || !flagWasSet else {
+            return Output(sleepDisabled: nil, sleepNow: false, state: state, failure: nil)
         }
         return Output(sleepDisabled: false, sleepNow: flagWasSet && lidClosed, state: state, failure: nil)
     }

@@ -159,7 +159,7 @@ actor KeepAwakeClient {
     ///    administrator prompt clear it, and the flag is read again.
     /// 3. Only once the flag reads clear is the helper unregistered (unless it never was) and
     ///    its build forgotten. A flag still set, or unreadable, keeps the helper registered: it
-    ///    clears the flag at its next start, and Reset can be pressed again.
+    ///    clears a flag it owns at its next start, and Reset can be pressed again.
     func reset() async -> KeepAwakeResetOutcome {
         let before = registration()
         if before == .ready {
