@@ -6,13 +6,29 @@ import SwiftUI
 /// armed replaces the deadline and Apply after an end starts a new one.
 struct KeepAwakeSection: View {
     @ObservedObject private var model = KeepAwakeModel.shared
-    /// The fields, seeded from the last applied duration on every popover open.
-    @State private var parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+    /// The fields' text, seeded from the last applied duration on every popover open and read
+    /// on every keystroke through `KeepAwakeCopy.fieldNumber`, so Apply sees what is typed.
+    @State private var daysText = Self.seedText.days
+    @State private var hoursText = Self.seedText.hours
+    @State private var minutesText = Self.seedText.minutes
     /// Ends up to this moment are dismissed (plan D3). Persisted, because the helper keeps
     /// reporting an end across restarts; the helper is never told.
     @AppStorage(KeepAwakeSection.dismissedEndKey) private var dismissedEndAt: Double = 0
 
     nonisolated static let dismissedEndKey = "keepAwakeDismissedEndAt"
+
+    private var parts: KeepAwakeRules.Parts {
+        KeepAwakeRules.Parts(
+            days: KeepAwakeCopy.fieldNumber(daysText),
+            hours: KeepAwakeCopy.fieldNumber(hoursText),
+            minutes: KeepAwakeCopy.fieldNumber(minutesText)
+        )
+    }
+
+    private static var seedText: (days: String, hours: String, minutes: String) {
+        let parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+        return (String(parts.days), String(parts.hours), String(parts.minutes))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
@@ -40,7 +56,7 @@ struct KeepAwakeSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .popoverSurface(.group)
         .task {
-            parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+            (daysText, hoursText, minutesText) = Self.seedText
             await model.refresh()
         }
     }
@@ -87,9 +103,9 @@ struct KeepAwakeSection: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
             HStack(spacing: OMSpacing.s) {
-                field(.days, value: $parts.days)
-                field(.hours, value: $parts.hours)
-                field(.minutes, value: $parts.minutes)
+                field(.days, text: $daysText)
+                field(.hours, text: $hoursText)
+                field(.minutes, text: $minutesText)
                 Spacer(minLength: 0)
                 if model.isWorking {
                     ProgressView().controlSize(.small)
@@ -107,17 +123,17 @@ struct KeepAwakeSection: View {
         }
     }
 
-    /// A number typed by hand and its unit; the value lands on Return or when focus leaves.
-    private func field(_ unit: KeepAwakeCopy.DurationUnit, value: Binding<Int>) -> some View {
+    /// A number typed by hand and its unit, read as typed.
+    private func field(_ unit: KeepAwakeCopy.DurationUnit, text: Binding<String>) -> some View {
         HStack(spacing: 3) {
-            TextField("0", value: value, format: .number)
+            TextField("0", text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: OMKeyValueRow.captionSize))
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
                 .frame(width: 44)
                 .accessibilityLabel(unit.name)
-                .accessibilityValue(KeepAwakeCopy.unitValue(value.wrappedValue, unit: unit))
+                .accessibilityValue(KeepAwakeCopy.unitValue(KeepAwakeCopy.fieldNumber(text.wrappedValue), unit: unit))
             Text(unit.symbol)
                 .font(.system(size: OMKeyValueRow.captionSize))
                 .foregroundStyle(.om(.secondary))

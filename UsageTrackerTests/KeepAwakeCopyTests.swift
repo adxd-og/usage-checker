@@ -179,6 +179,21 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 1, minutes: 0, isWorking: true))
     }
 
+    /// § UI: a field is read as typed — digits only, nothing else counts, nine digits at most.
+    func testAFieldIsReadAsTypedDigitsOnly() {
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber(""), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber(" 8 "), 8)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("007"), 7)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("1.5"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("1,5"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("-1"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("abc"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("٨"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("99999999999999999999"), 999_999_999)
+        XCTAssertNil(KeepAwakeRules.duration(days: KeepAwakeCopy.fieldNumber("99999999999999999999"), hours: 0, minutes: 0))
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: KeepAwakeCopy.fieldNumber("8"), hours: 0, minutes: 0), KeepAwakeCopy.limitNotice)
+    }
+
     /// § UI: a typed total over seven days is refused with one line; nothing else gets a line.
     func testOverSevenDaysTheBlockSaysWhyAndNothingElseDoes() {
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "7 days is the maximum, for your safety.")

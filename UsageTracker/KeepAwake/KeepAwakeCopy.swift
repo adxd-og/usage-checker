@@ -40,6 +40,15 @@ enum KeepAwakeCopy {
         "\(value) \(unit.symbol)"
     }
 
+    /// A field's text as a number, read on every keystroke: ASCII digits only (spaces around
+    /// them ignored), anything else counts as nothing typed. At most nine digits are read, so
+    /// a long run cannot overflow; the limit line explains it.
+    static func fieldNumber(_ text: String) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return 0 }
+        return Int(trimmed.prefix(9)) ?? 0
+    }
+
     /// The time left: "52 min", "4 h 52 min", "3 h", "3 d 2 h", "7 d". Minutes round up, so
     /// an armed mode with seconds left reads "1 min", never "0 min", and a fresh five-hour
     /// mode reads "5 h"; from a day on the minutes are dropped.
