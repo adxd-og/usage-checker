@@ -2,6 +2,10 @@ import SwiftUI
 
 struct PopoverView: View {
     @ObservedObject var state: AppState
+    /// The visible height (menu bar and Dock left out) of the screen the popover opens
+    /// on, set by `StatusBarController` before each show; nil keeps the agents list's
+    /// old fixed cap (popover height budget spec 2026-10-27).
+    var screenVisibleHeight: CGFloat? = nil
     /// The display mode. Observed here rather than read once, so flipping the switch
     /// in Settings repaints the popover under the cursor.
     @ObservedObject private var settings = SettingsStore.shared
@@ -15,6 +19,18 @@ struct PopoverView: View {
     @State private var codexHooksInstalled = false
     /// The one-time offer to install Claude's hooks, decided from the same read.
     @State private var hooksPromptVisible = false
+    /// What the popover measured on each tab (`WindowRanking.allTab` or a provider id):
+    /// its own height and its agents list's report, both taken while that tab showed
+    /// (plan ruling C1). An entry outlives the tab and the popover's close; a list that
+    /// empties drops its report.
+    @State private var tabSamples: [String: PopoverHeightRules.Samples] = [:]
+    /// The popover's height as last laid out, to seed a tab that has no sample of its
+    /// own when a switch leaves the height as it was (plan ruling R1).
+    @State private var lastPopoverHeight: CGFloat?
+    /// Each tab's last fixed height and list floor, so the first open after a launch
+    /// starts from them (plan rulings C3, R3). A view-level preference, forgotten by
+    /// Reset all settings.
+    @AppStorage(PopoverHeightRules.fixedHeightsKey) private var storedHeights: String = ""
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -57,6 +73,25 @@ struct PopoverView: View {
         }
         .padding(Self.padding)
         .frame(width: Self.width)
+        // The popover's own height, filed under the tab it was laid out for, from the
+        // same layout pass as that tab's list report (`AgentsSection.onListGeometry`),
+        // so the tab's `popover − list` does not move with the cap (spec 2026-10-27).
+        // Keep it an `onGeometryChange` writing state directly: a pass of lag against
+        // the list would make the cap flip for ever.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            lastPopoverHeight = height
+            recordPopoverHeight(height, tab: currentTab)
+        }
+        // A switch that leaves the popover's height as it was fires no geometry action,
+        // so a tab with no sample of its own takes the current height; when the height
+        // does change, the action above overwrites it (plan ruling R1).
+        .onChange(of: currentTab) { _, tab in
+            if tabSamples[tab]?.popoverHeight == nil, let height = lastPopoverHeight {
+                recordPopoverHeight(height, tab: tab)
+            }
+        }
         // The 3.0 body: chrome glass in the popover's 24 pt corner, over the window
         // backdrop it refracts (spec § Tokens: the window background is the popover
         // body's too). NSPopover draws its own frame and arrow around it.
@@ -156,6 +191,52 @@ struct PopoverView: View {
     /// nil on the All tab.
     private var selectedService: ServiceSnapshot? {
         displayedServices.first { $0.id == currentTab }
+    }
+
+    // MARK: - Height budget (spec 2026-10-27)
+
+    /// How tall the current tab's agents list may be on this screen: the list gives way
+    /// so the limits, keep awake and the footer stay on it (`PopoverHeightRules`).
+    private var agentsListCap: CGFloat {
+        PopoverHeightRules.agentsListCap(
+            screenVisibleHeight: screenVisibleHeight,
+            samples: tabSamples[currentTab],
+            persisted: PopoverHeightRules.persisted(for: currentTab, in: storedHeights)
+        )
+    }
+
+    /// Files the popover's height under the tab it was laid out for.
+    private func recordPopoverHeight(_ height: CGFloat, tab: String) {
+        var samples = tabSamples[tab] ?? PopoverHeightRules.Samples()
+        guard samples.popoverHeight != height else { return }
+        samples.popoverHeight = height
+        tabSamples[tab] = samples
+        persist(tab)
+    }
+
+    /// Files a list's report under its tab; nil (the list emptied) drops it. A report
+    /// equal to the one held (the `.onChange` re-send of a shown height) changes nothing.
+    private func recordAgentsList(_ geometry: AgentsListGeometry?, tab: String) {
+        var samples = tabSamples[tab] ?? PopoverHeightRules.Samples()
+        guard samples.list != geometry else { return }
+        samples.list = geometry
+        tabSamples[tab] = samples
+        persist(tab)
+    }
+
+    /// Keeps the tab's fixed height and list floor for the first open after the next
+    /// launch, once the tab has both samples; writes only when the stored string changes.
+    private func persist(_ tab: String) {
+        guard let samples = tabSamples[tab],
+              let fixed = PopoverHeightRules.fixedHeight(samples, persisted: nil),
+              let list = samples.list
+        else { return }
+        let stored = PopoverHeightRules.storing(
+            PopoverHeightRules.Persisted(fixedHeight: fixed, minimumHeight: list.minimumHeight),
+            for: tab,
+            in: storedHeights
+        )
+        if stored != storedHeights { storedHeights = stored }
     }
 
     /// The All tab's rows: two tiles each, the last one alone when the count is odd.
@@ -315,7 +396,9 @@ struct PopoverView: View {
                 showsHooksPrompt: hooksPromptVisible && AgentSource(rawValue: service.id) == .claude,
                 onEnableAgents: openAgentsSettings,
                 onEnableHooks: enableClaudeHooks,
-                onDismissHooksPrompt: dismissHooksPrompt
+                onDismissHooksPrompt: dismissHooksPrompt,
+                agentsMaxListHeight: agentsListCap,
+                onAgentsListGeometry: { recordAgentsList($0, tab: service.id) }
             )
         } else {
             allTab
@@ -355,6 +438,8 @@ struct PopoverView: View {
                 // guessing, so both have to be wired for it to disappear — and
                 // never while the prompt row above already offers the same thing.
                 hooksInstalled: (claudeHooksInstalled && codexHooksInstalled) || hooksPromptVisible,
+                maxListHeight: agentsListCap,
+                onListGeometry: { recordAgentsList($0, tab: WindowRanking.allTab) },
                 onEnable: openAgentsSettings
             )
         }
@@ -481,6 +566,10 @@ private struct ProviderDetail: View {
     let onEnableAgents: () -> Void
     var onEnableHooks: () -> Void = {}
     var onDismissHooksPrompt: () -> Void = {}
+    /// The agents list's cap on this screen and where its reports go
+    /// (`PopoverView.agentsListCap`); the defaults are today's fixed cap and nowhere.
+    var agentsMaxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
+    var onAgentsListGeometry: (AgentsListGeometry?) -> Void = { _ in }
 
     @ObservedObject private var agents = AgentSessionStore.shared
 
@@ -557,6 +646,8 @@ private struct ProviderDetail: View {
                     // The prompt row above is the same offer, said better; the
                     // link would only repeat it.
                     hooksInstalled: hooksInstalled || showsHooksPrompt,
+                    maxListHeight: agentsMaxListHeight,
+                    onListGeometry: onAgentsListGeometry,
                     onEnable: onEnableAgents
                 )
             }

@@ -6,6 +6,9 @@ import Combine
 final class StatusBarController {
     let statusItem: NSStatusItem
     private let popover: NSPopover
+    /// The popover's content. Its root view is re-made before each show to carry the
+    /// screen the popover opens on (popover height budget spec 2026-10-27).
+    private let host: NSHostingController<PopoverView>
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
     /// The tooltip's keep-awake line follows the model, not only the snapshot.
@@ -14,12 +17,11 @@ final class StatusBarController {
     init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
+        self.host = NSHostingController(rootView: PopoverView(state: AppState.shared))
         self.popover.behavior = .transient
         self.popover.animates = true
         self.popover.contentSize = NSSize(width: 340, height: 460)
-        self.popover.contentViewController = NSHostingController(
-            rootView: PopoverView(state: AppState.shared)
-        )
+        self.popover.contentViewController = host
 
         configureButton()
         // The snapshot notification is the only tooltip trigger: the data changes
@@ -73,9 +75,18 @@ final class StatusBarController {
             // app, so this is when an update is worth noticing. Throttled to once an
             // hour inside the updater.
             Updater.shared.checkInBackgroundIfDue()
+            // The screen the popover is about to open on, handed in before the show so
+            // its first layout already sizes the agents list for it (spec 2026-10-27).
+            host.rootView = PopoverView(state: AppState.shared, screenVisibleHeight: Self.screenVisibleHeight(of: button))
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    /// The visible height (menu bar and Dock left out) of the screen whose menu bar
+    /// holds the status item; the main screen's while the button has no window.
+    private static func screenVisibleHeight(of button: NSStatusBarButton) -> CGFloat? {
+        (button.window?.screen ?? NSScreen.main)?.visibleFrame.height
     }
 
     /// Entry point for `.showPopover` (a notification the user acted on). A menu bar
