@@ -6,6 +6,44 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Omelette v3.2.0</title>
+      <pubDate>Tue, 27 Oct 2026 18:35:14 +0200</pubDate>
+      <sparkle:version>54</sparkle:version>
+      <sparkle:shortVersionString>3.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Popover</h3>
+<ul>
+<li>Keep awake with the lid closed: a block above the footer keeps the Mac awake with its lid closed for 1 minute to 7 d 23 h 59 min (days, hours and minutes typed by hand, each field stopping at 7, 24 or 60, then Apply; more than that is brought down to it on Apply). While on it shows "Awake until 18:40 · 4 h 52 min left" and Cancel; Apply again replaces the deadline.</li>
+<li>When keep awake ends, the block says when and why (time is up, battery below 25 %, cancelled, a restart, the helper stopped) until you dismiss it or apply again.</li>
+<li>After the first Apply, the block says how to approve the helper and opens Login Items.</li>
+<li>The agents list gives way to the screen: on a small display such as a 14-inch MacBook it shows two rows, on a large one five, and the rest scrolls inside the list, so the limits, keep awake and the footer stay on screen. The first open after this update sizes itself once.</li>
+</ul>
+<h3>Menu bar</h3>
+<ul>
+<li>A ☾ before the bars while keep awake is on; the tooltip's first line says until when.</li>
+</ul>
+<h3>Settings</h3>
+<ul>
+<li>General → Keep awake: "End below 25 % on battery", on by default; a change reaches a running mode at once.</li>
+<li>Advanced → Reset keep awake, after a confirmation, ends the mode, clears the sleep flag, removes the helper from Login Items and puts its two settings back. The line under it shows what <code>pmset -g</code> reports.</li>
+</ul>
+<h3>Helper</h3>
+<ul>
+<li>Keep awake runs a helper, <code>omelette-keepawake</code>, as root under launchd. The first Apply registers it; macOS announces it as "Background Items Added", and it works once Omelette is switched on in System Settings → General → Login Items &amp; Extensions.</li>
+<li>The helper ends the mode on time and at the battery floor even when Omelette is not running, and clears its own sleep flag every time it starts, so nothing resumes after a restart; a flag set by another tool is left alone until an Apply takes it over, and the end of that mode clears it.</li>
+<li>When the mode ends at the deadline, at the battery floor, on Cancel or Reset, or through a helper restart while it was on, with the lid closed and no external display keeping the Mac awake, the Mac goes to sleep; a helper switched off in Login Items only clears the flag.</li>
+<li>Deleting Omelette while keep awake is on leaves the Mac unable to sleep until <code>sudo pmset -a disablesleep 0</code> is run in Terminal; press Reset keep awake before deleting it.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v3.2.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v3.2.0/Omelette.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="VskTaXerWGwfDP9lvbSKdCk1KUZSRz3ZgeHNdLqCYFQmUqYub8B4qZe64DozXcPLksxkeUGTmapBYZvIctkKBw=="
+        length="25862584"/>
+    </item>
+    <item>
       <title>Omelette v3.1.0</title>
       <pubDate>Sat, 17 Oct 2026 13:52:03 +0300</pubDate>
       <sparkle:version>53</sparkle:version>
