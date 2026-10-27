@@ -140,6 +140,81 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         } } }
     }
 
+    // MARK: - A keystroke goes through fieldText
+
+    private let units: [KeepAwakeCopy.DurationUnit] = [.days, .hours, .minutes]
+
+    func testAKeystrokeLeavesEmptyOrDigitsThatReadBackAsTheSameCappedNumber() {
+        let typed = ["", " ", "0", "00", "000000000", "5", "7", "8", "23", "24", "25", "59", "60", "61", "100", "230",
+                     "999999999", "1234567890", "99999999999999999999", "0000000000007", " 12 ", "\t9\t",
+                     "-1", "1.5", "1,5", "1 2", "abc", "\u{0668}", "\u{FF15}", "5\u{0668}", "+3", "1e2"]
+        for unit in units {
+            for t in typed {
+                for previous in ["", "0", "3"] {
+                    let out = KeepAwakeCopy.fieldText(t, previous: previous, unit: unit)
+                    let isDigitsOnly = !t.trimmingCharacters(in: .whitespaces).isEmpty
+                        && t.trimmingCharacters(in: .whitespaces).allSatisfy { $0.isASCII && $0.isNumber }
+                    if t.trimmingCharacters(in: .whitespaces).isEmpty {
+                        XCTAssertEqual(out, "", "\(unit) \(t.debugDescription)")
+                    } else if !isDigitsOnly {
+                        XCTAssertEqual(out, previous, "\(unit) \(t.debugDescription)")
+                    } else {
+                        let expected = min(KeepAwakeCopy.fieldNumber(t), unit.maximum)
+                        XCTAssertEqual(out, String(expected), "\(unit) \(t.debugDescription)")
+                        XCTAssertEqual(KeepAwakeCopy.fieldNumber(out), expected)
+                        // idempotent: typing the same thing on top of its own result changes nothing
+                        XCTAssertEqual(KeepAwakeCopy.fieldText(out, previous: out, unit: unit), out)
+                    }
+                }
+            }
+        }
+    }
+
+    func testAFieldKeepsAZeroAndSnapsAnythingPastItsMaximumToTheMaximum() {
+        XCTAssertEqual(KeepAwakeCopy.fieldText("0", previous: "5", unit: .minutes), "0")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("00", previous: "0", unit: .days), "0")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("   ", previous: "5", unit: .hours), "")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("24", previous: "2", unit: .hours), "24")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("245", previous: "24", unit: .hours), "24")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("25", previous: "2", unit: .hours), "24")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("23", previous: "2", unit: .hours), "23")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("59", previous: "5", unit: .minutes), "59")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("7", previous: "", unit: .days), "7")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("999999999", previous: "", unit: .days), "7")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("1234567890", previous: "", unit: .minutes), "60")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("99999999999999999999", previous: "", unit: .hours), "24")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("0000000000007", previous: "", unit: .days), "0", "only the first nine characters are read")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("1 2", previous: "1", unit: .minutes), "1")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("5\u{0668}", previous: "5", unit: .minutes), "5")
+    }
+
+    /// The caps are per field; the total rule still has the last word, at the ceiling.
+    func testTheFieldCapsComposeWithTheCeilingSoOnlyTheFullStopsAreRefused() {
+        for d in 0...7 {
+            for h in 0...24 {
+                for m in [0, 1, 58, 59, 60] {
+                    let nd = KeepAwakeCopy.fieldNumber(KeepAwakeCopy.fieldText(String(d), previous: "", unit: .days))
+                    let nh = KeepAwakeCopy.fieldNumber(KeepAwakeCopy.fieldText(String(h), previous: "", unit: .hours))
+                    let nm = KeepAwakeCopy.fieldNumber(KeepAwakeCopy.fieldText(String(m), previous: "", unit: .minutes))
+                    XCTAssertEqual([nd, nh, nm], [d, h, m])
+                    let total = d * 1_440 + h * 60 + m
+                    let isZero = total == 0
+                    let refused = total > 11_519
+                    XCTAssertEqual(KeepAwakeRules.duration(days: nd, hours: nh, minutes: nm) == nil, refused || isZero, "\(d) \(h) \(m)")
+                    XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm), refused ? KeepAwakeCopy.limitNotice : nil, "\(d) \(h) \(m)")
+                }
+            }
+        }
+        // typed at the stops: 7 / 24 / 60 is refused with the line, 7 / 23 / 59 is the ceiling
+        let stop = (KeepAwakeCopy.fieldText("9", previous: "", unit: .days), KeepAwakeCopy.fieldText("99", previous: "", unit: .hours), KeepAwakeCopy.fieldText("99", previous: "", unit: .minutes))
+        XCTAssertEqual([stop.0, stop.1, stop.2], ["7", "24", "60"])
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: KeepAwakeCopy.fieldNumber(stop.0), hours: KeepAwakeCopy.fieldNumber(stop.1), minutes: KeepAwakeCopy.fieldNumber(stop.2)), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 59), 691_140)
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 59))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertFalse(KeepAwakeCopy.canApply(days: 7, hours: 24, minutes: 0, isWorking: false))
+    }
+
     // MARK: - The model's Apply goes through the same rule
 
     @MainActor private final class Prefs { var remembered: [Int] = [] }
