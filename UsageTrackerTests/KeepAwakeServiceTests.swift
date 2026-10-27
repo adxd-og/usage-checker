@@ -88,15 +88,21 @@ final class KeepAwakeServiceTests: XCTestCase {
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
     }
 
-    /// C5: a failed save, then a crash with the lid closed — the file is no help.
-    func testACrashWithAnUnsavedArmedStateStillSleepsWithTheLidClosed() async throws {
+    /// V3 (supersedes C5's "always clear"): a set flag the file does not claim — Sleepless, or
+    /// `sudo pmset -a disablesleep 1` — is not the helper's. Its start on an app launch leaves
+    /// it, ends nothing, sleeps nothing with the lid closed, and lets the daemon go idle.
+    func testAStartLeavesAFlagItDidNotSetAlone() async throws {
         try Data("not json".utf8).write(to: stateFile.url)
         let fake = FakeKeepAwakeMachine()
         fake.with { $0.flag = .set; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
-        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["read"], "no set 0, no sleepnow")
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+        XCTAssertEqual(fake.with { $0.scheduled }, [nil])
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 60], "nothing of its own to hold: idle")
+        XCTAssertEqual(stateFile.load(), .idle)
     }
 
     func testAStartWithTheFlagClearNeverSleeps() async throws {
@@ -629,5 +635,127 @@ final class KeepAwakeServiceTests: XCTestCase {
         let next = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         _ = await next.start(now: t0 + 600)
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"])
+    }
+
+    // MARK: - Reviewer V3: the start clears only the helper's own flag
+
+    private let closedLid = KeepAwakeLid(closed: true, causesSleep: true)
+
+    func testAStartKeepsAnEndedModeAndAFlagSetElsewhere() async throws {
+        try stateFile.save(.ended(at: t0 - 60, reason: .deadline))
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set; $0.lid = closedLid }
+        let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        let reply = await service.start(now: t0)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 - 60, reason: .deadline), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["read"])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+        XCTAssertEqual(stateFile.load(), .ended(at: t0 - 60, reason: .deadline))
+    }
+
+    /// As before V3: an armed mode on file makes a set flag the helper's.
+    func testAStartAfterACrashWhileArmedWithTheLidClosedClearsAndSleeps() async throws {
+        try stateFile.save(.armed(deadline: t0 + 3_600, floorEnabled: true))
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set; $0.lid = closedLid }
+        let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        let reply = await service.start(now: t0)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
+    }
+
+    /// A sleep still owed (W1) says the last mode ended on a closed lid: the flag is the
+    /// helper's to clear before the sleep.
+    func testAnOwedSleepMakesASetFlagTheHelpersToClearThenSleep() async throws {
+        try stateFile.save(.ended(at: t0 - 60, reason: .deadline), sleepOwed: true)
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set; $0.lid = closedLid }
+        let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        _ = await service.start(now: t0)
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
+        XCTAssertFalse(stateFile.loadSleepOwed())
+    }
+
+    /// What the state file said each time pmset was asked to set the flag.
+    private final class FileAtEachSet: @unchecked Sendable {
+        struct Entry: Equatable { var value: Bool; var file: KeepAwakeState? }
+        private let lock = NSLock()
+        private var storage: [Entry] = []
+        var entries: [Entry] { lock.withLock { storage } }
+        func record(_ entry: Entry) { lock.withLock { storage.append(entry) } }
+    }
+
+    /// The crash window C5 guarded: the file says armed before the flag goes on, so a crash
+    /// between the two leaves "armed" on file, and the next start clears the flag as its own.
+    func testAnArmWritesTheArmedStateBeforeItSetsTheFlag() async {
+        let fake = FakeKeepAwakeMachine()
+        let file = stateFile
+        let seen = FileAtEachSet()
+        var machine = fake.machine()
+        let inner = machine.setSleepDisabled
+        machine.setSleepDisabled = { value in
+            seen.record(.init(value: value, file: file.load()))
+            return inner(value)
+        }
+        let service = KeepAwakeService(machine: machine, stateFile: file)
+        _ = await service.start(now: t0)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        XCTAssertEqual(seen.entries.last, .init(value: true, file: .armed(deadline: t0 + 7_200, floorEnabled: true)))
+    }
+
+    /// A set that fails rolls the engine back, and the file with it.
+    func testAnArmThatFailsWritesTheRolledBackStateAgain() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        fake.with { $0.failSetsRemaining = 1 }
+        let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        XCTAssertEqual(reply.state, .idle)
+        XCTAssertEqual(fake.with { $0.calls }, ["set 1", "set 0", "read"])
+        XCTAssertEqual(stateFile.load(), .idle)
+        XCTAssertFalse(stateFile.loadOwnsFlag())
+    }
+
+    /// Rule 10: a flag the helper never set is not its to clear on the way out either.
+    func testATerminateAfterAStartThatFoundAFlagSetElsewhereLeavesIt() async {
+        let fake = FakeKeepAwakeMachine()
+        fake.with { $0.flag = .set }
+        let service = await started(fake)
+        await service.terminate(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.calls }, [])
+        XCTAssertEqual(fake.with { $0.flag }, .set)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+    }
+
+    /// Rule 10 (P1a) under V3: a stop that could not clear exits 1 so launchd restarts the job;
+    /// the file says the helper still owns the flag, so that start clears it.
+    func testAStopThatCouldNotClearLeavesItsFlagToTheNextStart() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
+        fake.with { $0.setTakes = false }
+        await service.terminate(now: t0 + 60)
+        XCTAssertEqual(fake.with { $0.terminations }, [1])
+        XCTAssertTrue(stateFile.loadOwnsFlag())
+        fake.with { $0.calls = []; $0.setTakes = true }
+        let restarted = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        _ = await restarted.start(now: t0 + 70)
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"])
+        XCTAssertEqual(fake.with { $0.flag }, .cleared)
+        XCTAssertFalse(stateFile.loadOwnsFlag())
+    }
+
+    /// The deadline's clear fails with the lid open (no sleep owed): until a clear reads back,
+    /// the file says the flag is the helper's, so a crash before the retry still clears it.
+    func testTheFileOwnsTheFlagUntilAClearReadsBack() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        XCTAssertTrue(stateFile.loadOwnsFlag())
+        fake.with { $0.setStatus = 1 }
+        _ = await service.tick(now: t0 + 120)
+        XCTAssertTrue(stateFile.loadOwnsFlag(), "the clear failed: still the helper's")
+        fake.with { $0.setStatus = 0 }
+        _ = await service.tick(now: t0 + 180)
+        XCTAssertFalse(stateFile.loadOwnsFlag(), "read back clear: let go")
     }
 }

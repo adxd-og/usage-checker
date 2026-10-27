@@ -247,7 +247,9 @@ final class KeepAwakeVerificationServiceTests: XCTestCase {
     }
 
     /// A start that cannot clear the flag leaves a retry scheduled and keeps the daemon alive.
+    /// The flag is the helper's: a crash while armed (V3 leaves any other set flag alone).
     func testAStartWhoseClearFailsKeepsRetryingAndNeverExits() async {
+        XCTAssertNoThrow(try stateFile.save(.armed(deadline: t0 + 3_600, floorEnabled: true)))
         let fake = FakeKeepAwakeMachine()
         fake.with { $0.flag = .set; $0.setStatus = 1 }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
@@ -438,26 +440,37 @@ final class KeepAwakeVerificationEngineTests: XCTestCase {
             XCTAssertEqual(output.sleepDisabled, output.state.isArmed, "the flag follows the mode (step \(step))")
             if output.sleepNow {
                 XCTAssertTrue(lid && before.isArmed && !output.state.isArmed, "sleepNow only when an armed mode ended on a closed lid (step \(step))")
-                XCTAssertFalse(output.sleepDisabled)
+                XCTAssertEqual(output.sleepDisabled, false)
             }
             if let deadline = output.state.deadline { XCTAssertGreaterThan(deadline, now) }
         }
     }
 
-    func testAStartNeverLeavesTheFlagOnWhateverTheFileSays() {
+    /// V3: the helper's own flag (an armed mode on file, or a file that says it still owns the
+    /// flag) is never left on; a set flag that is not its own is never touched or slept from.
+    func testAStartNeverLeavesItsOwnFlagOnAndNeverTouchesAnother() {
         let now = Date(timeIntervalSince1970: 1_793_000_000)
         let files: [KeepAwakeState?] = [
             nil, .idle, .armed(deadline: now + 3_600, floorEnabled: true), .armed(deadline: now - 3_600, floorEnabled: false),
             .ended(at: now - 60, reason: .batteryFloor),
         ]
         for file in files {
-            for flagWasSet in [false, true] {
-                for lid in [false, true] {
-                    var engine = KeepAwakeEngine()
-                    let output = engine.start(persisted: file, flagWasSet: flagWasSet, now: now, lidClosed: lid)
-                    XCTAssertFalse(output.sleepDisabled, "\(String(describing: file)) \(flagWasSet) \(lid)")
-                    XCTAssertFalse(output.state.isArmed)
-                    XCTAssertEqual(output.sleepNow, flagWasSet && lid, "\(String(describing: file)) \(flagWasSet) \(lid)")
+            for ownsFlag in [false, true] {
+                for flagWasSet in [false, true] {
+                    for lid in [false, true] {
+                        let tag = "\(String(describing: file)) \(ownsFlag) \(flagWasSet) \(lid)"
+                        var engine = KeepAwakeEngine()
+                        let output = engine.start(persisted: file, ownsFlag: ownsFlag, flagWasSet: flagWasSet, now: now, lidClosed: lid)
+                        XCTAssertFalse(output.state.isArmed, tag)
+                        if flagWasSet && !ownsFlag && file?.isArmed != true {
+                            XCTAssertNil(output.sleepDisabled, tag)
+                            XCTAssertFalse(output.sleepNow, tag)
+                            XCTAssertEqual(output.state, file ?? .idle, tag)
+                        } else {
+                            XCTAssertEqual(output.sleepDisabled, false, tag)
+                            XCTAssertEqual(output.sleepNow, flagWasSet && lid, tag)
+                        }
+                    }
                 }
             }
         }
