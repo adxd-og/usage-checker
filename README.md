@@ -416,7 +416,8 @@ to keep a year of them:
 - Keep awake's helper, `omelette-keepawake`, runs as root under launchd once
   you approve it in Login Items. It answers only Omelette signed by the same
   developer team, runs nothing but `/usr/bin/pmset`, clears its own sleep flag
-  every time it starts (a flag set by another tool or by hand is left alone),
+  every time it starts (a flag set by another tool or by hand is left alone,
+  until an Apply takes it over: the end of that mode clears it),
   and exits a minute after it has nothing to do
 - The `omelette` command-line tool and MCP server only ever read
   `~/Library/Application Support/UsageTracker/status.json`, written after

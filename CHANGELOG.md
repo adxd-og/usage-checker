@@ -40,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Login Items & Extensions.
 - The helper ends the mode on time and at the battery floor even when
   Omelette is not running, and clears its own sleep flag every time it starts,
-  so nothing resumes after a restart; a flag set by another tool is left alone.
+  so nothing resumes after a restart; a flag set by another tool is left alone
+  until an Apply takes it over, and the end of that mode clears it.
 - When the mode ends at the deadline, at the battery floor, on Cancel or
   Reset, or through a helper restart while it was on, with the lid closed and
   no external display keeping the Mac awake, the Mac goes to sleep; a helper
