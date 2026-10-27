@@ -146,15 +146,19 @@ extension KeepAwakeCopy {
         !isWorking && KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) != nil
     }
 
-    /// § UI: a typed total of eight days or more is refused, and the block says why under the
-    /// fields. Zero, negatives and in-range totals get no line (Apply is simply disabled).
-    static let limitNotice = "Up to 7 d 23 h 59 min, for your safety."
+    /// § UI: a typed total over the ceiling is brought down to it, and the block says so under
+    /// the fields. Zero, negatives and in-range totals get no line.
+    static let limitNotice = "Up to 7 d 23 h 59 min, for your safety. Apply sets that."
 
+    /// § UI: the line under the fields while the typed total is over the ceiling. It explains
+    /// what Apply will do; it blocks nothing. Negatives and zero get no line.
     static func entryNotice(days: Int, hours: Int, minutes: Int) -> String? {
-        guard days >= 0, hours >= 0, minutes >= 0, days > 0 || hours > 0 || minutes > 0,
-              KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) == nil
-        else { return nil }
-        return limitNotice
+        guard days >= 0, hours >= 0, minutes >= 0 else { return nil }
+        let over = Double(days) > Double(KeepAwakeRules.maximumDays)
+            || Double(hours) > KeepAwakeRules.maximumDuration / 3_600
+            || Double(minutes) > KeepAwakeRules.maximumDuration / 60
+            || Double(days) * 1_440 + Double(hours) * 60 + Double(minutes) > KeepAwakeRules.maximumDuration / 60
+        return over ? limitNotice : nil
     }
 
     /// Where the block's minute timer starts (plan D5): the latest point at or before `now` on

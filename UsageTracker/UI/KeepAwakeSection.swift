@@ -3,7 +3,8 @@ import SwiftUI
 /// Keep awake with the lid closed (spec 2026-10-26, § UI): the popover's block between the
 /// content and the footer. One status line by state (`KeepAwakeCopy.status`), the failure
 /// when there is one, and the fields with Apply in every state (plan D1), so Apply while
-/// armed replaces the deadline and Apply after an end starts a new one.
+/// armed replaces the deadline and Apply after an end starts a new one. A total over the
+/// ceiling is applied as the ceiling, and the fields redraw in canonical form after Apply.
 struct KeepAwakeSection: View {
     @ObservedObject private var model = KeepAwakeModel.shared
     /// The fields' text, seeded from the last applied duration on every popover open and read
@@ -160,6 +161,9 @@ struct KeepAwakeSection: View {
     private func apply() {
         dismissedEndAt = Date().timeIntervalSince1970
         let parts = self.parts
-        Task { await model.arm(days: parts.days, hours: parts.hours, minutes: parts.minutes) }
+        Task {
+            await model.arm(days: parts.days, hours: parts.hours, minutes: parts.minutes)
+            (daysText, hoursText, minutesText) = Self.seedText
+        }
     }
 }

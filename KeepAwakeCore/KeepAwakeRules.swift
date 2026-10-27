@@ -9,7 +9,7 @@ struct KeepAwakePower: Equatable, Sendable {
 }
 
 /// Keep awake with the lid closed (spec 2026-10-26, § Design › Behaviour): timed only, from
-/// one minute to 7 d 23 h 59 min (anything from eight days on is refused), and ended by
+/// one minute to 7 d 23 h 59 min (more is brought down to it on Apply), and ended by
 /// itself on battery below 25 %.
 enum KeepAwakeRules {
     static let minimumDuration: TimeInterval = 60
@@ -29,17 +29,17 @@ enum KeepAwakeRules {
     /// 7 d 23 h 59 min: the fields' ceiling (owner, 2026-10-27).
     private static let maximumMinutes = 11_519
 
-    /// The fields' total in seconds. Nothing is clamped: a negative value, a zero total or a
-    /// total from eight days on is refused (nil), and the block says why; hours and minutes over
-    /// their range carry over (90 min is 1 h 30 min). Bounded before multiplying, so an
-    /// absurd value cannot overflow.
+    /// The fields' total in seconds. A negative field or a zero total is refused (nil); a
+    /// total over the ceiling is brought down to it (owner, 2026-10-27: Apply adapts, the
+    /// block only says so). Checked before multiplying, so an absurd value cannot overflow.
     static func duration(days: Int, hours: Int, minutes: Int) -> TimeInterval? {
-        guard days >= 0, hours >= 0, minutes >= 0,
-              days <= maximumDays, hours <= maximumMinutes / 60, minutes <= maximumMinutes
-        else { return nil }
+        guard days >= 0, hours >= 0, minutes >= 0 else { return nil }
+        guard days <= maximumDays, hours <= maximumMinutes / 60, minutes <= maximumMinutes else {
+            return maximumDuration
+        }
         let totalMinutes = days * 1_440 + hours * 60 + minutes
-        guard totalMinutes >= 1, totalMinutes <= maximumMinutes else { return nil }
-        return TimeInterval(totalMinutes * 60)
+        guard totalMinutes >= 1 else { return nil }
+        return TimeInterval(min(totalMinutes, maximumMinutes) * 60)
     }
 
     /// The privileged side's check: it refuses anything outside one minute to 7 d 23 h 59 min

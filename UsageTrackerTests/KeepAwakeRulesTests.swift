@@ -3,8 +3,8 @@ import XCTest
 
 /// Spec 2026-10-26 keep awake with the lid closed, § Design › Behaviour ("Timed only":
 /// 1 minute to 7 d 23 h 59 min, no indefinitely; "Battery floor": on battery and below 25 %) and
-/// § UI (`KeepAwakeRules.duration(days:hours:minutes:)` rejects zero, negatives and anything
-/// from 8 days on; hours and minutes carry over; no clamping).
+/// § UI (`KeepAwakeRules.duration(days:hours:minutes:)` rejects zero and negatives, brings a
+/// total over 7 d 23 h 59 min down to the ceiling; hours and minutes carry over).
 final class KeepAwakeRulesTests: XCTestCase {
     func testDaysHoursAndMinutesAddUpToSeconds() {
         XCTAssertEqual(KeepAwakeRules.duration(days: 1, hours: 2, minutes: 3), 93_780)
@@ -26,14 +26,14 @@ final class KeepAwakeRulesTests: XCTestCase {
         XCTAssertNil(KeepAwakeRules.duration(days: 0, hours: -3, minutes: 0))
     }
 
-    func testSevenDaysIsAcceptedAndAnythingPastItIsRefusedNotCapped() {
+    func testSevenDaysIsAcceptedAndAnythingPastTheCeilingIsBroughtDownToItNotRefused() {
         XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 0, minutes: 0), 604_800)
         XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 59), 691_140)
-        XCTAssertNil(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 60))
-        XCTAssertNil(KeepAwakeRules.duration(days: 8, hours: 0, minutes: 0))
-        XCTAssertNil(KeepAwakeRules.duration(days: 9, hours: 0, minutes: 0))
+        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 60), 691_140)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 8, hours: 0, minutes: 0), 691_140)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 9, hours: 0, minutes: 0), 691_140)
         XCTAssertEqual(KeepAwakeRules.duration(days: 6, hours: 23, minutes: 61), 604_860)
-        XCTAssertNil(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 61))
+        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 61), 691_140)
     }
 
     /// The daemon's own check (D4): the privileged side refuses rather than caps.

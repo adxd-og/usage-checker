@@ -168,13 +168,13 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertEqual(KeepAwakeCopy.status(registration: .requiresApproval, state: stopped, dismissedThrough: now.timeIntervalSince1970, now: now), .approval)
     }
 
-    /// § UI: Apply is disabled when `KeepAwakeRules.duration` has no duration, and while a
-    /// call is in flight.
+    /// § UI: Apply is disabled when `KeepAwakeRules.duration` has no duration (zero, negatives),
+    /// and while a call is in flight; over the ceiling it applies the ceiling.
     func testApplyNeedsADurationAndNoCallInFlight() {
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 1, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
-        XCTAssertFalse(KeepAwakeCopy.canApply(days: 8, hours: 0, minutes: 0, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 8, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 90, isWorking: false))
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 1, minutes: 0, isWorking: true))
@@ -191,12 +191,12 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertEqual(KeepAwakeCopy.fieldNumber("abc"), 0)
         XCTAssertEqual(KeepAwakeCopy.fieldNumber("٨"), 0)
         XCTAssertEqual(KeepAwakeCopy.fieldNumber("99999999999999999999"), 999_999_999)
-        XCTAssertNil(KeepAwakeRules.duration(days: KeepAwakeCopy.fieldNumber("99999999999999999999"), hours: 0, minutes: 0))
+        XCTAssertEqual(KeepAwakeRules.duration(days: KeepAwakeCopy.fieldNumber("99999999999999999999"), hours: 0, minutes: 0), 691_140)
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: KeepAwakeCopy.fieldNumber("8"), hours: 0, minutes: 0), KeepAwakeCopy.limitNotice)
     }
 
     /// Fool-proofing: a field stops at 7 / 24 / 60, refuses anything but digits, keeps
-    /// what was there, and the total rule still has the last word at 7 d 24 h.
+    /// what was there, and the total rule still has the last word at 7 d 24 h (the line, then the ceiling).
     func testAFieldStopsAtItsOwnMaximumAndRefusesAnythingButDigits() {
         XCTAssertEqual(KeepAwakeCopy.DurationUnit.days.maximum, 7)
         XCTAssertEqual(KeepAwakeCopy.DurationUnit.hours.maximum, 24)
@@ -217,9 +217,9 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 6, hours: 24, minutes: 60))
     }
 
-    /// § UI: a typed total over seven days is refused with one line; nothing else gets a line.
+    /// § UI: a typed total over the ceiling gets one line saying Apply brings it down; nothing else gets a line.
     func testOverSevenDaysTheBlockSaysWhyAndNothingElseDoes() {
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "Up to 7 d 23 h 59 min, for your safety.")
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "Up to 7 d 23 h 59 min, for your safety. Apply sets that.")
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 60), KeepAwakeCopy.limitNotice)
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 24, minutes: 0), KeepAwakeCopy.limitNotice)
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 11_520), KeepAwakeCopy.limitNotice)
@@ -231,6 +231,18 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 0))
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: -1, hours: 0, minutes: 0))
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 30, minutes: 0))
+    }
+
+    /// Owner 2026-10-27: Apply adapts. Over the ceiling the rule hands back the ceiling and
+    /// the block says so; the canonical form is what the fields show afterwards.
+    func testOverTheCeilingApplyUsesTheCeilingAndTheFieldsComeBackCanonical() {
+        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 24, minutes: 60), 691_140)
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 24, minutes: 60, isWorking: false))
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 24, minutes: 60), "Up to 7 d 23 h 59 min, for your safety. Apply sets that.")
+        XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: 11_519), KeepAwakeRules.Parts(days: 7, hours: 23, minutes: 59))
+        XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: Int(KeepAwakeRules.duration(days: 0, hours: 24, minutes: 60)! / 60)), KeepAwakeRules.Parts(days: 1, hours: 1, minutes: 0))
+        XCTAssertNil(KeepAwakeRules.duration(days: 0, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 59))
     }
 
     /// The rounded-up minute changes on the deadline's own minute grid; the block ticks there.
