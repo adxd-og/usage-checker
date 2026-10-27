@@ -133,7 +133,7 @@ on its own tab.
   ring** ("$431 of $1,500"), not a bare percentage
 - **The agents list gives way to the screen**: two rows on a small display,
   five on a large one, the rest scrolls inside the list, so the limits, keep
-  awake and the footer always fit
+  awake and the footer fit whenever the display has room for two agent rows
 - **Footer**: Dashboard, floating window, Settings and Quit. ⌘R refreshes;
   the version and the update check live in Settings → General
 - **Keep awake with the lid closed**: a block above the footer, see
