@@ -64,12 +64,25 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         }
     }
 
+    /// The requests the helper received, in order.
+    private actor RequestLog {
+        private(set) var requests: [KeepAwakeRequest] = []
+        func append(_ request: KeepAwakeRequest) { requests.append(request) }
+    }
+
+    /// The General tab's floor switch, as the settings store holds it.
+    @MainActor private final class FloorSwitch {
+        var enabled = false
+    }
+
     /// A helper whose replies come from `send`; registered and approved unless `statuses`
     /// says otherwise (consumed one per `SMAppService` status read, the last one kept);
-    /// pmset answers `.neverSet` unless `readFlag` is given.
+    /// pmset answers `.neverSet` unless `readFlag` is given; the floor setting is on unless
+    /// `floorEnabled` says otherwise.
     @MainActor private func makeModel(
         statuses: [SMAppService.Status] = [.enabled],
         readFlag: (@Sendable () async -> KeepAwakeFlagReading)? = nil,
+        floorEnabled: @escaping @MainActor () -> Bool = { true },
         send: @escaping @Sendable (KeepAwakeRequest) async -> Result<KeepAwakeReply, KeepAwakeFailure>
     ) -> KeepAwakeModel {
         var dependencies = KeepAwakeFakeHelper(statuses: statuses).dependencies()
@@ -77,7 +90,7 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         if let readFlag { dependencies.readFlag = readFlag }
         return KeepAwakeModel(
             client: KeepAwakeClient(dependencies: dependencies),
-            floorEnabled: { true },
+            floorEnabled: floorEnabled,
             rememberDuration: { _ in },
             resetSettings: {}
         )
@@ -231,6 +244,61 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         await refresh.value
         XCTAssertEqual(model.state, .armed(deadline: t0 + 600, floorEnabled: true))
         XCTAssertEqual(model.registration, .ready)
+    }
+
+    // MARK: - Whole-branch review W3: a floor switch during an in-flight Apply
+
+    /// The helper's side of an Apply held in flight; the floor switch answers at once.
+    @MainActor private func floorTestModel(
+        arm: HeldReply,
+        log: RequestLog,
+        floor: FloorSwitch
+    ) -> KeepAwakeModel {
+        let t0 = self.t0
+        return makeModel(floorEnabled: { floor.enabled }) { request in
+            await log.append(request)
+            switch request {
+            case .arm: return await arm.reply()
+            case .setFloor(let enabled): return answer(.armed(deadline: t0 + 7_200, floorEnabled: enabled))
+            case .disarm, .state: return answer(.idle)
+            }
+        }
+    }
+
+    /// Apply captured the floor as off; the user switches it on before the reply returns.
+    /// `floorChanged` finds no armed mode and leaves it to Apply, so Apply sends it on.
+    @MainActor func testAFloorSwitchedOnWhileApplyIsInFlightReachesTheHelper() async {
+        let t0 = self.t0
+        let arm = HeldReply()
+        let log = RequestLog()
+        let floor = FloorSwitch()
+        let model = floorTestModel(arm: arm, log: log, floor: floor)
+        let applying = Task { await model.arm(days: 0, hours: 2, minutes: 0, now: t0) }
+        await arm.untilAsked()
+        floor.enabled = true
+        await model.floorChanged(true, now: t0)
+        await arm.release(answer(.armed(deadline: t0 + 7_200, floorEnabled: false)))
+        await applying.value
+        let requests = await log.requests
+        XCTAssertEqual(requests, [.arm(seconds: 7_200, floorEnabled: false), .setFloor(enabled: true)])
+        XCTAssertEqual(model.state, .armed(deadline: t0 + 7_200, floorEnabled: true))
+        XCTAssertFalse(model.isWorking)
+    }
+
+    /// The switch did not move: the Apply's reply stands and nothing more is sent.
+    @MainActor func testAnApplyWhoseFloorDidNotMoveSendsNoFloorSwitch() async {
+        let t0 = self.t0
+        let arm = HeldReply()
+        let log = RequestLog()
+        let floor = FloorSwitch()
+        let model = floorTestModel(arm: arm, log: log, floor: floor)
+        let applying = Task { await model.arm(days: 0, hours: 2, minutes: 0, now: t0) }
+        await arm.untilAsked()
+        await arm.release(answer(.armed(deadline: t0 + 7_200, floorEnabled: false)))
+        await applying.value
+        let requests = await log.requests
+        XCTAssertEqual(requests, [.arm(seconds: 7_200, floorEnabled: false)])
+        XCTAssertEqual(model.state, .armed(deadline: t0 + 7_200, floorEnabled: false))
     }
 }
 
