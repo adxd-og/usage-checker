@@ -61,9 +61,6 @@ final class PopoverHeightModelTests: XCTestCase {
         var published: [[String: CGFloat]] = []
         let subscription = model.$caps.dropFirst().sink { published.append($0) }
         defer { subscription.cancel() }
-        // The tab cross-fade (0.18 s) and 0.1 s for its last layout.
-        XCTAssertEqual(PopoverHeightModel.transitionWindow, 0.28, accuracy: 0.000_1)
-
         model.tabChanged(to: "claude")
         // Both pages overlap while they fade; the popover is the taller one.
         clock = t0.addingTimeInterval(0.1)
@@ -89,6 +86,29 @@ final class PopoverHeightModelTests: XCTestCase {
         model.recordPopoverHeight(900, tab: "all")
         XCTAssertEqual(published.count, 3)
         XCTAssertEqual(published.last?["all"], 109)
+    }
+
+    /// The hold lasts the tab cross-fade (0.18 s) and 0.1 s for the layout after it; under
+    /// Reduce Motion the switch is instant, so only the 0.1 s.
+    func testUnderReduceMotionATabSwitchHoldsTheCapsOnlyForItsLayout() {
+        XCTAssertEqual(PopoverHeightModel.transitionWindow(reduceMotion: false), 0.28, accuracy: 0.000_1)
+        XCTAssertEqual(PopoverHeightModel.transitionWindow(reduceMotion: true), 0.1, accuracy: 0.000_1)
+
+        var clock = t0
+        let model = fourteenInchAtFiveRows(now: { clock })
+        model.tabChanged(to: "claude", reduceMotion: true)
+        // 0.15 s later the instant switch's hold is over: 905 − (800 − 100) = 205 at once.
+        clock = t0.addingTimeInterval(0.15)
+        model.recordPopoverHeight(800, tab: "all")
+        XCTAssertEqual(model.cap(for: "all"), 205)
+
+        // With motion, 0.15 s is still inside the cross-fade: nothing moves until the flush.
+        model.tabChanged(to: "claude", reduceMotion: false)
+        clock = t0.addingTimeInterval(0.3)
+        model.recordPopoverHeight(500, tab: "all")
+        XCTAssertEqual(model.cap(for: "all"), 205)
+        model.flush()
+        XCTAssertEqual(model.cap(for: "all"), 260)
     }
 
     /// Plan ruling R1: a switch that leaves the popover as tall as it was fires no geometry

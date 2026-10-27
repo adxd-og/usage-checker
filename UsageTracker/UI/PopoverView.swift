@@ -22,6 +22,8 @@ struct PopoverView: View {
     /// The flush that ends the current tab switch's hold on the caps; a newer switch
     /// cancels it. Never read by `body`, so setting it redraws nothing.
     @State private var transitionFlush: Task<Void, Never>?
+    /// Under Reduce Motion the tab switch is instant, so its hold on the caps is shorter.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -75,14 +77,15 @@ struct PopoverView: View {
             heights.recordPopoverHeight(height, tab: currentTab)
         }
         // A tab switch: the caps wait out the cross-fade and are published once after it,
-        // so the overlapping pages' samples redraw nothing; a tab with no sample of its
-        // own starts from the current height (plan ruling R1).
+        // so the overlapping pages' samples redraw nothing; the new tab starts from the
+        // current height (plan ruling R1).
         .onChange(of: currentTab) { _, tab in
-            heights.tabChanged(to: tab)
+            heights.tabChanged(to: tab, reduceMotion: reduceMotion)
             transitionFlush?.cancel()
             let model = heights
+            let window = PopoverHeightModel.transitionWindow(reduceMotion: reduceMotion)
             transitionFlush = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(PopoverHeightModel.transitionWindow))
+                try? await Task.sleep(for: .seconds(window))
                 guard !Task.isCancelled else { return }
                 model.flush()
             }

@@ -9,10 +9,12 @@ import Foundation
 /// arithmetic is `PopoverHeightRules`'.
 @MainActor
 final class PopoverHeightModel: ObservableObject {
-    /// How long a tab switch holds the caps back: the tab cross-fade (`OMTransitionRules`)
-    /// and 0.1 s for the layout after it to land.
-    nonisolated static let transitionWindow: TimeInterval =
-        (OMTransitionRules.tab(reduceMotion: false)?.duration ?? 0) + 0.1
+    /// How long a tab switch holds the caps back: the tab cross-fade (`OMTransitionRules`;
+    /// none under Reduce Motion, where the switch is instant) and 0.1 s for the layout
+    /// after it to land.
+    nonisolated static func transitionWindow(reduceMotion: Bool) -> TimeInterval {
+        (OMTransitionRules.tab(reduceMotion: reduceMotion)?.duration ?? 0) + 0.1
+    }
 
     /// Each tab's cap as last computed. Assigned only when a value changed, so a sample
     /// that leaves every cap where it was never re-renders the popover.
@@ -74,8 +76,8 @@ final class PopoverHeightModel: ObservableObject {
     /// dismissed hooks row or a keep-awake notice. A switch that leaves the height as it
     /// was fires no geometry action, so the seed stands; one that changes it fires the
     /// action, which overwrites the seed (plan ruling R1).
-    func tabChanged(to tab: String) {
-        transitionUntil = now().addingTimeInterval(Self.transitionWindow)
+    func tabChanged(to tab: String, reduceMotion: Bool = false) {
+        transitionUntil = now().addingTimeInterval(Self.transitionWindow(reduceMotion: reduceMotion))
         if let height = lastPopoverHeight {
             file(popoverHeight: height, tab: tab)
         }
