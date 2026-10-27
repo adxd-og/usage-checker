@@ -24,9 +24,19 @@ enum PopoverHeightRules {
     /// `AgentsSection.defaultMaxListHeight`, which wins when the two cross. Whole points,
     /// because a fractional cap would chase the fraction pixel rounding puts on the
     /// popover's height.
+    ///
+    /// Always a finite number of points: when the budget or the fixed height is not a
+    /// number, nothing is left to compute and the list keeps
+    /// `AgentsSection.defaultMaxListHeight`, as with no screen; a floor that is not a
+    /// number, or below every height, counts as two unmeasured rows. Infinities give the
+    /// clamp's ends.
     static func agentsListHeight(budget: CGFloat, fixedHeight: CGFloat, minimumHeight: CGFloat) -> CGFloat {
         let left = (budget - fixedHeight).rounded(.down)
-        return min(max(left, minimumHeight.rounded(.up)), AgentsSection.defaultMaxListHeight)
+        guard !left.isNaN else { return AgentsSection.defaultMaxListHeight }
+        let floor = minimumHeight.isNaN || minimumHeight == -.infinity
+            ? unmeasuredMinimumHeight
+            : minimumHeight.rounded(.up)
+        return min(max(left, floor), AgentsSection.defaultMaxListHeight)
     }
 
     /// What the popover measured while one tab showed: its own height and that tab's

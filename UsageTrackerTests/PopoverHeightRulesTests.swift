@@ -95,6 +95,35 @@ final class PopoverHeightRulesTests: XCTestCase {
         XCTAssertEqual(cap(screen: 945, fixed: 900, minimum: 110.4), 111)
     }
 
+    /// A height that is not a number never reaches the list's frame. A NaN budget or fixed
+    /// height leaves nothing to compute, so the list keeps today's cap, as with no screen;
+    /// a NaN floor, or one below every height, counts as two unmeasured rows. Infinities
+    /// still give the clamp's ends.
+    func testAHeightThatIsNotANumberLeavesTheListAtTheOldCap() {
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: .nan, fixedHeight: 600, minimumHeight: 109), 260)
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: 905, fixedHeight: .nan, minimumHeight: 109), 260)
+        // ∞ − ∞ is not a number either.
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: .infinity, fixedHeight: .infinity, minimumHeight: 109), 260)
+        // 905 − 900 = 5 → two unmeasured rows.
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: 905, fixedHeight: 900, minimumHeight: .nan), twoEstimatedRows)
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: 905, fixedHeight: 900, minimumHeight: -.infinity), twoEstimatedRows)
+        // A NaN screen, popover sample or kept fixed height, through the cap.
+        XCTAssertEqual(
+            PopoverHeightRules.agentsListCap(screenVisibleHeight: .nan, samples: nil, persisted: kept(600, 109)), 260
+        )
+        XCTAssertEqual(
+            PopoverHeightRules.agentsListCap(screenVisibleHeight: 945, samples: samples(popover: .nan, shown: 100), persisted: nil),
+            260
+        )
+        XCTAssertEqual(
+            PopoverHeightRules.agentsListCap(screenVisibleHeight: 945, samples: nil, persisted: kept(.nan, 109)), 260
+        )
+        // The clamp's ends: an endless budget, none at all, and a floor over the cap.
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: .infinity, fixedHeight: 600, minimumHeight: 109), 260)
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: -.infinity, fixedHeight: 600, minimumHeight: 109), 109)
+        XCTAssertEqual(PopoverHeightRules.agentsListHeight(budget: 905, fixedHeight: 900, minimumHeight: .infinity), 260)
+    }
+
     // MARK: - From what the popover measured
 
     /// Plan D8: no screen known, the list keeps today's cap.
