@@ -18,6 +18,14 @@ enum PopoverHeightRules {
         screenVisibleHeight - chrome
     }
 
+    /// The visible height `budget` takes (reviewer V4). With the menu bar set to hide, the
+    /// visible frame reaches the screen's top (nothing reserved there), but the popover still
+    /// opens below the menu bar, so the menu bar's height comes off; otherwise the visible
+    /// frame already leaves it out.
+    static func screenVisibleHeight(frameMaxY: CGFloat, visibleFrameMaxY: CGFloat, visibleFrameHeight: CGFloat, menuBarHeight: CGFloat) -> CGFloat {
+        visibleFrameMaxY >= frameMaxY ? visibleFrameHeight - menuBarHeight : visibleFrameHeight
+    }
+
     /// The list's cap: what the budget leaves after everything else in the popover
     /// (`fixedHeight`), rounded down to a whole point; never under the list's first two
     /// rows (`minimumHeight`, rounded up so the second row is never clipped); never over

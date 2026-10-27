@@ -107,10 +107,20 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         }
     }
 
-    /// The visible height (menu bar and Dock left out) of the screen whose menu bar
-    /// holds the status item; the main screen's while the button has no window.
+    /// The visible height (menu bar and Dock left out, an auto-hidden menu bar too) of the
+    /// screen whose menu bar holds the status item; the main screen's while the button has
+    /// no window. An accessory app may have no main menu to ask for the menu bar's height;
+    /// the status bar's thickness stands in.
     private static func screenVisibleHeight(of button: NSStatusBarButton) -> CGFloat? {
-        (button.window?.screen ?? NSScreen.main)?.visibleFrame.height
+        guard let screen = button.window?.screen ?? NSScreen.main else { return nil }
+        let menuBarHeight = NSApp.mainMenu.map(\.menuBarHeight).flatMap { $0 > 0 ? $0 : nil }
+            ?? NSStatusBar.system.thickness
+        return PopoverHeightRules.screenVisibleHeight(
+            frameMaxY: screen.frame.maxY,
+            visibleFrameMaxY: screen.visibleFrame.maxY,
+            visibleFrameHeight: screen.visibleFrame.height,
+            menuBarHeight: menuBarHeight
+        )
     }
 
     /// Entry point for `.showPopover` (a notification the user acted on). A menu bar
