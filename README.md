@@ -131,6 +131,9 @@ on its own tab.
   per-provider split underneath
 - **Spend-limit and extra-usage providers show both dollar amounts under the
   ring** ("$431 of $1,500"), not a bare percentage
+- **The agents list gives way to the screen**: two rows on a small display,
+  five on a large one, the rest scrolls inside the list, so the limits, keep
+  awake and the footer always fit
 - **Footer**: Dashboard, floating window, Settings and Quit. ⌘R refreshes;
   the version and the update check live in Settings → General
 - **Keep awake with the lid closed**: a block above the footer, see
