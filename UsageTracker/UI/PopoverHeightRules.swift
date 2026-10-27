@@ -95,6 +95,12 @@ enum PopoverHeightRules {
         storedPairs(stored)[tab]
     }
 
+    /// Every tab whose entry in `stored` reads, in id order: the tabs whose caps a new
+    /// screen moves before they have sampled anything.
+    static func persistedTabs(in stored: String) -> [String] {
+        storedPairs(stored).keys.sorted()
+    }
+
     /// `stored` with `tab` at `persisted` in whole points rounded up, every other tab
     /// kept, in id order. A negative, non-finite or absurd height (`keptHeightCeiling` or
     /// more) is not stored; an entry that no longer reads is dropped.

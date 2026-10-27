@@ -228,6 +228,8 @@ final class PopoverHeightRulesTests: XCTestCase {
         XCTAssertEqual(PopoverHeightRules.persisted(for: "claude", in: both), kept(905, 109))
         XCTAssertEqual(PopoverHeightRules.storing(kept(760, 109), for: "all", in: both), "all=760/109,claude=905/109")
         XCTAssertNil(PopoverHeightRules.persisted(for: "codex", in: both))
+        XCTAssertEqual(PopoverHeightRules.persistedTabs(in: "claude=905/109,all=812/161"), ["all", "claude"])
+        XCTAssertEqual(PopoverHeightRules.persistedTabs(in: ""), [])
     }
 
     /// Ruling R3: a malformed or partial entry is ignored and dropped at the next write; an
@@ -237,6 +239,7 @@ final class PopoverHeightRulesTests: XCTestCase {
         for tab in ["all", "codex", "grok", "antigravity", "claude", "orphan"] {
             XCTAssertNil(PopoverHeightRules.persisted(for: tab, in: stored), tab)
         }
+        XCTAssertEqual(PopoverHeightRules.persistedTabs(in: stored), [])
         XCTAssertEqual(PopoverHeightRules.storing(kept(760, 109), for: "all", in: "all=812,claude=905/109"), "all=760/109,claude=905/109")
         XCTAssertEqual(PopoverHeightRules.storing(kept(-5, 109), for: "all", in: "claude=905/109"), "claude=905/109")
         XCTAssertEqual(PopoverHeightRules.storing(kept(.nan, 109), for: "all", in: "claude=905/109"), "claude=905/109")
