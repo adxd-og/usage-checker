@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or apply again.
 - Before the first use, the block says how to approve the helper and opens
   Login Items.
+- The agents list gives way to the screen: on a small display such as a
+  14-inch MacBook it shows two rows, on a large one five, and the rest
+  scrolls inside the list, so the limits, keep awake and the footer stay on
+  screen.
 
 ### Menu bar
 - A ☾ before the bars while keep awake is on; the tooltip's first line says
