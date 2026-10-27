@@ -28,8 +28,8 @@ final class PopoverHeightModel: ObservableObject {
     private(set) var lastPopoverHeight: CGFloat?
     /// Each tab's fixed height and list floor (plan rulings C3, R3): read at launch,
     /// updated here as tabs sample, written by `persistNow`. Reset all settings removes the
-    /// key but not this copy, which stays stale until the next launch; a close after a
-    /// new sample writes it back. Accepted: the heights only size the list's first frame.
+    /// key but not this copy, which the caps read until the next close; that close sees
+    /// the key gone and keeps only what this session sampled.
     private(set) var stored: String
     /// Until when a tab switch holds the caps back; nil outside a switch.
     private(set) var transitionUntil: Date?
@@ -104,8 +104,17 @@ final class PopoverHeightModel: ObservableObject {
         stored
     }
 
-    /// Hands the kept heights to `store` when they changed since the last write.
-    func persistNow(into store: (String) -> Void) {
+    /// Hands the kept heights to `store` when they changed since the last write. `current`
+    /// is what the key holds now: nil when Reset all settings removed it after the launch,
+    /// in which case the heights read at launch are dropped and only the tabs this session
+    /// sampled are kept (nothing is written when there are none).
+    func persistNow(current: String?, into store: (String) -> Void) {
+        if current == nil {
+            stored = tabSamples.keys.reduce("") { kept, tab in
+                pair(tab).map { PopoverHeightRules.storing($0, for: tab, in: kept) } ?? kept
+            }
+            lastWritten = ""
+        }
         guard stored != lastWritten else { return }
         store(stored)
         lastWritten = stored
@@ -128,17 +137,19 @@ final class PopoverHeightModel: ObservableObject {
         publish([tab])
     }
 
-    /// The tab's fixed height and list floor, once it has both samples.
+    /// Keeps the tab's fixed height and list floor, once it has both samples.
     private func keep(_ tab: String) {
+        guard let pair = pair(tab) else { return }
+        stored = PopoverHeightRules.storing(pair, for: tab, in: stored)
+    }
+
+    /// The tab's fixed height and list floor from its own samples; nil until it has both.
+    private func pair(_ tab: String) -> PopoverHeightRules.Persisted? {
         guard let samples = tabSamples[tab],
               let fixed = PopoverHeightRules.fixedHeight(samples, persisted: nil),
               let list = samples.list
-        else { return }
-        stored = PopoverHeightRules.storing(
-            PopoverHeightRules.Persisted(fixedHeight: fixed, minimumHeight: list.minimumHeight),
-            for: tab,
-            in: stored
-        )
+        else { return nil }
+        return PopoverHeightRules.Persisted(fixedHeight: fixed, minimumHeight: list.minimumHeight)
     }
 
     /// Every tab whose cap can differ from today's 260 pt: sampled, kept, or computed.

@@ -96,11 +96,15 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         persistPopoverHeights()
     }
 
-    /// Writes each tab's fixed height and list floor when they changed. Also called as the
-    /// app quits, because Quit in the popover's footer ends the app with the popover open
-    /// and `popoverDidClose` never comes.
+    /// Writes each tab's fixed height and list floor when they changed, after a Reset all
+    /// settings only those this session sampled. Also called as the app quits, because
+    /// Quit in the popover's footer ends the app with the popover open and
+    /// `popoverDidClose` never comes.
     func persistPopoverHeights() {
-        heights.persistNow { UserDefaults.standard.set($0, forKey: PopoverHeightRules.fixedHeightsKey) }
+        let key = PopoverHeightRules.fixedHeightsKey
+        heights.persistNow(current: UserDefaults.standard.string(forKey: key)) {
+            UserDefaults.standard.set($0, forKey: key)
+        }
     }
 
     /// The visible height (menu bar and Dock left out) of the screen whose menu bar

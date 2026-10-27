@@ -124,8 +124,13 @@ final class PopoverHeightModelTests: XCTestCase {
     /// Plan rulings C3 and R3, written once per close instead of on every layout pass.
     func testTheKeptHeightsAreWrittenOnlyWhenTheyChanged() {
         let model = PopoverHeightModel(stored: "claude=905/109", now: { self.t0 })
+        // What `UserDefaults` holds under the key, and every write to it.
+        var defaults: String? = "claude=905/109"
         var writes: [String] = []
-        model.persistNow { writes.append($0) }
+        func close() {
+            model.persistNow(current: defaults) { defaults = $0; writes.append($0) }
+        }
+        close()
         XCTAssertEqual(writes, [], "nothing changed since the launch read it")
 
         model.setScreen(visibleHeight: 945)
@@ -134,14 +139,41 @@ final class PopoverHeightModelTests: XCTestCase {
         XCTAssertEqual(model.persistedString(), "all=800/121,claude=905/109")
         XCTAssertEqual(writes, [], "a sample wrote before the popover closed")
 
-        model.persistNow { writes.append($0) }
-        model.persistNow { writes.append($0) }
+        close()
+        close()
         XCTAssertEqual(writes, ["all=800/121,claude=905/109"])
 
         // A new pair goes out at the next close.
         model.recordPopoverHeight(910, tab: "all")
-        model.persistNow { writes.append($0) }
+        close()
         XCTAssertEqual(writes, ["all=800/121,claude=905/109", "all=810/121,claude=905/109"])
+    }
+
+    /// Reset all settings after the launch removes the key, not the model's copy: the next
+    /// close keeps only the tabs this session sampled, so Claude's height read at launch
+    /// is really forgotten. With the key in place the pairs are merged as usual.
+    func testAResetAfterLaunchKeepsOnlyWhatThisSessionSampled() {
+        let reset = PopoverHeightModel(stored: "claude=905/109", now: { self.t0 })
+        reset.setScreen(visibleHeight: 945)
+        reset.recordAgentsList(list(100, 121), tab: "all")
+        reset.recordPopoverHeight(900, tab: "all")
+        var writes: [String] = []
+        reset.persistNow(current: nil) { writes.append($0) }
+        XCTAssertEqual(writes, ["all=800/121"])
+        XCTAssertEqual(reset.persistedString(), "all=800/121")
+        reset.persistNow(current: "all=800/121") { writes.append($0) }
+        XCTAssertEqual(writes.count, 1, "the same pairs were written twice")
+
+        // A session that sampled nothing leaves the removed key removed.
+        let idle = PopoverHeightModel(stored: "claude=905/109", now: { self.t0 })
+        idle.persistNow(current: nil) { writes.append($0) }
+        XCTAssertEqual(writes.count, 1, "a reset key came back with the heights read at launch")
+
+        let kept = PopoverHeightModel(stored: "claude=905/109", now: { self.t0 })
+        kept.recordAgentsList(list(100, 121), tab: "all")
+        kept.recordPopoverHeight(900, tab: "all")
+        kept.persistNow(current: "claude=905/109") { writes.append($0) }
+        XCTAssertEqual(writes.last, "all=800/121,claude=905/109")
     }
 
     /// The next open on another screen: every known tab's cap follows it, the sampled ones
