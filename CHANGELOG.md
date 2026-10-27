@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - When keep awake ends, the block says when and why (time is up, battery
   below 25 %, cancelled, a restart, the helper stopped) until you dismiss it
   or apply again.
-- Before the first use, the block says how to approve the helper and opens
+- After the first Apply, the block says how to approve the helper and opens
   Login Items.
 - The agents list gives way to the screen: on a small display such as a
   14-inch MacBook it shows two rows, on a large one five, and the rest

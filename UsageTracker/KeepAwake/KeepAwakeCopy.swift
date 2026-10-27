@@ -28,7 +28,7 @@ enum KeepAwakeCopy {
         }
 
         /// Fool-proofing (owner, 2026-10-27): the field itself stops here, so nobody types
-        /// 230 hours. The total rule still refuses 7 d 24 h.
+        /// 230 hours. The total rule still has the last word: 7 d 24 h is brought down to the ceiling.
         var maximum: Int {
             switch self {
             case .days: return KeepAwakeRules.maximumDays

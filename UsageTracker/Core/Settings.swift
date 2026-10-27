@@ -166,7 +166,7 @@ final class SettingsStore: ObservableObject {
     /// Read at every Apply, and sent to an armed helper the moment it changes
     /// (`KeepAwakeModel.floorChanged`).
     @AppStorage("keepAwakeFloorEnabled") var keepAwakeFloorEnabled: Bool = Defaults.keepAwakeFloorEnabled
-    /// The last duration Apply used, in minutes; the popover's steppers start from
+    /// The last duration Apply used, in minutes; the popover's fields start from
     /// `KeepAwakeRules.parts(totalMinutes:)` of it.
     @AppStorage("keepAwakeDurationMinutes") var keepAwakeDurationMinutes: Int = Defaults.keepAwakeDurationMinutes
 
