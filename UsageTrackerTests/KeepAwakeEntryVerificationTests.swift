@@ -3,8 +3,8 @@ import ServiceManagement
 @testable import Omelette
 
 /// Spec 2026-10-26 keep awake with the lid closed, § UI: three number fields d / h / m typed by
-/// hand; a total over 7 days is refused, not clamped, with the notice under the fields and Apply
-/// disabled; hours and minutes over their range carry over. Edges around the boundary and
+/// hand; a total over 7 d 23 h 59 min is applied as the ceiling, with the notice under the
+/// fields while it is over (owner, 2026-10-27); hours and minutes over their range carry over. Edges around the boundary and
 /// around overflow, through `KeepAwakeRules.duration`, `KeepAwakeCopy.entryNotice` / `canApply`
 /// and the model's `arm`.
 final class KeepAwakeEntryVerificationTests: XCTestCase {
@@ -12,12 +12,18 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
     private let extremes = [Int.min, Int.min + 1, -10_081, -1, 0, 1, 59, 60, 1_439, 1_440, 10_079, 10_080, 10_081, Int.max / 1_440, Int.max / 60, Int.max - 1, Int.max]
 
     /// Independent reference: Double arithmetic cannot trap, and every value near the bounds is
-    /// exact in it; anything astronomically large is far past the cap either way.
+    /// exact in it; anything astronomically large is far past the cap either way. Over the
+    /// ceiling the answer is the ceiling, not nil.
     private func expectedMinutes(_ d: Int, _ h: Int, _ m: Int) -> Int? {
         guard d >= 0, h >= 0, m >= 0 else { return nil }
         let total = Double(d) * 1_440 + Double(h) * 60 + Double(m)
-        guard total >= 1, total <= Double(ceilingInMinutes) else { return nil }
-        return Int(total)
+        guard total >= 1 else { return nil }
+        return total > Double(ceilingInMinutes) ? ceilingInMinutes : Int(total)
+    }
+
+    /// The notice's reference: no negative field and a typed total over the ceiling.
+    private func isOver(_ d: Int, _ h: Int, _ m: Int) -> Bool {
+        d >= 0 && h >= 0 && m >= 0 && Double(d) * 1_440 + Double(h) * 60 + Double(m) > Double(ceilingInMinutes)
     }
 
     // MARK: - Overflow-shaped input never traps
@@ -31,8 +37,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
                     let can = KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false)
                     XCTAssertEqual(seconds.map { Int($0) / 60 }, expectedMinutes(d, h, m), "\(d) \(h) \(m)")
                     XCTAssertEqual(can, seconds != nil, "\(d) \(h) \(m)")
-                    let shouldNotice = d >= 0 && h >= 0 && m >= 0 && (d > 0 || h > 0 || m > 0) && seconds == nil
-                    XCTAssertEqual(notice != nil, shouldNotice, "\(d) \(h) \(m)")
+                    XCTAssertEqual(notice != nil, isOver(d, h, m), "\(d) \(h) \(m)")
                 }
             }
         }
@@ -52,10 +57,10 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
             XCTAssertEqual(KeepAwakeRules.duration(days: d, hours: h, minutes: m), 691_140, "\(d) \(h) \(m)")
             XCTAssertNil(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m), "\(d) \(h) \(m)")
         }
-        let refused: [(Int, Int, Int)] = [(7, 23, 60), (7, 24, 0), (6, 48, 0), (0, 192, 0), (0, 0, 11_520), (8, 0, 0), (6, 0, 10_081)]
-        for (d, h, m) in refused {
-            XCTAssertNil(KeepAwakeRules.duration(days: d, hours: h, minutes: m), "\(d) \(h) \(m)")
-            XCTAssertFalse(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false), "\(d) \(h) \(m)")
+        let over: [(Int, Int, Int)] = [(7, 23, 60), (7, 24, 0), (6, 48, 0), (0, 192, 0), (0, 0, 11_520), (8, 0, 0), (6, 0, 10_081)]
+        for (d, h, m) in over {
+            XCTAssertEqual(KeepAwakeRules.duration(days: d, hours: h, minutes: m), 691_140, "\(d) \(h) \(m)")
+            XCTAssertTrue(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false), "\(d) \(h) \(m)")
             XCTAssertEqual(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m), KeepAwakeCopy.limitNotice, "\(d) \(h) \(m)")
         }
     }
@@ -67,8 +72,8 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         XCTAssertNil(KeepAwakeRules.duration(days: 0, hours: 0, minutes: 0))
     }
 
-    /// A grid over the whole neighbourhood: every refusal over seven days has its line and no
-    /// accepted total does; Apply follows the duration and a call in flight always disables it.
+    /// A grid over the whole neighbourhood: the notice shows exactly when the typed total is over
+    /// the ceiling; Apply follows the duration and a call in flight always disables it.
     func testNoticeAndApplyAgreeWithTheDurationAcrossAGrid() {
         for d in 0...8 {
             for h in 0...170 {
@@ -77,8 +82,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
                     XCTAssertEqual(seconds.map { Int($0) / 60 }, expectedMinutes(d, h, m), "\(d) \(h) \(m)")
                     XCTAssertEqual(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false), seconds != nil)
                     XCTAssertFalse(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: true))
-                    let isZero = d == 0 && h == 0 && m == 0
-                    XCTAssertEqual(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m) != nil, seconds == nil && !isZero, "\(d) \(h) \(m)")
+                    XCTAssertEqual(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m) != nil, isOver(d, h, m), "\(d) \(h) \(m)")
                 }
             }
         }
@@ -128,15 +132,14 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         XCTAssertEqual(KeepAwakeCopy.fieldNumber("00000000000007"), 0, "the window is the first nine characters, leading zeros included")
     }
 
-    /// Whatever is typed, the three functions answer and a refused total always says why.
+    /// Whatever is typed, the three functions answer and a total over the ceiling always says so.
     func testEveryTypedRunInTheFieldsEndsInAnAnswerAndAConsistentNotice() {
         let runs = ["", "0", "7", "8", "168", "10080", "10081", "99999999999999999999", "-1", "1.5", "abc", "\u{0668}"]
         for d in runs { for h in runs { for m in runs {
             let (nd, nh, nm) = (KeepAwakeCopy.fieldNumber(d), KeepAwakeCopy.fieldNumber(h), KeepAwakeCopy.fieldNumber(m))
             let seconds = KeepAwakeRules.duration(days: nd, hours: nh, minutes: nm)
             XCTAssertEqual(KeepAwakeCopy.canApply(days: nd, hours: nh, minutes: nm, isWorking: false), seconds != nil)
-            let isZero = nd == 0 && nh == 0 && nm == 0
-            XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm) != nil, seconds == nil && !isZero, "\(d) \(h) \(m)")
+            XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm) != nil, isOver(nd, nh, nm), "\(d) \(h) \(m)")
         } } }
     }
 
@@ -189,7 +192,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
     }
 
     /// The caps are per field; the total rule still has the last word, at the ceiling.
-    func testTheFieldCapsComposeWithTheCeilingSoOnlyTheFullStopsAreRefused() {
+    func testTheFieldCapsComposeWithTheCeilingSoOnlyTheFullStopsAreBroughtDown() {
         for d in 0...7 {
             for h in 0...24 {
                 for m in [0, 1, 58, 59, 60] {
@@ -199,20 +202,21 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
                     XCTAssertEqual([nd, nh, nm], [d, h, m])
                     let total = d * 1_440 + h * 60 + m
                     let isZero = total == 0
-                    let refused = total > 11_519
-                    XCTAssertEqual(KeepAwakeRules.duration(days: nd, hours: nh, minutes: nm) == nil, refused || isZero, "\(d) \(h) \(m)")
-                    XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm), refused ? KeepAwakeCopy.limitNotice : nil, "\(d) \(h) \(m)")
+                    let over = total > 11_519
+                    XCTAssertEqual(KeepAwakeRules.duration(days: nd, hours: nh, minutes: nm), isZero ? nil : TimeInterval(min(total, 11_519) * 60), "\(d) \(h) \(m)")
+                    XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm), over ? KeepAwakeCopy.limitNotice : nil, "\(d) \(h) \(m)")
                 }
             }
         }
-        // typed at the stops: 7 / 24 / 60 is refused with the line, 7 / 23 / 59 is the ceiling
+        // typed at the stops: 7 / 24 / 60 is brought down to the ceiling with the line, 7 / 23 / 59 is the ceiling
         let stop = (KeepAwakeCopy.fieldText("9", previous: "", unit: .days), KeepAwakeCopy.fieldText("99", previous: "", unit: .hours), KeepAwakeCopy.fieldText("99", previous: "", unit: .minutes))
         XCTAssertEqual([stop.0, stop.1, stop.2], ["7", "24", "60"])
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: KeepAwakeCopy.fieldNumber(stop.0), hours: KeepAwakeCopy.fieldNumber(stop.1), minutes: KeepAwakeCopy.fieldNumber(stop.2)), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 24, minutes: 60), 691_140)
         XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 59), 691_140)
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 59))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
-        XCTAssertFalse(KeepAwakeCopy.canApply(days: 7, hours: 24, minutes: 0, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 24, minutes: 0, isWorking: false))
     }
 
     // MARK: - The model's Apply goes through the same rule
@@ -228,17 +232,23 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         )
     }
 
-    @MainActor func testApplyingMoreThanSevenDaysAsksNobodyAndRemembersNothing() async {
+    @MainActor func testApplyingMoreThanTheCeilingArmsTheCeilingAndRemembersIt() async {
         let helper = KeepAwakeFakeHelper(statuses: [.enabled])
         let prefs = Prefs()
         let model = makeModel(helper, prefs)
-        for (d, h, m) in [(8, 0, 0), (0, 0, 11_520), (0, 192, 0), (Int.max, Int.max, Int.max), (0, 0, Int.min)] {
+        let over = [(8, 0, 0), (0, 0, 11_520), (0, 192, 0), (Int.max, Int.max, Int.max)]
+        for (d, h, m) in over {
             await model.arm(days: d, hours: h, minutes: m)
-            XCTAssertEqual(model.failure, .invalidDuration, "\(d) \(h) \(m)")
+            XCTAssertNotEqual(model.failure, .invalidDuration, "\(d) \(h) \(m)")
             XCTAssertFalse(model.isWorking)
         }
-        XCTAssertEqual(helper.requests, [])
-        XCTAssertEqual(prefs.remembered, [])
+        XCTAssertEqual(helper.requests, Array(repeating: .arm(seconds: 691_140, floorEnabled: true), count: over.count))
+        XCTAssertEqual(prefs.remembered, Array(repeating: 11_519, count: over.count))
+        // a negative field still asks nobody
+        await model.arm(days: 0, hours: 0, minutes: Int.min)
+        XCTAssertEqual(model.failure, .invalidDuration)
+        XCTAssertEqual(helper.requests.count, over.count)
+        XCTAssertEqual(prefs.remembered.count, over.count)
     }
 
     @MainActor func testApplyingHoursAndMinutesOverTheirRangeArmsTheCarriedOverTotal() async {

@@ -535,8 +535,8 @@ final class KeepAwakeVerificationPureTests: XCTestCase {
         }
     }
 
-    func testAbsurdFieldValuesNeverTrapAndAreRefused() {
-        XCTAssertNil(KeepAwakeRules.duration(days: Int.max, hours: Int.max, minutes: Int.max))
+    func testAbsurdFieldValuesNeverTrapAndComeDownToTheCeiling() {
+        XCTAssertEqual(KeepAwakeRules.duration(days: Int.max, hours: Int.max, minutes: Int.max), 691_140)
         XCTAssertNil(KeepAwakeRules.duration(days: Int.min, hours: Int.min, minutes: Int.min))
         XCTAssertNil(KeepAwakeRules.duration(days: 7, hours: -3, minutes: 0))
         XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: Int.max), KeepAwakeRules.Parts(days: 7, hours: 23, minutes: 59))
