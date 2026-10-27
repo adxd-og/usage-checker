@@ -553,4 +553,81 @@ final class KeepAwakeServiceTests: XCTestCase {
         await service.connectionClosed(id: 3, now: t0 + 5)
         XCTAssertEqual(fake.with { $0.exits }.last ?? nil, t0 + 65)
     }
+
+    // MARK: - Whole-branch review W1: an owed sleep (C4) survives a daemon restart
+
+    /// The debt rides in the state file beside the state; a file written without it (every
+    /// file before this fix, and every save with nothing owed) owes nothing.
+    func testTheStateFileKeepsAnOwedSleepAndAFileWithoutOneOwesNothing() throws {
+        try stateFile.save(.ended(at: t0, reason: .deadline), sleepOwed: true)
+        XCTAssertTrue(stateFile.loadSleepOwed())
+        XCTAssertEqual(stateFile.load(), .ended(at: t0, reason: .deadline))
+        try stateFile.save(.ended(at: t0, reason: .deadline))
+        XCTAssertFalse(stateFile.loadSleepOwed())
+        let written = try String(contentsOf: stateFile.url, encoding: .utf8)
+        XCTAssertFalse(written.contains("sleepOwed"), "nothing owed keeps the old shape: \(written)")
+        try Data(#"{"state":{"armed":{"deadline":1793003600,"floorEnabled":true}},"version":1}"#.utf8).write(to: stateFile.url)
+        XCTAssertFalse(stateFile.loadSleepOwed())
+        XCTAssertEqual(stateFile.load(), .armed(deadline: Date(timeIntervalSince1970: 1_793_003_600), floorEnabled: true))
+    }
+
+    /// The deadline passes with the lid closed: the clear takes, `pmset sleepnow` fails, and
+    /// the service owes the sleep (on disk too).
+    private func owingASleep(_ fake: FakeKeepAwakeMachine) async -> KeepAwakeService {
+        let service = await started(fake)
+        _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
+        fake.with { $0.calls = []; $0.sleepStatus = 1; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
+        let reply = await service.tick(now: t0 + 120)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
+        XCTAssertTrue(stateFile.loadSleepOwed(), "the debt is on disk")
+        fake.with { $0.calls = []; $0.scheduled = []; $0.exits = []; $0.sleepStatus = 0 }
+        return service
+    }
+
+    /// W1: the daemon died before its retry tick. The restarted one finds the flag already
+    /// clear (so C5 alone would not sleep) and the lid still closed: it pays the debt once.
+    func testAnOwedSleepSurvivesARestartAndRunsWithTheLidStillClosed() async {
+        let fake = FakeKeepAwakeMachine()
+        _ = await owingASleep(fake)
+        let restarted = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        let reply = await restarted.start(now: t0 + 150)
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
+        XCTAssertFalse(stateFile.loadSleepOwed(), "paid")
+        XCTAssertEqual(fake.with { $0.scheduled }, [nil])
+    }
+
+    func testAnOwedSleepFoundAtARestartWithTheLidOpenIsDropped() async {
+        let fake = FakeKeepAwakeMachine()
+        _ = await owingASleep(fake)
+        fake.with { $0.lid = KeepAwakeLid(closed: false, causesSleep: true) }
+        let restarted = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        _ = await restarted.start(now: t0 + 150)
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"])
+        XCTAssertFalse(stateFile.loadSleepOwed(), "dropped")
+        XCTAssertEqual(fake.with { $0.exits }, [t0 + 210], "nothing owed: idle")
+    }
+
+    /// Rule 6: paying the debt changes no state, and the file still loses it.
+    func testAnOwedSleepPaidOnALaterTickLeavesTheFile() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await owingASleep(fake)
+        _ = await service.tick(now: t0 + 180)
+        XCTAssertEqual(fake.with { $0.calls }, ["sleepnow"])
+        XCTAssertFalse(stateFile.loadSleepOwed())
+    }
+
+    /// Rule 10 never sleeps: a stop drops the debt from the file too, so the next start does
+    /// not sleep a Mac whose daemon launchd stopped.
+    func testATerminateDropsAnOwedSleepFromTheFile() async {
+        let fake = FakeKeepAwakeMachine()
+        let service = await owingASleep(fake)
+        await service.terminate(now: t0 + 130)
+        XCTAssertEqual(fake.with { $0.terminations }, [0])
+        XCTAssertFalse(stateFile.loadSleepOwed())
+        let next = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
+        _ = await next.start(now: t0 + 600)
+        XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"])
+    }
 }

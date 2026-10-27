@@ -14,6 +14,9 @@ struct KeepAwakeStateFile: Sendable {
         /// What a stop could not clear (Task 9c); encoded only when present, so files without it
         /// still read.
         var failure: KeepAwakeFailure?
+        /// A `pmset sleepnow` the daemon still owes (review C4, whole-branch W1), so a restart
+        /// pays it; encoded only when true, so files without it still read and owe nothing.
+        var sleepOwed: Bool?
     }
 
     func load() -> KeepAwakeState? {
@@ -25,9 +28,14 @@ struct KeepAwakeStateFile: Sendable {
         envelope()?.failure
     }
 
-    func save(_ state: KeepAwakeState, failure: KeepAwakeFailure? = nil) throws {
+    /// Whether a sleep was owed when the file was written; false without a file.
+    func loadSleepOwed() -> Bool {
+        envelope()?.sleepOwed ?? false
+    }
+
+    func save(_ state: KeepAwakeState, failure: KeepAwakeFailure? = nil, sleepOwed: Bool = false) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let envelope = Envelope(version: Self.currentVersion, state: state, failure: failure)
+        let envelope = Envelope(version: Self.currentVersion, state: state, failure: failure, sleepOwed: sleepOwed ? true : nil)
         try KeepAwakeCoding.encode(envelope).write(to: url, options: .atomic)
     }
 

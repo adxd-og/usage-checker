@@ -46,9 +46,11 @@ struct KeepAwakeMachine: Sendable {
 /// 5. Owed sleep (review C4): an output's `sleepNow` makes a sleep owed. While owed, a lid
 ///    that does not read closed-and-causing-sleep drops it; otherwise, once the flag reads
 ///    clear, `pmset sleepnow` runs and a zero status drops it. So sleepnow never runs before
-///    the clear reads back, and a clear that fails at first still ends in a sleep.
-/// 6. The state is saved when it changed during the input (always on start); a save error is
-///    logged and otherwise ignored.
+///    the clear reads back, and a clear that fails at first still ends in a sleep. The debt is
+///    saved beside the state (whole-branch review W1), and `start` restores it before its
+///    forced apply, so a daemon that dies before its retry still has it paid or dropped.
+/// 6. The state is saved when it or the owed sleep changed during the input (always on
+///    start); a save error is logged and otherwise ignored.
 /// 7. The next tick is the engine's, or a minute from now while a clear or a sleep is owed.
 /// 8. The reply is the engine's state and the first failure.
 /// 9. Idle exit (plan D7; review C2). After every input that reaches the apply step, and when a
@@ -66,9 +68,10 @@ struct KeepAwakeMachine: Sendable {
 ///    not followed by a restart after a clean exit, so `terminate(now:)` ends an armed mode as
 ///    stopped and, when the flag is or may be on, clears it by rule 3: up to three attempts,
 ///    two seconds apart (inside the plist's 90 s ExitTimeOut). It never sleeps: an unload is not
-///    a lid closed in a bag. The state is saved (with the failure when the flag never read
-///    clear), and the daemon exits with 0, or with 1 when the flag may still be on, so that
-///    launchd restarts a still-loaded job and its start clears again.
+///    a lid closed in a bag, so an owed sleep is dropped, from the file too. The state is saved
+///    (with the failure when the flag never read clear), and the daemon exits with 0, or with
+///    1 when the flag may still be on, so that launchd restarts a still-loaded job and its
+///    start clears again.
 actor KeepAwakeService {
     private let machine: KeepAwakeMachine
     private let stateFile: KeepAwakeStateFile
@@ -102,6 +105,8 @@ actor KeepAwakeService {
         let flagWasSet = machine.readSleepDisabled() == .set
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
+        // A sleep the last daemon still owed (W1): the forced apply below pays it or drops it.
+        sleepOwed = stateFile.loadSleepOwed()
         let output = engine.start(persisted: stateFile.load(), flagWasSet: flagWasSet, now: now, lidClosed: lidSleeps)
         if let power = machine.power() {
             _ = engine.power(onBattery: power.onBattery, percent: power.percent, now: now, lidClosed: lidSleeps)
@@ -230,6 +235,7 @@ actor KeepAwakeService {
     func terminate(now: Date) {
         let before = engine.state
         _ = engine.stop(now: now)
+        let owedBefore = sleepOwed
         sleepOwed = false
         var lastFailure: KeepAwakeFailure?
         if before.isArmed || lastApplied != false {
@@ -242,7 +248,7 @@ actor KeepAwakeService {
         let cleared = lastApplied == false
         if !cleared {
             save(engine.state, failure: lastFailure)
-        } else if engine.state != before {
+        } else if engine.state != before || owedBefore {
             save(engine.state)
         }
         machine.schedule(nil)
@@ -266,6 +272,7 @@ actor KeepAwakeService {
         if let failure = output.failure {
             return KeepAwakeReply(state: engine.state, failure: failure)
         }
+        let owedBefore = sleepOwed
         // Rules 2 and 3.
         var firstFailure: KeepAwakeFailure?
         if force || output.sleepDisabled != lastApplied {
@@ -291,7 +298,7 @@ actor KeepAwakeService {
             }
         }
         // Rule 6.
-        if alwaysSave || engine.state != stateBefore {
+        if alwaysSave || engine.state != stateBefore || sleepOwed != owedBefore {
             save(engine.state)
         }
         // Rule 7.
@@ -320,9 +327,10 @@ actor KeepAwakeService {
         return nil
     }
 
+    /// Writes the state with the sleep owed now beside it.
     private func save(_ state: KeepAwakeState, failure: KeepAwakeFailure? = nil) {
         do {
-            try stateFile.save(state, failure: failure)
+            try stateFile.save(state, failure: failure, sleepOwed: sleepOwed)
         } catch {
             NSLog("[keepawake] state file: %@", String(describing: error))
         }
