@@ -12,7 +12,7 @@ final class KeepAwakeFailureCopyTests: XCTestCase {
             (.readBack(expected: false), "The sleep flag is still on. Reset keep awake in Settings › Advanced clears it."),
             (.invalidDuration, "Choose between 1 minute and 7 d 23 h 59 min."),
             (.helperUnavailable(reason: "Couldn’t communicate with a helper application."), "The keep-awake helper did not answer: Couldn’t communicate with a helper application."),
-            (.helperTimedOut, "The keep-awake helper did not answer within 10 seconds."),
+            (.helperTimedOut, "The keep-awake helper did not answer within 10 seconds. If this keeps happening, press Reset keep awake in Settings › Advanced, then Apply again."),
             (.unreadableReply, "The keep-awake helper answered in a form this version cannot read. Restarting the Mac starts the updated helper."),
             (.notSigned, "This build is not signed by a developer team, so the keep-awake helper will not talk to it."),
             (.registrationFailed(reason: "Operation not permitted"), "The keep-awake helper could not be set up: Operation not permitted"),
