@@ -87,6 +87,7 @@ struct KeepAwakeSection: View {
                 Button(KeepAwakeCopy.cancelButton) { Task { await model.cancel() } }
                     .buttonStyle(.omCapsule(.small))
                     .disabled(model.isWorking)
+                    .opacity(model.isWorking ? SettingsRowRules.disabledOpacity : 1)
             }
         case .approval:
             VStack(alignment: .leading, spacing: OMSpacing.s) {
@@ -121,9 +122,13 @@ struct KeepAwakeSection: View {
                 if model.isWorking {
                     ProgressView().controlSize(.small)
                 }
+                // The capsule style does not dim by itself (SettingsRowRules.disabledOpacity):
+                // a disabled Apply must look disabled, or 7 d 24 h reads as applicable.
+                let canApply = KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking)
                 Button(KeepAwakeCopy.applyButton, action: apply)
                     .buttonStyle(.omCapsule(.small))
-                    .disabled(!KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking))
+                    .disabled(!canApply)
+                    .opacity(canApply ? 1 : SettingsRowRules.disabledOpacity)
             }
             if let notice = KeepAwakeCopy.entryNotice(days: parts.days, hours: parts.hours, minutes: parts.minutes) {
                 Text(notice)
