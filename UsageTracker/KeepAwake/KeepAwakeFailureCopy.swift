@@ -17,7 +17,7 @@ enum KeepAwakeFailureCopy {
         case .helperUnavailable(let reason):
             return "The keep-awake helper did not answer: \(reason)"
         case .helperTimedOut:
-            return "The keep-awake helper did not answer within \(Int(KeepAwakeXPCTransport.timeout)) seconds."
+            return "The keep-awake helper did not answer within \(Int(KeepAwakeXPCTransport.timeout)) seconds. If this keeps happening, press Reset keep awake in Settings › Advanced, then Apply again."
         case .unreadableReply:
             return "The keep-awake helper answered in a form this version cannot read. Restarting the Mac starts the updated helper."
         case .notSigned:
