@@ -45,7 +45,7 @@ final class KeepAwakeRulesTests: XCTestCase {
         XCTAssertFalse(KeepAwakeRules.accepts(duration: .nan))
     }
 
-    func testARememberedDurationSplitsBackIntoTheThreeSteppers() {
+    func testARememberedDurationSplitsBackIntoTheThreeFields() {
         XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: 60), KeepAwakeRules.Parts(days: 0, hours: 1, minutes: 0))
         XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: 1_470), KeepAwakeRules.Parts(days: 1, hours: 0, minutes: 30))
         XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: 10_080), KeepAwakeRules.Parts(days: 7, hours: 0, minutes: 0))

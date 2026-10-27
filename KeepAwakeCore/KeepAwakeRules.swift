@@ -18,7 +18,7 @@ enum KeepAwakeRules {
     /// How often the daemon looks at the deadline and the battery while armed.
     static let tickInterval: TimeInterval = 60
 
-    /// The popover's three steppers.
+    /// The popover's three number fields.
     struct Parts: Equatable, Sendable {
         var days: Int
         var hours: Int
@@ -46,7 +46,7 @@ enum KeepAwakeRules {
         duration.isFinite && duration >= minimumDuration && duration <= maximumDuration
     }
 
-    /// A remembered duration back into the three steppers, brought inside 1 minute … 7 days.
+    /// A remembered duration back into the three fields, brought inside 1 minute … 7 days.
     static func parts(totalMinutes: Int) -> Parts {
         let total = min(max(totalMinutes, 1), maximumMinutes)
         return Parts(days: total / 1_440, hours: (total % 1_440) / 60, minutes: total % 60)
