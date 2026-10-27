@@ -5,13 +5,14 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [3.2.0] — 2026-10-27
 
 ### Popover
 - Keep awake with the lid closed: a block above the footer keeps the Mac
-  awake with its lid closed for 1 minute to 7 d 23 h 59 min (days, hours,
-  minutes typed by hand, then Apply; more than that is brought down to it on Apply). While on it shows "Awake until 18:40 · 4 h 52 min left" and
-  Cancel; Apply again replaces the deadline.
+  awake with its lid closed for 1 minute to 7 d 23 h 59 min (days, hours and
+  minutes typed by hand, each field stopping at 7, 24 or 60, then Apply; more
+  than that is brought down to it on Apply). While on it shows "Awake until
+  18:40 · 4 h 52 min left" and Cancel; Apply again replaces the deadline.
 - When keep awake ends, the block says when and why (time is up, battery
   below 25 %, cancelled, a restart, the helper stopped) until you dismiss it
   or apply again.
