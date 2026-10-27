@@ -310,7 +310,8 @@ Keeps a MacBook working with its lid closed for a set time, so agents carry on
 in a bag or under a cat. Set it from the block above the popover's footer; a ☾
 in the menu bar says it is on.
 
-- **Timed only**: days, hours and minutes, 1 minute to 7 days, then **Apply**.
+- **Timed only**: days, hours and minutes, 1 minute to 7 d 23 h 59 min, then **Apply**;
+  anything from eight days on is refused with "Up to 7 d 23 h 59 min, for your safety."
   The block shows "Awake until 18:40 · 4 h 52 min left" and **Cancel**; Apply
   again replaces the deadline. The menu bar tooltip's first line says until when
 - **Ends by itself**: at the deadline, even when Omelette is not running; on
