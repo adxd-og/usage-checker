@@ -103,9 +103,9 @@ struct KeepAwakeSection: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
             HStack(spacing: OMSpacing.s) {
-                field(.days, text: $daysText)
-                field(.hours, text: $hoursText)
-                field(.minutes, text: $minutesText)
+                field(.days, text: capped($daysText, .days))
+                field(.hours, text: capped($hoursText, .hours))
+                field(.minutes, text: capped($minutesText, .minutes))
                 Spacer(minLength: 0)
                 if model.isWorking {
                     ProgressView().controlSize(.small)
@@ -121,6 +121,14 @@ struct KeepAwakeSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    /// A field's binding that runs every keystroke through `KeepAwakeCopy.fieldText`.
+    private func capped(_ text: Binding<String>, _ unit: KeepAwakeCopy.DurationUnit) -> Binding<String> {
+        Binding(
+            get: { text.wrappedValue },
+            set: { text.wrappedValue = KeepAwakeCopy.fieldText($0, previous: text.wrappedValue, unit: unit) }
+        )
     }
 
     /// A number typed by hand and its unit, read as typed.

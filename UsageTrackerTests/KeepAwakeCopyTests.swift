@@ -195,6 +195,28 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: KeepAwakeCopy.fieldNumber("8"), hours: 0, minutes: 0), KeepAwakeCopy.limitNotice)
     }
 
+    /// Fool-proofing: a field stops at 7 / 24 / 60, refuses anything but digits, keeps
+    /// what was there, and the total rule still has the last word at 7 d 24 h.
+    func testAFieldStopsAtItsOwnMaximumAndRefusesAnythingButDigits() {
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.days.maximum, 7)
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.hours.maximum, 24)
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.minutes.maximum, 60)
+        XCTAssertEqual(KeepAwakeCopy.fieldText("230", previous: "23", unit: .hours), "24")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("8", previous: "", unit: .days), "7")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("61", previous: "6", unit: .minutes), "60")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("60", previous: "6", unit: .minutes), "60")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("", previous: "5", unit: .days), "")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("1.5", previous: "1", unit: .hours), "1")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("-1", previous: "", unit: .minutes), "")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("007", previous: "", unit: .days), "7")
+        XCTAssertEqual(KeepAwakeCopy.fieldText(" 5 ", previous: "", unit: .hours), "5")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("99999999999", previous: "", unit: .minutes), "60")
+        XCTAssertEqual(KeepAwakeCopy.fieldText("٨", previous: "3", unit: .days), "3")
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 24, minutes: 0), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 60), KeepAwakeCopy.limitNotice)
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 6, hours: 24, minutes: 60))
+    }
+
     /// § UI: a typed total over seven days is refused with one line; nothing else gets a line.
     func testOverSevenDaysTheBlockSaysWhyAndNothingElseDoes() {
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "Up to 7 d 23 h 59 min, for your safety.")
