@@ -7,6 +7,15 @@ struct AgentGroup: Identifiable, Equatable {
     var id: String { state.rawValue }
 }
 
+/// What the popover's agents list tells its host (popover height budget spec
+/// 2026-10-27): the list's frame as shown (its content, up to the cap) and the
+/// height of its first two rows with the hairline between them, the least the
+/// host may cap it to (`AgentsSection.minimumListHeight`).
+struct AgentsListGeometry: Equatable, Sendable {
+    let shownHeight: CGFloat
+    let minimumHeight: CGFloat
+}
+
 /// The popover's agent list (`Main.dc.html`): a sentence-case heading with the session
 /// count over one group card of rows split by hairlines. On the All tab (`grouped`) the
 /// rows run in state order — needs you, working, done, idle — with provider logos,
@@ -24,6 +33,10 @@ struct AgentsSection: View {
     /// scrolls (the dashboard page) needs, since a scroll view inside a scroll view
     /// swallows the wheel.
     var maxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
+    /// Called with the list's shown height and its two-row floor whenever either
+    /// changes, and with nil when the section has no sessions. The popover sizes the
+    /// list to the screen from it (`PopoverHeightRules`); nil everywhere else.
+    var onListGeometry: ((AgentsListGeometry?) -> Void)? = nil
     let onEnable: () -> Void
 
     nonisolated static let defaultTitle = "Agents"
@@ -33,11 +46,19 @@ struct AgentsSection: View {
     nonisolated static let headerInset: CGFloat = 4
     nonisolated static let surface: OMPopoverSurface = .group
 
+    /// The 1 pt line between two rows.
+    nonisolated static let hairlineHeight: CGFloat = 1
     /// Used only until the list has measured itself once, so the section never
-    /// flashes at 1 pt on the first frame.
-    nonisolated private static let estimatedRowHeight: CGFloat = 54
+    /// flashes at 1 pt on the first frame; also what a row not measured yet counts
+    /// as in the popover's two-row floor (`minimumListHeight`).
+    nonisolated static let estimatedRowHeight: CGFloat = 54
 
     @State private var listHeight: CGFloat = 0
+    /// The list's frame as last laid out: its content, up to `maxListHeight`.
+    @State private var shownHeight: CGFloat = 0
+    /// Each row's height as last laid out, by session id, so the first two are known
+    /// whichever sessions lead the list.
+    @State private var rowHeights: [String: CGFloat] = [:]
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
@@ -59,6 +80,20 @@ struct AgentsSection: View {
                     .padding(.horizontal, Self.headerInset)
             }
         }
+        // A section with no sessions has no list to size: the host drops the last report.
+        .onChange(of: sessions.isEmpty, initial: true) { _, isEmpty in
+            if isEmpty { onListGeometry?(nil) }
+        }
+        // The report, published whenever it changes and only then (ruling R2): a new
+        // shown height, a row that measured itself again, or rows that moved into first
+        // place without measuring again.
+        .onChange(of: listGeometry, initial: true) { _, geometry in
+            if let geometry { onListGeometry?(geometry) }
+        }
+        // The heights of sessions that have gone are never read again.
+        .onChange(of: sessions.map(\.id)) { _, ids in
+            rowHeights = rowHeights.filter { ids.contains($0.key) }
+        }
     }
 
     // MARK: - List
@@ -70,6 +105,13 @@ struct AgentsSection: View {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { index, session in
                     if index > 0 { hairline }
                     row(session)
+                        // Each row's own height, for the popover's two-row floor (C4); the
+                        // report goes out through `listGeometry` (R2).
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { height in
+                            rowHeights[session.id] = height
+                        }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -85,6 +127,18 @@ struct AgentsSection: View {
         // With an infinite cap all three collapse to "exactly the content height,
         // no indicators, no scrolling" — the list just grows.
         .frame(height: min(listHeight > 0 ? listHeight : estimatedHeight, maxListHeight))
+        // The frame as shown, from the layout pass that produced it: the pass in which
+        // the popover measures its own height, so the host's `popover − list` stays put
+        // when the cap moves (spec 2026-10-27). Sent from here at once as well as through
+        // `listGeometry`'s `.onChange`: through `.onChange` alone it would lag the
+        // popover's height by an update and the cap would flip for ever (plan D2). The
+        // re-send that follows carries the same value and is dropped by the host.
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            shownHeight = height
+            if let geometry = listGeometry { onListGeometry?(geometry) }
+        }
         .scrollIndicators(listHeight > maxListHeight ? .automatic : .never)
         .scrollDisabled(listHeight <= maxListHeight)
         // A scrolled row never paints past the card's corners.
@@ -95,7 +149,7 @@ struct AgentsSection: View {
     private var hairline: some View {
         Rectangle()
             .fill(.om(.hairline))
-            .frame(height: 1)
+            .frame(height: Self.hairlineHeight)
             .padding(.horizontal, OMAgentRow.horizontalPadding)
     }
 
@@ -130,7 +184,22 @@ struct AgentsSection: View {
     }
 
     private var estimatedHeight: CGFloat {
-        CGFloat(sessions.count) * Self.estimatedRowHeight + CGFloat(max(0, sessions.count - 1))
+        CGFloat(sessions.count) * Self.estimatedRowHeight + CGFloat(max(0, sessions.count - 1)) * Self.hairlineHeight
+    }
+
+    /// The list's report as of this body (ruling R2): its shown height and the floor of
+    /// the rows that lead it now. nil while there is nothing to list or the frame has
+    /// not been laid out yet, so a section that just appeared never wipes a report the
+    /// host already holds.
+    private var listGeometry: AgentsListGeometry? {
+        guard !sessions.isEmpty, shownHeight > 0 else { return nil }
+        return AgentsListGeometry(
+            shownHeight: shownHeight,
+            minimumHeight: Self.minimumListHeight(
+                rowIDs: Self.rows(sessions, grouped: grouped).map(\.id),
+                rowHeights: rowHeights
+            )
+        )
     }
 }
 
@@ -175,6 +244,17 @@ extension AgentsSection {
     /// Finished work stays readable but stops competing with live rows.
     nonisolated static func rowOpacity(_ state: AgentState) -> Double {
         (state == .done || state == .idle) ? 0.7 : 1
+    }
+
+    /// The least the popover may cap the list to (popover height budget spec
+    /// 2026-10-27, Q2, plan rulings C4 and R2): the first two rows in list order as
+    /// measured, with the hairline between them, so the second row is never clipped;
+    /// the first row alone when it is the only one; 54 pt for a row not measured yet.
+    nonisolated static func minimumListHeight(rowIDs: [String], rowHeights: [String: CGFloat]) -> CGFloat {
+        guard let firstID = rowIDs.first else { return 0 }
+        let first = rowHeights[firstID] ?? estimatedRowHeight
+        guard rowIDs.count > 1 else { return first }
+        return first + hairlineHeight + (rowHeights[rowIDs[1]] ?? estimatedRowHeight)
     }
 }
 

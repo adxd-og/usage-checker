@@ -3,23 +3,32 @@ import SwiftUI
 import Combine
 
 @MainActor
-final class StatusBarController {
+final class StatusBarController: NSObject, NSPopoverDelegate {
     let statusItem: NSStatusItem
     private let popover: NSPopover
+    /// The agents list's caps per tab for the popover's life (popover height budget spec
+    /// 2026-10-27): told the screen before each show, written to `UserDefaults` when the
+    /// popover closes.
+    private let heights: PopoverHeightModel
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
     nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
     /// The tooltip's keep-awake line follows the model, not only the snapshot.
     private var keepAwakeObserver: AnyCancellable?
 
-    init() {
+    override init() {
         self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.popover = NSPopover()
+        self.heights = PopoverHeightModel(
+            stored: UserDefaults.standard.string(forKey: PopoverHeightRules.fixedHeightsKey) ?? ""
+        )
+        super.init()
         self.popover.behavior = .transient
         self.popover.animates = true
         self.popover.contentSize = NSSize(width: 340, height: 460)
         self.popover.contentViewController = NSHostingController(
-            rootView: PopoverView(state: AppState.shared)
+            rootView: PopoverView(state: AppState.shared, heights: heights)
         )
+        self.popover.delegate = self
 
         configureButton()
         // The snapshot notification is the only tooltip trigger: the data changes
@@ -73,9 +82,35 @@ final class StatusBarController {
             // app, so this is when an update is worth noticing. Throttled to once an
             // hour inside the updater.
             Updater.shared.checkInBackgroundIfDue()
+            // The screen the popover is about to open on, handed in before the show so
+            // its first layout already sizes the agents list for it (spec 2026-10-27).
+            heights.setScreen(visibleHeight: Self.screenVisibleHeight(of: button))
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             popover.contentViewController?.view.window?.makeKey()
         }
+    }
+
+    /// The popover closed: its heights are kept for the first open after the next launch,
+    /// written once here rather than on every layout pass.
+    func popoverDidClose(_ notification: Notification) {
+        persistPopoverHeights()
+    }
+
+    /// Writes each tab's fixed height and list floor when they changed, after a Reset all
+    /// settings only those this session sampled. Also called as the app quits, because
+    /// Quit in the popover's footer ends the app with the popover open and
+    /// `popoverDidClose` never comes.
+    func persistPopoverHeights() {
+        let key = PopoverHeightRules.fixedHeightsKey
+        heights.persistNow(current: UserDefaults.standard.string(forKey: key)) {
+            UserDefaults.standard.set($0, forKey: key)
+        }
+    }
+
+    /// The visible height (menu bar and Dock left out) of the screen whose menu bar
+    /// holds the status item; the main screen's while the button has no window.
+    private static func screenVisibleHeight(of button: NSStatusBarButton) -> CGFloat? {
+        (button.window?.screen ?? NSScreen.main)?.visibleFrame.height
     }
 
     /// Entry point for `.showPopover` (a notification the user acted on). A menu bar

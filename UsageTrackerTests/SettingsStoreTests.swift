@@ -169,6 +169,21 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertNil(UserDefaults.standard.string(forKey: LimitsRules.groupingKey), "Claude stayed on Projects")
     }
 
+    /// Popover height budget (spec 2026-10-27, plan rulings C3 and R3): the popover's fixed
+    /// height and list floor per tab, kept for the first open after a launch, are a
+    /// view-level preference like its tab, and go with a reset.
+    @MainActor
+    func testResetForgetsThePopoversKeptHeights() {
+        UserDefaults.standard.set("all=812/161,claude=905/109", forKey: PopoverHeightRules.fixedHeightsKey)
+
+        SettingsStore.shared.resetToDefaults()
+
+        XCTAssertNil(
+            UserDefaults.standard.string(forKey: PopoverHeightRules.fixedHeightsKey),
+            "the popover kept its heights"
+        )
+    }
+
     @MainActor
     func testResetForgetsTheOnboardingAndTheMenuBarChoices() {
         // The four the old button silently skipped.
