@@ -37,7 +37,7 @@ enum KeepAwakeFailure: Error, Codable, Equatable, Sendable {
     case commandFailed(command: String, status: Int32)
     /// Daemon or app: the flag read back from `pmset -g` is not the value just applied.
     case readBack(expected: Bool)
-    /// Daemon: a duration outside one minute to seven days.
+    /// Daemon: a duration outside one minute to 7 d 23 h 59 min.
     case invalidDuration
     /// App: the XPC connection failed before a reply arrived.
     case helperUnavailable(reason: String)

@@ -26,7 +26,7 @@ struct KeepAwakeEngine: Equatable, Sendable {
     init() {}
 
     /// Apply: sets the flag until `now + duration`; while armed it replaces the deadline. A
-    /// duration outside one minute to seven days is refused and changes nothing.
+    /// duration outside one minute to 7 d 23 h 59 min is refused and changes nothing.
     mutating func arm(duration: TimeInterval, floorEnabled: Bool, now: Date, lidClosed: Bool) -> Output {
         guard KeepAwakeRules.accepts(duration: duration) else {
             return output(wasArmed: state.isArmed, lidClosed: false, failure: .invalidDuration)

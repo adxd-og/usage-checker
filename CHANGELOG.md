@@ -9,8 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Popover
 - Keep awake with the lid closed: a block above the footer keeps the Mac
-  awake with its lid closed for 1 minute to 7 days (days, hours, minutes,
-  then Apply). While on it shows "Awake until 18:40 · 4 h 52 min left" and
+  awake with its lid closed for 1 minute to 7 d 23 h 59 min (days, hours,
+  minutes typed by hand, then Apply; from eight days on the block says why). While on it shows "Awake until 18:40 · 4 h 52 min left" and
   Cancel; Apply again replaces the deadline.
 - When keep awake ends, the block says when and why (time is up, battery
   below 25 %, cancelled, a restart, the helper stopped) until you dismiss it

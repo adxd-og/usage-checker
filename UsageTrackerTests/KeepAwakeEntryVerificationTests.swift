@@ -8,7 +8,7 @@ import ServiceManagement
 /// around overflow, through `KeepAwakeRules.duration`, `KeepAwakeCopy.entryNotice` / `canApply`
 /// and the model's `arm`.
 final class KeepAwakeEntryVerificationTests: XCTestCase {
-    private let sevenDaysInMinutes = 10_080
+    private let ceilingInMinutes = 11_519
     private let extremes = [Int.min, Int.min + 1, -10_081, -1, 0, 1, 59, 60, 1_439, 1_440, 10_079, 10_080, 10_081, Int.max / 1_440, Int.max / 60, Int.max - 1, Int.max]
 
     /// Independent reference: Double arithmetic cannot trap, and every value near the bounds is
@@ -16,7 +16,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
     private func expectedMinutes(_ d: Int, _ h: Int, _ m: Int) -> Int? {
         guard d >= 0, h >= 0, m >= 0 else { return nil }
         let total = Double(d) * 1_440 + Double(h) * 60 + Double(m)
-        guard total >= 1, total <= Double(sevenDaysInMinutes) else { return nil }
+        guard total >= 1, total <= Double(ceilingInMinutes) else { return nil }
         return Int(total)
     }
 
@@ -47,7 +47,12 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
             XCTAssertTrue(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false), "\(d) \(h) \(m)")
             XCTAssertNil(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m), "\(d) \(h) \(m)")
         }
-        let refused: [(Int, Int, Int)] = [(7, 0, 1), (6, 24, 1), (6, 23, 61), (0, 168, 1), (0, 169, 0), (0, 0, 10_081), (8, 0, 0), (6, 0, 10_081)]
+        let ceiling: [(Int, Int, Int)] = [(7, 23, 59), (7, 22, 119), (6, 47, 59), (0, 191, 59), (0, 0, 11_519)]
+        for (d, h, m) in ceiling {
+            XCTAssertEqual(KeepAwakeRules.duration(days: d, hours: h, minutes: m), 691_140, "\(d) \(h) \(m)")
+            XCTAssertNil(KeepAwakeCopy.entryNotice(days: d, hours: h, minutes: m), "\(d) \(h) \(m)")
+        }
+        let refused: [(Int, Int, Int)] = [(7, 23, 60), (7, 24, 0), (6, 48, 0), (0, 192, 0), (0, 0, 11_520), (8, 0, 0), (6, 0, 10_081)]
         for (d, h, m) in refused {
             XCTAssertNil(KeepAwakeRules.duration(days: d, hours: h, minutes: m), "\(d) \(h) \(m)")
             XCTAssertFalse(KeepAwakeCopy.canApply(days: d, hours: h, minutes: m, isWorking: false), "\(d) \(h) \(m)")
@@ -96,7 +101,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
             XCTAssertNil(KeepAwakeCopy.entryNotice(days: p.days, hours: p.hours, minutes: p.minutes), "\(minutes)")
         }
         // out-of-range remembered values are brought inside, so the seeded fields never carry a notice
-        for minutes in [Int.min, -5, 0, 10_081, Int.max] {
+        for minutes in [Int.min, -5, 0, 11_520, Int.max] {
             let p = KeepAwakeRules.parts(totalMinutes: minutes)
             XCTAssertNotNil(KeepAwakeRules.duration(days: p.days, hours: p.hours, minutes: p.minutes), "\(minutes)")
             XCTAssertNil(KeepAwakeCopy.entryNotice(days: p.days, hours: p.hours, minutes: p.minutes), "\(minutes)")
@@ -152,7 +157,7 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         let helper = KeepAwakeFakeHelper(statuses: [.enabled])
         let prefs = Prefs()
         let model = makeModel(helper, prefs)
-        for (d, h, m) in [(7, 0, 1), (0, 0, 10_081), (0, 169, 0), (Int.max, Int.max, Int.max), (0, 0, Int.min)] {
+        for (d, h, m) in [(8, 0, 0), (0, 0, 11_520), (0, 192, 0), (Int.max, Int.max, Int.max), (0, 0, Int.min)] {
             await model.arm(days: d, hours: h, minutes: m)
             XCTAssertEqual(model.failure, .invalidDuration, "\(d) \(h) \(m)")
             XCTAssertFalse(model.isWorking)

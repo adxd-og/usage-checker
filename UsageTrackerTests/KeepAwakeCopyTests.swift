@@ -173,7 +173,8 @@ final class KeepAwakeCopyTests: XCTestCase {
     func testApplyNeedsADurationAndNoCallInFlight() {
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 1, isWorking: false))
-        XCTAssertFalse(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertFalse(KeepAwakeCopy.canApply(days: 8, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 90, isWorking: false))
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 1, minutes: 0, isWorking: true))
@@ -196,13 +197,15 @@ final class KeepAwakeCopyTests: XCTestCase {
 
     /// § UI: a typed total over seven days is refused with one line; nothing else gets a line.
     func testOverSevenDaysTheBlockSaysWhyAndNothingElseDoes() {
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "7 days is the maximum, for your safety.")
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 0, minutes: 1), KeepAwakeCopy.limitNotice)
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 6, hours: 25, minutes: 0), KeepAwakeCopy.limitNotice)
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 10_081), KeepAwakeCopy.limitNotice)
-        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 169, minutes: 0), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "Up to 7 d 23 h 59 min, for your safety.")
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 60), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 24, minutes: 0), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 11_520), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 192, minutes: 0), KeepAwakeCopy.limitNotice)
         XCTAssertEqual(KeepAwakeCopy.entryNotice(days: Int.max, hours: 1, minutes: Int.max), KeepAwakeCopy.limitNotice)
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 23, minutes: 59))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 6, hours: 25, minutes: 0))
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 0))
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: -1, hours: 0, minutes: 0))
         XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 30, minutes: 0))

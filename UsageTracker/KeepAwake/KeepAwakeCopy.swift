@@ -125,9 +125,9 @@ extension KeepAwakeCopy {
         !isWorking && KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) != nil
     }
 
-    /// § UI: a typed total over seven days is refused, and the block says why under the
+    /// § UI: a typed total of eight days or more is refused, and the block says why under the
     /// fields. Zero, negatives and in-range totals get no line (Apply is simply disabled).
-    static let limitNotice = "7 days is the maximum, for your safety."
+    static let limitNotice = "Up to 7 d 23 h 59 min, for your safety."
 
     static func entryNotice(days: Int, hours: Int, minutes: Int) -> String? {
         guard days >= 0, hours >= 0, minutes >= 0, days > 0 || hours > 0 || minutes > 0,

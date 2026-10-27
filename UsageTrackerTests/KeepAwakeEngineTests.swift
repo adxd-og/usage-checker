@@ -37,7 +37,7 @@ final class KeepAwakeEngineTests: XCTestCase {
         )
         var armed = engineArmed(for: 7_200)
         XCTAssertEqual(
-            armed.arm(duration: 604_801, floorEnabled: true, now: t0, lidClosed: false),
+            armed.arm(duration: 691_141, floorEnabled: true, now: t0, lidClosed: false),
             Out(sleepDisabled: true, sleepNow: false, state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: .invalidDuration)
         )
     }
