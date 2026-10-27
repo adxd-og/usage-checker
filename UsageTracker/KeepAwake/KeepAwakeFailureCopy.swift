@@ -13,7 +13,7 @@ enum KeepAwakeFailureCopy {
         case .readBack(expected: false):
             return "The sleep flag is still on. Reset keep awake in Settings › Advanced clears it."
         case .invalidDuration:
-            return "Choose between 1 minute and 7 days."
+            return "Choose between 1 minute and 7 d 23 h 59 min."
         case .helperUnavailable(let reason):
             return "The keep-awake helper did not answer: \(reason)"
         case .helperTimedOut:

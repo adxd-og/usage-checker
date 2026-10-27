@@ -528,7 +528,7 @@ final class KeepAwakeVerificationPureTests: XCTestCase {
     /// D11: the remembered minutes lose nothing: every legal total goes through the three
     /// fields and back to the same seconds.
     func testEveryWholeMinuteFromOneMinuteToSevenDaysRoundTripsThroughTheFields() {
-        for minutes in 1...10_080 {
+        for minutes in 1...11_519 {
             let parts = KeepAwakeRules.parts(totalMinutes: minutes)
             XCTAssertTrue((0...7).contains(parts.days) && (0...23).contains(parts.hours) && (0...59).contains(parts.minutes), "\(minutes)")
             XCTAssertEqual(KeepAwakeRules.duration(days: parts.days, hours: parts.hours, minutes: parts.minutes), TimeInterval(minutes * 60), "\(minutes)")
@@ -539,7 +539,7 @@ final class KeepAwakeVerificationPureTests: XCTestCase {
         XCTAssertNil(KeepAwakeRules.duration(days: Int.max, hours: Int.max, minutes: Int.max))
         XCTAssertNil(KeepAwakeRules.duration(days: Int.min, hours: Int.min, minutes: Int.min))
         XCTAssertNil(KeepAwakeRules.duration(days: 7, hours: -3, minutes: 0))
-        XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: Int.max), KeepAwakeRules.Parts(days: 7, hours: 0, minutes: 0))
+        XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: Int.max), KeepAwakeRules.Parts(days: 7, hours: 23, minutes: 59))
         XCTAssertEqual(KeepAwakeRules.parts(totalMinutes: Int.min), KeepAwakeRules.Parts(days: 0, hours: 0, minutes: 1))
     }
 
