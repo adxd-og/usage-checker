@@ -103,6 +103,38 @@ final class KeepAwakeEntryVerificationTests: XCTestCase {
         }
     }
 
+    // MARK: - A field's text is read as typed
+
+    /// Edges `fieldNumber` must keep: the nine-digit window is judged on the whole text, so a
+    /// non-ASCII digit after the ninth character cannot slip through, and a long run reads as
+    /// its first nine digits.
+    func testAFieldReadsItsFirstNineDigitsAndOnlyWhenTheWholeTextIsASCIIDigits() {
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("1234567890"), 123_456_789)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("123456789"), 123_456_789)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("123456789\u{0668}"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("123456789\u{FF18}"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("123456789x"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("\u{FF15}"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("1 2"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("   "), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber(" \t5\t "), 5)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("  123456789  "), 123_456_789)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("0"), 0)
+        XCTAssertEqual(KeepAwakeCopy.fieldNumber("00000000000007"), 0, "the window is the first nine characters, leading zeros included")
+    }
+
+    /// Whatever is typed, the three functions answer and a refused total always says why.
+    func testEveryTypedRunInTheFieldsEndsInAnAnswerAndAConsistentNotice() {
+        let runs = ["", "0", "7", "8", "168", "10080", "10081", "99999999999999999999", "-1", "1.5", "abc", "\u{0668}"]
+        for d in runs { for h in runs { for m in runs {
+            let (nd, nh, nm) = (KeepAwakeCopy.fieldNumber(d), KeepAwakeCopy.fieldNumber(h), KeepAwakeCopy.fieldNumber(m))
+            let seconds = KeepAwakeRules.duration(days: nd, hours: nh, minutes: nm)
+            XCTAssertEqual(KeepAwakeCopy.canApply(days: nd, hours: nh, minutes: nm, isWorking: false), seconds != nil)
+            let isZero = nd == 0 && nh == 0 && nm == 0
+            XCTAssertEqual(KeepAwakeCopy.entryNotice(days: nd, hours: nh, minutes: nm) != nil, seconds == nil && !isZero, "\(d) \(h) \(m)")
+        } } }
+    }
+
     // MARK: - The model's Apply goes through the same rule
 
     @MainActor private final class Prefs { var remembered: [Int] = [] }
