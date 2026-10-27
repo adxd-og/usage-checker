@@ -18,7 +18,7 @@ enum KeepAwakeRules {
     /// How often the daemon looks at the deadline and the battery while armed.
     static let tickInterval: TimeInterval = 60
 
-    /// The popover's three steppers.
+    /// The popover's three number fields.
     struct Parts: Equatable, Sendable {
         var days: Int
         var hours: Int
@@ -27,15 +27,17 @@ enum KeepAwakeRules {
 
     private static let maximumMinutes = 10_080
 
-    /// The steppers' total in seconds: each stepper is clamped to its range (d 0–7, h 0–23,
-    /// m 0–59), zero is refused, and the total stops at seven days (plan D4).
+    /// The fields' total in seconds. Nothing is clamped: a negative value, a zero total or a
+    /// total over seven days is refused (nil), and the block says why; hours and minutes over
+    /// their range carry over (90 min is 1 h 30 min). Bounded before multiplying, so an
+    /// absurd value cannot overflow.
     static func duration(days: Int, hours: Int, minutes: Int) -> TimeInterval? {
-        let days = min(max(days, 0), maximumDays)
-        let hours = min(max(hours, 0), 23)
-        let minutes = min(max(minutes, 0), 59)
-        let total = TimeInterval(days * 86_400 + hours * 3_600 + minutes * 60)
-        guard total > 0 else { return nil }
-        return min(total, maximumDuration)
+        guard days >= 0, hours >= 0, minutes >= 0,
+              days <= maximumDays, hours <= 24 * maximumDays, minutes <= maximumMinutes
+        else { return nil }
+        let totalMinutes = days * 1_440 + hours * 60 + minutes
+        guard totalMinutes >= 1, totalMinutes <= maximumMinutes else { return nil }
+        return TimeInterval(totalMinutes * 60)
     }
 
     /// The privileged side's check: it refuses anything outside one minute to seven days
@@ -44,7 +46,7 @@ enum KeepAwakeRules {
         duration.isFinite && duration >= minimumDuration && duration <= maximumDuration
     }
 
-    /// A remembered duration back into the three steppers, brought inside 1 minute … 7 days.
+    /// A remembered duration back into the three fields, brought inside 1 minute … 7 days.
     static func parts(totalMinutes: Int) -> Parts {
         let total = min(max(totalMinutes, 1), maximumMinutes)
         return Parts(days: total / 1_440, hours: (total % 1_440) / 60, minutes: total % 60)

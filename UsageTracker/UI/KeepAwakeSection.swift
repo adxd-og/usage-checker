@@ -2,17 +2,33 @@ import SwiftUI
 
 /// Keep awake with the lid closed (spec 2026-10-26, § UI): the popover's block between the
 /// content and the footer. One status line by state (`KeepAwakeCopy.status`), the failure
-/// when there is one, and the steppers with Apply in every state (plan D1), so Apply while
+/// when there is one, and the fields with Apply in every state (plan D1), so Apply while
 /// armed replaces the deadline and Apply after an end starts a new one.
 struct KeepAwakeSection: View {
     @ObservedObject private var model = KeepAwakeModel.shared
-    /// The steppers, seeded from the last applied duration on every popover open.
-    @State private var parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+    /// The fields' text, seeded from the last applied duration on every popover open and read
+    /// on every keystroke through `KeepAwakeCopy.fieldNumber`, so Apply sees what is typed.
+    @State private var daysText = Self.seedText.days
+    @State private var hoursText = Self.seedText.hours
+    @State private var minutesText = Self.seedText.minutes
     /// Ends up to this moment are dismissed (plan D3). Persisted, because the helper keeps
     /// reporting an end across restarts; the helper is never told.
     @AppStorage(KeepAwakeSection.dismissedEndKey) private var dismissedEndAt: Double = 0
 
     nonisolated static let dismissedEndKey = "keepAwakeDismissedEndAt"
+
+    private var parts: KeepAwakeRules.Parts {
+        KeepAwakeRules.Parts(
+            days: KeepAwakeCopy.fieldNumber(daysText),
+            hours: KeepAwakeCopy.fieldNumber(hoursText),
+            minutes: KeepAwakeCopy.fieldNumber(minutesText)
+        )
+    }
+
+    private static var seedText: (days: String, hours: String, minutes: String) {
+        let parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+        return (String(parts.days), String(parts.hours), String(parts.minutes))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
@@ -40,7 +56,7 @@ struct KeepAwakeSection: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .popoverSurface(.group)
         .task {
-            parts = KeepAwakeRules.parts(totalMinutes: SettingsStore.shared.keepAwakeDurationMinutes)
+            (daysText, hoursText, minutesText) = Self.seedText
             await model.refresh()
         }
     }
@@ -85,30 +101,43 @@ struct KeepAwakeSection: View {
     }
 
     private var controls: some View {
-        HStack(spacing: OMSpacing.s) {
-            stepper(.days, value: $parts.days)
-            stepper(.hours, value: $parts.hours)
-            stepper(.minutes, value: $parts.minutes)
-            Spacer(minLength: 0)
-            if model.isWorking {
-                ProgressView().controlSize(.small)
+        VStack(alignment: .leading, spacing: OMSpacing.s) {
+            HStack(spacing: OMSpacing.s) {
+                field(.days, text: $daysText)
+                field(.hours, text: $hoursText)
+                field(.minutes, text: $minutesText)
+                Spacer(minLength: 0)
+                if model.isWorking {
+                    ProgressView().controlSize(.small)
+                }
+                Button(KeepAwakeCopy.applyButton, action: apply)
+                    .buttonStyle(.omCapsule(.small))
+                    .disabled(!KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking))
             }
-            Button(KeepAwakeCopy.applyButton, action: apply)
-                .buttonStyle(.omCapsule(.small))
-                .disabled(!KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking))
+            if let notice = KeepAwakeCopy.entryNotice(days: parts.days, hours: parts.hours, minutes: parts.minutes) {
+                Text(notice)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.om(.warning))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
-    private func stepper(_ unit: KeepAwakeCopy.StepperUnit, value: Binding<Int>) -> some View {
-        Stepper(value: value, in: unit.range) {
-            Text(KeepAwakeCopy.stepperValue(value.wrappedValue, unit: unit))
+    /// A number typed by hand and its unit, read as typed.
+    private func field(_ unit: KeepAwakeCopy.DurationUnit, text: Binding<String>) -> some View {
+        HStack(spacing: 3) {
+            TextField("0", text: text)
+                .textFieldStyle(.roundedBorder)
                 .font(.system(size: OMKeyValueRow.captionSize))
                 .monospacedDigit()
-                .foregroundStyle(.om(.text))
+                .multilineTextAlignment(.trailing)
+                .frame(width: 44)
+                .accessibilityLabel(unit.name)
+                .accessibilityValue(KeepAwakeCopy.unitValue(KeepAwakeCopy.fieldNumber(text.wrappedValue), unit: unit))
+            Text(unit.symbol)
+                .font(.system(size: OMKeyValueRow.captionSize))
+                .foregroundStyle(.om(.secondary))
         }
-        .fixedSize()
-        .accessibilityLabel(unit.name)
-        .accessibilityValue(KeepAwakeCopy.stepperValue(value.wrappedValue, unit: unit))
     }
 
     /// Apply also dismisses the last end (spec § Behaviour: "until the next Apply or dismiss").

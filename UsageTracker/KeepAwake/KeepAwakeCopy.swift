@@ -5,11 +5,11 @@ import Foundation
 /// status bar's nonisolated tooltip rule may call it. Lives in the app, not in
 /// `KeepAwakeCore/`, because it reads `ResetCopy` and `KeepAwakeRegistration`.
 enum KeepAwakeCopy {
-    /// The block's three steppers: days, hours, minutes.
-    enum StepperUnit: CaseIterable, Sendable {
+    /// The block's three number fields: days, hours, minutes.
+    enum DurationUnit: CaseIterable, Sendable {
         case days, hours, minutes
 
-        /// The unit after the stepper's number.
+        /// The unit after the field's number.
         var symbol: String {
             switch self {
             case .days: return "d"
@@ -18,21 +18,12 @@ enum KeepAwakeCopy {
             }
         }
 
-        /// What VoiceOver calls the stepper.
+        /// What VoiceOver calls the field.
         var name: String {
             switch self {
             case .days: return "Days"
             case .hours: return "Hours"
             case .minutes: return "Minutes"
-            }
-        }
-
-        /// § Behaviour, Timed only: d 0–7, h 0–23, m 0–59.
-        var range: ClosedRange<Int> {
-            switch self {
-            case .days: return 0...KeepAwakeRules.maximumDays
-            case .hours: return 0...23
-            case .minutes: return 0...59
             }
         }
     }
@@ -44,9 +35,18 @@ enum KeepAwakeCopy {
     static let openLoginItemsButton = "Open Login Items"
     static let approvalText = "Omelette's helper needs your approval once. macOS announces it as “Background Items Added”: switch Omelette on in System Settings › General › Login Items & Extensions, then press Apply again."
 
-    /// "0 d", "4 h", "30 min".
-    static func stepperValue(_ value: Int, unit: StepperUnit) -> String {
+    /// VoiceOver's value for a field: the number and its unit.
+    static func unitValue(_ value: Int, unit: DurationUnit) -> String {
         "\(value) \(unit.symbol)"
+    }
+
+    /// A field's text as a number, read on every keystroke: ASCII digits only (spaces around
+    /// them ignored), anything else counts as nothing typed. At most nine digits are read, so
+    /// a long run cannot overflow; the limit line explains it.
+    static func fieldNumber(_ text: String) -> Int {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return 0 }
+        return Int(trimmed.prefix(9)) ?? 0
     }
 
     /// The time left: "52 min", "4 h 52 min", "3 h", "3 d 2 h", "7 d". Minutes round up, so
@@ -96,7 +96,7 @@ enum KeepAwakeCopy {
 }
 
 extension KeepAwakeCopy {
-    /// The status line above the steppers.
+    /// The status line above the fields.
     enum Status: Equatable, Sendable {
         case idle
         case armed(deadline: Date)
@@ -123,6 +123,17 @@ extension KeepAwakeCopy {
     /// § UI: Apply needs a duration `KeepAwakeRules.duration` accepts and no call in flight.
     static func canApply(days: Int, hours: Int, minutes: Int, isWorking: Bool) -> Bool {
         !isWorking && KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) != nil
+    }
+
+    /// § UI: a typed total over seven days is refused, and the block says why under the
+    /// fields. Zero, negatives and in-range totals get no line (Apply is simply disabled).
+    static let limitNotice = "7 days is the maximum, for your safety."
+
+    static func entryNotice(days: Int, hours: Int, minutes: Int) -> String? {
+        guard days >= 0, hours >= 0, minutes >= 0, days > 0 || hours > 0 || minutes > 0,
+              KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) == nil
+        else { return nil }
+        return limitNotice
     }
 
     /// Where the block's minute timer starts (plan D5): the latest point at or before `now` on
