@@ -59,6 +59,17 @@ struct KeepAwakeSection: View {
             (daysText, hoursText, minutesText) = Self.seedText
             await model.refresh()
         }
+        // Every keystroke lands in the state first and is then rewritten through
+        // `KeepAwakeCopy.fieldText`; writing the state (not a binding setter that keeps
+        // it) is what makes the field redraw with the capped or refused text.
+        .onChange(of: daysText) { old, new in cap(&daysText, old: old, new: new, unit: .days) }
+        .onChange(of: hoursText) { old, new in cap(&hoursText, old: old, new: new, unit: .hours) }
+        .onChange(of: minutesText) { old, new in cap(&minutesText, old: old, new: new, unit: .minutes) }
+    }
+
+    private func cap(_ text: inout String, old: String, new: String, unit: KeepAwakeCopy.DurationUnit) {
+        let fixed = KeepAwakeCopy.fieldText(new, previous: old, unit: unit)
+        if fixed != new { text = fixed }
     }
 
     @ViewBuilder

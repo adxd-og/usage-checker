@@ -26,6 +26,16 @@ enum KeepAwakeCopy {
             case .minutes: return "Minutes"
             }
         }
+
+        /// Fool-proofing (owner, 2026-10-27): the field itself stops here, so nobody types
+        /// 230 hours. The total rule still refuses 7 d 24 h.
+        var maximum: Int {
+            switch self {
+            case .days: return KeepAwakeRules.maximumDays
+            case .hours: return 24
+            case .minutes: return 60
+            }
+        }
     }
 
     static let title = "Keep awake with the lid closed"
@@ -47,6 +57,17 @@ enum KeepAwakeCopy {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty, trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return 0 }
         return Int(trimmed.prefix(9)) ?? 0
+    }
+
+    /// What a field holds after a keystroke: ASCII digits only (a keystroke that brings in
+    /// anything else is refused and the previous text stays), empty allowed, leading zeros
+    /// dropped, and the number capped at the unit's `maximum`.
+    static func fieldText(_ typed: String, previous: String, unit: DurationUnit) -> String {
+        let trimmed = typed.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return "" }
+        guard trimmed.allSatisfy({ $0.isASCII && $0.isNumber }) else { return previous }
+        let number = Int(trimmed.prefix(9)) ?? 0
+        return String(min(number, unit.maximum))
     }
 
     /// The time left: "52 min", "4 h 52 min", "3 h", "3 d 2 h", "7 d". Minutes round up, so
