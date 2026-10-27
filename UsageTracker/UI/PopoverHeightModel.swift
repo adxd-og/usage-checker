@@ -23,8 +23,8 @@ final class PopoverHeightModel: ObservableObject {
     /// What the popover measured on each tab: its own height and the tab's list report,
     /// both taken while that tab showed (plan ruling C1). An entry outlives the tab.
     private(set) var tabSamples: [String: PopoverHeightRules.Samples] = [:]
-    /// The popover's height as last laid out, to seed a tab with no sample of its own when
-    /// a switch leaves the height as it was (plan ruling R1).
+    /// The popover's height as last laid out, to seed the tab a switch lands on, since a
+    /// switch that leaves the height as it was fires no geometry action (plan ruling R1).
     private(set) var lastPopoverHeight: CGFloat?
     /// Each tab's fixed height and list floor (plan rulings C3, R3): read at launch,
     /// updated here as tabs sample, written by `persistNow`. Reset all settings removes the
@@ -69,12 +69,14 @@ final class PopoverHeightModel: ObservableObject {
     }
 
     /// A tab switch: the caps wait out the cross-fade (`transitionWindow`, then `flush()`),
-    /// during which both pages overlap and the popover is the taller one. A tab with no
-    /// popover sample of its own starts from the last height, because a switch that
-    /// leaves the height as it was fires no geometry action (plan ruling R1).
+    /// during which both pages overlap and the popover is the taller one. The new tab
+    /// starts from the last height, even over a sample of its own: that one may predate a
+    /// dismissed hooks row or a keep-awake notice. A switch that leaves the height as it
+    /// was fires no geometry action, so the seed stands; one that changes it fires the
+    /// action, which overwrites the seed (plan ruling R1).
     func tabChanged(to tab: String) {
         transitionUntil = now().addingTimeInterval(Self.transitionWindow)
-        if tabSamples[tab]?.popoverHeight == nil, let height = lastPopoverHeight {
+        if let height = lastPopoverHeight {
             file(popoverHeight: height, tab: tab)
         }
     }

@@ -92,8 +92,9 @@ final class PopoverHeightModelTests: XCTestCase {
     }
 
     /// Plan ruling R1: a switch that leaves the popover as tall as it was fires no geometry
-    /// action, so the new tab starts from the last popover height; a tab with a sample of
-    /// its own keeps it.
+    /// action, so the new tab starts from the last popover height, even over a sample of
+    /// its own, which can be stale; when the new tab's layout differs, its geometry action
+    /// overwrites the seed.
     func testATabSwitchSeedsTheNewTabFromTheLastPopoverHeight() {
         let model = PopoverHeightModel(stored: "", now: { self.t0 })
         model.setScreen(visibleHeight: 945)
@@ -108,10 +109,15 @@ final class PopoverHeightModelTests: XCTestCase {
         // Claude's own sample is the 800 it was seeded with: 905 − 800 = 105, two rows.
         XCTAssertEqual(model.cap(for: "claude"), 109)
 
-        // Claude grows; back on All, All keeps its own 800, not Claude's 1 000.
+        // A keep-awake notice comes up on Claude: the popover is 1 000 tall. All's own 800
+        // was taken before it and is stale; the switch back leaves the height as it was, so
+        // All starts from the 1 000 laid out last: 905 − (1 000 − 100) = 5, two rows.
         model.recordPopoverHeight(1_000, tab: "claude")
         model.tabChanged(to: "all")
         model.flush()
+        XCTAssertEqual(model.cap(for: "all"), 109)
+        // All's own layout turns out shorter: its geometry action overwrites the seed.
+        model.recordPopoverHeight(800, tab: "all")
         XCTAssertEqual(model.cap(for: "all"), 205)
     }
 
