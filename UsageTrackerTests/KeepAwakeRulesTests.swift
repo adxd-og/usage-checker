@@ -3,7 +3,8 @@ import XCTest
 
 /// Spec 2026-10-26 keep awake with the lid closed, § Design › Behaviour ("Timed only":
 /// 1 minute to 7 days, no indefinitely; "Battery floor": on battery and below 25 %) and
-/// § UI (`KeepAwakeRules.duration(days:hours:minutes:)` clamps, rejects zero, caps at 7 days).
+/// § UI (`KeepAwakeRules.duration(days:hours:minutes:)` rejects zero, negatives and anything
+/// over 7 days; hours and minutes carry over; no clamping).
 final class KeepAwakeRulesTests: XCTestCase {
     func testDaysHoursAndMinutesAddUpToSeconds() {
         XCTAssertEqual(KeepAwakeRules.duration(days: 1, hours: 2, minutes: 3), 93_780)
@@ -14,17 +15,22 @@ final class KeepAwakeRulesTests: XCTestCase {
         XCTAssertNil(KeepAwakeRules.duration(days: 0, hours: 0, minutes: 0))
     }
 
-    func testEachStepperIsClampedToItsRange() {
-        XCTAssertEqual(KeepAwakeRules.duration(days: 0, hours: 30, minutes: 0), 82_800)
-        XCTAssertEqual(KeepAwakeRules.duration(days: 0, hours: 0, minutes: 75), 3_540)
-        XCTAssertEqual(KeepAwakeRules.duration(days: -1, hours: 0, minutes: 5), 300)
+    func testHoursAndMinutesOverTheirRangeCarryOver() {
+        XCTAssertEqual(KeepAwakeRules.duration(days: 0, hours: 30, minutes: 0), 108_000)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 0, hours: 0, minutes: 75), 4_500)
+        XCTAssertEqual(KeepAwakeRules.duration(days: 6, hours: 24, minutes: 0), 604_800)
+    }
+
+    func testANegativeFieldIsRefusedNotClamped() {
+        XCTAssertNil(KeepAwakeRules.duration(days: -1, hours: 0, minutes: 5))
         XCTAssertNil(KeepAwakeRules.duration(days: 0, hours: -3, minutes: 0))
     }
 
-    func testAnythingPastSevenDaysIsCappedAtSevenDays() {
+    func testSevenDaysIsAcceptedAndAnythingPastItIsRefusedNotCapped() {
         XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 0, minutes: 0), 604_800)
-        XCTAssertEqual(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 59), 604_800)
-        XCTAssertEqual(KeepAwakeRules.duration(days: 9, hours: 0, minutes: 0), 604_800)
+        XCTAssertNil(KeepAwakeRules.duration(days: 7, hours: 23, minutes: 59))
+        XCTAssertNil(KeepAwakeRules.duration(days: 9, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeRules.duration(days: 6, hours: 23, minutes: 61))
     }
 
     /// The daemon's own check (D4): the privileged side refuses rather than caps.

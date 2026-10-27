@@ -34,18 +34,15 @@ final class KeepAwakeCopyTests: XCTestCase {
         )
     }
 
-    /// § Behaviour, Timed only: d 0–7, h 0–23, m 0–59.
-    func testTheSteppersCarryTheirUnitsAndRanges() {
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.allCases, [.days, .hours, .minutes])
-        XCTAssertEqual(KeepAwakeCopy.stepperValue(0, unit: .days), "0 d")
-        XCTAssertEqual(KeepAwakeCopy.stepperValue(4, unit: .hours), "4 h")
-        XCTAssertEqual(KeepAwakeCopy.stepperValue(30, unit: .minutes), "30 min")
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.days.name, "Days")
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.hours.name, "Hours")
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.minutes.name, "Minutes")
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.days.range, 0...7)
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.hours.range, 0...23)
-        XCTAssertEqual(KeepAwakeCopy.StepperUnit.minutes.range, 0...59)
+    /// § UI: the block's three number fields and what VoiceOver reads for them.
+    func testTheFieldsCarryTheirUnitsAndNames() {
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.allCases, [.days, .hours, .minutes])
+        XCTAssertEqual(KeepAwakeCopy.unitValue(0, unit: .days), "0 d")
+        XCTAssertEqual(KeepAwakeCopy.unitValue(4, unit: .hours), "4 h")
+        XCTAssertEqual(KeepAwakeCopy.unitValue(30, unit: .minutes), "30 min")
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.days.name, "Days")
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.hours.name, "Hours")
+        XCTAssertEqual(KeepAwakeCopy.DurationUnit.minutes.name, "Minutes")
     }
 
     // MARK: - The countdown
@@ -176,8 +173,24 @@ final class KeepAwakeCopyTests: XCTestCase {
     func testApplyNeedsADurationAndNoCallInFlight() {
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 0, isWorking: false))
         XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 1, isWorking: false))
-        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertFalse(KeepAwakeCopy.canApply(days: 7, hours: 23, minutes: 59, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 7, hours: 0, minutes: 0, isWorking: false))
+        XCTAssertTrue(KeepAwakeCopy.canApply(days: 0, hours: 0, minutes: 90, isWorking: false))
         XCTAssertFalse(KeepAwakeCopy.canApply(days: 0, hours: 1, minutes: 0, isWorking: true))
+    }
+
+    /// § UI: a typed total over seven days is refused with one line; nothing else gets a line.
+    func testOverSevenDaysTheBlockSaysWhyAndNothingElseDoes() {
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 8, hours: 0, minutes: 0), "7 days is the maximum, for your safety.")
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 7, hours: 0, minutes: 1), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 6, hours: 25, minutes: 0), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 10_081), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: 0, hours: 169, minutes: 0), KeepAwakeCopy.limitNotice)
+        XCTAssertEqual(KeepAwakeCopy.entryNotice(days: Int.max, hours: 1, minutes: Int.max), KeepAwakeCopy.limitNotice)
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 7, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: -1, hours: 0, minutes: 0))
+        XCTAssertNil(KeepAwakeCopy.entryNotice(days: 0, hours: 30, minutes: 0))
     }
 
     /// The rounded-up minute changes on the deadline's own minute grid; the block ticks there.
