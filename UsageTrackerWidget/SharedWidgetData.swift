@@ -111,6 +111,10 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// What every ring and number in the extension reads.
     var mode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
 
+    /// The app polls nothing: every provider is off (spec 2026-10-25 § Package 1). A file
+    /// that does not say is not.
+    var isNothingOn: Bool { enabledProviders == 0 }
+
     func service(id: String) -> WidgetService? {
         services.first(where: { $0.id == id })
     }
@@ -202,7 +206,8 @@ enum WidgetEntryRules {
     static let openAppMessage = "Open Omelette"
     /// The chosen provider is not in the file: signed out, switched off or forgotten.
     static let noDataMessage = "No data"
-    /// A file that names no provider at all — the app published "nothing to show".
+    /// A file that names no provider at all while some are on — the app published
+    /// "nothing to show". With every provider off the line is `NothingOnCopy.widget`.
     static let nothingReportingMessage = "No provider is reporting"
 
     /// The snapshot an entry is built from. `.placeholder` is invented — Claude at 42%
@@ -221,6 +226,9 @@ enum WidgetEntryRules {
 
     static func providerContent(_ snapshot: WidgetSnapshot?, providerID: String) -> ProviderContent {
         guard let snapshot else { return .message(openAppMessage) }
+        // Before the provider lookup: with every provider off, "No data" would read as this
+        // one provider's trouble.
+        if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
         guard let service = snapshot.service(id: providerID) else { return .message(noDataMessage) }
         return .service(service)
     }
@@ -233,6 +241,7 @@ enum WidgetEntryRules {
 
     static func allProvidersContent(_ snapshot: WidgetSnapshot?) -> AllProvidersContent {
         guard let snapshot else { return .message(openAppMessage) }
+        if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
         return snapshot.services.isEmpty ? .message(nothingReportingMessage) : .snapshot(snapshot)
     }
 }

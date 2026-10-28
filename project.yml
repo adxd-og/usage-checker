@@ -201,6 +201,9 @@ targets:
       # to invert them exactly as the app does. Same trick as ResetCopy in the CLI
       # target below — one folder is not shared, one file is.
       - path: UsageTracker/Core/PercentDisplay.swift
+      # What every surface says with every provider off, by path for the same reason: the
+      # widget says it in the app's words (spec 2026-10-25 § Package 1).
+      - path: UsageTracker/Core/NothingOnCopy.swift
     settings:
       base:
         PRODUCT_NAME: UsageTrackerWidget

@@ -19,4 +19,7 @@ enum NothingOnCopy {
     static var sentence: String { "\(title). \(hint)" }
     /// The popover's link to the switches.
     static let button = "Open Settings › Providers"
+    /// The widget's line. A widget sits on the desktop, away from the app, so it names
+    /// whose Settings.
+    static let widget = "All providers are off. Turn one on in Omelette's Settings › Providers."
 }
