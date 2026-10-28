@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A signed-out Claude says why (not signed in, expired, keychain permission,
   unreadable) and offers the way out that fits: Sign in, the install link,
   or Settings › Advanced.
+- A Claude Code sign-out that keeps other keychain entries reads as signed
+  out, with Sign in.
 - Omelette keeps Claude Code's token in memory only. The keychain item where
   earlier versions kept a copy is removed once, silently.
 

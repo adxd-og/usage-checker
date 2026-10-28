@@ -353,7 +353,9 @@ A sidebar window with six tabs.
 - **Providers**: one row per provider with its source, status and switch
   (Claude's too: off means not polled at all), and Forget last known numbers
   inline. With every provider off, the menu bar, popover and widgets say so.
-  A signed-out Claude's row has **Sign in**
+  A signed-out Claude's row offers the way out that fits: **Sign in** when
+  Claude Code is installed, the install link when it is not, and Settings ›
+  Advanced when Omelette needs keychain access
 - **Notifications**: the two limit warnings, session timing, agent alerts,
   quiet hours and the daily summary
 - **Integrations**: Claude Code (hooks, status line, MCP server), Codex
@@ -379,7 +381,9 @@ never refreshes that token itself and keeps it in memory only: when it has
 expired (it lives 8 hours), Omelette starts Claude Code for a few seconds so
 Claude Code renews it. With no Claude Code sign-in on the Mac (the Claude app
 alone), **Sign in** in the popover opens Terminal on Claude Code's own
-`claude auth login`.
+`claude auth login`. Omelette writes that command to
+`~/Library/Application Support/UsageTracker/claude-sign-in.command` for
+Terminal to run and leaves it there; it holds no secret.
 Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server (while
 the app is closed or not answering, Antigravity's own `agy` CLI), or the local
@@ -417,9 +421,10 @@ to keep a year of them:
   PATH, else the Claude app's own copy) on a terminal of its own in
   `~/Library/Application Support/UsageTracker/ClaudeRenewal` for 8 s, at most
   every 5 minutes, and only while the login keychain is unlocked and Claude
-  Code's item reads without a prompt. Nothing is typed into it (it only gets
-  a terminal's answer when it asks where the cursor is) and no message is
-  sent; it runs without `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  Code's item reads without a prompt; quitting Omelette stops it. Nothing is
+  typed into it (it only gets a terminal's answer when it asks where the
+  cursor is) and no message is sent; it runs without `CLAUDE_CONFIG_DIR`,
+  `CLAUDE_CODE_OAUTH_TOKEN`,
   `CLAUDECODE` or `ANTHROPIC_*`, with updates, telemetry and non-essential
   traffic switched off (on a fresh configuration Claude Code still fetches
   its plugin list), and talks to Anthropic as Claude Code always does. The
