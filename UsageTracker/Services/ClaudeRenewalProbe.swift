@@ -64,13 +64,17 @@ enum ClaudeRenewalProbe {
     }
 
     /// Removes the `.jsonl` files under `<claudeRoot>/projects/<the folder's name>`, and the
-    /// folder once it is empty. Anything else is left.
+    /// folder once it is empty. Anything else is left. A project folder that is a symbolic
+    /// link is left whole: only Claude Code makes that folder, so a link there points
+    /// somewhere Omelette did not make.
     @discardableResult
     static func removeTranscripts(probeDirectory: URL, claudeRoot: URL) -> [URL] {
         let fileManager = FileManager.default
         let folder = claudeRoot
             .appendingPathComponent("projects", isDirectory: true)
             .appendingPathComponent(projectDirectoryName(for: probeDirectory), isDirectory: true)
+        // Read off the folder itself, not resolved through the link.
+        if (try? folder.resourceValues(forKeys: [.isSymbolicLinkKey]))?.isSymbolicLink == true { return [] }
         guard let entries = try? fileManager.contentsOfDirectory(
             at: folder, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]
         ) else { return [] }
