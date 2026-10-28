@@ -74,10 +74,18 @@ struct ClaudeCredentialSources: Sendable {
     var file: @Sendable () -> ClaudeCredentials.OAuth?
     /// Claude Code's keychain item, never with a dialog.
     var item: @Sendable () -> ClaudeSourceRead
+    /// The renewal guard's read (ruling 2b): the item through `/usr/bin/security` alone, the
+    /// tool Claude Code reads it with.
+    var itemViaSecurityTool: @Sendable () -> ClaudeSourceRead
+    /// The renewal guard's lock check: unlocked for certain; a state that cannot be read counts
+    /// as locked.
+    var keychainUnlocked: @Sendable () -> Bool
 
     static let live = ClaudeCredentialSources(
         file: { ClaudeKeychainReader.readFromFile()?.claudeAiOauth },
-        item: { ClaudeKeychainReader.readItemSilently() }
+        item: { ClaudeKeychainReader.readItemSilently() },
+        itemViaSecurityTool: { ClaudeKeychainReader.readViaSecurityToolResult() },
+        keychainUnlocked: { KeychainNoUI.defaultKeychainLockState == .unlocked }
     )
 }
 

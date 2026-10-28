@@ -80,3 +80,17 @@ actor ClaudeRenewalGate {
         Self.admission(now: now, lastAttemptAt: nil, signInLaunchedAt: signInLaunchedAt) == .signInPending
     }
 }
+
+/// What the provider needs to have Claude Code renew a sign-in: the shared gate, the binary
+/// rule and one start. Values, so a test hands in its own.
+struct ClaudeRenewal: Sendable {
+    var gate: ClaudeRenewalGate
+    var locateBinary: @Sendable () -> String?
+    var start: @Sendable (_ binary: String) async -> Void
+
+    static let live = ClaudeRenewal(
+        gate: .shared,
+        locateBinary: { ClaudeBinaryLocator.locate() },
+        start: { await ClaudeRenewalProbe.startForRenewal(binary: $0) }
+    )
+}

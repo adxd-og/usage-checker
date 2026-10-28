@@ -249,6 +249,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     private let cache: ClaudeCredentialsCache
     /// Claude Code's credentials file and keychain item, read without a dialog.
     private let sources: ClaudeCredentialSources
+    /// How Claude Code is asked to renew an expired sign-in.
+    private let renewal: ClaudeRenewal
     private let now: @Sendable () -> Date
 
     init(
@@ -256,12 +258,14 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         betaHeader: String = "oauth-2025-04-20",
         cache: ClaudeCredentialsCache = .shared,
         sources: ClaudeCredentialSources = .live,
+        renewal: ClaudeRenewal = .live,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.http = http
         self.betaHeader = betaHeader
         self.cache = cache
         self.sources = sources
+        self.renewal = renewal
         self.now = now
     }
 
@@ -280,18 +284,21 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         do {
             resp = try await fetchUsage(token: oauth.accessToken)
         } catch HTTPClientError.badStatus(401, _) {
-            // The token is dead and refreshing it is Claude Code's job, not ours. Give its
-            // sources one more look — it may have rotated already — and otherwise say the
-            // sign-in expired.
-            guard let renewed = Self.newest(file: sources.file(), item: sources.item()),
-                  Self.isUsableRenewal(renewed, after: oauth)
-            else {
+            // The token is dead, and refreshing it is Claude Code's job, never Omelette's.
+            guard let renewed = await renewedAfterUnauthorized(dead: oauth, now: now) else {
                 return .notSignedIn(reason: .expired, message: ClaudeSignInCopy.expiredMessage, at: now)
             }
             cache.save(renewed)
             oauth = renewed
             do {
                 resp = try await fetchUsage(token: renewed.accessToken)
+            } catch HTTPClientError.badStatus(401, _) {
+                // Claude Code wrote a newer token and the server refuses it too: still signed
+                // out, and the Sign in button is the way back.
+                return .notSignedIn(reason: .expired, message: ClaudeSignInCopy.expiredMessage, at: now)
+            } catch HTTPClientError.rateLimited(let retryAfter) {
+                // The same answer as the first call's: the poll loop backs off by it.
+                return .errorState(message: "Rate limited by usage API", at: now, retryAfter: retryAfter ?? 60)
             } catch {
                 return .errorState(message: error.localizedDescription, at: now)
             }
@@ -300,6 +307,9 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         } catch {
             return .errorState(message: error.localizedDescription, at: now)
         }
+
+        // Claude read fine: a sign-in launched from the button is over.
+        await renewal.gate.tokenArrived()
 
         let tier = SubscriptionTier(
             rawSubscriptionType: oauth.subscriptionType,
@@ -375,6 +385,34 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         if let file { candidates.append(file) }
         if case .found(let fromItem) = item { candidates.append(fromItem) }
         return candidates.max { $0.expiresAt < $1.expiresAt }
+    }
+
+    /// After a 401 (spec 2026-10-25 § Package 2, Renewal through Claude Code): a newer token
+    /// Claude Code already wrote, or one it writes when Omelette starts it. Omelette never
+    /// refreshes a token itself. A start needs, in this order: the gate's leave (one every five
+    /// minutes, none during a sign-in from the button), the guard (ruling 2b: the login keychain
+    /// unlocked, and the `security` read Claude Code itself makes went through silently just
+    /// now, so Claude Code's read cannot raise a dialog either), and a `claude` to start. It
+    /// counts only when the item's expiry moved past the dead token's.
+    private func renewedAfterUnauthorized(dead: ClaudeCredentials.OAuth, now: Date) async -> ClaudeCredentials.OAuth? {
+        if let newer = Self.newest(file: sources.file(), item: sources.item()),
+           Self.isUsableRenewal(newer, after: dead) {
+            return newer
+        }
+        guard await renewal.gate.admission(now: now) == .run else { return nil }
+        guard sources.keychainUnlocked(), case .found = sources.itemViaSecurityTool() else { return nil }
+        guard let binary = renewal.locateBinary() else { return nil }
+        let reads = sources
+        let start = renewal.start
+        let outcome = await renewal.gate.attempt(now: now) {
+            await start(binary)
+            guard case .found(let after) = reads.itemViaSecurityTool(), after.expiresAt > dead.expiresAt else {
+                return nil
+            }
+            return after
+        }
+        guard case .renewed(let after) = outcome else { return nil }
+        return after
     }
 
     /// Whether credentials found after a 401 are worth swapping in.

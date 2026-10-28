@@ -27,9 +27,12 @@ final class ClaudeSignedOutReasonTests: XCTestCase {
     /// How often each source was asked.
     private final class Asked { var file = 0; var item = 0; var security = 0 }
 
-    /// The provider's sources, as closures over fixed answers.
+    /// The provider's sources, as closures over fixed answers. The renewal guard's two reads
+    /// say no: these tests never reach a renewal.
     private func sources(file: ClaudeCredentials.OAuth?, item: ClaudeSourceRead) -> ClaudeCredentialSources {
-        ClaudeCredentialSources(file: { file }, item: { item })
+        ClaudeCredentialSources(
+            file: { file }, item: { item }, itemViaSecurityTool: { .refused }, keychainUnlocked: { false }
+        )
     }
 
     // MARK: - Which credentials a poll uses
