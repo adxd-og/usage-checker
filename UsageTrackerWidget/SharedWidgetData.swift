@@ -102,10 +102,15 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// poll has started. Optional and decoded through the extension below for the reason
     /// `showsRemaining` is; an older extension ignores the key.
     var enabledProviders: Int? = nil
+    /// Which providers the app polls, sorted — the set `enabledProviders` counts. Lets a
+    /// provider widget tell "switched off" from "not reporting". nil in a file an older
+    /// build wrote and before the first poll; decoded through the extension below for the
+    /// reason `showsRemaining` is.
+    var enabledProviderIDs: [String]? = nil
 
     /// Spelled out because the decoder below needs them.
     enum CodingKeys: String, CodingKey {
-        case services, updatedAt, showsRemaining, enabledProviders
+        case services, updatedAt, showsRemaining, enabledProviders, enabledProviderIDs
     }
 
     /// What every ring and number in the extension reads.
@@ -114,6 +119,11 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// The app polls nothing: every provider is off (spec 2026-10-25 § Package 1). A file
     /// that does not say is not.
     var isNothingOn: Bool { enabledProviders == 0 }
+
+    /// The app polls other providers but not this one. A file that does not say is not.
+    func isSwitchedOff(_ providerID: String) -> Bool {
+        enabledProviderIDs.map { !$0.contains(providerID) } ?? false
+    }
 
     func service(id: String) -> WidgetService? {
         services.first(where: { $0.id == id })
@@ -154,6 +164,7 @@ extension WidgetSnapshot {
         self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         self.showsRemaining = try c.decodeIfPresent(Bool.self, forKey: .showsRemaining) ?? false
         self.enabledProviders = try c.decodeIfPresent(Int.self, forKey: .enabledProviders)
+        self.enabledProviderIDs = try c.decodeIfPresent([String].self, forKey: .enabledProviderIDs)
     }
 }
 
@@ -204,7 +215,8 @@ enum WidgetEntryRules {
     /// No file to read: the app has never published, or wrote one this build cannot
     /// decode (`SharedWidgetStore.read()` answers nil for both).
     static let openAppMessage = "Open Omelette"
-    /// The chosen provider is not in the file: signed out, switched off or forgotten.
+    /// The chosen provider is not in the file: signed out, not reported yet, forgotten, or
+    /// switched off in a file an older build wrote (no `enabledProviderIDs`).
     static let noDataMessage = "No data"
     /// A file that names no provider at all while some are on — the app published
     /// "nothing to show". With every provider off the line is `NothingOnCopy.widget`.
@@ -224,11 +236,12 @@ enum WidgetEntryRules {
         case message(String)
     }
 
-    static func providerContent(_ snapshot: WidgetSnapshot?, providerID: String) -> ProviderContent {
+    static func providerContent(_ snapshot: WidgetSnapshot?, providerID: String, providerName: String) -> ProviderContent {
         guard let snapshot else { return .message(openAppMessage) }
         // Before the provider lookup: with every provider off, "No data" would read as this
         // one provider's trouble.
         if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
+        if snapshot.isSwitchedOff(providerID) { return .message(NothingOnCopy.providerOff(providerName)) }
         guard let service = snapshot.service(id: providerID) else { return .message(noDataMessage) }
         return .service(service)
     }

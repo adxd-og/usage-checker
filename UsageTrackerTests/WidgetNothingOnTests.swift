@@ -23,7 +23,7 @@ final class WidgetNothingOnTests: XCTestCase {
 
     func testWithEveryProviderOffAProviderWidgetSaysSo() {
         XCTAssertEqual(
-            WidgetEntryRules.providerContent(file([], enabledProviders: 0), providerID: "claude"),
+            WidgetEntryRules.providerContent(file([], enabledProviders: 0), providerID: "claude", providerName: "Claude"),
             .message(NothingOnCopy.widget)
         )
     }
@@ -36,7 +36,7 @@ final class WidgetNothingOnTests: XCTestCase {
         let signedOut = file([], enabledProviders: 2)
         XCTAssertEqual(WidgetEntryRules.allProvidersContent(signedOut), .message(WidgetEntryRules.nothingReportingMessage))
         XCTAssertEqual(
-            WidgetEntryRules.providerContent(signedOut, providerID: "claude"), .message(WidgetEntryRules.noDataMessage)
+            WidgetEntryRules.providerContent(signedOut, providerID: "claude", providerName: "Claude"), .message(WidgetEntryRules.noDataMessage)
         )
     }
 

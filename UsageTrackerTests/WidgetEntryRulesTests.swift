@@ -40,19 +40,19 @@ final class WidgetEntryRulesTests: XCTestCase {
     }
 
     func testNoFileSaysOpenOmelette() {
-        XCTAssertEqual(WidgetEntryRules.providerContent(nil, providerID: "claude"), .message("Open Omelette"))
+        XCTAssertEqual(WidgetEntryRules.providerContent(nil, providerID: "claude", providerName: "Claude"), .message("Open Omelette"))
         XCTAssertEqual(WidgetEntryRules.allProvidersContent(nil), .message("Open Omelette"))
     }
 
     func testAProviderMissingFromTheFileSaysNoData() {
         XCTAssertEqual(
-            WidgetEntryRules.providerContent(file(["codex"]), providerID: "claude"), .message("No data")
+            WidgetEntryRules.providerContent(file(["codex"]), providerID: "claude", providerName: "Claude"), .message("No data")
         )
     }
 
     func testAProviderInTheFileIsDrawn() {
         XCTAssertEqual(
-            WidgetEntryRules.providerContent(file(["claude", "codex"]), providerID: "claude"),
+            WidgetEntryRules.providerContent(file(["claude", "codex"]), providerID: "claude", providerName: "Claude"),
             .service(service("claude"))
         )
     }

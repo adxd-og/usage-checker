@@ -9,10 +9,12 @@ enum WidgetBridge {
     /// Not the time, which moves with every poll. The count is in it because two empty
     /// files can say different things — every enabled provider signed out, or every
     /// provider switched off (spec 2026-10-25 § Package 1) — and a widget told the first
-    /// has to hear the second.
+    /// has to hear the second. The ids are in it because swapping which provider is on,
+    /// with nothing reporting, keeps the count — and a provider widget has to hear that too.
     struct Publication: Equatable, Sendable {
         let services: [WidgetService]
         let enabledProviders: Int?
+        var enabledProviderIDs: [String]? = nil
     }
 
     /// What this launch last wrote. nil until the first write, so a launch that has nothing
@@ -21,13 +23,13 @@ enum WidgetBridge {
 
     /// Called after every poll, on a display-mode change and from "Forget last known
     /// numbers". An empty list is written too: a widget never told "nothing to show"
-    /// keeps the last numbers it was given for good. `enabledProviders` is
-    /// `AppState.polledIDs?.count`, nil before the first poll has started.
+    /// keeps the last numbers it was given for good. `polled` is `AppState.polledIDs`,
+    /// nil before the first poll has started.
     static func publish(
-        _ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, enabledProviders: Int?
+        _ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, polled: Set<String>?
     ) {
-        let snapshot = snapshot(from: services, at: date, mode: mode, enabledProviders: enabledProviders)
-        let publication = Publication(services: snapshot.services, enabledProviders: snapshot.enabledProviders)
+        let snapshot = snapshot(from: services, at: date, mode: mode, polled: polled)
+        let publication = publication(of: snapshot)
         guard shouldPublish(publication, lastPublished: lastPublished) else { return }
         let wrote = SharedWidgetStore.write(snapshot)
         lastPublished = recordedPublication(publication, wrote: wrote, previous: lastPublished)
@@ -45,22 +47,44 @@ enum WidgetBridge {
 
     /// Whether a publication reaches the file. Anything to draw goes every time, so the
     /// widget's "Updated …" moves with the polls. Nothing to draw goes once: when it
-    /// becomes nothing, or when the count of providers that are on moves — every minute
-    /// would reload the widget's timelines to say the same nothing again.
+    /// becomes nothing, or when the providers that are on change (their count or which ones)
+    /// — every minute would reload the widget's timelines to say the same nothing again.
     nonisolated static func shouldPublish(_ publication: Publication, lastPublished: Publication?) -> Bool {
         !publication.services.isEmpty || publication != lastPublished
+    }
+
+    /// The file `publish` writes for one poll: how many providers are on and which, sorted,
+    /// both from the one set the poll ran with.
+    nonisolated static func snapshot(
+        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, polled: Set<String>?
+    ) -> WidgetSnapshot {
+        snapshot(
+            from: services, at: date, mode: mode,
+            enabledProviders: polled?.count, enabledProviderIDs: polled.map { $0.sorted() }
+        )
+    }
+
+    /// What the change comparison sees of a file.
+    nonisolated static func publication(of snapshot: WidgetSnapshot) -> Publication {
+        Publication(
+            services: snapshot.services,
+            enabledProviders: snapshot.enabledProviders,
+            enabledProviderIDs: snapshot.enabledProviderIDs
+        )
     }
 
     /// The whole file as a value. `publish` writes into the App Group container,
     /// which only the real app can reach, so everything it decides is decided here.
     nonisolated static func snapshot(
-        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, enabledProviders: Int? = nil
+        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode,
+        enabledProviders: Int? = nil, enabledProviderIDs: [String]? = nil
     ) -> WidgetSnapshot {
         WidgetSnapshot(
             services: widgetServices(from: services),
             updatedAt: date,
             showsRemaining: mode == .remaining,
-            enabledProviders: enabledProviders
+            enabledProviders: enabledProviders,
+            enabledProviderIDs: enabledProviderIDs
         )
     }
 

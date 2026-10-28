@@ -389,7 +389,7 @@ final class AppState: ObservableObject {
         // changes, and a widget never told "nothing to show" keeps the last numbers.
         WidgetBridge.publish(
             next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode,
-            enabledProviders: polledIDs?.count
+            polled: polledIDs
         )
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.
@@ -491,7 +491,7 @@ final class AppState: ObservableObject {
     func republishDisplayMode() {
         WidgetBridge.publish(
             snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
-            enabledProviders: polledIDs?.count
+            polled: polledIDs
         )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
@@ -757,7 +757,7 @@ final class AppState: ObservableObject {
         // reporting, that poll never came.
         WidgetBridge.publish(
             snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
-            enabledProviders: polledIDs?.count
+            polled: polledIDs
         )
         Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
     }

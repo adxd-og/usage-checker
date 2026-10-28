@@ -22,4 +22,9 @@ enum NothingOnCopy {
     /// The widget's line. A widget sits on the desktop, away from the app, so it names
     /// whose Settings.
     static let widget = "All providers are off. Turn one on in Omelette's Settings › Providers."
+    /// A provider widget pinned to a provider that is switched off while others are on.
+    /// Same shape as `widget`: it names whose Settings.
+    static func providerOff(_ name: String) -> String {
+        "\(name) is off. Turn it on in Omelette's Settings › Providers."
+    }
 }
