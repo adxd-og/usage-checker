@@ -26,10 +26,10 @@ enum ClaudeKeychainError: LocalizedError, Sendable {
 
     var errorDescription: String? {
         switch self {
-        case .notFound: return "Claude Code credentials not found. Please log into Claude Code (run `claude login`)."
+        case .notFound: return ClaudeSignInCopy.notFoundMessage
         case .readFailed(let s): return "Keychain read failed (status \(s))"
         case .decodeFailed(let m): return "Could not parse credentials: \(m)"
-        case .interactionRequired: return "Keychain access needs your permission"
+        case .interactionRequired: return ClaudeSignInCopy.deniedMessage
         }
     }
 }
