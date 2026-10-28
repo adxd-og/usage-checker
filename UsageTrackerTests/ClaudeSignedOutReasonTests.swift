@@ -116,6 +116,10 @@ final class ClaudeSignedOutReasonTests: XCTestCase {
         XCTAssertEqual(ClaudeSourceRead.combining(direct: .refused, security: { .refused }), .refused)
     }
 
+    func testSecurityFindingNoSignInAnswersARefusedDirectRead() {
+        XCTAssertEqual(ClaudeSourceRead.combining(direct: .refused, security: { .absent }), .absent)
+    }
+
     func testAnUnreadableItemStaysUnreadable() {
         XCTAssertEqual(ClaudeSourceRead.combining(direct: .unreadable("decode"), security: { .absent }), .unreadable("decode"))
     }

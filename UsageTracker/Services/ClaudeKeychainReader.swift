@@ -15,6 +15,18 @@ struct ClaudeCredentials: Decodable, Sendable {
     enum CodingKeys: String, CodingKey {
         case claudeAiOauth
     }
+
+    /// Claude Code's sign-in in a credentials payload; nil when the payload has none. Its item
+    /// can hold other entries (`mcpOAuth`) and no `claudeAiOauth` after a sign-out: that is
+    /// not signed in, with the Sign in button, never unreadable. Throws for anything else
+    /// malformed, a sign-in that is there but broken included.
+    nonisolated static func decodeSignIn(from data: Data) throws -> OAuth? {
+        try JSONDecoder().decode(SignInPayload.self, from: data).claudeAiOauth
+    }
+
+    private struct SignInPayload: Decodable {
+        let claudeAiOauth: OAuth?
+    }
 }
 
 /// Two readings of Claude Code's sign-in compare field by field: the resolution and the
@@ -62,7 +74,10 @@ enum ClaudeSourceRead: Equatable, Sendable {
             switch security() {
             case .found(let oauth): return .found(oauth)
             case .unreadable(let words): return .unreadable(words)
-            case .absent, .refused: return direct
+            // The tool read the item and it holds no sign-in: an answer, which a refused
+            // direct read is not. An unreadable direct read stays what it was.
+            case .absent: return direct == .refused ? .absent : direct
+            case .refused: return direct
             }
         }
     }
@@ -129,12 +144,15 @@ enum ClaudeKeychainReader {
             guard let data = item as? Data else {
                 throw ClaudeKeychainError.decodeFailed("not Data")
             }
+            let oauth: ClaudeCredentials.OAuth?
             do {
-                let creds = try JSONDecoder().decode(ClaudeCredentials.self, from: data)
-                return creds
+                oauth = try ClaudeCredentials.decodeSignIn(from: data)
             } catch {
                 throw ClaudeKeychainError.decodeFailed(String(describing: error))
             }
+            // An item that holds no sign-in (Claude Code signed out, other entries kept).
+            guard let oauth else { throw ClaudeKeychainError.notFound }
+            return ClaudeCredentials(claudeAiOauth: oauth)
         case errSecItemNotFound:
             throw ClaudeKeychainError.notFound
         case errSecInteractionNotAllowed, errSecAuthFailed, errSecUserCanceled:
@@ -197,7 +215,9 @@ enum ClaudeKeychainReader {
         guard KeychainNoUI.aclTrusts(path: securityToolPath, service: service) else { return .refused }
         guard let data = runSecurityTool(service: service) else { return .refused }
         do {
-            return .found(try JSONDecoder().decode(ClaudeCredentials.self, from: data).claudeAiOauth)
+            // An item that holds no sign-in (Claude Code signed out, other entries kept).
+            guard let oauth = try ClaudeCredentials.decodeSignIn(from: data) else { return .absent }
+            return .found(oauth)
         } catch {
             return .unreadable(ClaudeKeychainError.decodeFailed(String(describing: error)).localizedDescription)
         }
@@ -239,7 +259,8 @@ enum ClaudeKeychainReader {
     static func readFromFile() -> ClaudeCredentials? {
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/.credentials.json")
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(ClaudeCredentials.self, from: data)
+        guard let data = try? Data(contentsOf: url),
+              let oauth = (try? ClaudeCredentials.decodeSignIn(from: data)) ?? nil else { return nil }
+        return ClaudeCredentials(claudeAiOauth: oauth)
     }
 }
