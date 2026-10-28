@@ -20,6 +20,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   floating window and the widgets say "All providers are off" and point to
   Settings › Providers instead of "Loading…".
 
+### Claude sign-in
+- Sign in from the popover or Settings › Providers when Claude Code has no
+  sign-in on this Mac, the Claude app alone included: Terminal opens on
+  Claude Code's own `claude auth login`. Omelette never sees the password.
+- An expired Claude Code sign-in (it lasts 8 hours) is renewed by starting
+  Claude Code for a few seconds, at most every 5 minutes and only while the
+  login keychain is unlocked and readable without a prompt. Nothing is typed
+  into it and no message is sent; any transcript it leaves is removed.
+- A signed-out Claude says why (not signed in, expired, keychain permission,
+  unreadable) and offers the way out that fits: Sign in, the install link,
+  or Settings › Advanced.
+- Omelette keeps Claude Code's token in memory only. The keychain item where
+  earlier versions kept a copy is removed once, silently.
+
 ## [3.2.0] — 2026-10-27
 
 ### Popover
