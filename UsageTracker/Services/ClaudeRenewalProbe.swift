@@ -2,8 +2,8 @@ import Foundation
 
 /// One renewal start of Claude Code (spec 2026-10-25 § Design › Package 2, Renewal through
 /// Claude Code): in Omelette's own folder, under a session id Omelette keeps, with Claude Code's
-/// own flags, for `window` seconds, and any transcript under `~/.claude/projects` removed before
-/// and after.
+/// own flags, for `window` seconds, and the transcripts in its own project folder under
+/// `~/.claude/projects` removed before and after.
 ///
 /// Not CodexBarCore's `touchOAuthAuthPath`: its folder is CodexBar's, it presses Enter every
 /// 0.8 s, and its transcript cleaner is internal (plan Decision D1). The cleaner below is a port

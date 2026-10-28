@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An expired Claude Code sign-in (it lasts 8 hours) is renewed by starting
   Claude Code for a few seconds, at most every 5 minutes and only while the
   login keychain is unlocked and readable without a prompt. Nothing is typed
-  into it and no message is sent; any transcript it leaves is removed.
+  into it and no message is sent; the transcripts in its own project folder
+  are removed.
 - A signed-out Claude says why (not signed in, expired, keychain permission,
   unreadable) and offers the way out that fits: Sign in, the install link,
   or Settings › Advanced.

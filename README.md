@@ -417,10 +417,15 @@ to keep a year of them:
   PATH, else the Claude app's own copy) on a terminal of its own in
   `~/Library/Application Support/UsageTracker/ClaudeRenewal` for 8 s, at most
   every 5 minutes, and only while the login keychain is unlocked and Claude
-  Code's item reads without a prompt. Nothing is typed into it and no message
-  is sent; it runs without `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  Code's item reads without a prompt. Nothing is typed into it (it only gets
+  a terminal's answer when it asks where the cursor is) and no message is
+  sent; it runs without `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`,
   `CLAUDECODE` or `ANTHROPIC_*`, with updates, telemetry and non-essential
-  traffic off, and any transcript it leaves is removed
+  traffic switched off (on a fresh configuration Claude Code still fetches
+  its plugin list), and talks to Anthropic as Claude Code always does. The
+  transcripts in its own project folder under `~/.claude/projects` are
+  removed; Claude Code's own bookkeeping (`history.jsonl`, `sessions/`, a
+  `.claude.json` backup) stays
 - Agent status comes from a tiny `omelette-hook` helper inside the app that
   Claude Code and Codex run on their hook events. It talks to Omelette over
   a local Unix socket (0600, 64 KB cap) and forwards only the session id,
