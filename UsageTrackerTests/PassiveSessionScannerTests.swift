@@ -322,4 +322,38 @@ final class PassiveSessionScannerTests: XCTestCase {
         XCTAssertEqual(sessions.first(where: { $0.source == .claude })?.state, .idle)
         XCTAssertEqual(sessions.first(where: { $0.source == .codex })?.state, .working)
     }
+
+    // MARK: - Omelette's renewal start (spec 2026-10-25 § Package 2)
+
+    func testOmelettesRenewalStartIsNotASession() throws {
+        let renewalID = "5b0f3a52-8c1d-4e6f-9a7b-1c2d3e4f5a6b"
+        try write(
+            claudeTranscript(cwd: "/Users/tester/Library/Application Support/UsageTracker/ClaudeRenewal", sessionID: renewalID),
+            to: "claude-projects/-Users-tester-Library-Application-Support-UsageTracker-ClaudeRenewal/\(renewalID).jsonl",
+            secondsAgo: 5
+        )
+        try write(
+            claudeTranscript(cwd: "/Users/tester/Projects/alpha", sessionID: claudeSessionID),
+            to: "claude-projects/\(alphaSlug)/\(claudeSessionID).jsonl",
+            secondsAgo: 300
+        )
+
+        let sessions = PassiveSessionScanner.scan(
+            claudeProjects: claudeRoot, codexSessions: codexRoot, now: now, ignoringClaudeSessions: [renewalID]
+        )
+        XCTAssertEqual(sessions.map(\.sessionID), [claudeSessionID])
+    }
+
+    func testTheRenewalIDIsMatchedWhateverItsCase() throws {
+        let renewalID = "5b0f3a52-8c1d-4e6f-9a7b-1c2d3e4f5a6b"
+        try write(
+            claudeTranscript(cwd: "/Users/tester/Library/Application Support/UsageTracker/ClaudeRenewal", sessionID: renewalID),
+            to: "claude-projects/-Users-tester-Library-Application-Support-UsageTracker-ClaudeRenewal/\(renewalID).jsonl",
+            secondsAgo: 5
+        )
+        let sessions = PassiveSessionScanner.scan(
+            claudeProjects: claudeRoot, codexSessions: codexRoot, now: now, ignoringClaudeSessions: [renewalID.uppercased()]
+        )
+        XCTAssertTrue(sessions.isEmpty)
+    }
 }

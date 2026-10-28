@@ -401,8 +401,14 @@ final class AppState: ObservableObject {
     private func scanAgentsPassively() async {
         let claudeProjects = AgentPaths.claudeProjectsURL
         let codexSessions = AgentPaths.codexSessionsURL
+        let renewalDirectory = ClaudeRenewalProbe.directory
         let scanned = await Task.detached(priority: .utility) {
-            PassiveSessionScanner.scan(claudeProjects: claudeProjects, codexSessions: codexSessions)
+            // Omelette's own renewal start of Claude Code is not a session.
+            let renewal = ClaudeRenewalProbe.storedSessionID(in: renewalDirectory).map { [$0] } ?? []
+            return PassiveSessionScanner.scan(
+                claudeProjects: claudeProjects, codexSessions: codexSessions,
+                ignoringClaudeSessions: Set(renewal)
+            )
         }.value
         AgentSessionStore.shared.mergePassive(scanned)
         AgentSessionStore.shared.pruneStale()

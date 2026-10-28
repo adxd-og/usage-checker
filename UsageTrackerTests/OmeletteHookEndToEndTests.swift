@@ -56,7 +56,8 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         stdin input: String? = nil,
         arguments: [String] = [],
         decisionTimeout: TimeInterval? = nil,
-        cmux: [String: String] = [:]
+        cmux: [String: String] = [:],
+        extraEnvironment: [String: String] = [:]
     ) throws -> Launched {
         let process = Process()
         process.executableURL = AgentPaths.bundledHelperURL
@@ -68,6 +69,10 @@ final class OmeletteHookEndToEndTests: XCTestCase {
             environment.removeValue(forKey: key)
         }
         for (key, value) in cmux { environment[key] = value }
+        // The renewal mark is cleared first, like the cmux variables: the control case must
+        // not depend on the shell the suite runs in.
+        environment.removeValue(forKey: ClaudeRenewalMarker.environmentKey)
+        for (key, value) in extraEnvironment { environment[key] = value }
         process.environment = environment
         let stdout = Pipe()
         let stdin = Pipe()
@@ -94,9 +99,13 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         stdin input: String? = nil,
         arguments: [String] = [],
         decisionTimeout: TimeInterval? = nil,
-        cmux: [String: String] = [:]
+        cmux: [String: String] = [:],
+        extraEnvironment: [String: String] = [:]
     ) throws -> Run {
-        finish(try launchHelper(stdin: input, arguments: arguments, decisionTimeout: decisionTimeout, cmux: cmux))
+        finish(try launchHelper(
+            stdin: input, arguments: arguments, decisionTimeout: decisionTimeout, cmux: cmux,
+            extraEnvironment: extraEnvironment
+        ))
     }
 
     /// The reply handle of the `count`-th event, once the server has delivered it on main.
@@ -545,5 +554,31 @@ final class OmeletteHookEndToEndTests: XCTestCase {
 
         XCTAssertFalse(waitForEvents(1, timeout: 0.3))
         XCTAssertEqual(server?.droppedCount, 0)
+    }
+
+    // MARK: - Omelette's renewal start (spec 2026-10-25 § Package 2)
+
+    func testTheRenewalStartReportsNothing() throws {
+        try startServer()
+
+        let run = try runHelper(
+            stdin: AgentFixture.sessionStart,
+            extraEnvironment: [ClaudeRenewalMarker.environmentKey: ClaudeRenewalMarker.value]
+        )
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.isEmpty)
+        XCTAssertFalse(waitForEvents(1, timeout: 0.5), "Omelette's own start of Claude Code is not an agent session")
+        XCTAssertEqual(server?.receivedCount, 0)
+    }
+
+    func testAnyOtherValueOfTheMarkIsAnOrdinarySession() throws {
+        try startServer()
+
+        let run = try runHelper(stdin: AgentFixture.sessionStart, extraEnvironment: [ClaudeRenewalMarker.environmentKey: "0"])
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(waitForEvents(1))
+        XCTAssertEqual(box.events.first?.sessionID, "sess-1")
     }
 }
