@@ -189,4 +189,47 @@ final class ClaudePTYStartTests: XCTestCase {
         }
         await fulfillment(of: [finished], timeout: 60)
     }
+
+    // MARK: - Quitting Omelette (Codex sol F1, review of 3.3.0)
+
+    func testAClosedRegistryRefusesTheStart() async throws {
+        let registry = ChildProcessRegistry()
+        registry.terminateAll()
+        let started = Date()
+        do {
+            try await ClaudePTYStart.run(
+                binary: "/bin/sleep", arguments: ["30"], environment: ["PATH": "/usr/bin:/bin"],
+                directory: directory, duration: 20, grace: 1, registry: registry
+            )
+            XCTFail("a start after the quit did not throw")
+        } catch let failure as ClaudePTYStart.Failure {
+            guard case .launch = failure else { return XCTFail("\(failure)") }
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "nothing was started")
+        XCTAssertEqual(registry.runningCount, 0)
+    }
+
+    func testQuittingStopsARunningStart() async throws {
+        let registry = ChildProcessRegistry()
+        let folder = directory!
+        let returned = expectation(description: "the start came back after the quit")
+        let task = Task.detached {
+            try? await ClaudePTYStart.run(
+                binary: "/bin/sleep", arguments: ["30"], environment: ["PATH": "/usr/bin:/bin"],
+                directory: folder, duration: 20, grace: 1, registry: registry
+            )
+            returned.fulfill()
+        }
+        defer { task.cancel() }
+        let registeredBy = Date().addingTimeInterval(3)
+        while registry.runningCount != 1, Date() < registeredBy {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        XCTAssertEqual(registry.runningCount, 1, "the start is in the registry while it runs")
+
+        registry.terminateAll()
+
+        await fulfillment(of: [returned], timeout: 3)
+        XCTAssertEqual(registry.runningCount, 0)
+    }
 }
