@@ -92,6 +92,7 @@ final class AppState: ObservableObject {
         }
         observeAgentSessions()
         seedFromLastKnown()
+        removeLegacyClaudeTokenCopy()
         refreshNow()
         startTimer()
         // Keep awake (spec 2026-10-26 § Behaviour, Visible): what the helper says, once
@@ -119,6 +120,21 @@ final class AppState: ObservableObject {
                 guard !stored.isEmpty, !self.snapshot.hasAnyData else { return }
                 self.snapshot = Self.seededSnapshot(from: stored, enabledServiceIDs: self.enabledServiceIDs)
             }
+        }
+    }
+
+    /// Ruling 1a (spec 2026-10-25 § Package 2): the keychain item where 3.2 and earlier kept a
+    /// copy of Claude Code's token goes, once and silently. A keychain that is not certainly
+    /// unlocked leaves it for a later launch rather than raise a password panel.
+    private func removeLegacyClaudeTokenCopy() {
+        Task.detached(priority: .utility) {
+            let key = ClaudeCredentialsCache.legacyItemRemovedKey
+            let result = ClaudeCredentialsCache.removeLegacyItem(
+                alreadyDone: UserDefaults.standard.bool(forKey: key),
+                keychainUnlocked: KeychainNoUI.defaultKeychainLockState == .unlocked,
+                delete: ClaudeCredentialsCache.deleteLegacyItem
+            )
+            if result == .done { UserDefaults.standard.set(true, forKey: key) }
         }
     }
 
