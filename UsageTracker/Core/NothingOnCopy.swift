@@ -17,4 +17,6 @@ enum NothingOnCopy {
     static let tooltip = "Omelette — all providers are off. Turn one on in Settings › Providers."
     /// The floating window's line: the fact and where to change it.
     static var sentence: String { "\(title). \(hint)" }
+    /// The popover's link to the switches.
+    static let button = "Open Settings › Providers"
 }

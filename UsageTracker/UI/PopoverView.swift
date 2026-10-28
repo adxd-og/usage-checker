@@ -1,5 +1,15 @@
 import SwiftUI
 
+/// What the popover's body shows when there are no tiles to draw (spec 2026-10-25
+/// § Package 1, Nothing on). Top level, not nested in the view, so the rule's answer is a
+/// plain value a test compares.
+enum PopoverEmptyBody: Equatable, Sendable {
+    /// Every provider is off: says so and opens Settings › Providers.
+    case nothingOn
+    /// The first poll has not landed.
+    case loading
+}
+
 struct PopoverView: View {
     @ObservedObject var state: AppState
     /// The agents list's cap per tab (popover height budget spec 2026-10-27), owned by
@@ -171,6 +181,13 @@ struct PopoverView: View {
         openSettings()
     }
 
+    /// Settings on its Providers tab, where the switches are (the nothing-on link).
+    private func openProvidersSettings() {
+        SettingsRoute.shared.pendingTab = SettingsTab.providers.rawValue
+        NSApp.activate(ignoringOtherApps: true)
+        openSettings()
+    }
+
     // MARK: - Tab state
 
     private var displayedServices: [ServiceSnapshot] { state.snapshot.services }
@@ -270,6 +287,13 @@ struct PopoverView: View {
                              token: OMProviderTile.stateToken(for: service.state))
     }
 
+    /// The body with no tiles to draw; nil while there is anything to draw. Nothing on wins
+    /// even over services the poll that switched the last provider off has not dropped yet.
+    nonisolated static func emptyBody(pollsNothing: Bool, services: [ServiceSnapshot]) -> PopoverEmptyBody? {
+        if pollsNothing { return .nothingOn }
+        return services.isEmpty ? .loading : nil
+    }
+
     private var segments: some View {
         OMSegmentedControl(
             items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
@@ -324,7 +348,10 @@ struct PopoverView: View {
 
     @ViewBuilder
     private var content: some View {
-        if displayedServices.isEmpty {
+        switch Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) {
+        case .nothingOn?:
+            nothingOn
+        case .loading?:
             HStack {
                 ProgressView().controlSize(.small)
                 Text("Loading…")
@@ -333,28 +360,47 @@ struct PopoverView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, OMSpacing.xs)
-        } else if let service = selectedService {
-            // This tab's own burn rate, not the dashboard's selection. The two
-            // are separate persisted choices, so keying off the dashboard meant
-            // the verdict either went missing or, worse, described a provider
-            // that isn't on screen.
-            ProviderDetail(
-                service: service,
-                mode: settings.percentMode,
-                burn: dashboard.burn(for: service.id),
-                hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
-                // The offer is about Claude's settings.json, so it belongs on
-                // Claude's tab and nowhere else.
-                showsHooksPrompt: hooksPromptVisible && AgentSource(rawValue: service.id) == .claude,
-                onEnableAgents: openAgentsSettings,
-                onEnableHooks: enableClaudeHooks,
-                onDismissHooksPrompt: dismissHooksPrompt,
-                agentsMaxListHeight: heights.cap(for: service.id),
-                onAgentsListGeometry: { heights.recordAgentsList($0, tab: service.id) }
-            )
-        } else {
-            allTab
+        case nil:
+            if let service = selectedService {
+                // This tab's own burn rate, not the dashboard's selection. The two
+                // are separate persisted choices, so keying off the dashboard meant
+                // the verdict either went missing or, worse, described a provider
+                // that isn't on screen.
+                ProviderDetail(
+                    service: service,
+                    mode: settings.percentMode,
+                    burn: dashboard.burn(for: service.id),
+                    hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
+                    // The offer is about Claude's settings.json, so it belongs on
+                    // Claude's tab and nowhere else.
+                    showsHooksPrompt: hooksPromptVisible && AgentSource(rawValue: service.id) == .claude,
+                    onEnableAgents: openAgentsSettings,
+                    onEnableHooks: enableClaudeHooks,
+                    onDismissHooksPrompt: dismissHooksPrompt,
+                    agentsMaxListHeight: heights.cap(for: service.id),
+                    onAgentsListGeometry: { heights.recordAgentsList($0, tab: service.id) }
+                )
+            } else {
+                allTab
+            }
         }
+    }
+
+    /// Every provider switched off: the fact, where to change it, and a link that opens
+    /// Settings on Providers.
+    private var nothingOn: some View {
+        VStack(alignment: .leading, spacing: OMSpacing.xs) {
+            Text(NothingOnCopy.title)
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.om(.text))
+            Text(NothingOnCopy.hint)
+                .font(.system(size: 12.5))
+                .foregroundStyle(.om(.secondary))
+            Button(NothingOnCopy.button, action: openProvidersSettings)
+                .buttonStyle(.omLink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, OMSpacing.xs)
     }
 
     /// Every provider at a glance; tapping a tile is the same as picking its tab. Two
