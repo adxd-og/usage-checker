@@ -58,6 +58,17 @@ final class AppState: ObservableObject {
     /// (spec 2026-10-25 § Package 1).
     @Published private(set) var polledIDs: Set<String>?
 
+    /// Nothing is on: every switch off and no admin key (spec 2026-10-25 § Package 1,
+    /// Nothing on). The tooltip, the floating window and the popover say so rather than
+    /// "loading…" for good.
+    var pollsNothing: Bool { Self.isNothingOn(polledIDs: polledIDs) }
+
+    /// The rule: an empty set is nothing on; nil — no poll has started yet — is loading.
+    /// An admin key alone is something on.
+    nonisolated static func isNothingOn(polledIDs: Set<String>?) -> Bool {
+        polledIDs?.isEmpty == true
+    }
+
     /// Keeps `status.json` current between polls. `$sessions` rather than the store's
     /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
     /// session moving from working to idle still changes what the file says.
