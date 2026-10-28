@@ -15,4 +15,6 @@ enum NothingOnCopy {
     static let hint = "Turn one on in Settings › Providers."
     /// The menu bar tooltip's whole usage part.
     static let tooltip = "Omelette — all providers are off. Turn one on in Settings › Providers."
+    /// The floating window's line: the fact and where to change it.
+    static var sentence: String { "\(title). \(hint)" }
 }

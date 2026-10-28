@@ -25,7 +25,13 @@ enum FloatingMiniLayout {
 
     /// `maxRows` is 2 because that is what fits at 130 pt; it is a parameter only
     /// so the tests can pin the truncation without depending on the panel size.
-    static func content(for service: ServiceSnapshot?, maxRows: Int = 2) -> Content {
+    /// `pollsNothing`: every provider is off (spec 2026-10-25 § Package 1). The panel says
+    /// so rather than "Loading…" for good, even while the poll that switched the last one
+    /// off is still landing.
+    static func content(for service: ServiceSnapshot?, pollsNothing: Bool = false, maxRows: Int = 2) -> Content {
+        if pollsNothing {
+            return Content(hero: nil, rows: [], emptyText: NothingOnCopy.sentence)
+        }
         guard let service else {
             return Content(hero: nil, rows: [], emptyText: "Loading…")
         }
