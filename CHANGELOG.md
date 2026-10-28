@@ -5,6 +5,21 @@ All notable changes to Omelette (formerly Usage Checker) will be documented in t
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Settings
+- Claude has an on/off switch in Settings › Providers like Codex, Antigravity
+  and Grok. It starts on wherever Claude is on this Mac (`~/.claude`, the
+  Claude app, or a Claude reading Omelette kept). Off means off: Claude is not
+  polled, its numbers, dollars and chats leave the menu bar, popover,
+  dashboard, widgets, `omelette status`, the status line and the MCP tools,
+  and the daily summary stops.
+
+### Menu bar, popover and widgets
+- With every provider switched off, the menu bar tooltip, the popover, the
+  floating window and the widgets say "All providers are off" and point to
+  Settings › Providers instead of "Loading…".
+
 ## [3.2.0] — 2026-10-27
 
 ### Popover
