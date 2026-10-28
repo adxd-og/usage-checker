@@ -18,7 +18,8 @@ import XCTest
 /// `JSONLChatRebinTests`, `JSONLChatTierRuleTests` or either earlier verification file.
 final class JSONLV7ConversionVerification3Tests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let sessionID = "5b0e3c1a-7d42-4f96-a8e1-2c9d6b4f0a37"
     private let alphaSlug = "-Users-tester-Projects-alpha"
     private let sonnet = "claude-sonnet-4-5"

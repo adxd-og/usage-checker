@@ -14,7 +14,8 @@ import XCTest
 /// `JSONLDeferredFoldTests.swift` or its cache fixtures.
 final class JSONLCacheV7MigrationVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let alphaSlug = "-Users-verifier-Projects-alpha"
 
     private let calendar: Calendar = {

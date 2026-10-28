@@ -9,7 +9,8 @@ import XCTest
 /// target, which is also why the un-ticked turn below must come out at $0.
 final class GrokUsageAggregatorTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     /// Deliberately outside the tester's home directory: `ProjectName` strips a home
     /// prefix, and a fixture whose display name moved with whoever ran the suite

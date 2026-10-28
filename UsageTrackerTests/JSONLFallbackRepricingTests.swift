@@ -10,7 +10,8 @@ import XCTest
 /// `JSONLDeferredFoldTests`), ids and paths scrubbed.
 final class JSONLFallbackRepricingTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let sessionID = "9e41c2b7-3a58-4d0f-b6e2-8c17a5d93f04"
     private let alphaSlug = "-Users-tester-Projects-alpha"
     /// No table names it; "opus" in the id prices it at claude-opus-4-8's $5 / $25.

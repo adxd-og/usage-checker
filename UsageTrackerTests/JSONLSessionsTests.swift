@@ -12,7 +12,8 @@ import XCTest
 /// the static `ModelPricing` table, which is what the app uses offline.
 final class JSONLSessionsTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     private let sessionID = "d5dff4f0-3038-4ed6-81d6-ddccee879027"
     private let otherSessionID = "90a2e89b-86f7-438b-bbb1-d0b5735809e3"

@@ -10,7 +10,8 @@ import XCTest
 /// shape Claude Code 2.1.280 writes (see `JSONLDeferredFoldTests`), ids and paths scrubbed.
 final class JSONLRekeyOnLoadTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let sessionID = "5b0e3c1a-7d42-4f96-a8e1-2c9d6b4f0a37"
     private let alphaSlug = "-Users-tester-Projects-alpha"
 

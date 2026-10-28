@@ -10,7 +10,8 @@ import XCTest
 /// Fixture shape and the seeded rates are the ones `CodexUsageAggregatorTests` uses.
 final class CodexEarlyTokenCountTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     private let alphaCwd = "/tmp/Codex Fixtures/alpha app"
     private let model = "gpt-5.6-terra"

@@ -7,7 +7,8 @@ import XCTest
 /// network-dependent can move these numbers.
 final class JSONLAggregatorTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     private let alphaSlug = "-Users-tester-Projects-alpha"
     private let betaSlug = "-Users-tester-Projects-beta"

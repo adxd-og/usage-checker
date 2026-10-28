@@ -22,7 +22,8 @@ import XCTest
 /// `JSONLChatTierRuleTests`.
 final class JSONLV7ConversionVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let alphaSlug = "-Users-verifier-Projects-alpha"
 
     private static func calendar(secondsFromGMT: Int) -> Calendar {

@@ -12,7 +12,8 @@ import XCTest
 final class CodexChatRebinTests: XCTestCase {
     private var root: URL!
     private var tree: CodexTree!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let cwd = "/tmp/Codex Fixtures/alpha app"
     private let model = "gpt-5.6-terra"
     private let sessionID = "01a0c3d2-5e7f-7a18-9b4c-2d6e8f0a1b35"
