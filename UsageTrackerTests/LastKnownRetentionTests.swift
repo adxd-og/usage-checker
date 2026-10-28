@@ -94,7 +94,7 @@ final class LastKnownRetentionTests: XCTestCase {
                        "a disabled provider must not appear before the first poll")
     }
 
-    func testClaudeIsSeededBecauseItIsAlwaysPolled() throws {
+    func testClaudeIsSeededWhenItIsPolled() throws {
         let seeded = AppState.seededSnapshot(
             from: ["claude": entry(id: "claude", percent: 20, order: 0)],
             enabledServiceIDs: ["claude"]

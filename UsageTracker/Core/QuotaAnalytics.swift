@@ -289,8 +289,8 @@ enum QuotaAnalytics {
     /// Every bucket id these records carry, sorted so the order is stable.
     ///
     /// Only the generic `bucketPercents` map is consulted. The legacy fixed fields
-    /// exist solely for Claude, which always has a live snapshot to name its windows
-    /// from and never needs this fallback.
+    /// exist solely for Claude, which has a live snapshot to name its windows from
+    /// whenever its history is on offer and never needs this fallback.
     static func bucketIDs(in records: [HistoryRecord]) -> [String] {
         var ids = Set<String>()
         for record in records {
