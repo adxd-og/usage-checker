@@ -273,7 +273,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
                     at: now
                 )
             }
-            ClaudeCredentialsCache.save(renewed)
+            ClaudeCredentialsCache.shared.save(renewed)
             oauth = renewed
             do {
                 resp = try await fetchUsage(token: renewed.accessToken)
@@ -321,12 +321,12 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     /// `/usr/bin/security`, whose access survives our renames. Every one of those is
     /// prompt-proof; the interactive read lives behind the Settings button alone.
     private func resolveCredentials(now: Date) throws -> ClaudeCredentials.OAuth {
-        let cached = ClaudeCredentialsCache.load()?.claudeAiOauth
+        let cached = ClaudeCredentialsCache.shared.load()
         if let cached, !Self.isExpired(cached, at: now) { return cached }
 
         // Cache missing or stale: ask Claude Code what it has now.
         if let fresh = Self.newestFromClaudeCode(beating: cached) {
-            ClaudeCredentialsCache.save(fresh)
+            ClaudeCredentialsCache.shared.save(fresh)
             return fresh
         }
         // Nothing newer anywhere. An expired cached token still beats no token: the
@@ -393,7 +393,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     /// picks the credentials up.
     static func forceKeychainRead() throws {
         let oauth = try ClaudeKeychainReader.read().claudeAiOauth
-        ClaudeCredentialsCache.save(oauth)
+        ClaudeCredentialsCache.shared.save(oauth)
     }
 
     // MARK: - Payload → model

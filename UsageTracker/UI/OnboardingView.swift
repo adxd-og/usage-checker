@@ -7,7 +7,7 @@ struct OnboardingView: View {
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     /// Background polling never prompts, so the keychain dialog has to be asked for
     /// explicitly — here on first run, or from Settings later.
-    @State private var keychainGranted = ClaudeCredentialsCache.load() != nil
+    @State private var keychainGranted = ClaudeCredentialsCache.shared.load() != nil
     @State private var keychainError: String?
     @State private var agentHooks: HookInstallStatus = .notInstalled
     @State private var agentHooksError: String?
