@@ -815,6 +815,9 @@ private struct ServiceStateLabel: View {
     let service: ServiceSnapshot
     let label: OMColoredText
     @State private var showsStateHelp = false
+    /// Claude's Sign in: whether a `claude` is on this Mac, and what the last click did.
+    @ObservedObject private var claudeSignIn = ClaudeSignInModel.shared
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         if let help = stateHelp {
@@ -847,16 +850,21 @@ private struct ServiceStateLabel: View {
         var appPath: String?
         var linkTitle: String?
         var linkURL: String?
+        /// Claude's way out when it is signed out (spec 2026-10-25 § Package 2).
+        var claude: ClaudeSignInHelp?
     }
 
     /// Per-service recovery instructions behind the state badge.
     private var stateHelp: StateHelp? {
         switch (service.id, service.state) {
         case ("claude", .notSignedIn):
-            return StateHelp(
-                message: "Sign into Claude Code in a terminal, then the widget picks it up on the next refresh.",
-                command: "claude login"
-            )
+            // Why Claude is signed out decides the way out (spec 2026-10-25 § Package 2): Sign in
+            // through Claude Code's own sign-in, the install link, keychain access in Settings ›
+            // Advanced, or nothing a click could fix.
+            guard let help = ClaudeSignInCopy.help(
+                for: service, binaryFound: claudeSignIn.binaryFound, note: claudeSignIn.note
+            ) else { return nil }
+            return StateHelp(message: help.message, claude: help)
         case ("codex", .notSignedIn):
             return StateHelp(
                 message: "Codex reports limits only for ChatGPT sign-in (API-key auth doesn't expose them).",
@@ -914,9 +922,43 @@ private struct ServiceStateLabel: View {
                 Link(title, destination: url)
                     .font(.caption)
             }
+            if let claude = help.claude {
+                claudeActions(claude)
+            }
         }
         .padding(14)
         .frame(width: 280, alignment: .leading)
+    }
+
+    /// Claude's way out, as the rule decided it, and the line a click left.
+    @ViewBuilder
+    private func claudeActions(_ help: ClaudeSignInHelp) -> some View {
+        switch help.recovery {
+        case .signIn:
+            Button(ClaudeSignInCopy.signInButton) {
+                Task { await ClaudeSignInModel.shared.signIn() }
+            }
+            .controlSize(.small)
+        case .install:
+            Link(ClaudeSignInCopy.installLinkTitle, destination: ClaudeSignInCopy.installURL)
+                .font(.caption)
+        case .keychainAccess:
+            Button(ClaudeSignInCopy.advancedButton) {
+                SettingsRoute.shared.pendingTab = SettingsTab.advanced.rawValue
+                NSApp.activate(ignoringOtherApps: true)
+                openSettings()
+                showsStateHelp = false
+            }
+            .controlSize(.small)
+        case .noAction:
+            EmptyView()
+        }
+        if let note = help.note {
+            Text(note)
+                .font(.caption)
+                .foregroundStyle(.om(help.noteIsFailure ? .warning : .secondary))
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 
