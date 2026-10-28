@@ -107,6 +107,30 @@ enum ProvidersSettingsCopy {
         service?.isRetained == true
     }
 
+    /// What Claude's row offers beside its switch (spec 2026-10-25 § Package 2): Sign in while
+    /// Claude is on and not signed in or expired, the install link when no Claude Code is on this
+    /// Mac. nil for every other row, for Claude off or reading fine, and for the keychain cases,
+    /// whose button is in Settings › Advanced.
+    static func claudeAction(
+        for provider: Provider, service: ServiceSnapshot?, isEnabled: Bool, binaryFound: Bool
+    ) -> ClaudeRecovery? {
+        guard provider.id == claudeID, isEnabled,
+              let recovery = ClaudeSignInCopy.recovery(for: service, binaryFound: binaryFound),
+              recovery == .signIn || recovery == .install
+        else { return nil }
+        return recovery
+    }
+
+    /// The line under Claude's status after a Sign in click: amber when it did not start. Only
+    /// beside the button or link it came from.
+    static func claudeNote(_ note: ClaudeSignInNote?, action: ClaudeRecovery?) -> SettingsCaption? {
+        guard action != nil, let note else { return nil }
+        switch note {
+        case .pending: return SettingsCaption(text: ClaudeSignInCopy.pendingLine, token: .secondary)
+        case .failed: return SettingsCaption(text: ClaudeSignInCopy.noteText(note), token: .warning)
+        }
+    }
+
     /// "Last fetch 7s ago"; "Nothing fetched yet" before the first reading.
     static func lastFetch(fetchedAt: Date, now: Date) -> String {
         guard fetchedAt.timeIntervalSince1970 >= 1 else { return "Nothing fetched yet" }
@@ -138,6 +162,8 @@ enum ProvidersSettingsCopy {
 struct ProvidersSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var state = AppState.shared
+    /// Claude's Sign in: whether a `claude` is on this Mac, and what the last click did.
+    @ObservedObject private var claudeSignIn = ClaudeSignInModel.shared
 
     var body: some View {
         let snapshot = state.snapshot
@@ -162,6 +188,10 @@ struct ProvidersSettingsView: View {
     private func row(_ provider: ProvidersSettingsCopy.Provider, service: ServiceSnapshot?, now: Date) -> some View {
         let toggle = enabledBinding(for: provider)
         let status = ProvidersSettingsCopy.status(for: service, isEnabled: toggle?.wrappedValue ?? true, now: now)
+        let claudeAction = ProvidersSettingsCopy.claudeAction(
+            for: provider, service: service, isEnabled: toggle?.wrappedValue ?? true,
+            binaryFound: claudeSignIn.binaryFound
+        )
         return HStack(spacing: SettingsRowRules.spacing) {
             SettingsLogoView(logo: ProvidersSettingsCopy.logo(for: provider, service: service))
             VStack(alignment: .leading, spacing: ProvidersSettingsCopy.lineSpacing) {
@@ -177,6 +207,9 @@ struct ProvidersSettingsView: View {
                     }
                 }
                 SettingsStatusLabel(status: status)
+                if let note = ProvidersSettingsCopy.claudeNote(claudeSignIn.note, action: claudeAction) {
+                    SettingsCaptionText(caption: note)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: ProvidersSettingsCopy.trailingSpacing) {
@@ -186,6 +219,15 @@ struct ProvidersSettingsView: View {
                     }
                     .buttonStyle(.omLink)
                     .help(ProvidersSettingsCopy.forgetHelp)
+                }
+                if claudeAction == .signIn {
+                    Button(ClaudeSignInCopy.signInButton) {
+                        Task { await ClaudeSignInModel.shared.signIn() }
+                    }
+                    .buttonStyle(.settings)
+                } else if claudeAction == .install {
+                    Link(ClaudeSignInCopy.installLinkTitle, destination: ClaudeSignInCopy.installURL)
+                        .font(.system(size: ProvidersSettingsCopy.sourceSize))
                 }
                 if let toggle {
                     SettingsSwitch(label: ProvidersSettingsCopy.switchLabel(provider.name), isOn: toggle)

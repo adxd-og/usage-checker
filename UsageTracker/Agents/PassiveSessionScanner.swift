@@ -17,14 +17,20 @@ enum PassiveSessionScanner {
     /// turn a poll tick into thousands of deserialisations.
     private static let maxHeadLines = 200
 
+    /// `ignoringClaudeSessions`: Omelette's own renewal start of Claude Code
+    /// (`ClaudeRenewalProbe`), which is not a session (spec 2026-10-25 § Package 2).
     static func scan(
         claudeProjects: URL,
         codexSessions: URL,
         now: Date = Date(),
         recentWindow: TimeInterval = 30 * 60,
-        workingWindow: TimeInterval = 30
+        workingWindow: TimeInterval = 30,
+        ignoringClaudeSessions: Set<String> = []
     ) -> [AgentSession] {
-        scanClaude(root: claudeProjects, now: now, recentWindow: recentWindow, workingWindow: workingWindow)
+        scanClaude(
+            root: claudeProjects, now: now, recentWindow: recentWindow, workingWindow: workingWindow,
+            ignoring: Set(ignoringClaudeSessions.map { $0.lowercased() })
+        )
             + scanCodex(root: codexSessions, now: now, recentWindow: recentWindow, workingWindow: workingWindow)
     }
 
@@ -40,7 +46,7 @@ enum PassiveSessionScanner {
     /// transcripts by more than ten to one. The enumerator is pruned there too, so the
     /// per-minute scan never walks that tree.
     private static func scanClaude(
-        root: URL, now: Date, recentWindow: TimeInterval, workingWindow: TimeInterval
+        root: URL, now: Date, recentWindow: TimeInterval, workingWindow: TimeInterval, ignoring: Set<String>
     ) -> [AgentSession] {
         // Symlinks resolved on both sides: the temp dir the tests use is
         // /var/folders/… which is a link to /private/var/folders/….
@@ -55,6 +61,7 @@ enum PassiveSessionScanner {
             // Claude names transcripts after the session uuid; anything else at
             // this level (a stray export, a tool's side file) is not a session.
             guard UUID(uuidString: sessionID) != nil else { return }
+            guard !ignoring.contains(sessionID.lowercased()) else { return }
             let cwd = firstString(forKey: "cwd", in: url)
             sessions.append(makeSession(
                 source: .claude,

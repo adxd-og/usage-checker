@@ -7,7 +7,9 @@ struct OnboardingView: View {
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     /// Background polling never prompts, so the keychain dialog has to be asked for
     /// explicitly — here on first run, or from Settings later.
-    @State private var keychainGranted = ClaudeCredentialsCache.load() != nil
+    /// Whether Omelette can read Claude Code's item now, without a dialog. Not the token copy:
+    /// since spec 2026-10-25 § Package 2 that lives in memory and is empty at every launch.
+    @State private var keychainGranted = Self.keychainGranted(ClaudeKeychainReader.readItemSilently())
     @State private var keychainError: String?
     @State private var agentHooks: HookInstallStatus = .notInstalled
     @State private var agentHooksError: String?
@@ -124,7 +126,7 @@ struct OnboardingView: View {
                 permissionRow(
                     icon: "key.fill",
                     title: "Keychain access",
-                    description: "We read the OAuth token that Claude Code stored in your macOS Keychain. Click **Grant access** and macOS will ask you to allow it — choose **Always Allow**. Omelette then works from its own copy and never raises that dialog on its own; Settings → Account → **Request keychain access now** brings it back if it's ever needed again."
+                    description: Self.keychainDescription
                 )
 
                 HStack(spacing: OMSpacing.s) {
@@ -321,6 +323,15 @@ struct OnboardingView: View {
             }
         }
     }
+
+    /// The chip's answer for a silent read of Claude Code's item: granted only when it was read.
+    nonisolated static func keychainGranted(_ read: ClaudeSourceRead) -> Bool {
+        if case .found = read { return true }
+        return false
+    }
+
+    /// The keychain card's words: what is read, what to click, and where the button lives later.
+    nonisolated static let keychainDescription = "We read the sign-in Claude Code stored in your macOS Keychain. Click **Grant access** and macOS will ask you to allow it — choose **Always Allow**. Omelette then reads it without that dialog and keeps it in memory only; Settings → \(SettingsTab.advanced.rawValue) → **\(AdvancedSettingsCopy.keychainTitle)** brings the dialog back if it's ever needed again."
 
     private func requestKeychainAccess() {
         do {

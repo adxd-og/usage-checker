@@ -93,6 +93,18 @@ enum KeychainNoUI {
         case unknown
     }
 
+    /// Ruling 2b (spec 2026-10-25 § Package 2): what has no no-UI policy of its own — the
+    /// `/usr/bin/security` read, the legacy item's delete — runs only on a keychain certainly
+    /// unlocked; "could not tell" counts as locked.
+    nonisolated static func isCertainlyUnlocked(_ state: LockState) -> Bool {
+        state == .unlocked
+    }
+
+    /// `isCertainlyUnlocked` of the login keychain as it is now.
+    static var isDefaultKeychainCertainlyUnlocked: Bool {
+        isCertainlyUnlocked(defaultKeychainLockState)
+    }
+
     /// The lock state behind `isDefaultKeychainUnlocked`, with "could not tell" kept apart.
     static var defaultKeychainLockState: LockState {
         guard let copyDefault = legacy.copyDefault, let getStatus = legacy.getStatus else {

@@ -20,7 +20,10 @@ import XCTest
 /// `2026/09/03/rollout-…-01a066eb-….jsonl`) a `token_count` with `"info":null`.
 final class CodexUsageAggregatorVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the
+    /// run: by the time this class runs in the full suite that gap passed the 30 s margin the
+    /// week and month boundary tests allow.
+    private lazy var now = Date()
 
     private let alphaCwd = "/tmp/Codex Verify/alpha app"
     private let betaCwd = "/tmp/Codex Verify/beta"

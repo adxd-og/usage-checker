@@ -352,7 +352,8 @@ A sidebar window with six tabs.
   providers show in the menu bar, agents in the menu bar
 - **Providers**: one row per provider with its source, status and switch
   (Claude's too: off means not polled at all), and Forget last known numbers
-  inline. With every provider off, the menu bar, popover and widgets say so
+  inline. With every provider off, the menu bar, popover and widgets say so.
+  A signed-out Claude's row has **Sign in**
 - **Notifications**: the two limit warnings, session timing, agent alerts,
   quiet hours and the daily summary
 - **Integrations**: Claude Code (hooks, status line, MCP server), Codex
@@ -374,7 +375,11 @@ Reads the OAuth token that **Claude Code** stores in your macOS Keychain
 (item name `Claude Code-credentials`) and calls
 `https://api.anthropic.com/api/oauth/usage`, the same undocumented endpoint
 Claude Code itself uses for its `/usage` command and status line. Omelette
-never refreshes that token itself; Claude Code owns its own refresh cycle.
+never refreshes that token itself and keeps it in memory only: when it has
+expired (it lives 8 hours), Omelette starts Claude Code for a few seconds so
+Claude Code renews it. With no Claude Code sign-in on the Mac (the Claude app
+alone), **Sign in** in the popover opens Terminal on Claude Code's own
+`claude auth login`.
 Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server (while
 the app is closed or not answering, Antigravity's own `agy` CLI), or the local
@@ -391,8 +396,9 @@ to keep a year of them:
 }
 ```
 
-- Uses only your own credentials, already obtained by the tools themselves.
-  It never asks you to log in anywhere
+- Uses only your own credentials, obtained by the tools themselves. Sign in
+  runs Claude Code's own sign-in in Terminal; Omelette never sees a password
+  and never asks for a token
 - Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost
   reports if you add an Admin API key), `models.dev` (public pricing data),
   `cloudcode-pa.googleapis.com` (Antigravity's quota while it isn't running, only if enabled),
@@ -407,6 +413,19 @@ to keep a year of them:
   to one file, `agy-usage.log` in Omelette's Application Support folder;
   Omelette reads only the quota it prints, and skips the run unless the login
   keychain is unlocked
+- When Claude Code's sign-in has expired, starts `claude` (the one on your
+  PATH, else the Claude app's own copy) on a terminal of its own in
+  `~/Library/Application Support/UsageTracker/ClaudeRenewal` for 8 s, at most
+  every 5 minutes, and only while the login keychain is unlocked and Claude
+  Code's item reads without a prompt. Nothing is typed into it (it only gets
+  a terminal's answer when it asks where the cursor is) and no message is
+  sent; it runs without `CLAUDE_CONFIG_DIR`, `CLAUDE_CODE_OAUTH_TOKEN`,
+  `CLAUDECODE` or `ANTHROPIC_*`, with updates, telemetry and non-essential
+  traffic switched off (on a fresh configuration Claude Code still fetches
+  its plugin list), and talks to Anthropic as Claude Code always does. The
+  transcripts in its own project folder under `~/.claude/projects` are
+  removed; Claude Code's own bookkeeping (`history.jsonl`, `sessions/`, a
+  `.claude.json` backup) stays
 - Agent status comes from a tiny `omelette-hook` helper inside the app that
   Claude Code and Codex run on their hook events. It talks to Omelette over
   a local Unix socket (0600, 64 KB cap) and forwards only the session id,
@@ -435,8 +454,9 @@ Next: [Requirements](#requirements).
 - macOS 26 (Tahoe) or newer from Omelette 3.0 on
 - On macOS 14 or 15, [Omelette 2.7.1](../../releases/tag/v2.7.1) is the last version
   that runs; an installed copy stays on it and is not offered 3.0
-- [Claude Code](https://docs.anthropic.com/claude-code) installed and
-  signed in (`claude login`)
+- [Claude Code](https://docs.anthropic.com/claude-code) or the Claude app.
+  Without a Claude Code sign-in, **Sign in** in the popover runs Claude
+  Code's own sign-in in Terminal
 - Works with Pro / Max / Team / Enterprise subscriptions **and**
   pay-as-you-go Enterprise accounts
 - Optional: Codex CLI (ChatGPT sign-in), Antigravity (Google sign-in), and/or
@@ -453,8 +473,8 @@ Next: [Install](#install).
    Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first.
    Settings, history and widgets carry over automatically
 3. Launch it. macOS asks for permission to read the `Claude Code-credentials`
-   Keychain item: click **Always Allow**. From then on Omelette works off its
-   own copy and never raises that dialog from a background refresh. It can
+   Keychain item: click **Always Allow**. From then on Omelette reads it
+   without that dialog and keeps what it read in memory only. It can
    reappear after something resets the item's access list (a reinstall, or a
    differently signed build); Settings → Advanced → **Request keychain access
    now** brings it back on demand

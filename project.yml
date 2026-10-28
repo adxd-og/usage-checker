@@ -230,6 +230,9 @@ targets:
       # And the parent walk itself, for the same reason: the app repeats it on the pid
       # of the tmux client, and one table of terminal bundle ids is the whole point.
       - path: UsageTracker/Agents/HostProcessWalk.swift
+      # And the mark on Omelette's own start of Claude Code (spec 2026-10-25 § Package 2):
+      # the app sets it, the helper reads it and reports nothing for that start.
+      - path: UsageTracker/Agents/ClaudeRenewalMarker.swift
     settings:
       base:
         PRODUCT_NAME: omelette-hook

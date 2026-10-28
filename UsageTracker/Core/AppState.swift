@@ -92,6 +92,7 @@ final class AppState: ObservableObject {
         }
         observeAgentSessions()
         seedFromLastKnown()
+        removeLegacyClaudeTokenCopy()
         refreshNow()
         startTimer()
         // Keep awake (spec 2026-10-26 § Behaviour, Visible): what the helper says, once
@@ -119,6 +120,21 @@ final class AppState: ObservableObject {
                 guard !stored.isEmpty, !self.snapshot.hasAnyData else { return }
                 self.snapshot = Self.seededSnapshot(from: stored, enabledServiceIDs: self.enabledServiceIDs)
             }
+        }
+    }
+
+    /// Ruling 1a (spec 2026-10-25 § Package 2): the keychain item where 3.2 and earlier kept a
+    /// copy of Claude Code's token goes, once and silently. A keychain that is not certainly
+    /// unlocked leaves it for a later launch rather than raise a password panel.
+    private func removeLegacyClaudeTokenCopy() {
+        Task.detached(priority: .utility) {
+            let key = ClaudeCredentialsCache.legacyItemRemovedKey
+            let result = ClaudeCredentialsCache.removeLegacyItem(
+                alreadyDone: UserDefaults.standard.bool(forKey: key),
+                keychainUnlocked: KeychainNoUI.isDefaultKeychainCertainlyUnlocked,
+                delete: ClaudeCredentialsCache.deleteLegacyItem
+            )
+            if result == .done { UserDefaults.standard.set(true, forKey: key) }
         }
     }
 
@@ -228,6 +244,14 @@ final class AppState: ObservableObject {
             distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil,
                                     queue: .main, using: handler(locked: false)),
         ]
+        // Back from Terminal after Sign in (spec 2026-10-25 § Package 2).
+        suspensionObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in await self?.refreshIfSignInPending() }
+            }
+        )
     }
 
     private func setSuspension(asleep: Bool?, locked: Bool?) {
@@ -240,6 +264,15 @@ final class AppState: ObservableObject {
             refreshNow(userInitiated: false)
             Task { await KeepAwakeModel.shared.pollIfNeeded() }
         }
+    }
+
+    /// Omelette came to the front. While a sign-in launched from the button is pending, poll at
+    /// once rather than a poll interval later, so the numbers are there when the user is. Any
+    /// other activation (Settings, the dashboard) keeps the poll's own rhythm and its
+    /// Retry-After backoff.
+    private func refreshIfSignInPending() async {
+        guard await ClaudeRenewalGate.shared.isSignInPending(now: Date()) else { return }
+        refreshNow()
     }
 
     /// User-initiated by default (settings toggles, Refresh buttons). A user
@@ -336,6 +369,8 @@ final class AppState: ObservableObject {
         // (switched off) is gone. From here on `next` is what the app shows.
         next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
         snapshot = next
+        // The Sign in button follows what Claude just said (spec 2026-10-25 § Package 2).
+        ClaudeSignInModel.shared.pollLanded(claude: next.services.first { $0.id == ClaudeOAuthProvider.serviceID })
 
         // The disk copy, for the next launch and for retention on a later poll. Only
         // ok readings with windows or spend are written; the store skips unchanged numbers.
@@ -385,8 +420,14 @@ final class AppState: ObservableObject {
     private func scanAgentsPassively() async {
         let claudeProjects = AgentPaths.claudeProjectsURL
         let codexSessions = AgentPaths.codexSessionsURL
+        let renewalDirectory = ClaudeRenewalProbe.directory
         let scanned = await Task.detached(priority: .utility) {
-            PassiveSessionScanner.scan(claudeProjects: claudeProjects, codexSessions: codexSessions)
+            // Omelette's own renewal start of Claude Code is not a session.
+            let renewal = ClaudeRenewalProbe.storedSessionID(in: renewalDirectory).map { [$0] } ?? []
+            return PassiveSessionScanner.scan(
+                claudeProjects: claudeProjects, codexSessions: codexSessions,
+                ignoringClaudeSessions: Set(renewal)
+            )
         }.value
         AgentSessionStore.shared.mergePassive(scanned)
         AgentSessionStore.shared.pruneStale()
@@ -630,7 +671,8 @@ final class AppState: ObservableObject {
                 stateMessage: service.stateMessage,
                 fetchedAt: source.fetchedAt,
                 retryAfter: service.retryAfter,
-                isCarriedOver: true
+                isCarriedOver: true,
+                signedOutReason: service.signedOutReason
             )
         }
         return UsageSnapshot(
@@ -739,7 +781,8 @@ final class AppState: ObservableObject {
                 state: service.state,
                 stateMessage: service.stateMessage,
                 fetchedAt: service.fetchedAt,
-                retryAfter: service.retryAfter
+                retryAfter: service.retryAfter,
+                signedOutReason: service.signedOutReason
             )
         }
         return UsageSnapshot(

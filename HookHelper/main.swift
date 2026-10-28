@@ -30,6 +30,10 @@ enum HookMain {
         let receivedAt = Date().timeIntervalSince1970
 
         guard let input = readPayload(CommandLine.arguments) else { exit(0) }
+        // Omelette's own start of Claude Code, which renews a sign-in, is not an agent
+        // session: it carries the mark, and Claude Code hands its environment to its hooks.
+        // Checked after the payload is read, so Claude Code never writes into a closed pipe.
+        if ClaudeRenewalMarker.isRenewal(environment: ProcessInfo.processInfo.environment) { exit(0) }
         let host = HostProcess.describe()
         // The three cmux keys are omitted rather than sent as null: a terminal that is
         // not cmux has no such address, and an absent key says that plainly.
