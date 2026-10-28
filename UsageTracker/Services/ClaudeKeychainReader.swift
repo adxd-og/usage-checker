@@ -85,7 +85,7 @@ struct ClaudeCredentialSources: Sendable {
         file: { ClaudeKeychainReader.readFromFile()?.claudeAiOauth },
         item: { ClaudeKeychainReader.readItemSilently() },
         itemViaSecurityTool: { ClaudeKeychainReader.readViaSecurityToolResult() },
-        keychainUnlocked: { KeychainNoUI.defaultKeychainLockState == .unlocked }
+        keychainUnlocked: { KeychainNoUI.isDefaultKeychainCertainlyUnlocked }
     )
 }
 
@@ -191,7 +191,7 @@ enum ClaudeKeychainReader {
         // Locked keychain: `security` would raise a password panel this process can't
         // suppress, and it has no no-UI policy of its own, so "could not tell" counts as
         // locked too (KeychainNoUI.swift:83) — stricter than the direct read above.
-        guard KeychainNoUI.defaultKeychainLockState == .unlocked else { return .refused }
+        guard KeychainNoUI.isDefaultKeychainCertainlyUnlocked else { return .refused }
         // And only when the ACL really names the tool. Without this check a changed
         // Claude Code storage backend would turn a background poll into a dialog.
         guard KeychainNoUI.aclTrusts(path: securityToolPath, service: service) else { return .refused }

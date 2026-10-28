@@ -131,7 +131,7 @@ final class AppState: ObservableObject {
             let key = ClaudeCredentialsCache.legacyItemRemovedKey
             let result = ClaudeCredentialsCache.removeLegacyItem(
                 alreadyDone: UserDefaults.standard.bool(forKey: key),
-                keychainUnlocked: KeychainNoUI.defaultKeychainLockState == .unlocked,
+                keychainUnlocked: KeychainNoUI.isDefaultKeychainCertainlyUnlocked,
                 delete: ClaudeCredentialsCache.deleteLegacyItem
             )
             if result == .done { UserDefaults.standard.set(true, forKey: key) }
