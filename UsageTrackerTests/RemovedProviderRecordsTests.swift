@@ -22,12 +22,12 @@ final class RemovedProviderRecordsTests: XCTestCase {
 
     func testALaunchSeedsOnlyTheProvidersItPollsAndGeminiIsNotOneOfThem() {
         XCTAssertEqual(
-            AppState.polledServiceIDs(codexEnabled: false, antigravityEnabled: false, grokEnabled: false, hasAdminKey: false),
+            AppState.polledServiceIDs(claudeEnabled: true, codexEnabled: false, antigravityEnabled: false, grokEnabled: false, hasAdminKey: false),
             ["claude"],
-            "Claude is not behind a switch"
+            "Claude on, every other switch off"
         )
         XCTAssertEqual(
-            AppState.polledServiceIDs(codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true),
+            AppState.polledServiceIDs(claudeEnabled: true, codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true),
             ["claude", "codex", "antigravity", "grok", "anthropic-admin"]
         )
     }
@@ -53,7 +53,7 @@ final class RemovedProviderRecordsTests: XCTestCase {
         let stored = await LastKnownStore(fileURL: file).load()
         XCTAssertEqual(Set(stored.keys), ["claude", "gemini"], "both entries decode from disk")
 
-        let polled = AppState.polledServiceIDs(codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true)
+        let polled = AppState.polledServiceIDs(claudeEnabled: true, codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true)
         let seeded = AppState.seededSnapshot(from: stored, enabledServiceIDs: polled)
         XCTAssertEqual(seeded.services.map(\.id), ["claude"], "the Gemini reading never reaches the screen")
         XCTAssertEqual(seeded.services.first?.buckets.first?.utilization, 63)

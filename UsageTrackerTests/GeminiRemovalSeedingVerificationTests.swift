@@ -13,25 +13,29 @@ import XCTest
 final class GeminiRemovalSeedingVerificationTests: XCTestCase {
     // MARK: - polledServiceIDs: every combination of the other three switches
 
-    /// The rule takes four booleans; brute-forcing all sixteen combinations is the only
+    /// The rule takes five booleans; brute-forcing all thirty-two combinations is the only
     /// way to honour the spec's "never polled" as an unconditional fact rather than a
-    /// couple of hand-picked cases.
+    /// couple of hand-picked cases. Claude follows its own switch since spec 2026-10-25
+    /// § Package 1 gave it one.
     func testPolledServiceIDsNeverContainsGeminiForAnyCombinationOfFlags() {
-        for codex in [false, true] {
-            for antigravity in [false, true] {
-                for grok in [false, true] {
-                    for adminKey in [false, true] {
-                        let ids = AppState.polledServiceIDs(
-                            codexEnabled: codex,
-                            antigravityEnabled: antigravity,
-                            grokEnabled: grok,
-                            hasAdminKey: adminKey
-                        )
-                        XCTAssertFalse(
-                            ids.contains("gemini"),
-                            "codex=\(codex) antigravity=\(antigravity) grok=\(grok) adminKey=\(adminKey) polled \(ids)"
-                        )
-                        XCTAssertTrue(ids.contains("claude"), "Claude is never behind a switch")
+        for claude in [false, true] {
+            for codex in [false, true] {
+                for antigravity in [false, true] {
+                    for grok in [false, true] {
+                        for adminKey in [false, true] {
+                            let ids = AppState.polledServiceIDs(
+                                claudeEnabled: claude,
+                                codexEnabled: codex,
+                                antigravityEnabled: antigravity,
+                                grokEnabled: grok,
+                                hasAdminKey: adminKey
+                            )
+                            XCTAssertFalse(
+                                ids.contains("gemini"),
+                                "claude=\(claude) codex=\(codex) antigravity=\(antigravity) grok=\(grok) adminKey=\(adminKey) polled \(ids)"
+                            )
+                            XCTAssertEqual(ids.contains("claude"), claude, "Claude follows its switch")
+                        }
                     }
                 }
             }
@@ -62,7 +66,7 @@ final class GeminiRemovalSeedingVerificationTests: XCTestCase {
         ]
 
         let polled = AppState.polledServiceIDs(
-            codexEnabled: false, antigravityEnabled: false, grokEnabled: false, hasAdminKey: false
+            claudeEnabled: true, codexEnabled: false, antigravityEnabled: false, grokEnabled: false, hasAdminKey: false
         )
         let seeded = AppState.seededSnapshot(from: stored, enabledServiceIDs: polled)
 
@@ -86,7 +90,7 @@ final class GeminiRemovalSeedingVerificationTests: XCTestCase {
             ),
         ]
         let polled = AppState.polledServiceIDs(
-            codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true
+            claudeEnabled: true, codexEnabled: true, antigravityEnabled: true, grokEnabled: true, hasAdminKey: true
         )
         let seeded = AppState.seededSnapshot(from: stored, enabledServiceIDs: polled)
         XCTAssertEqual(Set(seeded.services.map(\.id)), ["claude", "codex"])

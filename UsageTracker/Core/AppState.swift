@@ -108,11 +108,13 @@ final class AppState: ObservableObject {
     /// decisions `performRefresh` hands `ProviderCoordinator.snapshot`, read one turn
     /// earlier. The file remembers every provider that ever reported, so without this
     /// a provider the user has since switched off flashes back onto the All tab at
-    /// launch and disappears when the first poll lands.
-    private var enabledServiceIDs: Set<String> {
+    /// launch and disappears when the first poll lands. Internal, not private: the
+    /// dashboard's heal reads it before the first poll has published `polledIDs`.
+    var enabledServiceIDs: Set<String> {
         let settings = SettingsStore.shared
         let adminKey = KeychainStore.loadAdminKey() ?? ""
         return Self.polledServiceIDs(
+            claudeEnabled: settings.claudeProviderEnabled,
             codexEnabled: settings.codexProviderEnabled,
             antigravityEnabled: settings.antigravityProviderEnabled,
             grokEnabled: settings.grokProviderEnabled,
@@ -120,18 +122,20 @@ final class AppState: ObservableObject {
         )
     }
 
-    /// `enabledServiceIDs` as a rule. Claude always: it is not behind a toggle, the
-    /// coordinator always fetches it. Each provider whose switch is on. The admin
-    /// organisation only while there is a key to call it with. A stored reading under
-    /// any other id — a provider this build no longer polls — stays in
-    /// `last-known.json` and is never seeded.
+    /// `enabledServiceIDs` as a rule: each provider whose switch is on, Claude included
+    /// since it has one (spec 2026-10-25 § Package 1), and the admin organisation while
+    /// there is a key to call it with. Empty is the "nothing on" state. A stored reading
+    /// under any other id — a provider switched off, or one this build no longer polls —
+    /// stays in `last-known.json` and is never seeded.
     nonisolated static func polledServiceIDs(
+        claudeEnabled: Bool,
         codexEnabled: Bool,
         antigravityEnabled: Bool,
         grokEnabled: Bool,
         hasAdminKey: Bool
     ) -> Set<String> {
-        var ids: Set<String> = ["claude"]
+        var ids: Set<String> = []
+        if claudeEnabled { ids.insert("claude") }
         if codexEnabled { ids.insert("codex") }
         if antigravityEnabled { ids.insert("antigravity") }
         if grokEnabled { ids.insert("grok") }
@@ -293,6 +297,7 @@ final class AppState: ObservableObject {
             adminKey: admin,
             betaHeader: beta,
             preferAdmin: preferAdmin,
+            claudeEnabled: SettingsStore.shared.claudeProviderEnabled,
             codexEnabled: SettingsStore.shared.codexProviderEnabled,
             antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
             grokEnabled: SettingsStore.shared.grokProviderEnabled
