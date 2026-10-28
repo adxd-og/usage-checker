@@ -389,7 +389,10 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
     /// After a 401 (spec 2026-10-25 § Package 2, Renewal through Claude Code): a newer token
     /// Claude Code already wrote, or one it writes when Omelette starts it. Omelette never
-    /// refreshes a token itself. A start needs, in this order: the gate's leave (one every five
+    /// refreshes a token itself. A start needs, in this order: an expired token (`isExpired`,
+    /// five minutes early; a 401 on one
+    /// its own clock still gives time, revoked or signed out elsewhere, is not something a start
+    /// fixes: it stays signed out, and Sign in is the way back), the gate's leave (one every five
     /// minutes, none during a sign-in from the button), the guard (ruling 2b: the login keychain
     /// unlocked, and the `security` read Claude Code itself makes went through silently just
     /// now, so Claude Code's read cannot raise a dialog either), and a `claude` to start. It
@@ -399,6 +402,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
            Self.isUsableRenewal(newer, after: dead) {
             return newer
         }
+        guard Self.isExpired(dead, at: now) else { return nil }
         guard await renewal.gate.admission(now: now) == .run else { return nil }
         guard sources.keychainUnlocked(), case .found = sources.itemViaSecurityTool() else { return nil }
         guard let binary = renewal.locateBinary() else { return nil }
