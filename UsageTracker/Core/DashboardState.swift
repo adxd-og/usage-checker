@@ -455,9 +455,13 @@ final class DashboardState: ObservableObject {
 
     /// The selection to use when the stored one is no longer on offer. Falls back to the
     /// stored value when there is nothing to heal to, so an empty first launch doesn't
-    /// blank the picker, but only for a provider this build polls (`polled`). A stored
-    /// id from a provider that is gone goes to Claude, which is always polled: standing
-    /// still on it would load that provider's leftover history onto the tab.
+    /// blank the picker — but only for a provider that is polled. `polled` is what the last
+    /// poll asked for (`AppState.polledIDs`), or every provider this build can poll before
+    /// the first one. A stored id that is gone or switched off goes to Claude while Claude
+    /// is polled, else to the first polled provider by id, and with nothing polled to no
+    /// provider at all (`noSelection`): the fallback never lands on a provider that is off
+    /// (spec 2026-10-25 § Package 1), whose history would fill the tab and whose cost log
+    /// would be read.
     nonisolated static func healedSelection(
         stored: String,
         available: [String],
@@ -465,17 +469,32 @@ final class DashboardState: ObservableObject {
     ) -> String {
         if available.contains(stored) { return stored }
         guard available.isEmpty else { return available[0] }
-        return polled.contains(stored) ? stored : "claude"
+        if polled.contains(stored) { return stored }
+        if polled.contains("claude") { return "claude" }
+        return polled.sorted().first ?? noSelection
     }
 
-    /// Providers switched off in Settings. Claude has no toggle — it is always polled.
+    /// The selection with nothing polled: no provider's history, chats or dollars load.
+    nonisolated static let noSelection = ""
+
+    /// What the poll asks for: the last poll's set, or — before the first poll has
+    /// published one — the switches and the key as they stand now. Never
+    /// `ProviderCoordinator.serviceIDs`, which holds Claude whatever its switch.
+    private static var polledNow: Set<String> {
+        AppState.shared.polledIDs ?? AppState.shared.enabledServiceIDs
+    }
+
+    /// Providers that are off: switched off in Settings, Claude included since its switch
+    /// (spec 2026-10-25 § Package 1), and the admin organisation while there is no key
+    /// to poll it with. Their recorded history is not on offer.
     private static var disabledServices: Set<String> {
-        let s = SettingsStore.shared
-        var off: Set<String> = []
-        if !s.codexProviderEnabled { off.insert("codex") }
-        if !s.antigravityProviderEnabled { off.insert("antigravity") }
-        if !s.grokProviderEnabled { off.insert("grok") }
-        return off
+        switchedOff(polled: polledNow)
+    }
+
+    /// `disabledServices` as a rule: every provider this build can poll that the poll
+    /// does not ask for.
+    nonisolated static func switchedOff(polled: Set<String>) -> Set<String> {
+        ProviderCoordinator.serviceIDs.subtracting(polled)
     }
 
     /// Rebuilds the picker's options and moves the selection onto one of them if it has
@@ -489,7 +508,11 @@ final class DashboardState: ObservableObject {
         )
         if options != availableServices { availableServices = options }
 
-        let healed = Self.healedSelection(stored: storedService, available: options)
+        let healed = Self.healedSelection(
+            stored: storedService,
+            available: options,
+            polled: Self.polledNow
+        )
         guard healed != storedService else { return }
         objectWillChange.send()
         storedService = healed

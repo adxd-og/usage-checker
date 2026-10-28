@@ -51,6 +51,13 @@ final class AppState: ObservableObject {
     /// tile can lead with today rather than with the week. A service with no local
     /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
     @Published private(set) var todayCosts: [String: Double] = [:]
+
+    /// What the poll asks for: `polledServiceIDs` of the switches and the admin key, set as
+    /// each poll starts. nil until the first one has, which is still "loading". The
+    /// dashboard's heal reads it, so its fallback never lands on a provider that is off
+    /// (spec 2026-10-25 § Package 1).
+    @Published private(set) var polledIDs: Set<String>?
+
     /// Keeps `status.json` current between polls. `$sessions` rather than the store's
     /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
     /// session moving from working to idle still changes what the file says.
@@ -287,6 +294,13 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // What this poll asks for, published before anything is awaited, so every reader
+        // sees it while the poll runs. The same rule the launch seed uses.
+        let polled = enabledServiceIDs
+        // Only when it moved: every assignment redraws whatever observes the app.
+        let polledMoved = polledIDs != polled
+        if polledMoved { polledIDs = polled }
+
         // Cheap daily no-op: keeps CLI cost rates current from models.dev.
         await ModelsDevPricing.refreshIfStale()
 
@@ -297,10 +311,10 @@ final class AppState: ObservableObject {
             adminKey: admin,
             betaHeader: beta,
             preferAdmin: preferAdmin,
-            claudeEnabled: SettingsStore.shared.claudeProviderEnabled,
-            codexEnabled: SettingsStore.shared.codexProviderEnabled,
-            antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
-            grokEnabled: SettingsStore.shared.grokProviderEnabled
+            claudeEnabled: polled.contains("claude"),
+            codexEnabled: polled.contains("codex"),
+            antigravityEnabled: polled.contains("antigravity"),
+            grokEnabled: polled.contains("grok")
         )
         // Before retention: a Codex account that answered without the windows it had a
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
@@ -335,7 +349,10 @@ final class AppState: ObservableObject {
             await HistoryStore.shared.append(snapshot: service)
             recordedAny = true
         }
-        if recordedAny {
+        // Also when the polled set moved with nothing recorded (every provider off, or
+        // failing): the heal inside must still move a selection off a provider that is
+        // off, dashboard open or not.
+        if recordedAny || polledMoved {
             await DashboardState.shared.refreshDerived()
         }
         // Deliberately after the history append: the pace alert predicts from a slice
