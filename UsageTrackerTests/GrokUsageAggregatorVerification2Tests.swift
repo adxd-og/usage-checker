@@ -15,7 +15,8 @@ import XCTest
 /// updates.jsonl`'s `_x.ai/session/update` / `turn_completed` envelope.
 final class GrokUsageAggregatorVerification2Tests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let projectDir = "%2Ftmp%2FGrok%20Verify%202%2Fgamma"
 
     override func setUpWithError() throws {

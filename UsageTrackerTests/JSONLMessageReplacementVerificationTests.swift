@@ -12,7 +12,8 @@ import XCTest
 /// partial-tail rule across more than one poll, and cache version rejection.
 final class JSONLMessageReplacementVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory

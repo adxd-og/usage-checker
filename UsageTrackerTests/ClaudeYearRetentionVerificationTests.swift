@@ -11,7 +11,8 @@ import XCTest
 /// § Facts, § Retention, § Claude cache, § Tests.
 final class ClaudeYearRetentionVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let alphaSlug = "-Users-verifier-Projects-alpha"
 
     override func setUpWithError() throws {

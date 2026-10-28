@@ -16,7 +16,8 @@ import XCTest
 /// the static `ModelPricing` table.
 final class JSONLDeferredFoldTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     private let sessionID = "d5dff4f0-3038-4ed6-81d6-ddccee879027"
     private let alphaSlug = "-Users-tester-Projects-alpha"

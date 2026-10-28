@@ -17,7 +17,8 @@ import XCTest
 /// UTC) would not catch it.
 final class JSONLSessionsVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     private let sessionID = "b2f6a4e1-6d8f-4b1a-9a2b-2f6a4e16d8f4"
     private let alphaSlug = "-Users-tester-Projects-alpha"

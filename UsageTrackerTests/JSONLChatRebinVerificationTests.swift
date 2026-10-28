@@ -15,7 +15,8 @@ import XCTest
 /// test — nothing here touches the process's time zone or the real Application Support.
 final class JSONLChatRebinVerificationTests: XCTestCase {
     private var root: URL!
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
     private let sessionID = "7f1a9c3e-4b5d-4a12-9e6f-3d8b2c1a0f45"
     private let agentID = "b1e4a7c92f5d3861"
     private let orphanID = "dddddddd-4444-4444-8444-444444444444"

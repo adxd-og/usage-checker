@@ -2,7 +2,8 @@ import XCTest
 @testable import Omelette
 
 final class AnalyticsBurnRateTests: XCTestCase {
-    private let now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
+    private lazy var now = Date()
 
     func testProjectsTheLimitFromASteadyClimb() {
         // 10% → 40% over half an hour: 1%/min, 60% of the window left, so an hour to go.
