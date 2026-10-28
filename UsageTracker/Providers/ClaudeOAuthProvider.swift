@@ -616,7 +616,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 }
 
 extension ServiceSnapshot {
-    static func notSignedIn(message: String, at date: Date) -> ServiceSnapshot {
+    static func notSignedIn(reason: SignedOutReason? = nil, message: String, at date: Date) -> ServiceSnapshot {
         ServiceSnapshot(
             id: ClaudeOAuthProvider.serviceID,
             displayName: "Claude",
@@ -628,7 +628,8 @@ extension ServiceSnapshot {
             weekCost: nil,
             state: .notSignedIn,
             stateMessage: message,
-            fetchedAt: date
+            fetchedAt: date,
+            signedOutReason: reason
         )
     }
 

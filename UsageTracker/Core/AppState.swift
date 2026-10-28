@@ -630,7 +630,8 @@ final class AppState: ObservableObject {
                 stateMessage: service.stateMessage,
                 fetchedAt: source.fetchedAt,
                 retryAfter: service.retryAfter,
-                isCarriedOver: true
+                isCarriedOver: true,
+                signedOutReason: service.signedOutReason
             )
         }
         return UsageSnapshot(
@@ -739,7 +740,8 @@ final class AppState: ObservableObject {
                 state: service.state,
                 stateMessage: service.stateMessage,
                 fetchedAt: service.fetchedAt,
-                retryAfter: service.retryAfter
+                retryAfter: service.retryAfter,
+                signedOutReason: service.signedOutReason
             )
         }
         return UsageSnapshot(

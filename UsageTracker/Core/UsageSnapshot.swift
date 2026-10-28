@@ -89,6 +89,20 @@ enum ServiceState: String, Sendable, Codable {
     case error
 }
 
+/// Why a provider is signed out, when it can say (spec 2026-10-25 § Design › Package 2,
+/// Sign in). Claude sets it, and the way out the popover and Settings offer follows from
+/// it. It lives on the snapshot only: `status.json`, the CLI and MCP never carry it.
+enum SignedOutReason: String, Equatable, Sendable {
+    /// No sign-in anywhere Claude Code keeps one.
+    case notFound
+    /// The token stopped working and Claude Code did not renew it.
+    case expired
+    /// The sign-in is there, but reading it needs a permission Omelette does not have.
+    case denied
+    /// The sign-in is there and cannot be read or decoded.
+    case unreadable
+}
+
 struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     let id: String
     let displayName: String
@@ -110,6 +124,9 @@ struct ServiceSnapshot: Equatable, Sendable, Identifiable {
     /// (`GrokProvider`), so a failed service with dollars and no windows is retained only
     /// when this says so.
     var isCarriedOver: Bool = false
+    /// Why a signed-out service is signed out; nil for every other state and for a provider
+    /// that does not say. Retention carries it with the state it explains.
+    var signedOutReason: SignedOutReason? = nil
 
     /// Something to draw: a window, or — for a windowless pay-as-you-go account — the
     /// week's dollars. What retention and `LastKnownStore` count as a reading.
