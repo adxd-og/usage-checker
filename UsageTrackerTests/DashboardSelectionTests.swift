@@ -76,14 +76,14 @@ final class DashboardSelectionTests: XCTestCase {
 
     func testASelectionThatIsStillOnOfferIsLeftAlone() {
         XCTAssertEqual(
-            DashboardState.healedSelection(stored: "codex", available: ["claude", "codex"]),
+            DashboardState.healedSelection(stored: "codex", available: ["claude", "codex"], polled: ProviderCoordinator.serviceIDs),
             "codex"
         )
     }
 
     func testASelectionThatFellOffMovesToTheFirstOption() {
         XCTAssertEqual(
-            DashboardState.healedSelection(stored: "claude", available: ["grok"]),
+            DashboardState.healedSelection(stored: "claude", available: ["grok"], polled: ProviderCoordinator.serviceIDs),
             "grok"
         )
     }
@@ -91,7 +91,7 @@ final class DashboardSelectionTests: XCTestCase {
     func testWithNothingToHealToTheSelectionStandsStill() {
         // Before the first poll there is nothing to move to, and blanking the picker
         // would be worse than a selection that is briefly wrong.
-        XCTAssertEqual(DashboardState.healedSelection(stored: "claude", available: []), "claude")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "claude", available: [], polled: ProviderCoordinator.serviceIDs), "claude")
     }
 }
 

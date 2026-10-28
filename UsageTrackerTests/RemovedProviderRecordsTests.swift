@@ -113,12 +113,12 @@ final class RemovedProviderRecordsTests: XCTestCase {
 
     /// The dashboard's stored provider is "gemini" and nothing is on offer yet: a fresh
     /// launch whose Claude fetch failed. Standing still would let `refreshHistory` load
-    /// that id's leftover records onto the tab, so the selection goes to Claude, which is
-    /// always polled. A provider this build still polls keeps standing still, as before.
+    /// that id's leftover records onto the tab, so the selection goes to Claude while Claude
+    /// is polled. A provider this build still polls keeps standing still, as before.
     func testAStoredGeminiSelectionWithNothingOnOfferHealsToClaude() {
-        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: []), "claude")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: [], polled: ProviderCoordinator.serviceIDs), "claude")
         XCTAssertEqual(
-            DashboardState.healedSelection(stored: "codex", available: []), "codex",
+            DashboardState.healedSelection(stored: "codex", available: [], polled: ProviderCoordinator.serviceIDs), "codex",
             "a polled provider still stands still when there is nothing to heal to"
         )
     }

@@ -124,14 +124,14 @@ final class GeminiRemovalSeedingVerificationTests: XCTestCase {
     // MARK: - DashboardState.healedSelection (default `polled` parameter, i.e. real usage)
 
     func testHealedSelectionStoredGeminiWithNothingOnOfferGoesToClaude() {
-        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: []), "claude")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: [], polled: ProviderCoordinator.serviceIDs), "claude")
     }
 
     func testHealedSelectionStoredCodexWithNothingOnOfferStandsStill() {
-        XCTAssertEqual(DashboardState.healedSelection(stored: "codex", available: []), "codex")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "codex", available: [], polled: ProviderCoordinator.serviceIDs), "codex")
     }
 
     func testHealedSelectionStoredGeminiWithGrokOnOfferMovesToGrok() {
-        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: ["grok"]), "grok")
+        XCTAssertEqual(DashboardState.healedSelection(stored: "gemini", available: ["grok"], polled: ProviderCoordinator.serviceIDs), "grok")
     }
 }

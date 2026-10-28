@@ -456,8 +456,9 @@ final class DashboardState: ObservableObject {
     /// The selection to use when the stored one is no longer on offer. Falls back to the
     /// stored value when there is nothing to heal to, so an empty first launch doesn't
     /// blank the picker — but only for a provider that is polled. `polled` is what the last
-    /// poll asked for (`AppState.polledIDs`), or every provider this build can poll before
-    /// the first one. A stored id that is gone or switched off goes to Claude while Claude
+    /// poll asked for (`AppState.polledIDs`), or the switches and the key as they stand
+    /// before the first one (`polledNow`); never `ProviderCoordinator.serviceIDs`, which
+    /// holds Claude whatever its switch, so the caller always says. A stored id that is gone or switched off goes to Claude while Claude
     /// is polled, else to the first polled provider by id, and with nothing polled to no
     /// provider at all (`noSelection`): the fallback never lands on a provider that is off
     /// (spec 2026-10-25 § Package 1), whose history would fill the tab and whose cost log
@@ -465,7 +466,7 @@ final class DashboardState: ObservableObject {
     nonisolated static func healedSelection(
         stored: String,
         available: [String],
-        polled: Set<String> = ProviderCoordinator.serviceIDs
+        polled: Set<String>
     ) -> String {
         if available.contains(stored) { return stored }
         guard available.isEmpty else { return available[0] }
