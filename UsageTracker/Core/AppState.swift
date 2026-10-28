@@ -51,6 +51,24 @@ final class AppState: ObservableObject {
     /// tile can lead with today rather than with the week. A service with no local
     /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
     @Published private(set) var todayCosts: [String: Double] = [:]
+
+    /// What the poll asks for: `polledServiceIDs` of the switches and the admin key, set as
+    /// each poll starts. nil until the first one has, which is still "loading". The
+    /// dashboard's heal reads it, so its fallback never lands on a provider that is off
+    /// (spec 2026-10-25 § Package 1).
+    @Published private(set) var polledIDs: Set<String>?
+
+    /// Nothing is on: every switch off and no admin key (spec 2026-10-25 § Package 1,
+    /// Nothing on). The tooltip, the floating window and the popover say so rather than
+    /// "loading…" for good.
+    var pollsNothing: Bool { Self.isNothingOn(polledIDs: polledIDs) }
+
+    /// The rule: an empty set is nothing on; nil — no poll has started yet — is loading.
+    /// An admin key alone is something on.
+    nonisolated static func isNothingOn(polledIDs: Set<String>?) -> Bool {
+        polledIDs?.isEmpty == true
+    }
+
     /// Keeps `status.json` current between polls. `$sessions` rather than the store's
     /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
     /// session moving from working to idle still changes what the file says.
@@ -108,11 +126,13 @@ final class AppState: ObservableObject {
     /// decisions `performRefresh` hands `ProviderCoordinator.snapshot`, read one turn
     /// earlier. The file remembers every provider that ever reported, so without this
     /// a provider the user has since switched off flashes back onto the All tab at
-    /// launch and disappears when the first poll lands.
-    private var enabledServiceIDs: Set<String> {
+    /// launch and disappears when the first poll lands. Internal, not private: the
+    /// dashboard's heal reads it before the first poll has published `polledIDs`.
+    var enabledServiceIDs: Set<String> {
         let settings = SettingsStore.shared
         let adminKey = KeychainStore.loadAdminKey() ?? ""
         return Self.polledServiceIDs(
+            claudeEnabled: settings.claudeProviderEnabled,
             codexEnabled: settings.codexProviderEnabled,
             antigravityEnabled: settings.antigravityProviderEnabled,
             grokEnabled: settings.grokProviderEnabled,
@@ -120,18 +140,20 @@ final class AppState: ObservableObject {
         )
     }
 
-    /// `enabledServiceIDs` as a rule. Claude always: it is not behind a toggle, the
-    /// coordinator always fetches it. Each provider whose switch is on. The admin
-    /// organisation only while there is a key to call it with. A stored reading under
-    /// any other id — a provider this build no longer polls — stays in
-    /// `last-known.json` and is never seeded.
+    /// `enabledServiceIDs` as a rule: each provider whose switch is on, Claude included
+    /// since it has one (spec 2026-10-25 § Package 1), and the admin organisation while
+    /// there is a key to call it with. Empty is the "nothing on" state. A stored reading
+    /// under any other id — a provider switched off, or one this build no longer polls —
+    /// stays in `last-known.json` and is never seeded.
     nonisolated static func polledServiceIDs(
+        claudeEnabled: Bool,
         codexEnabled: Bool,
         antigravityEnabled: Bool,
         grokEnabled: Bool,
         hasAdminKey: Bool
     ) -> Set<String> {
-        var ids: Set<String> = ["claude"]
+        var ids: Set<String> = []
+        if claudeEnabled { ids.insert("claude") }
         if codexEnabled { ids.insert("codex") }
         if antigravityEnabled { ids.insert("antigravity") }
         if grokEnabled { ids.insert("grok") }
@@ -283,6 +305,13 @@ final class AppState: ObservableObject {
         isLoading = true
         defer { isLoading = false }
 
+        // What this poll asks for, published before anything is awaited, so every reader
+        // sees it while the poll runs. The same rule the launch seed uses.
+        let polled = enabledServiceIDs
+        // Only when it moved: every assignment redraws whatever observes the app.
+        let polledMoved = polledIDs != polled
+        if polledMoved { polledIDs = polled }
+
         // Cheap daily no-op: keeps CLI cost rates current from models.dev.
         await ModelsDevPricing.refreshIfStale()
 
@@ -293,9 +322,10 @@ final class AppState: ObservableObject {
             adminKey: admin,
             betaHeader: beta,
             preferAdmin: preferAdmin,
-            codexEnabled: SettingsStore.shared.codexProviderEnabled,
-            antigravityEnabled: SettingsStore.shared.antigravityProviderEnabled,
-            grokEnabled: SettingsStore.shared.grokProviderEnabled
+            claudeEnabled: polled.contains("claude"),
+            codexEnabled: polled.contains("codex"),
+            antigravityEnabled: polled.contains("antigravity"),
+            grokEnabled: polled.contains("grok")
         )
         // Before retention: a Codex account that answered without the windows it had a
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
@@ -322,7 +352,10 @@ final class AppState: ObservableObject {
 
         // Every poll, an empty one too: `WidgetBridge.publish` decides whether the file
         // changes, and a widget never told "nothing to show" keeps the last numbers.
-        WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
+        WidgetBridge.publish(
+            next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
+        )
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.
         var recordedAny = false
@@ -330,7 +363,10 @@ final class AppState: ObservableObject {
             await HistoryStore.shared.append(snapshot: service)
             recordedAny = true
         }
-        if recordedAny {
+        // Also when the polled set moved with nothing recorded (every provider off, or
+        // failing): the heal inside must still move a selection off a provider that is
+        // off, dashboard open or not.
+        if recordedAny || polledMoved {
             await DashboardState.shared.refreshDerived()
         }
         // Deliberately after the history append: the pace alert predicts from a slice
@@ -413,7 +449,8 @@ final class AppState: ObservableObject {
     /// on a toggle would be a second of file I/O for no new information.
     func republishDisplayMode() {
         WidgetBridge.publish(
-            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
         )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
@@ -676,7 +713,10 @@ final class AppState: ObservableObject {
         // The widget shows the same numbers on the desktop. Without this it kept the
         // forgotten ones until a poll brought windows, and with no other provider
         // reporting, that poll never came.
-        WidgetBridge.publish(snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode)
+        WidgetBridge.publish(
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
+        )
         Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
     }
 

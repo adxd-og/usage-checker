@@ -350,8 +350,9 @@ A sidebar window with six tabs.
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
   providers show in the menu bar, agents in the menu bar
-- **Providers**: one row per provider with its source, status and switch,
-  and Forget last known numbers inline
+- **Providers**: one row per provider with its source, status and switch
+  (Claude's too: off means not polled at all), and Forget last known numbers
+  inline. With every provider off, the menu bar, popover and widgets say so
 - **Notifications**: the two limit warnings, session timing, agent alerts,
   quiet hours and the daily summary
 - **Integrations**: Claude Code (hooks, status line, MCP server), Codex

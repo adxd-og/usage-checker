@@ -16,20 +16,26 @@ final class WidgetPublishTests: XCTestCase {
         )
     }
 
+    /// The services half of a publication; the count is the same on both sides, so only
+    /// the rows decide, as these tests always meant.
+    private func publication(_ services: [WidgetService]) -> WidgetBridge.Publication {
+        WidgetBridge.Publication(services: services, enabledProviders: 2)
+    }
+
     func testSomethingToDrawIsWrittenEveryPoll() {
-        XCTAssertTrue(WidgetBridge.shouldPublish([claude], lastPublished: [claude]),
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication([claude]), lastPublished: publication([claude])),
                       "\"Updated …\" has to move with every poll")
-        XCTAssertTrue(WidgetBridge.shouldPublish([claude], lastPublished: nil))
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication([claude]), lastPublished: nil))
     }
 
     func testNothingToDrawIsWrittenOnceWhenItBecomesNothing() {
-        XCTAssertTrue(WidgetBridge.shouldPublish([], lastPublished: [claude]))
-        XCTAssertFalse(WidgetBridge.shouldPublish([], lastPublished: []),
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication([]), lastPublished: publication([claude])))
+        XCTAssertFalse(WidgetBridge.shouldPublish(publication([]), lastPublished: publication([])),
                        "reloading every widget each minute to say nothing again is waste")
     }
 
     func testALaunchWithNothingToDrawClearsWhatAnEarlierRunLeft() {
-        XCTAssertTrue(WidgetBridge.shouldPublish([], lastPublished: nil))
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication([]), lastPublished: nil))
     }
 
     func testForgettingTheOnlyRetainedProviderEmptiesTheWidget() {
@@ -48,7 +54,7 @@ final class WidgetPublishTests: XCTestCase {
         let written = WidgetBridge.snapshot(from: after.services, at: after.fetchedAt, mode: .used)
         XCTAssertTrue(written.services.isEmpty)
         XCTAssertTrue(WidgetBridge.shouldPublish(
-            written.services, lastPublished: WidgetBridge.widgetServices(from: before.services)
+            publication(written.services), lastPublished: publication(WidgetBridge.widgetServices(from: before.services))
         ))
     }
 
@@ -60,6 +66,6 @@ final class WidgetPublishTests: XCTestCase {
         )
         let services = WidgetBridge.widgetServices(from: [payAsYouGo])
         XCTAssertEqual(services.first?.spendLabel, "$31.70 last 7 days")
-        XCTAssertTrue(WidgetBridge.shouldPublish(services, lastPublished: services))
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication(services), lastPublished: publication(services)))
     }
 }

@@ -6,12 +6,15 @@ final class WidgetPublishRetryTests: XCTestCase {
     /// The one empty list the publish rule allows is not spent by a write that failed.
     func testAnEmptyPublicationThatFailedToWriteIsTriedAgain() throws {
         let published = WidgetBridge.widgetServices(from: [Fixture.snapshot(buckets: [Fixture.bucket(id: "claude_5h")])])
-        let previous: [WidgetService]? = [try XCTUnwrap(published.first)]
-        let afterFailure = WidgetBridge.recordedPublication([], wrote: false, previous: previous)
+        let previous: WidgetBridge.Publication? = WidgetBridge.Publication(
+            services: [try XCTUnwrap(published.first)], enabledProviders: 1
+        )
+        let empty = WidgetBridge.Publication(services: [], enabledProviders: 1)
+        let afterFailure = WidgetBridge.recordedPublication(empty, wrote: false, previous: previous)
         XCTAssertEqual(afterFailure, previous)
-        XCTAssertTrue(WidgetBridge.shouldPublish([], lastPublished: afterFailure), "still due")
-        let afterSuccess = WidgetBridge.recordedPublication([], wrote: true, previous: previous)
-        XCTAssertEqual(afterSuccess, [])
-        XCTAssertFalse(WidgetBridge.shouldPublish([], lastPublished: afterSuccess), "delivered once")
+        XCTAssertTrue(WidgetBridge.shouldPublish(empty, lastPublished: afterFailure), "still due")
+        let afterSuccess = WidgetBridge.recordedPublication(empty, wrote: true, previous: previous)
+        XCTAssertEqual(afterSuccess, empty)
+        XCTAssertFalse(WidgetBridge.shouldPublish(empty, lastPublished: afterSuccess), "delivered once")
     }
 }

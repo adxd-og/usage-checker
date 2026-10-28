@@ -5,48 +5,62 @@ import WidgetKit
 /// and tells WidgetKit to refresh its timelines.
 @MainActor
 enum WidgetBridge {
-    /// The services this launch last wrote. nil until the first write, so a launch that
-    /// has nothing to draw still replaces whatever an earlier run left in the file.
-    private static var lastPublished: [WidgetService]?
+    /// What the change comparison looks at: the rows, and how many providers the app polls.
+    /// Not the time, which moves with every poll. The count is in it because two empty
+    /// files can say different things — every enabled provider signed out, or every
+    /// provider switched off (spec 2026-10-25 § Package 1) — and a widget told the first
+    /// has to hear the second.
+    struct Publication: Equatable, Sendable {
+        let services: [WidgetService]
+        let enabledProviders: Int?
+    }
+
+    /// What this launch last wrote. nil until the first write, so a launch that has nothing
+    /// to draw still replaces whatever an earlier run left in the file.
+    private static var lastPublished: Publication?
 
     /// Called after every poll, on a display-mode change and from "Forget last known
     /// numbers". An empty list is written too: a widget never told "nothing to show"
-    /// keeps the last numbers it was given for good.
-    static func publish(_ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode) {
-        let snapshot = snapshot(from: services, at: date, mode: mode)
-        guard shouldPublish(snapshot.services, lastPublished: lastPublished) else { return }
+    /// keeps the last numbers it was given for good. `enabledProviders` is
+    /// `AppState.polledIDs?.count`, nil before the first poll has started.
+    static func publish(
+        _ services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, enabledProviders: Int?
+    ) {
+        let snapshot = snapshot(from: services, at: date, mode: mode, enabledProviders: enabledProviders)
+        let publication = Publication(services: snapshot.services, enabledProviders: snapshot.enabledProviders)
+        guard shouldPublish(publication, lastPublished: lastPublished) else { return }
         let wrote = SharedWidgetStore.write(snapshot)
-        lastPublished = recordedPublication(snapshot.services, wrote: wrote, previous: lastPublished)
+        lastPublished = recordedPublication(publication, wrote: wrote, previous: lastPublished)
         if wrote { WidgetCenter.shared.reloadAllTimelines() }
     }
 
     /// What `lastPublished` becomes after a write. A write that failed (the container
-    /// briefly unwritable) records nothing, so the one empty list the rule above
+    /// briefly unwritable) records nothing, so the one empty publication the rule below
     /// allows is tried again next time instead of being counted as delivered.
     nonisolated static func recordedPublication(
-        _ services: [WidgetService], wrote: Bool, previous: [WidgetService]?
-    ) -> [WidgetService]? {
-        wrote ? services : previous
+        _ publication: Publication, wrote: Bool, previous: Publication?
+    ) -> Publication? {
+        wrote ? publication : previous
     }
 
-    /// Whether a list reaches the file. Anything to draw goes every time, so the widget's
-    /// "Updated …" moves with the polls. An empty list goes once, when it becomes empty —
-    /// every minute would reload the widget's timelines to say nothing again.
-    nonisolated static func shouldPublish(
-        _ services: [WidgetService], lastPublished: [WidgetService]?
-    ) -> Bool {
-        !services.isEmpty || services != lastPublished
+    /// Whether a publication reaches the file. Anything to draw goes every time, so the
+    /// widget's "Updated …" moves with the polls. Nothing to draw goes once: when it
+    /// becomes nothing, or when the count of providers that are on moves — every minute
+    /// would reload the widget's timelines to say the same nothing again.
+    nonisolated static func shouldPublish(_ publication: Publication, lastPublished: Publication?) -> Bool {
+        !publication.services.isEmpty || publication != lastPublished
     }
 
     /// The whole file as a value. `publish` writes into the App Group container,
     /// which only the real app can reach, so everything it decides is decided here.
     nonisolated static func snapshot(
-        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode
+        from services: [ServiceSnapshot], at date: Date, mode: PercentDisplay.Mode, enabledProviders: Int? = nil
     ) -> WidgetSnapshot {
         WidgetSnapshot(
             services: widgetServices(from: services),
             updatedAt: date,
-            showsRemaining: mode == .remaining
+            showsRemaining: mode == .remaining,
+            enabledProviders: enabledProviders
         )
     }
 

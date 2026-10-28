@@ -168,7 +168,8 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         statusItem.button?.toolTip = Self.tooltipText(
             snapshot: AppState.shared.snapshot,
             mode: SettingsStore.shared.percentMode,
-            keepAwake: keepAwake ?? KeepAwakeModel.shared.state
+            keepAwake: keepAwake ?? KeepAwakeModel.shared.state,
+            pollsNothing: AppState.shared.pollsNothing
         )
     }
 
@@ -178,16 +179,21 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     ///
     /// Every provider with data gets a block; a retained one is headed by the line
     /// that says why its numbers aren't moving, a healthy one by its plan. While keep
-    /// awake is on, its line comes first (keep-awake spec 2026-10-26, § UI).
+    /// awake is on, its line comes first (keep-awake spec 2026-10-26, § UI). With every
+    /// provider off (`pollsNothing`) the usage part is `NothingOnCopy.tooltip` instead of
+    /// "loading…" for good (spec 2026-10-25 § Package 1).
     nonisolated static func tooltipText(
         snapshot: UsageSnapshot,
         mode: PercentDisplay.Mode = .used,
         keepAwake: KeepAwakeState = .idle,
+        pollsNothing: Bool = false,
         now: Date = Date(),
         calendar: Calendar = .current,
         locale: Locale = .current
     ) -> String {
-        let usage = usageTooltip(snapshot: snapshot, mode: mode, now: now, calendar: calendar, locale: locale)
+        let usage = pollsNothing
+            ? NothingOnCopy.tooltip
+            : usageTooltip(snapshot: snapshot, mode: mode, now: now, calendar: calendar, locale: locale)
         guard let line = KeepAwakeCopy.tooltipLine(keepAwake, now: now, calendar: calendar, locale: locale) else {
             return usage
         }

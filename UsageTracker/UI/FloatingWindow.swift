@@ -96,6 +96,7 @@ struct FloatingMiniView: View {
             service: service,
             mode: settings.percentMode,
             agents: FloatingMiniLayout.agents(agents.sessions),
+            pollsNothing: state.pollsNothing,
             onClose: onClose
         )
     }
@@ -107,6 +108,8 @@ struct FloatingMiniContent: View {
     let service: ServiceSnapshot?
     let mode: PercentDisplay.Mode
     var agents: OMAgentsPill.Appearance? = nil
+    /// Every provider is off: the panel says so (`FloatingMiniLayout.content`).
+    var pollsNothing: Bool = false
     let onClose: () -> Void
 
     /// The panel is a fixed 260 × 130 (`FloatingWindowController.open`). A hero
@@ -117,7 +120,7 @@ struct FloatingMiniContent: View {
     private static let rowLabelWidth: CGFloat = 62
 
     private var content: FloatingMiniLayout.Content {
-        FloatingMiniLayout.content(for: service)
+        FloatingMiniLayout.content(for: service, pollsNothing: pollsNothing)
     }
 
     var body: some View {

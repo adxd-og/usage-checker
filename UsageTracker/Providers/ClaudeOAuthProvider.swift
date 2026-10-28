@@ -209,6 +209,33 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     static let serviceID = "claude"
 
     var serviceID: String { ClaudeOAuthProvider.serviceID }
+
+    /// Default for the settings switch (spec 2026-10-25 § Design › Package 1): on wherever
+    /// this Mac shows Claude — Claude Code's `~/.claude`, the Claude app in /Applications
+    /// or ~/Applications, or a Claude reading Omelette kept, which covers Claude Code run
+    /// under `CLAUDE_CONFIG_DIR` with no `~/.claude`. Every existing user has one of them,
+    /// so the switch starts on for them and nothing changes.
+    static var isClaudeInstalled: Bool {
+        isClaudeInstalled(
+            home: NSHomeDirectory(),
+            fileExists: { FileManager.default.fileExists(atPath: $0) },
+            lastKnownServiceIDs: { LastKnownStore.storedServiceIDs(fileURL: LastKnownStore.defaultFileURL) }
+        )
+    }
+
+    /// The rule under `isClaudeInstalled`, with the machine passed in. The stored file is
+    /// asked last: it is the one check that opens a file.
+    static func isClaudeInstalled(
+        home: String,
+        fileExists: (String) -> Bool,
+        lastKnownServiceIDs: () -> Set<String>
+    ) -> Bool {
+        fileExists(home + "/.claude")
+            || fileExists("/Applications/Claude.app")
+            || fileExists(home + "/Applications/Claude.app")
+            || lastKnownServiceIDs().contains(Self.serviceID)
+    }
+
     private let http: HTTPClient
     private let betaHeader: String
 

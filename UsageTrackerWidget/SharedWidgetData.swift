@@ -95,14 +95,25 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// `WidgetService.isRetained` is: a property default is not a *decoding*
     /// default, and one `keyNotFound` empties every widget on the desktop.
     var showsRemaining: Bool = false
+    /// How many providers the app polls: every switch that is on, plus the Admin API
+    /// organisation while its key is set (spec 2026-10-25 § Package 1). 0 tells "every
+    /// provider is off" from "every provider that is on is signed out", which an empty
+    /// `services` cannot. nil in a file an older build wrote and before the app's first
+    /// poll has started. Optional and decoded through the extension below for the reason
+    /// `showsRemaining` is; an older extension ignores the key.
+    var enabledProviders: Int? = nil
 
     /// Spelled out because the decoder below needs them.
     enum CodingKeys: String, CodingKey {
-        case services, updatedAt, showsRemaining
+        case services, updatedAt, showsRemaining, enabledProviders
     }
 
     /// What every ring and number in the extension reads.
     var mode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
+
+    /// The app polls nothing: every provider is off (spec 2026-10-25 § Package 1). A file
+    /// that does not say is not.
+    var isNothingOn: Bool { enabledProviders == 0 }
 
     func service(id: String) -> WidgetService? {
         services.first(where: { $0.id == id })
@@ -142,6 +153,7 @@ extension WidgetSnapshot {
         self.services = try c.decodeIfPresent([WidgetService].self, forKey: .services) ?? []
         self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         self.showsRemaining = try c.decodeIfPresent(Bool.self, forKey: .showsRemaining) ?? false
+        self.enabledProviders = try c.decodeIfPresent(Int.self, forKey: .enabledProviders)
     }
 }
 
@@ -194,7 +206,8 @@ enum WidgetEntryRules {
     static let openAppMessage = "Open Omelette"
     /// The chosen provider is not in the file: signed out, switched off or forgotten.
     static let noDataMessage = "No data"
-    /// A file that names no provider at all — the app published "nothing to show".
+    /// A file that names no provider at all while some are on — the app published
+    /// "nothing to show". With every provider off the line is `NothingOnCopy.widget`.
     static let nothingReportingMessage = "No provider is reporting"
 
     /// The snapshot an entry is built from. `.placeholder` is invented — Claude at 42%
@@ -213,6 +226,9 @@ enum WidgetEntryRules {
 
     static func providerContent(_ snapshot: WidgetSnapshot?, providerID: String) -> ProviderContent {
         guard let snapshot else { return .message(openAppMessage) }
+        // Before the provider lookup: with every provider off, "No data" would read as this
+        // one provider's trouble.
+        if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
         guard let service = snapshot.service(id: providerID) else { return .message(noDataMessage) }
         return .service(service)
     }
@@ -225,6 +241,7 @@ enum WidgetEntryRules {
 
     static func allProvidersContent(_ snapshot: WidgetSnapshot?) -> AllProvidersContent {
         guard let snapshot else { return .message(openAppMessage) }
+        if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
         return snapshot.services.isEmpty ? .message(nothingReportingMessage) : .snapshot(snapshot)
     }
 }

@@ -11,7 +11,7 @@ enum ProvidersSettingsCopy {
         let source: String?
         /// The SF Symbol when the logo asset is missing.
         let sfFallback: String
-        /// Claude, and the Admin API organisation, are always polled: no switch.
+        /// The Admin API organisation is polled while its key is set: no switch.
         let hasSwitch: Bool
     }
 
@@ -23,7 +23,7 @@ enum ProvidersSettingsCopy {
 
     /// The mockup's four rows, in its order.
     static let listed: [Provider] = [
-        Provider(id: claudeID, name: "Claude", source: "Claude Code sign-in", sfFallback: "sparkles", hasSwitch: false),
+        Provider(id: claudeID, name: "Claude", source: "Claude Code sign-in", sfFallback: "sparkles", hasSwitch: true),
         Provider(id: codexID, name: "Codex", source: "Local Codex CLI, needs codex login", sfFallback: "terminal", hasSwitch: true),
         Provider(id: antigravityID, name: "Antigravity", source: "Running Antigravity app, agy CLI or IDE", sfFallback: "circle.hexagongrid", hasSwitch: true),
         Provider(id: grokID, name: "Grok", source: "Local Grok CLI, grok.com fallback", sfFallback: "bolt", hasSwitch: true),
@@ -113,9 +113,10 @@ enum ProvidersSettingsCopy {
         return "Last fetch \(SettingsCopy.ago(from: fetchedAt, now: now))"
     }
 
-    /// The caption under the list.
+    /// The caption under the list. Every listed provider has a switch, Claude's since spec
+    /// 2026-10-25 § Package 1, and off means not polled at all.
     static func footer(fetchedAt: Date, now: Date) -> String {
-        "Claude is always on. \(lastFetch(fetchedAt: fetchedAt, now: now)). A provider that is closed keeps its last known numbers, dimmed, until you forget them."
+        "\(lastFetch(fetchedAt: fetchedAt, now: now)). A provider switched off is not polled. A provider that is closed keeps its last known numbers, dimmed, until you forget them."
     }
 
     /// The last poll's error, 2.x Account's warning line, as an amber line under the list.
@@ -152,6 +153,7 @@ struct ProvidersSettingsView: View {
             }
         }
         // A provider switched on or off is polled, or dropped, at once.
+        .onChange(of: settings.claudeProviderEnabled) { _, _ in AppState.shared.refreshNow() }
         .onChange(of: settings.codexProviderEnabled) { _, _ in AppState.shared.refreshNow() }
         .onChange(of: settings.antigravityProviderEnabled) { _, _ in AppState.shared.refreshNow() }
         .onChange(of: settings.grokProviderEnabled) { _, _ in AppState.shared.refreshNow() }
@@ -195,10 +197,11 @@ struct ProvidersSettingsView: View {
         .padding(.vertical, ProvidersSettingsCopy.verticalPadding)
     }
 
-    /// The provider's 2.x switch. nil for Claude and any provider without one.
+    /// The provider's switch. nil for a provider without one (the Admin API organisation).
     private func enabledBinding(for provider: ProvidersSettingsCopy.Provider) -> Binding<Bool>? {
         guard provider.hasSwitch else { return nil }
         switch provider.id {
+        case ProvidersSettingsCopy.claudeID: return $settings.claudeProviderEnabled
         case ProvidersSettingsCopy.codexID: return $settings.codexProviderEnabled
         case ProvidersSettingsCopy.antigravityID: return $settings.antigravityProviderEnabled
         case ProvidersSettingsCopy.grokID: return $settings.grokProviderEnabled

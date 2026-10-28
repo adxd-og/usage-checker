@@ -43,8 +43,15 @@ final class ProvidersSettingsCopyTests: XCTestCase {
         XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.name), ["Claude", "Codex", "Antigravity", "Grok"])
     }
 
-    func testClaudeIsAlwaysOnAndTheOthersHaveASwitch() {
-        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.hasSwitch), [false, true, true, true])
+    /// Spec 2026-10-25 § Package 1: Claude has the switch the other three have.
+    func testEveryListedProviderHasASwitchClaudeIncluded() {
+        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.hasSwitch), [true, true, true, true])
+    }
+
+    func testClaudeSwitchedOffIsOffWhateverItLastSaid() {
+        let claude = Fixture.snapshot(id: "claude", displayName: "Claude", plan: "Max 20x")
+        XCTAssertEqual(status(claude, enabled: false), SettingsStatus(text: "Off", dot: .muted))
+        XCTAssertEqual(status(nil, enabled: false), SettingsStatus(text: "Off", dot: .muted))
     }
 
     func testEachRowSaysWhereItsNumbersComeFrom() {
@@ -149,10 +156,10 @@ final class ProvidersSettingsCopyTests: XCTestCase {
 
     // MARK: Footer
 
-    func testTheFooterSaysClaudeIsAlwaysOnAndWhenTheLastFetchWas() {
+    func testTheFooterSaysWhenTheLastFetchWasAndWhatOffMeans() {
         XCTAssertEqual(
             ProvidersSettingsCopy.footer(fetchedAt: now.addingTimeInterval(-7), now: now),
-            "Claude is always on. Last fetch 7s ago. A provider that is closed keeps its last known numbers, dimmed, until you forget them."
+            "Last fetch 7s ago. A provider switched off is not polled. A provider that is closed keeps its last known numbers, dimmed, until you forget them."
         )
     }
 
