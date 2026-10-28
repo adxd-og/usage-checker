@@ -19,6 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - With every provider switched off, the menu bar tooltip, the popover, the
   floating window and the widgets say "All providers are off" and point to
   Settings › Providers instead of "Loading…".
+- Widgets: a provider widget pinned to a provider you switched off says so
+  ("Claude is off") and points to Settings › Providers instead of "No data".
 
 ### Claude sign-in
 - Sign in from the popover or Settings › Providers when Claude Code has no

@@ -211,11 +211,13 @@ final class ClaudeSwitchVerificationTests: XCTestCase {
         XCTAssertTrue(AppState.isNothingOn(polledIDs: []))
     }
 
-    func testAPerProviderWidgetWhoseProviderIsOffButOthersAreOnReadsNoData() {
-        // Claude's own widget, Claude switched off, Codex on: not "all providers are off".
+    func testAPerProviderWidgetInAFileWithoutTheProviderListReadsNoData() {
+        // Claude's own widget, Claude switched off, Codex on, in a file that carries only the
+        // count (an older build): not "all providers are off", and it cannot say "Claude is off".
         let file = widgetFile(claude: false, codex: true, adminKey: false)
         XCTAssertEqual(file.enabledProviders, 1)
-        XCTAssertEqual(WidgetEntryRules.providerContent(file, providerID: "claude"), .message(WidgetEntryRules.noDataMessage))
+        XCTAssertNil(file.enabledProviderIDs)
+        XCTAssertEqual(WidgetEntryRules.providerContent(file, providerID: "claude", providerName: "Claude"), .message(WidgetEntryRules.noDataMessage))
     }
 
     func testTheFileTheAppWritesForNothingOnCarriesTheCountAnOlderReaderIgnores() throws {
@@ -235,7 +237,7 @@ final class ClaudeSwitchVerificationTests: XCTestCase {
         XCTAssertNil(opened.enabledProviders)
         XCTAssertTrue(opened.showsRemaining)
         XCTAssertEqual(WidgetEntryRules.allProvidersContent(opened), .message(WidgetEntryRules.nothingReportingMessage))
-        XCTAssertEqual(WidgetEntryRules.providerContent(opened, providerID: "codex"), .message(WidgetEntryRules.noDataMessage))
+        XCTAssertEqual(WidgetEntryRules.providerContent(opened, providerID: "codex", providerName: "Codex"), .message(WidgetEntryRules.noDataMessage))
     }
 
     // MARK: - The words agree

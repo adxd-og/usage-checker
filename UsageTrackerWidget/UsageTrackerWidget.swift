@@ -87,7 +87,9 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
         ProviderEntry(
             date: date,
             provider: provider,
-            content: WidgetEntryRules.providerContent(snap, providerID: provider.rawValue),
+            content: WidgetEntryRules.providerContent(
+                snap, providerID: provider.rawValue, providerName: provider.fallbackName
+            ),
             updatedAt: snap?.updatedAt ?? date,
             mode: snap?.mode ?? .used
         )
