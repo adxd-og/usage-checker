@@ -196,6 +196,13 @@ private struct OAuthUsageResponse: Decodable, Sendable {
     }
 }
 
+/// What one poll uses for Claude: credentials (and whether they came from Claude Code, so
+/// the copy in memory takes them), or why there are none.
+enum ClaudeCredentialResolution: Equatable, Sendable {
+    case use(ClaudeCredentials.OAuth, fromSource: Bool)
+    case signedOut(SignedOutReason, message: String)
+}
+
 final class ClaudeOAuthProvider: UsageProvider, Sendable {
     static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     /// The usage endpoint is undocumented and identifies callers by Claude Code's own
@@ -238,42 +245,50 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
     private let http: HTTPClient
     private let betaHeader: String
+    /// What Omelette last read from Claude Code, for this run only (ruling 1a).
+    private let cache: ClaudeCredentialsCache
+    /// Claude Code's credentials file and keychain item, read without a dialog.
+    private let sources: ClaudeCredentialSources
+    private let now: @Sendable () -> Date
 
     init(
         http: HTTPClient = HTTPClient(),
-        betaHeader: String = "oauth-2025-04-20"
+        betaHeader: String = "oauth-2025-04-20",
+        cache: ClaudeCredentialsCache = .shared,
+        sources: ClaudeCredentialSources = .live,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.http = http
         self.betaHeader = betaHeader
+        self.cache = cache
+        self.sources = sources
+        self.now = now
     }
 
     func fetch() async -> ServiceSnapshot {
-        let now = Date()
+        let now = self.now()
         var oauth: ClaudeCredentials.OAuth
-        do {
-            oauth = try resolveCredentials(now: now)
-        } catch {
-            return .notSignedIn(message: error.localizedDescription, at: now)
+        switch Self.resolve(cached: cache.load(), now: now, file: sources.file, item: sources.item) {
+        case .use(let found, let fromSource):
+            if fromSource { cache.save(found) }
+            oauth = found
+        case .signedOut(let reason, let message):
+            return .notSignedIn(reason: reason, message: message, at: now)
         }
 
         let resp: OAuthUsageResponse
         do {
             resp = try await fetchUsage(token: oauth.accessToken)
         } catch HTTPClientError.badStatus(401, _) {
-            // The token is dead and refreshing it is Claude Code's job, not ours. Give
-            // its sources one more look — it may have rotated already — and otherwise
-            // report a signed-out state. The cache is deliberately NOT cleared: on a
-            // machine with no credentials file it is the only copy we have, and
-            // dropping it would force the next poll back onto an interactive read.
-            guard let renewed = Self.newestFromClaudeCode(beating: nil),
+            // The token is dead and refreshing it is Claude Code's job, not ours. Give its
+            // sources one more look — it may have rotated already — and otherwise say the
+            // sign-in expired.
+            guard let renewed = Self.newest(file: sources.file(), item: sources.item()),
                   Self.isUsableRenewal(renewed, after: oauth)
             else {
-                return .notSignedIn(
-                    message: "Claude Code session expired — run `claude` once to renew it",
-                    at: now
-                )
+                return .notSignedIn(reason: .expired, message: ClaudeSignInCopy.expiredMessage, at: now)
             }
-            ClaudeCredentialsCache.shared.save(renewed)
+            cache.save(renewed)
             oauth = renewed
             do {
                 resp = try await fetchUsage(token: renewed.accessToken)
@@ -311,58 +326,55 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
 
     // MARK: - Credentials
 
-    /// Resolves OAuth credentials without ever putting a keychain dialog on screen.
+    /// Which credentials this poll uses, or why there are none (spec 2026-10-25 § Design ›
+    /// Package 2, Sign in). Never puts a keychain dialog on screen.
     ///
-    /// Claude Code owns the refresh lifecycle — it *rotates* its refresh token, so
-    /// refreshing on our own would invalidate the CLI's copy and steal the session
-    /// (and lose the race the other half of the time). We only ever read, cheapest
-    /// source first: our own cache → the credentials file (no keychain at all) →
-    /// a silent probe of Claude Code's item → the same item read through
-    /// `/usr/bin/security`, whose access survives our renames. Every one of those is
-    /// prompt-proof; the interactive read lives behind the Settings button alone.
-    private func resolveCredentials(now: Date) throws -> ClaudeCredentials.OAuth {
-        let cached = ClaudeCredentialsCache.shared.load()
-        if let cached, !Self.isExpired(cached, at: now) { return cached }
+    /// Claude Code owns the refresh lifecycle — it *rotates* its refresh token, so refreshing
+    /// on our own would invalidate the CLI's copy and steal the session. We only ever read,
+    /// cheapest source first: the copy in memory → the credentials file (no keychain at all)
+    /// → Claude Code's item, read silently. A read or decode failure is no longer swallowed:
+    /// with nothing usable anywhere, the item's own answer says why Claude is signed out.
+    static func resolve(
+        cached: ClaudeCredentials.OAuth?,
+        now: Date,
+        file: () -> ClaudeCredentials.OAuth?,
+        item: () -> ClaudeSourceRead
+    ) -> ClaudeCredentialResolution {
+        if let cached, !isExpired(cached, at: now) { return .use(cached, fromSource: false) }
 
-        // Cache missing or stale: ask Claude Code what it has now.
-        if let fresh = Self.newestFromClaudeCode(beating: cached) {
-            ClaudeCredentialsCache.shared.save(fresh)
-            return fresh
+        // Copy missing or stale: ask Claude Code what it has now.
+        let fromFile = file()
+        let read = item()
+        var winner: ClaudeCredentials.OAuth?
+        var bestExpiry = cached?.expiresAt ?? 0
+        if let fromFile, fromFile.expiresAt > bestExpiry {
+            winner = fromFile
+            bestExpiry = fromFile.expiresAt
         }
-        // Nothing newer anywhere. An expired cached token still beats no token: the
-        // usage API is the authority on whether it's really dead, and a 401 there is
-        // recoverable, whereas throwing here would blank the menu bar.
-        if let cached { return cached }
+        if case .found(let fromItem) = read, fromItem.expiresAt > bestExpiry {
+            winner = fromItem
+        }
+        if let winner { return .use(winner, fromSource: true) }
+        // Nothing newer anywhere. An expired copy still beats no token: the usage API is the
+        // authority on whether it is really dead, and a 401 there is recoverable.
+        if let cached { return .use(cached, fromSource: false) }
+        if let fromFile { return .use(fromFile, fromSource: true) }
 
-        // Truly nothing to work with — say which of the two situations this is.
-        throw ClaudeKeychainReader.itemExists()
-            ? ClaudeKeychainError.interactionRequired
-            : ClaudeKeychainError.notFound
+        switch read {
+        case .found(let fromItem): return .use(fromItem, fromSource: true)
+        case .absent: return .signedOut(.notFound, message: ClaudeSignInCopy.notFoundMessage)
+        case .refused: return .signedOut(.denied, message: ClaudeSignInCopy.deniedMessage)
+        case .unreadable(let words): return .signedOut(.unreadable, message: words)
+        }
     }
 
-    /// Newest credentials Claude Code currently exposes, or nil when nothing it has
-    /// beats `best`. Pass nil to get the newest regardless. Never prompts.
-    private static func newestFromClaudeCode(
-        beating best: ClaudeCredentials.OAuth?
-    ) -> ClaudeCredentials.OAuth? {
-        var winner: ClaudeCredentials.OAuth?
-        var bestExpiry = best?.expiresAt ?? 0
-        // File first: it needs no keychain access, so it can't fail on an ACL.
-        if let file = ClaudeKeychainReader.readFromFile()?.claudeAiOauth, file.expiresAt > bestExpiry {
-            winner = file
-            bestExpiry = file.expiresAt
-        }
-        // Then Claude Code's own item. The direct silent read only works while this
-        // binary is on that item's ACL trust list; a rename or a re-sign drops it off
-        // and the read can then only ever fail. `security` wrote the item, so it stays
-        // on the list — delegating to it is what keeps the cache refreshable without
-        // ever putting a permission panel on screen.
-        let probed = (try? ClaudeKeychainReader.readNonInteractive().claudeAiOauth)
-            ?? ClaudeKeychainReader.readViaSecurityTool()?.claudeAiOauth
-        if let probed, probed.expiresAt > bestExpiry {
-            winner = probed
-        }
-        return winner
+    /// The newest credentials Claude Code exposes, with no floor: after a 401 the token that
+    /// just failed may still be the newest thing there. The file wins a tie.
+    static func newest(file: ClaudeCredentials.OAuth?, item: ClaudeSourceRead) -> ClaudeCredentials.OAuth? {
+        var candidates: [ClaudeCredentials.OAuth] = []
+        if let file { candidates.append(file) }
+        if case .found(let fromItem) = item { candidates.append(fromItem) }
+        return candidates.max { $0.expiresAt < $1.expiresAt }
     }
 
     /// Whether credentials found after a 401 are worth swapping in.
@@ -389,8 +401,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     }
 
     /// User-initiated keychain read (the Settings button): the only path in the app
-    /// allowed to show the macOS permission dialog. Caches on success — the next poll
-    /// picks the credentials up.
+    /// allowed to show the macOS permission dialog. Kept in memory on success — the next
+    /// poll picks the credentials up.
     static func forceKeychainRead() throws {
         let oauth = try ClaudeKeychainReader.read().claudeAiOauth
         ClaudeCredentialsCache.shared.save(oauth)

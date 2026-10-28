@@ -17,6 +17,10 @@ struct ClaudeCredentials: Decodable, Sendable {
     }
 }
 
+/// Two readings of Claude Code's sign-in compare field by field: the resolution and the
+/// renewal rules ask whether one is the other.
+extension ClaudeCredentials.OAuth: Equatable {}
+
 enum ClaudeKeychainError: LocalizedError, Sendable {
     case notFound
     case readFailed(OSStatus)
@@ -32,6 +36,49 @@ enum ClaudeKeychainError: LocalizedError, Sendable {
         case .interactionRequired: return ClaudeSignInCopy.deniedMessage
         }
     }
+}
+
+/// What one of Claude Code's credential sources answered (spec 2026-10-25 § Design › Package 2,
+/// Sign in). Why a signed-out Claude is signed out comes from here, where the read and decode
+/// errors used to be swallowed.
+enum ClaudeSourceRead: Equatable, Sendable {
+    case found(ClaudeCredentials.OAuth)
+    /// No such item.
+    case absent
+    /// The item is there, but reading it needs a permission Omelette does not have silently:
+    /// its access list, or a locked keychain.
+    case refused
+    /// The item is there and could not be read or decoded; the read's own words.
+    case unreadable(String)
+
+    /// The item as the provider reads it: the direct silent read, and when that was refused
+    /// or failed, the same item through `/usr/bin/security`, whose access survives this app's
+    /// renames. An absent item is not asked for twice.
+    static func combining(direct: ClaudeSourceRead, security: () -> ClaudeSourceRead) -> ClaudeSourceRead {
+        switch direct {
+        case .found, .absent:
+            return direct
+        case .refused, .unreadable:
+            switch security() {
+            case .found(let oauth): return .found(oauth)
+            case .unreadable(let words): return .unreadable(words)
+            case .absent, .refused: return direct
+            }
+        }
+    }
+}
+
+/// Where the provider reads Claude Code's sign-in, as closures, so a test hands in its own.
+struct ClaudeCredentialSources: Sendable {
+    /// `~/.claude/.credentials.json`; nil when absent or not decodable.
+    var file: @Sendable () -> ClaudeCredentials.OAuth?
+    /// Claude Code's keychain item, never with a dialog.
+    var item: @Sendable () -> ClaudeSourceRead
+
+    static let live = ClaudeCredentialSources(
+        file: { ClaudeKeychainReader.readFromFile()?.claudeAiOauth },
+        item: { ClaudeKeychainReader.readItemSilently() }
+    )
 }
 
 enum ClaudeKeychainReader {
@@ -95,26 +142,23 @@ enum ClaudeKeychainReader {
         }
     }
 
-    /// Silent existence check. Asks for the item's *attributes*, never `kSecReturnData`,
-    /// so it reads the keychain's index rather than the protected payload — no ACL
-    /// evaluation, no prompt, even when the secret itself is unreadable to us.
-    /// Lets the UI tell "Claude Code was never logged in" apart from "we can't read it".
-    static func itemExists() -> Bool {
-        // Locked: we can't tell, and "false" would wrongly claim Claude Code never
-        // logged in. Say the item may be there and let the message stay about access.
-        guard KeychainNoUI.isDefaultKeychainUnlocked else { return true }
-        var query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-            kSecReturnAttributes as String: true,
-        ]
-        KeychainNoUI.apply(to: &query)
-        var item: AnyObject?
-        let q = query
-        let status = KeychainNoUI.withoutUI { SecItemCopyMatching(q as CFDictionary, &item) }
-        // A guarded item still reports its presence via the interaction statuses.
-        return status == errSecSuccess || KeychainNoUI.isInteractionRequired(status)
+    /// Claude Code's item as the provider reads it: never a dialog, and an answer that says
+    /// why when there is nothing usable (spec 2026-10-25 § Package 2).
+    static func readItemSilently() -> ClaudeSourceRead {
+        ClaudeSourceRead.combining(direct: directRead(), security: { readViaSecurityToolResult() })
+    }
+
+    /// This binary's own silent read, its errors kept apart instead of swallowed.
+    private static func directRead() -> ClaudeSourceRead {
+        do {
+            return .found(try readNonInteractive().claudeAiOauth)
+        } catch ClaudeKeychainError.notFound {
+            return .absent
+        } catch ClaudeKeychainError.interactionRequired {
+            return .refused
+        } catch {
+            return .unreadable(error.localizedDescription)
+        }
     }
 
     /// The tool Claude Code writes its credential item with — and therefore a name the
@@ -126,25 +170,35 @@ enum ClaudeKeychainReader {
     /// A keychain ACL trusts *binaries*, by path and signature. Renaming or re-signing
     /// this app drops it out of `Claude Code-credentials`' trust list, and from then on
     /// its own silent read can only return `errSecAuthFailed` — the prompt is suppressed
-    /// by design, so nothing is left to refresh the cache from and the menu bar goes
-    /// signed-out roughly every time the access token expires.
+    /// by design, so nothing is left to read from and the menu bar goes signed-out roughly
+    /// every time the access token expires.
     ///
     /// `security` is in that trust list because Claude Code writes the item through it,
     /// so borrowing its access gets the current credentials with no panel and no ACL
     /// surgery. Verified on this item: a direct silent read answers -25293 while the
-    /// delegated one returns the payload.
-    ///
-    /// Returns nil rather than throwing: every caller treats "nothing here" the same way,
-    /// and this source is an optional supplement to the two above it.
-    static func readViaSecurityTool(for service: String = ClaudeKeychainReader.service) -> ClaudeCredentials? {
+    /// delegated one returns the payload. It is also the read Claude Code itself makes, so
+    /// its answer is the renewal guard's (ruling 2b): a locked keychain or an access list
+    /// without `security` is `.refused`, and nothing is run.
+    static func readViaSecurityToolResult(for service: String = ClaudeKeychainReader.service) -> ClaudeSourceRead {
         // Locked keychain: `security` would raise a password panel this process can't
-        // suppress. Same gate as every other read here.
-        guard KeychainNoUI.isDefaultKeychainUnlocked else { return nil }
+        // suppress, and it has no no-UI policy of its own, so "could not tell" counts as
+        // locked too (KeychainNoUI.swift:83) — stricter than the direct read above.
+        guard KeychainNoUI.defaultKeychainLockState == .unlocked else { return .refused }
         // And only when the ACL really names the tool. Without this check a changed
         // Claude Code storage backend would turn a background poll into a dialog.
-        guard KeychainNoUI.aclTrusts(path: securityToolPath, service: service) else { return nil }
-        guard let data = runSecurityTool(service: service) else { return nil }
-        return try? JSONDecoder().decode(ClaudeCredentials.self, from: data)
+        guard KeychainNoUI.aclTrusts(path: securityToolPath, service: service) else { return .refused }
+        guard let data = runSecurityTool(service: service) else { return .refused }
+        do {
+            return .found(try JSONDecoder().decode(ClaudeCredentials.self, from: data).claudeAiOauth)
+        } catch {
+            return .unreadable(ClaudeKeychainError.decodeFailed(String(describing: error)).localizedDescription)
+        }
+    }
+
+    /// The delegated read's credentials alone; nil for any other answer.
+    static func readViaSecurityTool(for service: String = ClaudeKeychainReader.service) -> ClaudeCredentials? {
+        guard case .found(let oauth) = readViaSecurityToolResult(for: service) else { return nil }
+        return ClaudeCredentials(claudeAiOauth: oauth)
     }
 
     /// Runs `security find-generic-password -w` and returns its stdout.
