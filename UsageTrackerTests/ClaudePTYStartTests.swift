@@ -166,4 +166,27 @@ final class ClaudePTYStartTests: XCTestCase {
             guard case .launch = failure else { return XCTFail("\(failure)") }
         }
     }
+
+    /// `waitUntilExit()` from a task missed the exit now and then and never returned (2 of 5
+    /// stress runs of 80 starts, 2026-10-28). Many short starts of a program that ignores
+    /// SIGTERM and floods its terminal must all come back; a regression fails here on the
+    /// timeout instead of hanging the suite.
+    func testManyStartsInARowAllComeBack() async throws {
+        let flood = directory.appendingPathComponent("flood.sh")
+        try "#!/bin/sh\ntrap '' TERM\nwhile :; do echo xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx; done\n"
+            .write(to: flood, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: flood.path)
+        let folder = directory!
+        let finished = expectation(description: "every start came back")
+        Task.detached {
+            for _ in 0..<25 {
+                try? await ClaudePTYStart.run(
+                    binary: flood.path, arguments: [], environment: ["PATH": "/usr/bin:/bin"],
+                    directory: folder, duration: 0.05, grace: 0.05
+                )
+            }
+            finished.fulfill()
+        }
+        await fulfillment(of: [finished], timeout: 60)
+    }
 }

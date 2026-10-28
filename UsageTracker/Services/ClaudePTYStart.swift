@@ -87,7 +87,20 @@ enum ClaudePTYStart {
         // that stopped reading hung in waitpid for minutes, the CLI in state "E"). Close
         // ours before waiting; the defer's close is then a no-op.
         try? primaryHandle.close()
-        process.waitUntilExit()
+        // Not `waitUntilExit()`: called from a task it waits on a run loop nobody drives and can
+        // miss the exit for good — measured 2026-10-28, 2 of 5 stress runs of 80 starts hung with
+        // no child left, which would hold the renewal gate and Claude's poll until a relaunch.
+        await waitForExit(process)
+    }
+
+    /// Waits for `process` to be gone, polling, for at most `limit`: past it the process is
+    /// left to the system rather than the poll waiting on it.
+    static func waitForExit(_ process: Process, limit: TimeInterval = 5) async {
+        let giveUpAt = Date().addingTimeInterval(limit)
+        while process.isRunning, Date() < giveUpAt {
+            // A cancelled task's sleep returns at once; a short blocking pause keeps this a wait.
+            if Task.isCancelled { usleep(20_000) } else { try? await Task.sleep(nanoseconds: 20_000_000) }
+        }
     }
 
     /// Everything the program has written since the last read; empty when nothing is waiting.
