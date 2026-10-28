@@ -334,16 +334,40 @@ final class UsageNotifier: NSObject {
         return calendar.isDate(legacy, inSameDayAs: day)
     }
 
-    private func checkDailySummary(at now: Date, inQuiet: Bool, isPayAsYouGo: Bool) {
-        guard SettingsStore.shared.dailySummaryEnabled, !inQuiet else { return }
-        let cal = Calendar.current
-        let today = cal.startOfDay(for: now)
-        guard !Self.isSameDay(storedKey: SettingsStore.shared.lastDailySummaryDay, as: today, calendar: cal)
-        else { return }
-        let hour = cal.component(.hour, from: now)
-        guard hour >= SettingsStore.shared.dailySummaryHour else { return }
+    /// Whether the daily summary goes out now. It is Claude Code's log, so it follows
+    /// Claude's switch (spec 2026-10-25 § Package 1, ruling 2026-10-27): with Claude off
+    /// nothing is read, nothing is sent and the day is not marked, so switching Claude
+    /// back on later that day still sends it.
+    nonisolated static func dailySummaryDue(
+        summaryEnabled: Bool,
+        claudeEnabled: Bool,
+        inQuiet: Bool,
+        lastSentKey: String,
+        summaryHour: Int,
+        now: Date,
+        calendar: Calendar = .current
+    ) -> Bool {
+        guard summaryEnabled, claudeEnabled, !inQuiet else { return false }
+        let today = calendar.startOfDay(for: now)
+        guard !isSameDay(storedKey: lastSentKey, as: today, calendar: calendar) else { return false }
+        return calendar.component(.hour, from: now) >= summaryHour
+    }
 
-        SettingsStore.shared.lastDailySummaryDay = Self.dayKey(for: today, calendar: cal)
+    private func checkDailySummary(at now: Date, inQuiet: Bool, isPayAsYouGo: Bool) {
+        let settings = SettingsStore.shared
+        let cal = Calendar.current
+        guard Self.dailySummaryDue(
+            summaryEnabled: settings.dailySummaryEnabled,
+            claudeEnabled: settings.claudeProviderEnabled,
+            inQuiet: inQuiet,
+            lastSentKey: settings.lastDailySummaryDay,
+            summaryHour: settings.dailySummaryHour,
+            now: now,
+            calendar: cal
+        ) else { return }
+        let today = cal.startOfDay(for: now)
+
+        settings.lastDailySummaryDay = Self.dayKey(for: today, calendar: cal)
         Task {
             await JSONLAggregator.shared.refresh()
             let breakdown = await JSONLAggregator.shared.breakdown()
@@ -356,6 +380,9 @@ final class UsageNotifier: NSObject {
                 isPayAsYouGo: isPayAsYouGo
             )
             await MainActor.run {
+                // Read once more at the end: the switch may have gone off while the log
+                // was read, and off means no summary (Codex plan review F3).
+                guard SettingsStore.shared.claudeProviderEnabled else { return }
                 self.fire(title: "Omelette — daily summary", body: body)
             }
         }
