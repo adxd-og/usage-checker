@@ -242,15 +242,21 @@ enum ClaudeKeychainReader {
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        let started = Date()
         do { try process.run() } catch { return nil }
 
         let watchdog = DispatchWorkItem { process.terminate() }
         DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: watchdog)
         // Read before waiting: waiting on a process whose pipe is full deadlocks.
         let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // Not `waitUntilExit()`, for the reason `ClaudePTYStart.waitForExit` gives: called from a
+        // task it waits on a run loop nobody drives and can miss the exit for good. The watchdog
+        // stops the tool at `timeout`; the poll gives it a second more to be gone.
+        let deadline = started.addingTimeInterval(timeout + 1)
+        while process.isRunning, Date() < deadline { usleep(10_000) }
         watchdog.cancel()
-        guard process.terminationStatus == 0, !data.isEmpty else { return nil }
+        // Still there past the poll: no answer (`terminationStatus` of a running process traps).
+        guard !process.isRunning, process.terminationStatus == 0, !data.isEmpty else { return nil }
         return data
     }
 
