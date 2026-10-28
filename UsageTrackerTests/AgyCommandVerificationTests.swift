@@ -24,7 +24,7 @@ final class AgyCommandVerificationTests: XCTestCase {
         environment: [String: String] = ["PATH": "/usr/bin:/bin"],
         deadline: TimeInterval = 10,
         killGrace: TimeInterval = 0.3,
-        registry: AgyChildRegistry = AgyChildRegistry()
+        registry: ChildProcessRegistry = ChildProcessRegistry()
     ) async throws -> Data {
         try await AgyCommand.run(
             executable: "/bin/sh",
@@ -154,7 +154,7 @@ final class AgyCommandVerificationTests: XCTestCase {
 
     /// The registry holds a child from its start to its end, whichever way it ends.
     func testTheRegistryIsEmptyAfterEveryKindOfEnd() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         _ = try await sh("printf ok", registry: registry)
         XCTAssertEqual(registry.runningCount, 0, "exit 0")
 
@@ -190,10 +190,10 @@ final class AgyCommandVerificationTests: XCTestCase {
     /// The app's own registry: a child started the way the provider starts one is in it
     /// while it runs, so `terminateAll()`, which is what `applicationWillTerminate` calls,
     /// reaches it. `terminateAll()` also closes a registry for good, so it is not called on
-    /// the app's one here: the child ends at its deadline, and `AgyChildRegistryTests`
+    /// the app's one here: the child ends at its deadline, and `ChildProcessRegistryTests`
     /// stops one through `terminateAll()` on a registry of its own.
     func testARunStartedTheWayTheProviderStartsOneIsInTheSharedRegistry() async throws {
-        let shared = AgyChildRegistry.shared
+        let shared = ChildProcessRegistry.shared
         let baseline = shared.runningCount
         let folder: URL = directory
         let child = Task { () -> Result<Data, Error> in

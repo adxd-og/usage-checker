@@ -1,17 +1,17 @@
 import XCTest
 @testable import Omelette
 
-/// `AgyChildRegistry` (session ruling A4 on spec 2026-10-16-antigravity-argon § "Package 2":
+/// `ChildProcessRegistry` (session ruling A4 on spec 2026-10-16-antigravity-argon § "Package 2":
 /// a background agy run does not outlive the app; on quit every running child gets
 /// SIGTERM). The rule is tested on a registry of the test's own, with `/bin/sh` children
-/// in this test's folder; the app delegate only calls `AgyChildRegistry.shared.terminateAll()`.
+/// in this test's folder; the app delegate only calls `ChildProcessRegistry.shared.terminateAll()`.
 /// Real processes, real time: every wait keeps at least five times the margin it needs.
-final class AgyChildRegistryTests: XCTestCase {
+final class ChildProcessRegistryTests: XCTestCase {
     private var directory: URL!
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AgyChildRegistryTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ChildProcessRegistryTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
@@ -30,7 +30,7 @@ final class AgyChildRegistryTests: XCTestCase {
     }
 
     func testQuittingTerminatesARunningChild() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let folder: URL = directory
         let pidFile = folder.appendingPathComponent("child.pid")
         let run = Task {
@@ -65,7 +65,7 @@ final class AgyChildRegistryTests: XCTestCase {
     }
 
     func testAFinishedChildIsNoLongerRegistered() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let output = try await AgyCommand.run(
             executable: "/bin/sh",
             arguments: ["-c", "printf done"],
@@ -81,7 +81,7 @@ final class AgyChildRegistryTests: XCTestCase {
     }
 
     func testAChildThatNeverStartedIsNotRegistered() async {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         do {
             _ = try await AgyCommand.run(
                 executable: directory.appendingPathComponent("no-such-agy").path,
