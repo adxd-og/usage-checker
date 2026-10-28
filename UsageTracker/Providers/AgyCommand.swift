@@ -117,7 +117,7 @@ enum AgyCommand {
         deadline: TimeInterval,
         killGrace: TimeInterval,
         outputLimit: Int = AgyCommand.outputLimit,
-        registry: AgyChildRegistry = .shared
+        registry: ChildProcessRegistry = .shared
     ) async throws -> Data {
         let child = AgyChild(
             executable: executable,
@@ -164,70 +164,6 @@ enum AgyCommand {
     }
 }
 
-/// The agy children running now (spec 2026-10-16-antigravity-argon, Package 2 Design): a
-/// background run must not outlive the app that started it, so Omelette stops them as it
-/// quits. A child is registered before it starts and leaves when it exits; one that could
-/// not start leaves at once.
-/// `terminateAll()` closes the registry for good: no child starts after the quit.
-final class AgyChildRegistry: @unchecked Sendable {
-    /// The app's registry; `AppDelegate.applicationWillTerminate` stops its children and
-    /// closes it.
-    static let shared = AgyChildRegistry()
-
-    private let lock = NSLock()
-    // Guarded by `lock`.
-    private var children: [ObjectIdentifier: Process] = [:]
-    private var closed = false
-
-    /// Takes `process` in before it starts. False once `terminateAll()` has run: Omelette
-    /// is quitting, and the child must not start.
-    func register(_ process: Process) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !closed else { return false }
-        children[ObjectIdentifier(process)] = process
-        return true
-    }
-
-    /// Called right after `process` started. `terminateAll()` signals only a running
-    /// child, so one registered before it and started after it was passed by: it is
-    /// stopped here, through `Process.terminate()`.
-    func didStart(_ process: Process) {
-        lock.lock()
-        let quitting = closed
-        lock.unlock()
-        if quitting { process.terminate() }
-    }
-
-    func unregister(_ process: Process) {
-        lock.lock()
-        children[ObjectIdentifier(process)] = nil
-        lock.unlock()
-    }
-
-    /// The children registered and not yet exited.
-    var runningCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return children.count
-    }
-
-    /// SIGTERM, through `Process.terminate()`, to every registered child still running,
-    /// and the registry closed: a later `register` is refused, and a child registered but
-    /// not yet started is stopped by `didStart` once it is. Called as Omelette quits;
-    /// nothing waits for the children to go, and nothing is left to send SIGKILL, so agy's
-    /// own clean shutdown on SIGTERM is what ends them.
-    func terminateAll() {
-        lock.lock()
-        closed = true
-        let running = Array(children.values)
-        lock.unlock()
-        for process in running where process.isRunning {
-            process.terminate()
-        }
-    }
-}
-
 /// One agy run: the child, its stdout, and the caller waiting on them. The end of the
 /// output, the cap and the deadline race to answer the caller; the lock lets exactly one
 /// of them do it, and every later answer is dropped.
@@ -241,7 +177,7 @@ private final class AgyChild: @unchecked Sendable {
     private let queue = DispatchQueue(label: "omelette.agy-run", qos: .utility)
     private let outputLimit: Int
     private let killGrace: TimeInterval
-    private let registry: AgyChildRegistry
+    private let registry: ChildProcessRegistry
     private let lock = NSLock()
     // Guarded by `lock`.
     private var continuation: CheckedContinuation<Data, Error>?
@@ -257,7 +193,7 @@ private final class AgyChild: @unchecked Sendable {
         directory: URL,
         outputLimit: Int,
         killGrace: TimeInterval,
-        registry: AgyChildRegistry
+        registry: ChildProcessRegistry
     ) {
         self.outputLimit = outputLimit
         self.killGrace = killGrace

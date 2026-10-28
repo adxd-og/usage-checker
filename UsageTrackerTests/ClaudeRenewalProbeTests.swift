@@ -101,6 +101,21 @@ final class ClaudeRenewalProbeTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: project.path))
     }
 
+    func testAProjectFolderThatIsASymlinkIsLeftAlone() throws {
+        let real = root.appendingPathComponent("elsewhere", isDirectory: true)
+        let keep = try transcript("keep.jsonl", in: real)
+        try FileManager.default.createDirectory(at: project.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: project, withDestinationURL: real)
+
+        let removed = ClaudeRenewalProbe.removeTranscripts(probeDirectory: probe, claudeRoot: claude)
+
+        XCTAssertEqual(removed, [])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: keep.path), "a file behind the link stays")
+        XCTAssertNotNil(
+            try? FileManager.default.destinationOfSymbolicLink(atPath: project.path), "the link stays"
+        )
+    }
+
     // MARK: - One renewal
 
     private final class Start {

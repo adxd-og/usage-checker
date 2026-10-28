@@ -98,7 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // missing file is the cleaner signal).
         AgentChannel.shared.stop()
         // A background agy run (Antigravity closed) must not outlive the app.
-        AgyChildRegistry.shared.terminateAll()
+        ChildProcessRegistry.shared.terminateAll()
         // Quit in the popover's footer ends the app with the popover open: its heights
         // are written here, since its close never comes.
         statusBar?.persistPopoverHeights()

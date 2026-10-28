@@ -8,13 +8,13 @@ import XCTest
 /// Each test has a registry of its own; the children are `/bin/sh` and `/bin/sleep` in
 /// this test's folder. Real processes, real time: every wait keeps at least five times the
 /// margin it needs.
-final class AgyChildRegistryQuitTests: XCTestCase {
+final class ChildProcessRegistryQuitTests: XCTestCase {
     private var directory: URL!
     private var strays: [Process] = []
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("AgyChildRegistryQuitTests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("ChildProcessRegistryQuitTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     }
 
@@ -46,7 +46,7 @@ final class AgyChildRegistryQuitTests: XCTestCase {
     }
 
     func testARunAskedForAfterTheQuitStartsNoChild() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         registry.terminateAll()
         let marker = directory.appendingPathComponent("ran")
 
@@ -71,7 +71,7 @@ final class AgyChildRegistryQuitTests: XCTestCase {
     }
 
     func testARegistrationAfterTheQuitIsRefused() {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         XCTAssertTrue(registry.register(sleeper()), "open before the quit")
 
         registry.terminateAll()
@@ -82,7 +82,7 @@ final class AgyChildRegistryQuitTests: XCTestCase {
     /// `terminateAll()` signals only a running child, and this one was not running yet:
     /// it is stopped once it has started.
     func testAChildRegisteredBeforeTheQuitAndStartedAfterItIsStopped() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let child = sleeper()
         XCTAssertTrue(registry.register(child))
 
@@ -97,7 +97,7 @@ final class AgyChildRegistryQuitTests: XCTestCase {
     }
 
     func testBeforeTheQuitAStartedChildRunsOn() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let child = sleeper()
         XCTAssertTrue(registry.register(child))
 

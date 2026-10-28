@@ -22,14 +22,17 @@ enum ClaudePTYStart {
     static let cursorReply = Data([0x1B, 0x5B, 0x31, 0x3B, 0x31, 0x52])
 
     /// Runs `binary` until it exits or `duration` has passed, then asks it to stop (SIGTERM)
-    /// and, after `grace`, makes it (SIGKILL).
+    /// and, after `grace`, makes it (SIGKILL). The program is in `registry` from its start to
+    /// its end, so Omelette quitting stops it (`applicationWillTerminate` → `terminateAll`);
+    /// once the registry is closed nothing starts and the answer is `.launch`.
     static func run(
         binary: String,
         arguments: [String],
         environment: [String: String],
         directory: URL,
         duration: TimeInterval,
-        grace: TimeInterval = 1
+        grace: TimeInterval = 1,
+        registry: ChildProcessRegistry = .shared
     ) async throws {
         var primary: Int32 = -1
         var secondary: Int32 = -1
@@ -48,12 +51,20 @@ enum ClaudePTYStart {
         process.standardInput = secondaryHandle
         process.standardOutput = secondaryHandle
         process.standardError = secondaryHandle
+        // Registered before it starts, so a quit from here on reaches it.
+        guard registry.register(process) else {
+            try? secondaryHandle.close()
+            throw Failure.launch("Omelette is quitting")
+        }
+        defer { registry.unregister(process) }
         do {
             try process.run()
         } catch {
             try? secondaryHandle.close()
             throw Failure.launch(error.localizedDescription)
         }
+        // A quit between the registration and the start passed this program by.
+        registry.didStart(process)
         // The child has its own copy; ours would keep the terminal open after it exits.
         try? secondaryHandle.close()
 

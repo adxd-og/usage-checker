@@ -171,6 +171,20 @@ final class ClaudeRenewalThroughClaudeCodeTests: XCTestCase {
         )
     }
 
+    func testA401OnATokenThatHasNotExpiredDoesNotStartClaudeCode() async {
+        // Revoked or signed out elsewhere: its own clock gives it two more hours, and a start of
+        // Claude Code renews only an expired sign-in.
+        let revoked = oauth("revoked", expiresAt: nowMS + 2 * 3_600_000)
+        let claudeCode = ClaudeCodeFake(item: .found(revoked), renewsTo: fresh)
+
+        let snapshot = await provider(claudeCode, gate: ClaudeRenewalGate(), binary: binary, at: now).fetch()
+
+        XCTAssertTrue(claudeCode.starts.isEmpty, "Claude Code is not started")
+        XCTAssertEqual(snapshot.state, .notSignedIn)
+        XCTAssertEqual(snapshot.signedOutReason, .expired)
+        XCTAssertEqual(UsageEndpointStub.tokensAsked, ["revoked"])
+    }
+
     func testAStartThatRenewsNothingLeavesTheSignInExpired() async {
         let claudeCode = ClaudeCodeFake(item: .found(dead))
 

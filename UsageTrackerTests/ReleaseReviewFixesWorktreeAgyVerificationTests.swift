@@ -149,7 +149,7 @@ final class ReleaseReviewFixesWorktreeAgyVerificationTests: XCTestCase {
     /// Runs asked for after the quit answer an error each and start nothing; they hand
     /// back every descriptor they took.
     func testManyRunsAfterTheQuitLeakNoDescriptor() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         registry.terminateAll()
         let before = openDescriptors()
 
@@ -176,7 +176,7 @@ final class ReleaseReviewFixesWorktreeAgyVerificationTests: XCTestCase {
     /// A race the lock must settle: whichever side wins, no child is left running after
     /// both `terminateAll()` and every registration have come back.
     func testNoChildRegisteredAroundTheQuitIsLeftRunning() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let children = (0..<40).map { _ in sleeper() }
         defer { for child in children where child.isRunning { kill(child.processIdentifier, SIGKILL) } }
 
@@ -199,7 +199,7 @@ final class ReleaseReviewFixesWorktreeAgyVerificationTests: XCTestCase {
     }
 
     func testTerminateAllTwiceKeepsTheRegistryClosedAndDoesNotCrash() {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         registry.terminateAll()
         registry.terminateAll()
 
@@ -207,7 +207,7 @@ final class ReleaseReviewFixesWorktreeAgyVerificationTests: XCTestCase {
     }
 
     func testAChildThatHasAlreadyExitedBeforeDidStartIsHarmless() async throws {
-        let registry = AgyChildRegistry()
+        let registry = ChildProcessRegistry()
         let child = Process()
         child.executableURL = URL(fileURLWithPath: "/usr/bin/true")
         XCTAssertTrue(registry.register(child))
