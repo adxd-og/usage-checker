@@ -15,16 +15,18 @@ enum ClaudeSignInLauncher {
     }
 
     /// The script. Terminal runs the user's shell startup files before it, so the clean
-    /// environment is made here, at the invocation: every `ANTHROPIC_*` variable unset, then
-    /// `env -u` for the named ones, and Claude Code in place of the script.
+    /// environment is made here, at the invocation: every `ANTHROPIC_*` variable and the named
+    /// ones unset in the shell itself, then Claude Code in place of the script. Not
+    /// `env -u … <binary>`: `env` takes any word holding "=" for an assignment, so a `claude`
+    /// under a folder like "a=b" would never run (tester, 2026-10-28).
     static func commandFile(binary: String) -> String {
-        let unsets = ClaudeCLIEnvironment.scrubbedKeys.map { "-u \($0)" }.joined(separator: " ")
         let prefix = ClaudeCLIEnvironment.scrubbedPrefix
         return """
         #!/bin/sh
         # Written by Omelette: Claude Code's own sign-in, in a clean environment. Safe to delete.
         for name in $(/usr/bin/env | /usr/bin/sed -n 's/^\\(\(prefix)[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$name"; done
-        exec /usr/bin/env \(unsets) \(shellQuoted(binary)) auth login
+        unset \(ClaudeCLIEnvironment.scrubbedKeys.joined(separator: " "))
+        exec \(shellQuoted(binary)) auth login
 
         """
     }

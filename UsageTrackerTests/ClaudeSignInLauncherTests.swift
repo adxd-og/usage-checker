@@ -89,6 +89,31 @@ final class ClaudeSignInLauncherTests: XCTestCase {
         )
     }
 
+    func testAnEqualsSignInThePathStillRunsThatBinary() throws {
+        // `env` would take "/…/a=b/claude" for an assignment and run "auth" instead.
+        let folder = directory.appendingPathComponent("a=b", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let binary = folder.appendingPathComponent("claude")
+        try FileManager.default.copyItem(at: try standIn(), to: binary)
+        let file = directory.appendingPathComponent("sign-in.command")
+        try ClaudeSignInLauncher.commandFile(binary: binary.path).write(to: file, atomically: true, encoding: .utf8)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = [file.path]
+        process.environment = ["PATH": "/usr/bin:/bin", "HOME": directory.path]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+
+        XCTAssertEqual(process.terminationStatus, 0)
+        XCTAssertEqual(
+            try String(contentsOf: folder.appendingPathComponent("seen-args"), encoding: .utf8),
+            "2\n[auth]\n[login]\n"
+        )
+    }
+
     func testTheFileIsAShellScript() {
         let text = ClaudeSignInLauncher.commandFile(binary: "/usr/local/bin/claude")
         XCTAssertTrue(text.hasPrefix("#!/bin/sh\n"))
