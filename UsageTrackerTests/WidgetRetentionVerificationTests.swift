@@ -24,6 +24,11 @@ final class WidgetRetentionVerificationTests: XCTestCase {
         )
     }
 
+    /// A publication with the count held constant: only the rows decide here.
+    private func publication(_ services: [WidgetService]) -> WidgetBridge.Publication {
+        WidgetBridge.Publication(services: services, enabledProviders: 1)
+    }
+
     func testANilReadOutsideAPreviewIsNilNoMatterWhatWasThereBefore() {
         // The literal claim: nil in, nil out, when not a preview — regardless of
         // whether a previous call in the same process happened to be a preview.
@@ -50,29 +55,31 @@ final class WidgetRetentionVerificationTests: XCTestCase {
         // A longer sequence than either executor test: five consecutive empty polls
         // after the widget already knows there is nothing — the extension's timelines
         // must not reload five times to say the same "nothing to show" again.
-        var lastPublished: [WidgetService]? = [service("claude")]
-        let firstEmpty = WidgetBridge.shouldPublish([], lastPublished: lastPublished)
+        var lastPublished: WidgetBridge.Publication? = publication([service("claude")])
+        let firstEmpty = WidgetBridge.shouldPublish(publication([]), lastPublished: lastPublished)
         XCTAssertTrue(firstEmpty)
-        lastPublished = []
+        lastPublished = publication([])
 
         for i in 0..<5 {
             XCTAssertFalse(
-                WidgetBridge.shouldPublish([], lastPublished: lastPublished),
+                WidgetBridge.shouldPublish(publication([]), lastPublished: lastPublished),
                 "empty poll \(i): nothing changed, nothing should republish"
             )
         }
     }
 
     func testShouldPublishFlipsBackOnAsSoonAsSomethingReturns() {
-        var lastPublished: [WidgetService]? = []
-        XCTAssertFalse(WidgetBridge.shouldPublish([], lastPublished: lastPublished))
+        var lastPublished: WidgetBridge.Publication? = publication([])
+        XCTAssertFalse(WidgetBridge.shouldPublish(publication([]), lastPublished: lastPublished))
 
         let returned = [service("claude")]
-        XCTAssertTrue(WidgetBridge.shouldPublish(returned, lastPublished: lastPublished))
-        lastPublished = returned
+        XCTAssertTrue(WidgetBridge.shouldPublish(publication(returned), lastPublished: lastPublished))
+        lastPublished = publication(returned)
         // And a retained flag flipping on the same provider — still "something to
         // draw" — keeps publishing every time, same as any other live change.
-        XCTAssertTrue(WidgetBridge.shouldPublish([service("claude", retained: true)], lastPublished: lastPublished))
+        XCTAssertTrue(WidgetBridge.shouldPublish(
+            publication([service("claude", retained: true)]), lastPublished: lastPublished
+        ))
     }
 
     func testAllProvidersContentTreatsANilSnapshotAndAnEmptyOneDifferently() {

@@ -95,10 +95,17 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
     /// `WidgetService.isRetained` is: a property default is not a *decoding*
     /// default, and one `keyNotFound` empties every widget on the desktop.
     var showsRemaining: Bool = false
+    /// How many providers the app polls: every switch that is on, plus the Admin API
+    /// organisation while its key is set (spec 2026-10-25 § Package 1). 0 tells "every
+    /// provider is off" from "every provider that is on is signed out", which an empty
+    /// `services` cannot. nil in a file an older build wrote and before the app's first
+    /// poll has started. Optional and decoded through the extension below for the reason
+    /// `showsRemaining` is; an older extension ignores the key.
+    var enabledProviders: Int? = nil
 
     /// Spelled out because the decoder below needs them.
     enum CodingKeys: String, CodingKey {
-        case services, updatedAt, showsRemaining
+        case services, updatedAt, showsRemaining, enabledProviders
     }
 
     /// What every ring and number in the extension reads.
@@ -142,6 +149,7 @@ extension WidgetSnapshot {
         self.services = try c.decodeIfPresent([WidgetService].self, forKey: .services) ?? []
         self.updatedAt = try c.decode(Date.self, forKey: .updatedAt)
         self.showsRemaining = try c.decodeIfPresent(Bool.self, forKey: .showsRemaining) ?? false
+        self.enabledProviders = try c.decodeIfPresent(Int.self, forKey: .enabledProviders)
     }
 }
 

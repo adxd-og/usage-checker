@@ -352,7 +352,10 @@ final class AppState: ObservableObject {
 
         // Every poll, an empty one too: `WidgetBridge.publish` decides whether the file
         // changes, and a widget never told "nothing to show" keeps the last numbers.
-        WidgetBridge.publish(next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode)
+        WidgetBridge.publish(
+            next.services, at: next.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
+        )
         // Every healthy provider gets a history point, not just Claude — the
         // dashboard's charts and the pace prediction are per service now.
         var recordedAny = false
@@ -446,7 +449,8 @@ final class AppState: ObservableObject {
     /// on a toggle would be a second of file I/O for no new information.
     func republishDisplayMode() {
         WidgetBridge.publish(
-            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
         )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
@@ -709,7 +713,10 @@ final class AppState: ObservableObject {
         // The widget shows the same numbers on the desktop. Without this it kept the
         // forgotten ones until a poll brought windows, and with no other provider
         // reporting, that poll never came.
-        WidgetBridge.publish(snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode)
+        WidgetBridge.publish(
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
+            enabledProviders: polledIDs?.count
+        )
         Task { await LastKnownStore.shared.forget(serviceID: serviceID) }
     }
 
