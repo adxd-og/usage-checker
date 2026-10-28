@@ -244,6 +244,14 @@ final class AppState: ObservableObject {
             distributed.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil,
                                     queue: .main, using: handler(locked: false)),
         ]
+        // Back from Terminal after Sign in (spec 2026-10-25 § Package 2).
+        suspensionObservers.append(
+            NotificationCenter.default.addObserver(
+                forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in await self?.refreshIfSignInPending() }
+            }
+        )
     }
 
     private func setSuspension(asleep: Bool?, locked: Bool?) {
@@ -256,6 +264,15 @@ final class AppState: ObservableObject {
             refreshNow(userInitiated: false)
             Task { await KeepAwakeModel.shared.pollIfNeeded() }
         }
+    }
+
+    /// Omelette came to the front. While a sign-in launched from the button is pending, poll at
+    /// once rather than a poll interval later, so the numbers are there when the user is. Any
+    /// other activation (Settings, the dashboard) keeps the poll's own rhythm and its
+    /// Retry-After backoff.
+    private func refreshIfSignInPending() async {
+        guard await ClaudeRenewalGate.shared.isSignInPending(now: Date()) else { return }
+        refreshNow()
     }
 
     /// User-initiated by default (settings toggles, Refresh buttons). A user
@@ -352,6 +369,8 @@ final class AppState: ObservableObject {
         // (switched off) is gone. From here on `next` is what the app shows.
         next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
         snapshot = next
+        // The Sign in button follows what Claude just said (spec 2026-10-25 § Package 2).
+        ClaudeSignInModel.shared.pollLanded(claude: next.services.first { $0.id == ClaudeOAuthProvider.serviceID })
 
         // The disk copy, for the next launch and for retention on a later poll. Only
         // ok readings with windows or spend are written; the store skips unchanged numbers.

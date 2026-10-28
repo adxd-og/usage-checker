@@ -51,4 +51,30 @@ final class ClaudeSignInModel: ObservableObject {
             note = .failed(detail)
         }
     }
+
+    enum PollReaction: Equatable, Sendable {
+        /// Claude reads fine: the click's line is over.
+        case clearNote
+        /// Still signed out: Claude Code may have been installed since, look again.
+        case lookForBinary
+        case nothing
+    }
+
+    /// What a poll's Claude means for the button.
+    nonisolated static func reaction(to claude: ServiceSnapshot?) -> PollReaction {
+        switch claude?.state {
+        case .ok?: return .clearNote
+        case .notSignedIn?: return .lookForBinary
+        default: return .nothing
+        }
+    }
+
+    /// After every poll (`AppState.performRefresh`).
+    func pollLanded(claude: ServiceSnapshot?) {
+        switch Self.reaction(to: claude) {
+        case .clearNote: note = nil
+        case .lookForBinary: Task { await lookForBinary() }
+        case .nothing: break
+        }
+    }
 }

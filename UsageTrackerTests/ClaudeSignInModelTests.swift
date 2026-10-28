@@ -16,4 +16,24 @@ final class ClaudeSignInModelTests: XCTestCase {
     func testNoBinaryAfterALookIsTheInstallLink() {
         XCTAssertFalse(ClaudeSignInModel.binaryFound(binary: nil, hasLooked: true))
     }
+
+    // MARK: - After a poll
+
+    private let now = Date(timeIntervalSince1970: 1_793_100_000)
+
+    func testClaudeReadingFineEndsTheClicksLine() {
+        XCTAssertEqual(ClaudeSignInModel.reaction(to: Fixture.snapshot(id: "claude", at: now)), .clearNote)
+    }
+
+    func testASignedOutClaudeLooksForTheBinaryAgain() {
+        XCTAssertEqual(
+            ClaudeSignInModel.reaction(to: .notSignedIn(reason: .notFound, message: "Signed out.", at: now)),
+            .lookForBinary, "Claude Code may have been installed since the last poll"
+        )
+    }
+
+    func testAnyOtherStateLeavesItAlone() {
+        XCTAssertEqual(ClaudeSignInModel.reaction(to: Fixture.snapshot(id: "claude", state: .error, at: now)), .nothing)
+        XCTAssertEqual(ClaudeSignInModel.reaction(to: nil), .nothing, "Claude switched off")
+    }
 }
