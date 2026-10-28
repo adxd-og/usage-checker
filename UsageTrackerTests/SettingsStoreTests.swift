@@ -29,6 +29,7 @@ final class SettingsStoreTests: XCTestCase {
         s.refreshIntervalSeconds = 300
         s.anthropicBetaHeader = "oauth-1999-01-01"
         s.preferAdminWhenAvailable = !SettingsStore.Defaults.preferAdminWhenAvailable
+        s.claudeProviderEnabled = !SettingsStore.Defaults.claudeProviderEnabled
         s.codexProviderEnabled = !SettingsStore.Defaults.codexProviderEnabled
         s.antigravityProviderEnabled = !SettingsStore.Defaults.antigravityProviderEnabled
         s.grokProviderEnabled = !SettingsStore.Defaults.grokProviderEnabled
@@ -78,6 +79,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.refreshIntervalSeconds, SettingsStore.Defaults.refreshIntervalSeconds, message)
         XCTAssertEqual(s.anthropicBetaHeader, SettingsStore.Defaults.anthropicBetaHeader, message)
         XCTAssertEqual(s.preferAdminWhenAvailable, SettingsStore.Defaults.preferAdminWhenAvailable, message)
+        XCTAssertEqual(s.claudeProviderEnabled, SettingsStore.Defaults.claudeProviderEnabled, message)
         XCTAssertEqual(s.codexProviderEnabled, SettingsStore.Defaults.codexProviderEnabled, message)
         XCTAssertEqual(s.antigravityProviderEnabled, SettingsStore.Defaults.antigravityProviderEnabled, message)
         XCTAssertEqual(s.grokProviderEnabled, SettingsStore.Defaults.grokProviderEnabled, message)

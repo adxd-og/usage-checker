@@ -77,6 +77,7 @@ final class SettingsStore: ObservableObject {
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
         // launch. `@AppStorage` keeps re-evaluating these until the user decides.
+        static var claudeProviderEnabled: Bool { ClaudeOAuthProvider.isClaudeInstalled }
         static var codexProviderEnabled: Bool { CodexProvider.isCodexInstalled }
         static var antigravityProviderEnabled: Bool { AntigravityProvider.isAntigravityInstalled }
         static var grokProviderEnabled: Bool { GrokProvider.isGrokInstalled }
@@ -88,6 +89,9 @@ final class SettingsStore: ObservableObject {
     // preference was written by nothing and read by nothing but its own reset.
     @AppStorage("anthropicBetaHeader") var anthropicBetaHeader: String = Defaults.anthropicBetaHeader
     @AppStorage("preferAdminWhenAvailable") var preferAdminWhenAvailable: Bool = Defaults.preferAdminWhenAvailable
+    // Defaults to on wherever Claude has been seen on this Mac: ~/.claude, the Claude app,
+    // or a kept Claude reading (spec 2026-10-25 § Package 1).
+    @AppStorage("claudeProviderEnabled") var claudeProviderEnabled: Bool = Defaults.claudeProviderEnabled
     // Defaults to on when the Codex CLI has been signed into on this machine.
     @AppStorage("codexProviderEnabled") var codexProviderEnabled: Bool = Defaults.codexProviderEnabled
     // Defaults to on when Antigravity (app or CLI) is installed on this machine.
@@ -182,6 +186,7 @@ final class SettingsStore: ObservableObject {
         refreshIntervalSeconds = Defaults.refreshIntervalSeconds
         anthropicBetaHeader = Defaults.anthropicBetaHeader
         preferAdminWhenAvailable = Defaults.preferAdminWhenAvailable
+        claudeProviderEnabled = Defaults.claudeProviderEnabled
         codexProviderEnabled = Defaults.codexProviderEnabled
         antigravityProviderEnabled = Defaults.antigravityProviderEnabled
         grokProviderEnabled = Defaults.grokProviderEnabled

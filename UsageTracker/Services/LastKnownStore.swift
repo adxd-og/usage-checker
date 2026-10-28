@@ -144,6 +144,16 @@ actor LastKnownStore {
         return restored
     }
 
+    /// The provider ids a stored file holds, without decoding the readings: for
+    /// `ClaudeOAuthProvider.isClaudeInstalled`, which runs as settings load and asks only
+    /// whether a Claude reading was ever kept. A missing or unreadable file holds none.
+    static func storedServiceIDs(fileURL: URL) -> Set<String> {
+        guard let data = try? Data(contentsOf: fileURL),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return [] }
+        return Set(object.keys)
+    }
+
     /// Stores every service that actually reported something. A failing service is
     /// skipped, not cleared: its old entry is the whole point of this file.
     func remember(_ services: [ServiceSnapshot]) {
