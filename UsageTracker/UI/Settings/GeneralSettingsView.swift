@@ -43,9 +43,10 @@ struct GeneralSettingsView: View {
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     /// Whether a display with a notch is attached: Show in menu bar's value, whether it moves,
-    /// and its caption follow it (notch-island spec 2026-10-29 § 3.7). Read when the page
-    /// appears and whenever the displays change.
-    @State private var notchedDisplayAttached = true
+    /// and its caption follow it (notch-island spec 2026-10-29 § 3.7). Read for the first
+    /// frame, so a Mac with no notched display never flashes the switch as off and movable,
+    /// and again whenever the displays change.
+    @State private var notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
