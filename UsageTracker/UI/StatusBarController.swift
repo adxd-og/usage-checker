@@ -65,6 +65,10 @@ final class StatusBarController: NSObject {
         )
         if shown, statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            // AppKit names the first item "Item-0" and keeps its menu-bar position under
+            // that name in the defaults 3.x shares; a recreated item would get a new name
+            // and lose the place the user dragged it to.
+            item.autosaveName = "Item-0"
             statusItem = item
             configureButton(item)
         } else if !shown, let item = statusItem {
