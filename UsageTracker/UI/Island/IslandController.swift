@@ -22,6 +22,9 @@ final class IslandController: NSObject {
     /// The agents list's caps per tab (popover height budget spec 2026-10-27): told the
     /// screen before each open, written to `UserDefaults` when the island closes.
     private let heights: PopoverHeightModel
+    /// The notch-sized panel at rest over the notch (D13), and its view.
+    private let resting: RestingNotchPanel
+    private let restingView: RestingNotchView
 
     private(set) var isOpen = false
     /// The current open's entry and placement; nil while closed.
@@ -44,6 +47,8 @@ final class IslandController: NSObject {
         self.model = model
         self.heights = heights
         self.window = IslandWindow.make()
+        self.resting = RestingNotchPanel.make()
+        self.restingView = RestingNotchView(frame: .zero)
         self.host = NSHostingView(rootView: IslandRootView(
             model: model,
             content: PopoverView(state: AppState.shared, heights: heights)
@@ -51,6 +56,11 @@ final class IslandController: NSObject {
         super.init()
         // The window keeps the frame it is given; the content never resizes it.
         host.sizingOptions = []
+        resting.contentView = restingView
+        restingView.onPress = { [weak self] option in
+            self?.notchPressed(option: option)
+        }
+        placeResting(IslandScreen.current())
         window.contentView = placeholder
         // `@Published` sends before the value lands: the hit test takes the sent size.
         contentSizeObserver = model.$contentSize
@@ -182,6 +192,7 @@ final class IslandController: NSObject {
             )
             return .island(geometry.region(of: point, contentSize: model.contentSize))
         }
+        if target === resting { return .restingNotch }
         if target === statusItemWindow() { return .statusItem }
         if isChildOfIsland(target) { return .childOfIsland }
         return .otherWindow
@@ -212,6 +223,37 @@ final class IslandController: NSObject {
         if IslandEventRules.closesOnKeyWindow(isIsland: key === window, isChildOfIsland: isChildOfIsland(key)) {
             close()
         }
+    }
+
+    // MARK: - The resting notch
+
+    /// Over the notched display's notch, under the island while it is open; ordered out
+    /// while no notched display is attached.
+    private func placeResting(_ screens: [IslandScreen]) {
+        guard let notch = screens.lazy.compactMap(\.notchRect).first else {
+            resting.orderOut(nil)
+            return
+        }
+        resting.setFrame(IslandDisplayResolver.restingFrame(notch: notch), display: false)
+        restingView.notchPath = IslandGeometry.restingPath(notch: notch, appliedFrame: resting.frame)
+        if isOpen {
+            resting.order(.below, relativeTo: window.windowNumber)
+        } else {
+            resting.orderFrontRegardless()
+        }
+    }
+
+    /// A press on the bare notch, by mouse or VoiceOver (D1, D13). On the open island the
+    /// same spot is its notch strip, which closes it through `localClick`; this runs while
+    /// the island is closed or open on another display. Until P6's ears, a Debug ⌥-click
+    /// opens as an ear will, without key, so F4–F5 can be checked (ruling R4).
+    private func notchPressed(option: Bool) {
+        #if DEBUG
+        let debugBuild = true
+        #else
+        let debugBuild = false
+        #endif
+        handle(IslandEventRules.notchPressEntry(option: option, debugBuild: debugBuild))
     }
 
     // MARK: - Placement
