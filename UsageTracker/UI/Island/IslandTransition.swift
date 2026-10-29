@@ -86,6 +86,12 @@ struct IslandTransition: Equatable, Sendable {
         shape.value(at: time)
     }
 
+    /// A key aimed at the island while it closes goes nowhere: its content is leaving and no
+    /// longer interactive (§ 3.2), and a second Esc would beep. Another window's keys are its own.
+    func swallowsKey(inIsland: Bool) -> Bool {
+        phase == .closing && inIsland
+    }
+
     static func route(phase: Phase, sameDisplay: Bool) -> OpenRoute {
         switch phase {
         case .closed: return .fresh

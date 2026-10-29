@@ -384,4 +384,20 @@ final class IslandTransitionTests: XCTestCase {
             "an ear turning a key island around gives the keyboard back to the app behind"
         )
     }
+
+    // MARK: Keys
+
+    func testOnlyAClosingIslandSwallowsKeysAndOnlyItsOwn() {
+        var t = IslandTransition()
+        XCTAssertFalse(t.swallowsKey(inIsland: true), "closed")
+        t.open(style: .spring, at: 0)
+        t.advance(to: 0.05)
+        XCTAssertFalse(t.swallowsKey(inIsland: true), "opening: Esc still closes")
+        t.advance(to: 0.125)
+        t.advance(to: 1)
+        XCTAssertFalse(t.swallowsKey(inIsland: true), "open")
+        t.close(style: .spring, at: 1)
+        XCTAssertTrue(t.swallowsKey(inIsland: true), "closing")
+        XCTAssertFalse(t.swallowsKey(inIsland: false), "another window's keys are its own")
+    }
 }

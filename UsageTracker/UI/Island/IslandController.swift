@@ -277,7 +277,9 @@ final class IslandController: NSObject {
     }
 
     /// Esc closes the island while it is the key window; a key help popover takes its own.
+    /// While the island closes, a key aimed at it goes nowhere (`swallowsKey`).
     private func keyDown(_ event: NSEvent) -> NSEvent? {
+        if transition.swallowsKey(inIsland: event.window === window) { return nil }
         guard isOpen,
               IslandEventRules.escapeCloses(keyCode: event.keyCode, keyWindowIsIsland: NSApp.keyWindow === window)
         else { return event }
