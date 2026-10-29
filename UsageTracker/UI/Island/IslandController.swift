@@ -82,6 +82,7 @@ final class IslandController: NSObject {
             self, selector: #selector(windowBecameKey(_:)),
             name: NSWindow.didBecomeKeyNotification, object: nil
         )
+        observeDisplays()
     }
 
     deinit {
@@ -254,6 +255,69 @@ final class IslandController: NSObject {
         let debugBuild = false
         #endif
         handle(IslandEventRules.notchPressEntry(option: option, debugBuild: debugBuild))
+    }
+
+    // MARK: - Display changes
+
+    private func observeDisplays() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged(_:)),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ] {
+            workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
+        }
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(woke(_:)),
+            name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
+        )
+    }
+
+    /// A display came, went or changed mode; a lid open is one of these.
+    @objc private func screensChanged(_ note: Notification) {
+        replace()
+    }
+
+    /// Wake, display sleep or wake, the session back, the screen unlocked: re-placed now and
+    /// a second later, since the first read of the screens after these can be stale (P0
+    /// run 1: both passes kept the frames stable).
+    @objc private func woke(_ note: Notification) {
+        replace()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.replace()
+        }
+    }
+
+    /// The resting notch follows the notch; an open island is re-resolved on its own display
+    /// and closes when that display is gone (§ 3.1, Display and anchor; ruling R13).
+    private func replace() {
+        let screens = IslandScreen.current()
+        placeResting(screens)
+        guard isOpen, let entry, let placement else { return }
+        // The status item as it is now: it moves with the displays, and the resolver
+        // prefers it over the frame a status-item entry was clicked on.
+        guard let again = IslandDisplayResolver.replacement(
+            for: placement, entry: entry, screens: screens,
+            statusItemFrame: statusItemWindow()?.frame,
+            panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
+        ) else {
+            close()
+            return
+        }
+        if let screen = screens.first(where: { $0.id == again.screenID }) {
+            heights.setScreen(visibleHeight: Self.visibleHeight(of: screen))
+        }
+        if again != placement {
+            place(again)
+        }
+        updateMouseIgnoring()
     }
 
     // MARK: - Placement
