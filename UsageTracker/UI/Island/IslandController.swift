@@ -161,7 +161,7 @@ final class IslandController: NSObject {
 
     /// Opened by a click: key, with the content as first responder, so typing, Tab, paste,
     /// ⌘A and Esc reach the island and never the app behind (§ 3.1, Focus). P0: works with
-    /// Safari, iTerm2 or Finder in front, without activating the app.
+    /// Safari, iTerm2 or Finder in front; the island turning key makes Omelette active.
     private func makeKey() {
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(host)
