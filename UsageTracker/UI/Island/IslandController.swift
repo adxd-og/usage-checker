@@ -67,6 +67,11 @@ final class IslandController: NSObject {
                 self?.handle(.notification(pointer: NSEvent.mouseLocation))
             }
         }
+        // Dashboard, Settings or any other Omelette window turning key closes the island.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(windowBecameKey(_:)),
+            name: NSWindow.didBecomeKeyNotification, object: nil
+        )
     }
 
     deinit {
@@ -151,6 +156,64 @@ final class IslandController: NSObject {
         window.makeFirstResponder(host)
     }
 
+    // MARK: - Dismissal
+
+    /// A mouse-down in one of Omelette's own windows while the island is open (§ 3.1).
+    private func localClick(_ event: NSEvent) -> NSEvent? {
+        guard isOpen else { return event }
+        switch IslandEventRules.localClick(clickTarget(of: event)) {
+        case .pass:
+            return event
+        case .close:
+            close()
+            return event
+        case .closeAndSwallow:
+            close()
+            return nil
+        }
+    }
+
+    private func clickTarget(of event: NSEvent) -> IslandEventRules.ClickTarget {
+        guard let target = event.window else { return .noWindow }
+        if target === window, let geometry = model.geometry {
+            let point = IslandGeometry.windowPoint(
+                screenPoint: window.convertPoint(toScreen: event.locationInWindow),
+                windowFrame: window.frame
+            )
+            return .island(geometry.region(of: point, contentSize: model.contentSize))
+        }
+        if target === statusItemWindow() { return .statusItem }
+        if isChildOfIsland(target) { return .childOfIsland }
+        return .otherWindow
+    }
+
+    /// A help popover, a menu, or any window attached to the island counts as inside it.
+    private func isChildOfIsland(_ other: NSWindow) -> Bool {
+        IslandEventRules.isChildOfIsland(
+            parentIsIsland: other.parent === window,
+            listedAsChild: window.childWindows?.contains(where: { $0 === other }) == true,
+            className: other.className
+        )
+    }
+
+    /// Esc closes the island while it is the key window; a key help popover takes its own.
+    private func keyDown(_ event: NSEvent) -> NSEvent? {
+        guard isOpen,
+              IslandEventRules.escapeCloses(keyCode: event.keyCode, keyWindowIsIsland: NSApp.keyWindow === window)
+        else { return event }
+        close()
+        return nil
+    }
+
+    /// Another of Omelette's windows turned key: Dashboard or Settings opening from the
+    /// footer, the floating window, onboarding (§ 3.1, Dismissal; ruling R7).
+    @objc private func windowBecameKey(_ note: Notification) {
+        guard isOpen, let key = note.object as? NSWindow else { return }
+        if IslandEventRules.closesOnKeyWindow(isIsland: key === window, isChildOfIsland: isChildOfIsland(key)) {
+            close()
+        }
+    }
+
     // MARK: - Placement
 
     private func place(_ placement: IslandDisplayResolver.Placement) {
@@ -193,7 +256,30 @@ final class IslandController: NSObject {
 
     private func installMonitors() {
         removeMonitors()
+        let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
+        // Clicks in Omelette's own windows: inside, the notch strip, the status item, a child
+        // window, or another Omelette window (`IslandEventRules.localClick`). `forward` keeps a
+        // swallowed click swallowed; `self?.localClick(event) ?? event` would hand it back.
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: clicks, handler: { [weak self] event in
+            IslandEventRules.forward(event, to: self?.localClick)
+        }) {
+            monitors.append(monitor)
+        }
+        // A click in another app or on the desktop is outside. The local and the global
+        // monitor see different streams, so the island needs both (§ 3.1, Dismissal).
+        if let monitor = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
+            self?.close()
+        }) {
+            monitors.append(monitor)
+        }
+        // Esc, through a local key monitor (P0 run 1: six of six); a swallowed Esc stays
+        // swallowed, so it never reaches the field or the app behind.
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
+            IslandEventRules.forward(event, to: self?.keyDown)
+        }) {
+            monitors.append(monitor)
+        }
         // Over the island's own window while it takes the mouse.
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: moves, handler: { [weak self] event in
             self?.updateMouseIgnoring()
