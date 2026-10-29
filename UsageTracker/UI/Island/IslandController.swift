@@ -175,6 +175,8 @@ final class IslandController: NSObject {
     /// since one window cannot move in two places.
     private func open(_ entry: IslandEntry, on screen: IslandScreen) {
         let now = clock()
+        // Whether the island holds the keyboard, read before anything below orders it out.
+        let islandWasKey = window.isKeyWindow
         // Deadlines due by now first, as a frame would have applied them: a close may have ended.
         settle(at: now)
         let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
@@ -204,10 +206,19 @@ final class IslandController: NSObject {
         guard let placement else { return }
         transition.open(style: style(for: placement.kind), at: now)
         apply(at: now)
-        if entry.becomesKey {
+        switch IslandTransition.keyAction(entryBecomesKey: entry.becomesKey, islandIsKey: islandWasKey) {
+        case .makeKey:
             makeKey()
-        } else {
+        case .orderFront:
             window.orderFrontRegardless()
+        case .handBack:
+            window.orderFrontRegardless()
+            // `resignKey()` is AppKit's own to call, and ordering the window out and back would
+            // leave Omelette active with no key window, typing going nowhere. The island turned
+            // key by making Omelette active (`makeKey`), so the inverse is deactivating it: the
+            // app that was active before gets the keyboard back, and the island stays up, since
+            // it does not hide on deactivation.
+            NSApp.deactivate()
         }
         if route != .reverse {
             installMonitors()

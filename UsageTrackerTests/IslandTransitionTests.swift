@@ -372,4 +372,16 @@ final class IslandTransitionTests: XCTestCase {
         closing.reset()
         XCTAssertEqual(closing, IslandTransition())
     }
+
+    // MARK: The keyboard
+
+    func testAnEntryThatGivesKeyTakesItAndOneThatDoesNotHandsItBack() {
+        XCTAssertEqual(IslandTransition.keyAction(entryBecomesKey: true, islandIsKey: false), .makeKey)
+        XCTAssertEqual(IslandTransition.keyAction(entryBecomesKey: true, islandIsKey: true), .makeKey)
+        XCTAssertEqual(IslandTransition.keyAction(entryBecomesKey: false, islandIsKey: false), .orderFront)
+        XCTAssertEqual(
+            IslandTransition.keyAction(entryBecomesKey: false, islandIsKey: true), .handBack,
+            "an ear turning a key island around gives the keyboard back to the app behind"
+        )
+    }
 }

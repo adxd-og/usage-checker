@@ -94,6 +94,25 @@ struct IslandTransition: Equatable, Sendable {
         }
     }
 
+    /// What an open does with the keyboard (§ 3.1, Focus).
+    enum KeyAction: Equatable, Sendable {
+        /// A click entry: the island becomes key.
+        case makeKey
+        /// An ear: the island comes forward and the keyboard stays where it is.
+        case orderFront
+        /// An ear turning around an island that holds key from an earlier click: forward, and
+        /// the keyboard back to the app behind.
+        case handBack
+    }
+
+    /// Every open, a reversal included, takes its entry's key policy: an entry that gives key
+    /// takes it; one that does not leaves the keyboard with the app behind, handing it back
+    /// when the island still holds it.
+    static func keyAction(entryBecomesKey: Bool, islandIsKey: Bool) -> KeyAction {
+        if entryBecomesKey { return .makeKey }
+        return islandIsKey ? .handBack : .orderFront
+    }
+
     /// Opens with `style` at `now`, after applying what was due by then; nothing when already
     /// opening or open. From closing it turns around: the shape springs back from its value and
     /// velocity at `now`, and the content comes back at once when the shape had not started to
