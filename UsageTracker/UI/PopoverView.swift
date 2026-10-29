@@ -13,7 +13,7 @@ enum PopoverEmptyBody: Equatable, Sendable {
 struct PopoverView: View {
     @ObservedObject var state: AppState
     /// The agents list's cap per tab (popover height budget spec 2026-10-27), owned by
-    /// `StatusBarController` for the popover's life. It re-renders this view only when a
+    /// `IslandController` for the app's life. It re-renders this view only when a
     /// cap moves, so a geometry sample costs no redraw of the tiles.
     @ObservedObject var heights: PopoverHeightModel
     /// The display mode. Observed here rather than read once, so flipping the switch

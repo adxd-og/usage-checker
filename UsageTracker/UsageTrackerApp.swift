@@ -51,6 +51,7 @@ struct UsageTrackerApp: App {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var island: IslandController?
     private var statusBar: StatusBarController?
     private var onboardingWindow: NSWindow?
     private var replayObserver: NSObjectProtocol?
@@ -58,7 +59,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         guard !AppEnvironment.isRunningTests else { return }
-        self.statusBar = StatusBarController()
+        let island = IslandController()
+        self.island = island
+        self.statusBar = StatusBarController(island: island)
         AppState.shared.bootstrap()
         // Hook → app channel: helper symlink + Unix socket. Started after bootstrap
         // so a hook that fires during launch never beats the poll's first snapshot.
@@ -99,9 +102,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentChannel.shared.stop()
         // A background agy run (Antigravity closed) must not outlive the app.
         ChildProcessRegistry.shared.terminateAll()
-        // Quit in the popover's footer ends the app with the popover open: its heights
+        // Quit in the island's footer ends the app with the island open: its heights
         // are written here, since its close never comes.
-        statusBar?.persistPopoverHeights()
+        island?.persistPopoverHeights()
         flushCostCache()
     }
 

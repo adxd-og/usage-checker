@@ -5,7 +5,7 @@ import Foundation
 /// kept out of `PopoverView`'s state so a geometry sample re-renders the popover only
 /// when it moves a cap. While a tab switch cross-fades, samples are kept but the caps
 /// wait for `flush()`; the kept heights reach `UserDefaults` only through `persistNow`,
-/// when the popover closes. `StatusBarController` owns one for the popover's life. The
+/// when the island closes. `IslandController` owns one for the app's life. The
 /// arithmetic is `PopoverHeightRules`'.
 @MainActor
 final class PopoverHeightModel: ObservableObject {
