@@ -73,6 +73,9 @@ final class SettingsStore: ObservableObject {
         static let keepAwakeFloorEnabled = true
         /// The last duration Apply used, in minutes; one hour until the first Apply.
         static let keepAwakeDurationMinutes = 60
+        /// Show in menu bar: nothing stored, so the default follows the displays
+        /// (notch-island spec 2026-10-29 § 3.7, `StatusItemVisibilityRules`).
+        static let showInMenuBar: Bool? = nil
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -174,6 +177,24 @@ final class SettingsStore: ObservableObject {
     /// `KeepAwakeRules.parts(totalMinutes:)` of it.
     @AppStorage("keepAwakeDurationMinutes") var keepAwakeDurationMinutes: Int = Defaults.keepAwakeDurationMinutes
 
+    /// Defaults key for Show in menu bar. Spelled out because the tests read it by name.
+    static let showInMenuBarKey = "showInMenuBar"
+
+    /// Show in menu bar (notch-island spec 2026-10-29 § 3.7, D4): nil until the user flips
+    /// the switch, so the default can follow the displays — off while a notched display is
+    /// attached. A plain `@Published` over an explicit read and write of the key, for the
+    /// reason `showsRemaining` gives: the status item hides and shows the moment it moves.
+    @Published var showInMenuBar: Bool? = Defaults.showInMenuBar {
+        didSet {
+            guard oldValue != showInMenuBar else { return }
+            if let showInMenuBar {
+                UserDefaults.standard.set(showInMenuBar, forKey: Self.showInMenuBarKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: Self.showInMenuBarKey)
+            }
+        }
+    }
+
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
     /// old button reset ten of them and quietly left providers, budget, menu bar
@@ -214,6 +235,10 @@ final class SettingsStore: ObservableObject {
         agentsAnswerPermissions = Defaults.agentsAnswerPermissions
         agentsHooksPromptDismissed = Defaults.agentsHooksPromptDismissed
         agentsHooksPromptNotified = Defaults.agentsHooksPromptNotified
+        showInMenuBar = Defaults.showInMenuBar
+        // The `didSet` above skips an unchanged nil, and the key can hold a value this object
+        // never saw (a restored domain, another copy of the app): remove it either way.
+        UserDefaults.standard.removeObject(forKey: Self.showInMenuBarKey)
         resetKeepAwake()
 
         // Choices that live in the views and state objects rather than in a property
@@ -261,6 +286,7 @@ final class SettingsStore: ObservableObject {
         // Property observers do not fire from an initializer, which is exactly what
         // is wanted here: reading the stored value must not write it back.
         showsRemaining = UserDefaults.standard.bool(forKey: Self.showsRemainingKey)
+        showInMenuBar = UserDefaults.standard.object(forKey: Self.showInMenuBarKey) as? Bool
     }
 
     var interval: TimeInterval {
