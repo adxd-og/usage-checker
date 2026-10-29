@@ -30,6 +30,8 @@ struct IslandRootView<Content: View>: View {
     @ObservedObject var model: IslandModel
     let shape: IslandShapeModel
     let content: Content
+    /// Reduce Transparency: the panel's body goes opaque (`IslandSurfaceRules`).
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         if let geometry = model.geometry {
@@ -37,12 +39,18 @@ struct IslandRootView<Content: View>: View {
             let origin = geometry.contentOrigin(contentSize: size)
             let stage = model.stage
             let rise = IslandMotion.rise(for: geometry.kind)
+            let backing = IslandSurfaceRules.backing(kind: geometry.kind, reduceTransparency: reduceTransparency)
             ZStack(alignment: .topLeading) {
-                if geometry.kind == .island {
+                if backing == .black {
                     IslandShapeLayer(model: shape, geometry: geometry, contentSize: size)
                 }
                 // The content stage: what comes in after the shape and goes out before it.
                 ZStack(alignment: .topLeading) {
+                    // Reduce Transparency: the panel's body is opaque whatever its content draws.
+                    if backing == .windowBackground {
+                        IslandBodyShape(geometry: geometry, contentSize: size, progress: 1)
+                            .fill(Color(nsColor: .windowBackgroundColor))
+                    }
                     content
                         .fixedSize()
                         .onGeometryChange(for: CGSize.self) { proxy in
