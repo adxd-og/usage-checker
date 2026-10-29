@@ -3,27 +3,33 @@ import SwiftUI
 import Combine
 
 /// The status item: its pills, its tooltip, and its click, which opens and closes the island
-/// (notch-island spec 2026-10-29 § 3.1, Entry points). The island is `IslandController`'s.
+/// (notch-island spec 2026-10-29 § 3.1, Entry points). Shown per Show in menu bar (§ 3.7,
+/// D4). The island is `IslandController`'s.
 @MainActor
 final class StatusBarController: NSObject {
-    let statusItem: NSStatusItem
+    /// The item while it is shown; nil while Show in menu bar hides it. Removed and made
+    /// again rather than set invisible: `isVisible = false` is saved under the item's
+    /// autosave name in the defaults domain a 3.x copy shares, which would then start with no
+    /// item and no notch to open it from (ruling R9).
+    private(set) var statusItem: NSStatusItem?
     private let island: IslandController
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
     /// The tooltip's keep-awake line follows the model, not only the snapshot.
     private var keepAwakeObserver: AnyCancellable?
+    /// Show in menu bar, as `SettingsStore` publishes it.
+    private var visibilityObserver: AnyCancellable?
 
     init(island: IslandController) {
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         self.island = island
         super.init()
-        configureButton()
         // The snapshot notification is the only tooltip trigger: the data changes
         // once per poll, so a wall-clock tick timer on top of it was pure waste
         // (and was never invalidated).
         observeSnapshotForTooltip()
         observeKeepAwakeForTooltip()
         // A click on the item is its own toggle's, never also an outside click.
-        island.statusItemWindow = { [weak self] in self?.statusItem.button?.window }
+        island.statusItemWindow = { [weak self] in self?.statusItem?.button?.window }
+        observeVisibility()
     }
 
     deinit {
@@ -32,8 +38,43 @@ final class StatusBarController: NSObject {
         }
     }
 
-    private func configureButton() {
-        guard let button = statusItem.button else { return }
+    // MARK: - Shown or hidden (§ 3.7, D4)
+
+    private func observeVisibility() {
+        // `@Published` sends before the property changes, so the sent value is the new one;
+        // the first send is the current value, which places the item at launch.
+        visibilityObserver = SettingsStore.shared.$showInMenuBar
+            .sink { [weak self] setting in
+                self?.updateVisibility(setting: setting)
+            }
+        // A notched display attached or gone (clamshell, an external display) moves the answer.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged(_:)),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
+    }
+
+    @objc private func screensChanged(_ note: Notification) {
+        updateVisibility(setting: SettingsStore.shared.showInMenuBar)
+    }
+
+    private func updateVisibility(setting: Bool?) {
+        let shown = StatusItemVisibilityRules.isShown(
+            setting: setting,
+            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+        )
+        if shown, statusItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            statusItem = item
+            configureButton(item)
+        } else if !shown, let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
+        }
+    }
+
+    private func configureButton(_ item: NSStatusItem) {
+        guard let button = item.button else { return }
         button.action = #selector(toggleIsland)
         button.target = self
 
@@ -51,7 +92,7 @@ final class StatusBarController: NSObject {
     /// The item opens the island on its own display (a panel under it when that display has
     /// no notch) and closes it when it is open (§ 3.1).
     @objc private func toggleIsland() {
-        guard let frame = statusItem.button?.window?.frame else { return }
+        guard let frame = statusItem?.button?.window?.frame else { return }
         island.handle(.statusItem(buttonFrame: frame))
     }
 
@@ -79,7 +120,7 @@ final class StatusBarController: NSObject {
     }
 
     private func updateTooltip(keepAwake: KeepAwakeState? = nil) {
-        statusItem.button?.toolTip = Self.tooltipText(
+        statusItem?.button?.toolTip = Self.tooltipText(
             snapshot: AppState.shared.snapshot,
             mode: SettingsStore.shared.percentMode,
             keepAwake: keepAwake ?? KeepAwakeModel.shared.state,

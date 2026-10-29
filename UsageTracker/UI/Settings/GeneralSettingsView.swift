@@ -4,6 +4,8 @@ import SwiftUI
 enum GeneralSettingsCopy {
     static let startupHeader = "Startup"
     static let launchAtLoginTitle = "Launch at login"
+    static let menuBarIconHeader = "Menu bar icon"
+    static let showInMenuBarTitle = "Show in menu bar"
     static let refreshHeader = "Refresh"
     static let refreshTitle = "Update every"
     static let refreshFooter = "Faster is closer to real time but can hit rate limits."
@@ -40,6 +42,10 @@ struct GeneralSettingsView: View {
     /// OS state (`SMAppService`), not a preference: read when the page is built, so a
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
+    /// Whether a display with a notch is attached: Show in menu bar's value, whether it moves,
+    /// and its caption follow it (notch-island spec 2026-10-29 § 3.7). Read when the page
+    /// appears and whenever the displays change.
+    @State private var notchedDisplayAttached = true
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -53,10 +59,19 @@ struct GeneralSettingsView: View {
     var body: some View {
         SettingsPage(tab: .general) {
             startup
+            menuBarIcon
             refresh
             keepAwake
             updates
         }
+        .onAppear { readDisplays() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            readDisplays()
+        }
+    }
+
+    private func readDisplays() {
+        notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
     }
 
     private var startup: some View {
@@ -71,6 +86,27 @@ struct GeneralSettingsView: View {
                     }
                 )
             )
+        }
+    }
+
+    /// Show in menu bar (§ 3.7, D4): off by default with a notched display attached, on and
+    /// held while none is (ruling R15). `StatusBarController` adds or removes the item at once.
+    private var menuBarIcon: some View {
+        SettingsSection(header: GeneralSettingsCopy.menuBarIconHeader) {
+            SettingsSwitchRow(
+                title: GeneralSettingsCopy.showInMenuBarTitle,
+                caption: StatusItemVisibilityRules.caption(notchedDisplayAttached: notchedDisplayAttached),
+                isOn: Binding(
+                    get: {
+                        StatusItemVisibilityRules.isShown(
+                            setting: settings.showInMenuBar,
+                            notchedDisplayAttached: notchedDisplayAttached
+                        )
+                    },
+                    set: { settings.showInMenuBar = $0 }
+                )
+            )
+            .disabled(!StatusItemVisibilityRules.switchEnabled(notchedDisplayAttached: notchedDisplayAttached))
         }
     }
 
