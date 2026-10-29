@@ -11,14 +11,17 @@ protocol IslandFrameSource: AnyObject {
 }
 
 /// The island's motion clock (notch-island spec 2026-10-29 § 3.2): passes its source's frames
-/// to `onFrame` while motion is wanted. Closed, or open at rest, the island adds no timer and
-/// no wake-up (§ 3.8). Its policy is tested against a fake source.
+/// to `onFrame` while motion is wanted and the displays are awake. Closed, open at rest, or
+/// with the displays asleep, the island adds no timer and no wake-up (§ 3.8); motion still
+/// pending at the wake resumes then. Its policy is tested against a fake source.
 @MainActor
 final class IslandFrameDriver {
     var onFrame: (@MainActor (TimeInterval) -> Void)?
     private let source: IslandFrameSource
     /// The controller wants frames: the transition has motion pending.
     private var wanted = false
+    /// The displays sleep: no frames whatever is wanted.
+    private var asleep = false
 
     init(source: IslandFrameSource) {
         self.source = source
@@ -38,8 +41,20 @@ final class IslandFrameDriver {
         update()
     }
 
+    /// The displays went to sleep: the frames stop, and what was wanted waits for the wake.
+    func displaysSlept() {
+        asleep = true
+        update()
+    }
+
+    /// The displays woke: the frames resume only if motion is still pending.
+    func displaysWoke() {
+        asleep = false
+        update()
+    }
+
     private func update() {
-        let run = wanted
+        let run = wanted && !asleep
         if run, !source.isRunning {
             source.start { [weak self] time in
                 self?.onFrame?(time)

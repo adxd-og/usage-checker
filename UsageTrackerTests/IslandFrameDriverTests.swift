@@ -64,4 +64,35 @@ final class IslandFrameDriverTests: XCTestCase {
         XCTAssertEqual(source.stops, 1)
         XCTAssertFalse(source.isRunning)
     }
+
+    // MARK: Sleep
+
+    func testSleepingDisplaysStopTheTicksAndWakingResumesThemWhileMotionIsPending() {
+        let (driver, source) = make()
+        driver.start()
+        driver.displaysSlept()
+        XCTAssertFalse(source.isRunning)
+        driver.displaysWoke()
+        XCTAssertTrue(source.isRunning)
+        XCTAssertEqual(source.starts, 2)
+    }
+
+    func testWakingDoesNotResumeTicksWhenTheMotionEndedBeforeTheSleep() {
+        let (driver, source) = make()
+        driver.start()
+        driver.stop()
+        driver.displaysSlept()
+        driver.displaysWoke()
+        XCTAssertFalse(source.isRunning)
+        XCTAssertEqual(source.starts, 1)
+    }
+
+    func testMotionAskedForWhileTheDisplaysSleepWaitsForTheWake() {
+        let (driver, source) = make()
+        driver.displaysSlept()
+        driver.start()
+        XCTAssertFalse(source.isRunning)
+        driver.displaysWoke()
+        XCTAssertTrue(source.isRunning)
+    }
 }

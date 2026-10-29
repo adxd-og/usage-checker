@@ -330,10 +330,40 @@ final class IslandController: NSObject {
         ] {
             workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
         }
+        // The motion's frames pause while the displays sleep and stop for good if the island's
+        // window ever closes (it is normally only ordered out).
+        workspace.addObserver(
+            self, selector: #selector(displaysSlept(_:)),
+            name: NSWorkspace.screensDidSleepNotification, object: nil
+        )
+        workspace.addObserver(
+            self, selector: #selector(displaysWoke(_:)),
+            name: NSWorkspace.screensDidWakeNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(islandWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: window
+        )
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(woke(_:)),
             name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
         )
+    }
+
+    /// The displays went to sleep: no frames until they wake (§ 3.8).
+    @objc private func displaysSlept(_ note: Notification) {
+        frames.displaysSlept()
+    }
+
+    /// The displays woke: frames resume only if the motion is still pending; its first frame
+    /// settles every deadline that passed meanwhile.
+    @objc private func displaysWoke(_ note: Notification) {
+        frames.displaysWoke()
+    }
+
+    /// The island's window closing for good: no more frames.
+    @objc private func islandWillClose(_ note: Notification) {
+        frames.stop()
     }
 
     /// A display came, went or changed mode; a lid open is one of these.
