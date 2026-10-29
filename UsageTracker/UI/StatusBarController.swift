@@ -2,63 +2,84 @@ import AppKit
 import SwiftUI
 import Combine
 
+/// The status item: its pills, its tooltip, and its click, which opens and closes the island
+/// (notch-island spec 2026-10-29 § 3.1, Entry points). Shown per Show in menu bar (§ 3.7,
+/// D4). The island is `IslandController`'s.
 @MainActor
-final class StatusBarController: NSObject, NSPopoverDelegate {
-    let statusItem: NSStatusItem
-    private let popover: NSPopover
-    /// The agents list's caps per tab for the popover's life (popover height budget spec
-    /// 2026-10-27): told the screen before each show, written to `UserDefaults` when the
-    /// popover closes.
-    private let heights: PopoverHeightModel
+final class StatusBarController: NSObject {
+    /// The item while it is shown; nil while Show in menu bar hides it. Removed and made
+    /// again rather than set invisible: `isVisible = false` is saved under the item's
+    /// autosave name in the defaults domain a 3.x copy shares, which would then start with no
+    /// item and no notch to open it from (ruling R9).
+    private(set) var statusItem: NSStatusItem?
+    private let island: IslandController
     nonisolated(unsafe) private var snapshotObserver: (any NSObjectProtocol)?
-    nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
     /// The tooltip's keep-awake line follows the model, not only the snapshot.
     private var keepAwakeObserver: AnyCancellable?
+    /// Show in menu bar, as `SettingsStore` publishes it.
+    private var visibilityObserver: AnyCancellable?
 
-    override init() {
-        self.statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        self.popover = NSPopover()
-        self.heights = PopoverHeightModel(
-            stored: UserDefaults.standard.string(forKey: PopoverHeightRules.fixedHeightsKey) ?? ""
-        )
+    init(island: IslandController) {
+        self.island = island
         super.init()
-        self.popover.behavior = .transient
-        self.popover.animates = true
-        self.popover.contentSize = NSSize(width: 340, height: 460)
-        self.popover.contentViewController = NSHostingController(
-            rootView: PopoverView(state: AppState.shared, heights: heights)
-        )
-        self.popover.delegate = self
-
-        configureButton()
         // The snapshot notification is the only tooltip trigger: the data changes
         // once per poll, so a wall-clock tick timer on top of it was pure waste
         // (and was never invalidated).
         observeSnapshotForTooltip()
         observeKeepAwakeForTooltip()
-        // A notification the user acted on can name a session that has already
-        // ended; the popover is where the rest of them are.
-        showPopoverObserver = NotificationCenter.default.addObserver(
-            forName: .showPopover, object: nil, queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.peek()
-            }
-        }
+        // A click on the item is its own toggle's, never also an outside click.
+        island.statusItemWindow = { [weak self] in self?.statusItem?.button?.window }
+        observeVisibility()
     }
 
     deinit {
         if let observer = snapshotObserver {
             NotificationCenter.default.removeObserver(observer)
         }
-        if let observer = showPopoverObserver {
-            NotificationCenter.default.removeObserver(observer)
+    }
+
+    // MARK: - Shown or hidden (§ 3.7, D4)
+
+    private func observeVisibility() {
+        // `@Published` sends before the property changes, so the sent value is the new one;
+        // the first send is the current value, which places the item at launch.
+        visibilityObserver = SettingsStore.shared.$showInMenuBar
+            .sink { [weak self] setting in
+                self?.updateVisibility(setting: setting)
+            }
+        // A notched display attached or gone (clamshell, an external display) moves the answer.
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(screensChanged(_:)),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil
+        )
+    }
+
+    @objc private func screensChanged(_ note: Notification) {
+        updateVisibility(setting: SettingsStore.shared.showInMenuBar)
+    }
+
+    private func updateVisibility(setting: Bool?) {
+        let shown = StatusItemVisibilityRules.isShown(
+            setting: setting,
+            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+        )
+        if shown, statusItem == nil {
+            let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+            // AppKit names the first item "Item-0" and keeps its menu-bar position under
+            // that name in the defaults 3.x shares; a recreated item would get a new name
+            // and lose the place the user dragged it to.
+            item.autosaveName = "Item-0"
+            statusItem = item
+            configureButton(item)
+        } else if !shown, let item = statusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            statusItem = nil
         }
     }
 
-    private func configureButton() {
-        guard let button = statusItem.button else { return }
-        button.action = #selector(togglePopover)
+    private func configureButton(_ item: NSStatusItem) {
+        guard let button = item.button else { return }
+        button.action = #selector(toggleIsland)
         button.target = self
 
         let host = NSHostingView(rootView: MenuBarHostView(state: AppState.shared))
@@ -72,73 +93,11 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
         updateTooltip()
     }
 
-    @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            AppState.shared.refreshForPopover()
-            // Same moment, same reasoning as the refresh: the user is looking at the
-            // app, so this is when an update is worth noticing. Throttled to once an
-            // hour inside the updater.
-            Updater.shared.checkInBackgroundIfDue()
-            // The screen the popover is about to open on, handed in before the show so
-            // its first layout already sizes the agents list for it (spec 2026-10-27).
-            heights.setScreen(visibleHeight: Self.screenVisibleHeight(of: button))
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
-        }
-    }
-
-    /// The popover closed: its heights are kept for the first open after the next launch,
-    /// written once here rather than on every layout pass.
-    func popoverDidClose(_ notification: Notification) {
-        persistPopoverHeights()
-    }
-
-    /// Writes each tab's fixed height and list floor when they changed, after a Reset all
-    /// settings only those this session sampled. Also called as the app quits, because
-    /// Quit in the popover's footer ends the app with the popover open and
-    /// `popoverDidClose` never comes.
-    func persistPopoverHeights() {
-        let key = PopoverHeightRules.fixedHeightsKey
-        heights.persistNow(current: UserDefaults.standard.string(forKey: key)) {
-            UserDefaults.standard.set($0, forKey: key)
-        }
-    }
-
-    /// The visible height (menu bar and Dock left out, an auto-hidden menu bar too) of the
-    /// screen whose menu bar holds the status item; the main screen's while the button has
-    /// no window. An accessory app may have no main menu to ask for the menu bar's height;
-    /// the status bar's thickness stands in.
-    private static func screenVisibleHeight(of button: NSStatusBarButton) -> CGFloat? {
-        guard let screen = button.window?.screen ?? NSScreen.main else { return nil }
-        let menuBarHeight = NSApp.mainMenu.map(\.menuBarHeight).flatMap { $0 > 0 ? $0 : nil }
-            ?? NSStatusBar.system.thickness
-        return PopoverHeightRules.screenVisibleHeight(
-            frameMaxY: screen.frame.maxY,
-            visibleFrameMaxY: screen.visibleFrame.maxY,
-            visibleFrameHeight: screen.visibleFrame.height,
-            menuBarHeight: menuBarHeight
-        )
-    }
-
-    /// Entry point for `.showPopover` (a notification the user acted on). A menu bar
-    /// app is usually not frontmost at that moment, and a popover shown from a
-    /// background app opens behind whatever the user is looking at — so activate
-    /// first, then toggle.
-    private func peek() {
-        if popover.isShown {
-            popover.performClose(nil)
-            return
-        }
-        NSApp.activate(ignoringOtherApps: true)
-        // Next run loop turn, not this one: a `.transient` popover shown in the same
-        // turn as the activation can be dismissed again by the activation's own events
-        // before the user ever sees it.
-        DispatchQueue.main.async { [weak self] in
-            self?.togglePopover()
-        }
+    /// The item opens the island on its own display (a panel under it when that display has
+    /// no notch) and closes it when it is open (§ 3.1).
+    @objc private func toggleIsland() {
+        guard let frame = statusItem?.button?.window?.frame else { return }
+        island.handle(.statusItem(buttonFrame: frame))
     }
 
     private func observeSnapshotForTooltip() {
@@ -165,7 +124,7 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
     }
 
     private func updateTooltip(keepAwake: KeepAwakeState? = nil) {
-        statusItem.button?.toolTip = Self.tooltipText(
+        statusItem?.button?.toolTip = Self.tooltipText(
             snapshot: AppState.shared.snapshot,
             mode: SettingsStore.shared.percentMode,
             keepAwake: keepAwake ?? KeepAwakeModel.shared.state,
@@ -264,8 +223,9 @@ final class StatusBarController: NSObject, NSPopoverDelegate {
 
 extension Notification.Name {
     static let snapshotUpdated = Notification.Name("com.usagetracker.snapshotUpdated")
-    /// Posted when something outside the status item wants the popover on screen.
-    /// Today that is one caller: an agent notification whose session is gone.
+    /// Posted when something outside the status item wants the island on screen: an agent
+    /// notification the user acted on (`UsageNotifier`). Opens it on the display under the
+    /// pointer and leaves an open island open (notch-island spec 2026-10-29 § 3.1).
     static let showPopover = Notification.Name("com.usagetracker.showPopover")
 }
 

@@ -42,4 +42,10 @@ final class GeneralSettingsCopyTests: XCTestCase {
         XCTAssertEqual(GeneralSettingsCopy.keepAwakeFloorTitle, "End below 25 % on battery")
         XCTAssertEqual(GeneralSettingsCopy.keepAwakeFooter, "Keep awake with the lid closed ends on time even when Omelette is not running, and never resumes after a restart.")
     }
+
+    /// Notch-island spec 2026-10-29 § 3.7: the switch that brings the status item back.
+    func testTheMenuBarIconSectionNamesItsSwitch() {
+        XCTAssertEqual(GeneralSettingsCopy.menuBarIconHeader, "Menu bar icon")
+        XCTAssertEqual(GeneralSettingsCopy.showInMenuBarTitle, "Show in menu bar")
+    }
 }

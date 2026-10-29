@@ -59,6 +59,7 @@ final class SettingsStoreTests: XCTestCase {
         s.agentsHooksPromptNotified = !SettingsStore.Defaults.agentsHooksPromptNotified
         s.keepAwakeFloorEnabled = !SettingsStore.Defaults.keepAwakeFloorEnabled
         s.keepAwakeDurationMinutes = 1_470
+        s.showInMenuBar = true
 
         // Preferences that live outside this object but are still preferences. Written
         // by key rather than through the state objects, so the scramble doesn't kick off
@@ -109,6 +110,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.agentsHooksPromptNotified, SettingsStore.Defaults.agentsHooksPromptNotified, message)
         XCTAssertEqual(s.keepAwakeFloorEnabled, SettingsStore.Defaults.keepAwakeFloorEnabled, message)
         XCTAssertEqual(s.keepAwakeDurationMinutes, SettingsStore.Defaults.keepAwakeDurationMinutes, message)
+        XCTAssertNil(s.showInMenuBar, message)
+        XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey), message)
 
         XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)
@@ -282,5 +285,52 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(settings.keepAwakeDurationMinutes, 60)
         XCTAssertEqual(settings.refreshIntervalSeconds, 300, "another setting was reset")
         XCTAssertEqual(settings.menuBarNumberMode, .never, "another setting was reset")
+    }
+
+    /// Notch-island spec 2026-10-29 § 3.7, D4: Show in menu bar has no stored answer until the
+    /// user flips the switch, so its default can follow the displays; the user's answer is kept.
+    @MainActor
+    func testShowInMenuBarIsStoredOnlyOnceTheUserChooses() {
+        let settings = SettingsStore.shared
+        settings.resetToDefaults()
+        XCTAssertNil(settings.showInMenuBar)
+        XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey))
+
+        settings.showInMenuBar = false
+        XCTAssertEqual(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey) as? Bool, false)
+        settings.showInMenuBar = true
+        XCTAssertEqual(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey) as? Bool, true)
+    }
+
+    /// Starts from a reset, so the singleton's value left by an earlier test (the domain is
+    /// restored under it by `AppDomainRestore`) cannot make the write a no-op.
+    @MainActor
+    func testResetForgetsShowInMenuBar() {
+        let settings = SettingsStore.shared
+        settings.resetToDefaults()
+        settings.showInMenuBar = true
+        XCTAssertEqual(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey) as? Bool, true)
+
+        settings.resetToDefaults()
+
+        XCTAssertNil(settings.showInMenuBar)
+        XCTAssertNil(
+            UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey),
+            "the reset left the choice stored, so the default no longer follows the displays"
+        )
+    }
+
+    /// The key can hold a value the store never saw: a domain put back by
+    /// `AppDomainRestore`, or another copy of the app sharing it. Reset removes it anyway.
+    @MainActor
+    func testResetForgetsAShowInMenuBarChoiceTheStoreDidNotSee() {
+        let settings = SettingsStore.shared
+        settings.resetToDefaults()
+        UserDefaults.standard.set(true, forKey: SettingsStore.showInMenuBarKey)
+
+        settings.resetToDefaults()
+
+        XCTAssertNil(settings.showInMenuBar)
+        XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey))
     }
 }
