@@ -3,7 +3,8 @@ import XCTest
 @testable import Omelette
 
 /// Verifier for notch-island spec 2026-10-29 § 3.5 Runtime (one stretch per live reset, waiting
-/// for the island's next open with no wall-clock expiry; bits on visible open time) and § 3.8
+/// for the island's next open with no wall-clock expiry; bits on visible open time, an open's
+/// first 2–4 s into it) and § 3.8
 /// (the habitat's `TimelineView` closure may run twice for one tick): the keeper's `frame(at:)`
 /// is safe to evaluate twice at the same instant, and a waiting stretch survives closed hours,
 /// several opens and a pat.
@@ -111,11 +112,11 @@ final class PetKeeperVerificationTests: XCTestCase {
 
     // MARK: - The stretch waits
 
-    /// Seen with the island closed; opened hours later for ten seconds, closed again for a day,
-    /// opened again: the stretch plays when the visible time reaches the slot (20 s, over two
+    /// Seen with the island closed; opened hours later for a second, closed again for a day,
+    /// opened again: the stretch plays when the visible time reaches the slot (3 s, over two
     /// opens), not before, and never because wall-clock time passed.
-    func testAStretchSeenWhileClosedWaitsAcrossHoursAndOpensForVisibleTimeAlone() {
-        let rig = Rig(draws: PetRandomFixture.sequence([0, 0.5]), seen: t0)
+    func testAStretchSeenWhileClosedWaitsAcrossHoursAndShortOpensForVisibleTimeAlone() {
+        let rig = Rig(draws: PetRandomFixture.sequence([0, 0.5, 0.5]), seen: t0)
         let reset = t0.addingTimeInterval(-3_600)
         rig.pollClock.now = t0.addingTimeInterval(-3_660)
         rig.polls.send([claude(resetsAt: reset)])
@@ -129,16 +130,16 @@ final class PetKeeperVerificationTests: XCTestCase {
         let open1 = t0.addingTimeInterval(6 * 3_600)
         XCTAssertNil(frame(open1), "closed: no frame at all")
         rig.keeper.setAnimating(true, at: open1)
-        XCTAssertNil(frame(open1.addingTimeInterval(9.9))?.bit)
-        rig.keeper.setAnimating(false, at: open1.addingTimeInterval(10))
+        XCTAssertNil(frame(open1.addingTimeInterval(0.9))?.bit)
+        rig.keeper.setAnimating(false, at: open1.addingTimeInterval(1))
         let open2 = t0.addingTimeInterval(36 * 3_600)
         rig.keeper.setAnimating(true, at: open2)
-        XCTAssertNil(frame(open2.addingTimeInterval(9.9))?.bit, "10 s of the first open and 9.9 s of this one: not 20 yet")
-        XCTAssertEqual(frame(open2.addingTimeInterval(10))?.bit, .stretch, "20 s of visible time over two opens")
+        XCTAssertNil(frame(open2.addingTimeInterval(1.9))?.bit, "1 s of the first open and 1.9 s of this one: not 3 yet")
+        XCTAssertEqual(frame(open2.addingTimeInterval(2))?.bit, .stretch, "3 s of visible time over two opens")
         XCTAssertNil(rig.keeper.runtime.stretchSeenAt)
     }
 
-    /// A pat puts the next slot 20–40 s off; the stretch that was waiting is not lost with it.
+    /// A pat puts the next slot 7–10 s off; the stretch that was waiting is not lost with it.
     func testAPatDelaysAWaitingStretchButDoesNotDropIt() {
         let rig = Rig(draws: PetRandomFixture.sequence([0, 0, 0.5]), seen: t0)
         let reset = t0.addingTimeInterval(-3_600)
@@ -148,13 +149,13 @@ final class PetKeeperVerificationTests: XCTestCase {
         rig.polls.send([claude(resetsAt: reset.addingTimeInterval(5 * 3_600))])
         let idle = presentation(.idle)
         rig.keeper.setAnimating(true, at: t0)
-        _ = rig.keeper.frame(at: t0 + 5, presentation: idle, animations: animations, roamBeads: 65)
-        rig.keeper.pat(at: t0 + 5)
+        _ = rig.keeper.frame(at: t0 + 1, presentation: idle, animations: animations, roamBeads: 65)
+        rig.keeper.pat(at: t0 + 1)
         XCTAssertEqual(rig.keeper.runtime.stretchSeenAt, t0, "still waiting")
-        XCTAssertNil(rig.keeper.frame(at: t0 + 24.9, presentation: idle, animations: animations, roamBeads: 65)?.bit)
+        XCTAssertNil(rig.keeper.frame(at: t0 + 9.4, presentation: idle, animations: animations, roamBeads: 65)?.bit)
         XCTAssertEqual(
-            rig.keeper.frame(at: t0 + 25, presentation: idle, animations: animations, roamBeads: 65)?.bit, .stretch,
-            "5 s of visible time and the pat's 20"
+            rig.keeper.frame(at: t0 + 9.5, presentation: idle, animations: animations, roamBeads: 65)?.bit, .stretch,
+            "1 s of visible time and the pat's 8.5"
         )
     }
 
