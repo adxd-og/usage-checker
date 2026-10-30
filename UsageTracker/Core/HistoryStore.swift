@@ -168,7 +168,7 @@ actor HistoryStore {
 
     func append(snapshot: ServiceSnapshot) {
         loadIfNeeded()
-        let now = Date()
+        let now = self.now()
         // Throttle per service, not globally: with several providers polling
         // together, a single `records.last` check let the first one through and
         // silently dropped every other provider's point.

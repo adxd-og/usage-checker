@@ -142,6 +142,18 @@ final class HistoryStoreTests: XCTestCase {
         )
     }
 
+    func testAnAppendedRecordIsStampedByTheStoresClock() async {
+        // Pinned years ahead: a record stamped with the wall clock would be older
+        // than 90 days by the store's own clock and pruned on the spot.
+        let pinned = Date(timeIntervalSince1970: 1_893_456_000)
+        let store = HistoryStore(directory: directory, now: { pinned })
+        await store.append(snapshot: claude())
+
+        let records = await store.all(service: "claude")
+        XCTAssertEqual(records.count, 1)
+        XCTAssertEqual(records.first?.timestamp, pinned)
+    }
+
     func testThrottlingIsPerServiceNotGlobal() async {
         let store = HistoryStore(directory: directory)
         await store.append(snapshot: claude())
