@@ -184,6 +184,16 @@ final class IslandController: NSObject {
         // already has its width and its budget (§ 3.3).
         layout.place(on: screen, visibleHeight: Self.visibleHeight(of: screen))
         self.entry = entry
+        // Every open starts at All, or at the only provider's page; nothing is kept from the last
+        // open (§ 3.4; owner 2026-10-30). An open that turns around a close still running on this
+        // display is an interrupted close, not an open: the content never left and keeps its page
+        // (plan ruling R4). Before the content lays out, so its first layout is already home.
+        if IslandNavigation.opensAtHome(route: route) {
+            navigation.apply(
+                .open(subject: nil), providers: AppState.shared.snapshot.services.map(\.id),
+                reduceMotion: false, at: now
+            )
+        }
         if route != .reverse {
             // The shown status item, whatever opened the island: the panel hangs under it
             // when it is on this display (ruling R8).
