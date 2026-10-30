@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// Full-width cost tile on the All tab (`Main.dc.html`): today's local $ accounting
-/// across providers — Claude's included — with the week's total and the per-provider
-/// breakdown on the line below, and the API-equivalent caption under both when any of
-/// those dollars are a subscription's. Callers hide it when `total == 0`.
+/// The cost tile in the island's grid (`Main.dc.html`; notch-island spec 2026-10-29 § 3.3):
+/// today's local $ accounting across providers — Claude's included — stacked to fit half
+/// the grid: what it counts, the headline, the week and the per-provider split, and the
+/// API-equivalent caption when any of those dollars are a subscription's. Over keep awake
+/// with an even provider count; in the orphan slot, stretched to its row, with an odd one.
+/// Callers hide it when `total == 0` (`ProviderGridRules.showsCostTile`).
 ///
 /// Today leads because a week-only tile reads as a switch someone else made: a day
 /// with no spend under a "Last 7 days $409.67" headline looks like the app quietly
@@ -15,6 +17,8 @@ struct OMCostTile: View {
     /// that is absent has no local cost log — which is not the same as having spent
     /// nothing, so the tile says nothing about today at all.
     var today: [String: Double] = [:]
+    /// In a tile row's orphan slot the tile is as tall as the provider tile beside it.
+    var fillsHeight: Bool = false
 
     // MARK: - Metrics (`Main.dc.html`)
 
@@ -101,23 +105,20 @@ struct OMCostTile: View {
         let todayTotal = Self.todayTotal(services, today: today)
         let headline = todayTotal ?? Self.total(services)
         return VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(Self.title(todayKnown: todayTotal != nil))
-                        .font(.system(size: Self.titleSize, weight: .semibold))
-                        .foregroundStyle(.om(.text))
-                    Text(Self.secondary(services: services, today: today))
-                        .font(.system(size: Self.secondarySize))
-                        .foregroundStyle(.om(.secondary))
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Text(Self.money(headline))
-                    .font(OMFont.numerals(size: Self.headlineSize, weight: .bold))
-                    .foregroundStyle(.om(.text))
-            }
-            // Full width under the numbers: the sentence is too long for the column
-            // beside the hero numeral, and it qualifies every dollar in the tile.
+            Text(Self.title(todayKnown: todayTotal != nil))
+                .font(.system(size: Self.titleSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+            Text(Self.money(headline))
+                .font(OMFont.numerals(size: Self.headlineSize, weight: .bold))
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+            Text(Self.secondary(services: services, today: today))
+                .font(.system(size: Self.secondarySize))
+                .foregroundStyle(.om(.secondary))
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            // It qualifies every dollar in the tile.
             if let caption = Self.caption(services: services, today: today) {
                 Text(caption)
                     .font(.system(size: Self.captionSize))
@@ -127,7 +128,7 @@ struct OMCostTile: View {
         }
         .padding(.vertical, Self.verticalPadding)
         .padding(.horizontal, Self.horizontalPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: fillsHeight ? .infinity : nil, alignment: .topLeading)
         .popoverSurface(Self.surface)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Self.accessibilityText(services: services, today: today))
@@ -137,5 +138,5 @@ struct OMCostTile: View {
 #Preview {
     let a = ServiceSnapshot(id: "claude", displayName: "Claude", icon: "sparkles", plan: nil, accountLabel: nil, buckets: [], extraUsage: nil, weekCost: 15.6, state: .ok, stateMessage: nil, fetchedAt: Date())
     let b = ServiceSnapshot(id: "codex", displayName: "Codex", icon: "terminal", plan: nil, accountLabel: nil, buckets: [], extraUsage: nil, weekCost: 8.2, state: .ok, stateMessage: nil, fetchedAt: Date())
-    return OMCostTile(services: [a, b]).padding().frame(width: 360)
+    return OMCostTile(services: [a, b]).padding().frame(width: 220)
 }
