@@ -792,6 +792,9 @@ struct PopoverView: View {
                     embedded: true,
                     maxListHeight: layout.agentsListCap,
                     onListGeometry: { layout.record(list: $0) },
+                    // A jump that landed closes the island, if it is still this open's latest
+                    // (§ 3.5); a failed one leaves it open.
+                    onJumpStarted: { [pet = self.pet] in pet.jumpStarted() },
                     onEnable: openAgentsSettings
                 )
                 .padding(.vertical, ProviderGridRules.agentsCardVerticalPadding)
