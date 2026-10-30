@@ -26,6 +26,9 @@ struct PopoverView: View {
     /// Where the content is, All or a provider's page, and the move toward it
     /// (`IslandNavigationModel`, § 3.4), owned by `IslandController` for the app's life.
     @ObservedObject var navigation: IslandNavigationModel
+    /// What the island tells its pet (`IslandPetModel`, § 3.5): the gate's conditions, the app's pet
+    /// runtime, the jumps and the close. Not observed here: only the habitat redraws for it.
+    let pet: IslandPetModel
     /// The display mode. Observed here rather than read once, so flipping the switch
     /// in Settings repaints the island under the cursor.
     @ObservedObject private var settings = SettingsStore.shared
@@ -1267,7 +1270,10 @@ private struct ServiceStateLabel: View {
 }
 
 #Preview("Popover — All") {
-    PopoverView(state: AppState.shared, layout: IslandLayoutModel(), navigation: IslandNavigationModel())
+    PopoverView(
+        state: AppState.shared, layout: IslandLayoutModel(), navigation: IslandNavigationModel(),
+        pet: IslandPetModel(keeper: PetKeeper(random: .system()))
+    )
 }
 
 #Preview("Provider detail") {
