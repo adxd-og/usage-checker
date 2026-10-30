@@ -197,6 +197,14 @@ struct PetHabitatView: View {
             }
             moodLine(presentation.line)
         }
+        #if DEBUG
+        // The whole column takes the right-click: the pet moves and lifts under the pointer. It sits
+        // outside the animation timeline, so no tick rebuilds the menu. Release has none.
+        .contentShape(Rectangle())
+        .contextMenu {
+            debugMenu(manifest, library: assets.library)
+        }
+        #endif
         // One element for VoiceOver (§ 3.8): the mood's label, the click as its action.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
@@ -273,6 +281,21 @@ struct PetHabitatView: View {
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
     }
+
+    #if DEBUG
+    /// Debug's way to play any event and to show another animal, since Settings › Pet is P6.
+    private func debugMenu(_ manifest: PetManifest, library: PetLibrary) -> some View {
+        PetDebugMenuContent(
+            menu: PetDebugMenuRules.menu(
+                shown: manifest.id, library: library,
+                animates: pet.animates, reduceMotion: pet.reduceMotion
+            ),
+            play: { [keeper] id in keeper.play(eventID: id) },
+            playAll: { [keeper] in keeper.playAll(eventIDs: manifest.events.map(\.id)) },
+            show: { [pet] id in pet.showDebugAnimal(id) }
+        )
+    }
+    #endif
 
     /// A click on the pet, or VoiceOver's action on the habitat: a pat is the habitat's own, the
     /// rest the island's (`PetActionRules`).
