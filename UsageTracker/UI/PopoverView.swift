@@ -44,6 +44,8 @@ struct PopoverView: View {
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
+    /// The island's nearly transparent surfaces, or the panel's: the growing tile wears them.
+    @Environment(\.popoverSurfaceOnIsland) private var surfaceOnIsland
 
     // MARK: - Metrics (§ 3.3 tokens)
 
@@ -57,6 +59,8 @@ struct PopoverView: View {
     nonisolated static let metaSize: CGFloat = 11.5
     /// Between the camera and the strip's words on either side of it.
     nonisolated static let stripNotchGap: CGFloat = 10
+    /// The coordinate space the tiles' frames and the reveal share: the stage's.
+    nonisolated static let stageSpace = "islandStage"
     nonisolated static var staleNoticeToken: OMColorToken { .warning }
 
     var body: some View {
@@ -180,7 +184,8 @@ struct PopoverView: View {
     private var providerIDs: [String] { displayedServices.map(\.id) }
 
     /// The provider whose page is shown; nil on All. During a move, the page more than half in
-    /// (`IslandDrillLook.shownPage`): the strip, the meta line and the lower row follow it.
+    /// (`IslandDrillLook.shownPage`): the strip and the meta line follow it. The lower row shows
+    /// the destination instead (`lowerRowService`).
     private var selectedService: ServiceSnapshot? {
         service(on: IslandDrillLook.shownPage(navigation.frame))
     }
@@ -382,7 +387,8 @@ struct PopoverView: View {
     /// page, the lower row, the footer. It reports its own height; a part of the lower row that
     /// is not there takes its measurement with it.
     private func rightColumn(_ columns: ProviderGridRules.Columns) -> some View {
-        VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
+        let move = moveHeights
+        return VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
             if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
             upper(columns)
             lowerRow(columns)
@@ -392,7 +398,11 @@ struct PopoverView: View {
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.height
         } action: { height in
-            layout.record(rightColumn: height)
+            // With the move drawn in this same pass: the height rules read the destination as it
+            // will lay out at rest, the island the column as drawn (Task 8b). A move whose last
+            // frame leaves the height unchanged leaves its last sample behind, which still reads as
+            // the destination at rest; the next change at rest reports none.
+            layout.record(rightColumn: height, move: move)
         }
         .onChange(of: lowerRowAgents == nil, initial: true) { _, absent in
             if absent {
@@ -431,30 +441,90 @@ struct PopoverView: View {
         case .loading?:
             loadingRow
         case nil:
-            if let service = selectedService {
-                pageLayer(service)
-            } else {
-                allLayer(columns)
-            }
+            stage(columns)
         }
     }
 
-    /// All: the tiles, then the hooks offer under them. A point of room above the first row for
-    /// a tile's hover lift: the right column's scroll view clips at its top edge (R11).
-    private func allLayer(_ columns: ProviderGridRules.Columns) -> some View {
+    // MARK: - The stage (§ 3.2, Drill-down)
+
+    /// All's tiles or a provider's page; during a move both, each drawn as `IslandDrillLook` says
+    /// for the frame: the tile growing into its page or the page going back into it, a
+    /// cross-fade with a rise, Reduce Motion's cross-fade. Its height goes from one page's to the
+    /// other's with the move, so the island grows and shrinks with it (`IslandHeightRules`
+    /// measures the column as it goes). Clipped: a taller outgoing page never draws over the
+    /// lower row. The lower row stays outside, so keep awake keeps its fields (plan ruling R2).
+    private func stage(_ columns: ProviderGridRules.Columns) -> some View {
+        let moment = navigation.frame
+        return ZStack(alignment: .topLeading) {
+            ForEach(IslandDrillLook.layers(moment), id: \.self) { page in
+                stageLayer(page, moment: moment, columns: columns)
+            }
+        }
+        .frame(
+            width: columns.right,
+            height: IslandDrillLook.height(
+                moment, from: navigation.pageHeights[moment.from], to: navigation.pageHeights[moment.to]
+            ),
+            alignment: .topLeading
+        )
+        .clipped()
+        .coordinateSpace(.named(Self.stageSpace))
+    }
+
+    /// One page in the stage at its own height, measured for the move, drawn as the frame says;
+    /// only the page shown takes clicks and VoiceOver. Keyed by its page, so a page's own state
+    /// (the unused-windows fold) starts afresh on each visit (R15).
+    private func stageLayer(
+        _ page: IslandNavigation.Page, moment: IslandDrill.Frame, columns: ProviderGridRules.Columns
+    ) -> some View {
+        let look = IslandDrillLook.layer(
+            page, in: moment,
+            tile: IslandDrillLook.revealedProvider(moment).flatMap { navigation.tileFrames[$0] },
+            size: CGSize(width: columns.right, height: navigation.pageHeights[page] ?? 0)
+        )
+        return Group {
+            if let service = service(on: page) {
+                pageLayer(service, columns: columns, look: look)
+            } else {
+                allLayer(columns, hiding: IslandDrillLook.hiddenTile(moment))
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            navigation.record(page: page, height: height)
+        }
+        .scaleEffect(look.scale, anchor: look.anchor)
+        .opacity(look.opacity)
+        .allowsHitTesting(look.interactive)
+        .accessibilityHidden(!look.interactive)
+    }
+
+    /// All: the tiles, then the hooks offer under them. The tile a page grows out of or goes
+    /// back into is not drawn: the page's growing tile stands in its place. A point of room
+    /// above the first row for a tile's hover lift: the right column's scroll view clips at its
+    /// top edge (R11).
+    private func allLayer(_ columns: ProviderGridRules.Columns, hiding hidden: String?) -> some View {
         VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
-            tileGrid(columns)
+            tileGrid(columns, hiding: hidden)
             if hooksPromptVisible {
                 OMHooksPromptRow(onEnable: enableClaudeHooks, onDismiss: dismissHooksPrompt)
             }
         }
         .padding(.top, OMProviderTile.hoverLift)
+        .frame(width: columns.right, alignment: .topLeading)
     }
 
     /// A provider's page: its meta line when it has siblings (their logos hold the strip, R9),
-    /// then its state, numbers, dollars and hooks offer.
-    private func pageLayer(_ service: ServiceSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
+    /// then its state, numbers, dollars and hooks offer. During a reveal it shows only inside
+    /// the growing tile (`look.clip`), over the tile's own surface fading as it grows, its words
+    /// fading in and rising.
+    private func pageLayer(
+        _ service: ServiceSnapshot, columns: ProviderGridRules.Columns, look: IslandDrillLook.Layer
+    ) -> some View {
+        let surface = OMPopoverSurface.style(onIsland: surfaceOnIsland)
+        return VStack(alignment: .leading, spacing: OMSpacing.m) {
             if IslandNavigation.isDrilledIn(.provider(service.id), providers: providerIDs) {
                 metaLine(service: service)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -472,6 +542,33 @@ struct PopoverView: View {
                 antigravityInstalled: antigravityInstalled
             )
         }
+        .opacity(look.contentOpacity)
+        .offset(y: look.contentOffsetY)
+        .frame(width: columns.right, alignment: .topLeading)
+        .mask(alignment: .topLeading) {
+            if let clip = look.clip {
+                RoundedRectangle(cornerRadius: look.clipRadius, style: .continuous)
+                    .frame(width: clip.width, height: clip.height)
+                    .offset(x: clip.minX, y: clip.minY)
+            } else {
+                Rectangle()
+            }
+        }
+        .background(alignment: .topLeading) {
+            if let clip = look.clip {
+                RoundedRectangle(cornerRadius: look.clipRadius, style: .continuous)
+                    .fill(surface.fill)
+                    .overlay {
+                        RoundedRectangle(cornerRadius: look.clipRadius, style: .continuous)
+                            .strokeBorder(surface.border, lineWidth: surface.borderWidth)
+                    }
+                    .frame(width: clip.width, height: clip.height)
+                    .offset(x: clip.minX, y: clip.minY)
+                    .opacity(look.surfaceOpacity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+        }
     }
 
     /// The tile rows (`ProviderGridRules.grid`): an odd count's orphan slot holds the cost
@@ -485,7 +582,7 @@ struct PopoverView: View {
 
     /// The provider tiles two a row, each row as tall as its taller tile; every bar starts
     /// after one shared label column.
-    private func tileGrid(_ columns: ProviderGridRules.Columns) -> some View {
+    private func tileGrid(_ columns: ProviderGridRules.Columns, hiding hidden: String?) -> some View {
         let labelWidth = ProviderGridRules.barLabelWidth(
             labelWidths: displayedServices
                 .compactMap { OMProviderTile.barLabel(for: $0) }
@@ -496,7 +593,7 @@ struct PopoverView: View {
             ForEach(Array(tiles.tileRows.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .top, spacing: ProviderGridRules.gap) {
                     ForEach(Array(row.enumerated()), id: \.offset) { _, slot in
-                        tileSlot(slot, barLabelWidth: labelWidth)
+                        tileSlot(slot, barLabelWidth: labelWidth, hidden: hidden)
                     }
                 }
                 .fixedSize(horizontal: false, vertical: true)
@@ -505,11 +602,12 @@ struct PopoverView: View {
     }
 
     @ViewBuilder
-    private func tileSlot(_ slot: ProviderGridRules.Slot, barLabelWidth: CGFloat) -> some View {
+    private func tileSlot(_ slot: ProviderGridRules.Slot, barLabelWidth: CGFloat, hidden: String?) -> some View {
         switch slot {
         case .provider(let id):
             if let service = displayedServices.first(where: { $0.id == id }) {
-                // A tile opens its provider's page (§ 3.4).
+                // A tile opens its provider's page (§ 3.4) and is where the page grows from: its
+                // frame in the stage is kept for the reveal.
                 OMProviderTile(
                     service: service,
                     mode: settings.percentMode,
@@ -518,6 +616,12 @@ struct PopoverView: View {
                 ) {
                     navigation.request(.tile(id), providers: providerIDs)
                 }
+                .onGeometryChange(for: CGRect.self) { proxy in
+                    proxy.frame(in: .named(Self.stageSpace))
+                } action: { frame in
+                    navigation.record(tile: id, frame: frame)
+                }
+                .opacity(id == hidden ? 0 : 1)
             }
         case .cost:
             OMCostTile(services: displayedServices, today: state.todayCosts, fillsHeight: true)
@@ -534,12 +638,30 @@ struct PopoverView: View {
         let hooksInstalled: Bool
     }
 
+    /// The provider whose page the lower row shows; nil on All. During a move, the destination
+    /// from the first frame (`IslandDrillLook.lowerRowPage`): the row switches once, at the start,
+    /// inside a frame whose height moves with the page (`lowerRow`).
+    private var lowerRowService: ServiceSnapshot? {
+        service(on: IslandDrillLook.lowerRowPage(navigation.frame))
+    }
+
+    /// The move as drawn in this pass, for the height rules (`IslandDrillLook.moveHeights`): the
+    /// same heights the stage and the lower row take below; nil at rest.
+    private var moveHeights: IslandHeightRules.MoveHeights? {
+        let moment = navigation.frame
+        return IslandDrillLook.moveHeights(
+            moment,
+            stage: (navigation.pageHeights[moment.from], navigation.pageHeights[moment.to]),
+            lowerRow: (navigation.lowerRowHeights[moment.from], navigation.lowerRowHeights[moment.to])
+        )
+    }
+
     /// All: every session, grouped by state. A provider's page: that provider's sessions,
     /// needs-you first; none for a provider without agents (plan ruling R2), nor while
     /// loading or with every provider off.
     private var lowerRowAgents: LowerRowAgents? {
         guard Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil else { return nil }
-        guard let service = selectedService else {
+        guard let service = lowerRowService else {
             // The link shows while either source is still guessing, never under the prompt
             // row that offers the same thing.
             return LowerRowAgents(
@@ -561,7 +683,7 @@ struct PopoverView: View {
     /// slot for it.
     private var showsCostInLowerRow: Bool {
         Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil
-            && selectedService == nil
+            && lowerRowService == nil
             && tiles.costInLowerRow
     }
 
@@ -572,6 +694,8 @@ struct PopoverView: View {
     private func lowerRow(_ columns: ProviderGridRules.Columns) -> some View {
         let agentsCard = lowerRowAgents
         let row = ProviderGridRules.lowerRow(columns: columns, hasAgentsCard: agentsCard != nil)
+        let moment = navigation.frame
+        let showing = IslandDrillLook.lowerRowPage(moment)
         return HStack(alignment: .top, spacing: ProviderGridRules.gap) {
             if let card = agentsCard {
                 AgentsSection(
@@ -613,6 +737,29 @@ struct PopoverView: View {
             .frame(width: row.otherWidth)
         }
         .fixedSize(horizontal: false, vertical: true)
+        // Its own height under the page it shows, kept for a move's height between two pages. The
+        // measuring view is keyed by that page, so every change of page brings a measurement even
+        // when the height stays the same (Codex re-review finding 1); the row itself keeps one
+        // identity. Nothing runs while the height and the page stay put.
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    navigation.record(lowerRow: showing, height: height)
+                }
+                .id(showing)
+        }
+        // During a move it is drawn from the page left's height to the destination's, clipped,
+        // so the column never jumps; at rest, its own. The same view either way: keep awake
+        // keeps its typed fields (plan ruling R2).
+        .frame(
+            height: IslandDrillLook.height(
+                moment, from: navigation.lowerRowHeights[moment.from], to: navigation.lowerRowHeights[moment.to]
+            ),
+            alignment: .top
+        )
+        .clipped()
     }
 
     // MARK: - Nothing to draw

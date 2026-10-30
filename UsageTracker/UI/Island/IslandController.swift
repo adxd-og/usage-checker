@@ -84,6 +84,11 @@ final class IslandController: NSObject {
         frames.onFrame = { [weak self] now in
             self?.frame(now)
         }
+        // A tile, a logo, "‹ All" and the providers changing take the keys' path: the clock,
+        // Reduce Motion and the frames are here (plan ruling R13).
+        navigation.onRequest = { [weak self] input, providers in
+            _ = self?.navigate(input, providers: providers)
+        }
         resting.contentView = restingView
         restingView.onPress = { [weak self] option in
             self?.notchPressed(option: option)
