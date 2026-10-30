@@ -87,8 +87,9 @@ struct IslandTransition: Equatable, Sendable {
     }
 
     /// A plain key aimed at the island while it closes (Esc, typing) goes nowhere: its content
-    /// is leaving and no longer interactive (§ 3.2), and a second Esc would beep. A key with ⌘
-    /// is a shortcut (⌘Q) and goes on. Another window's keys are its own.
+    /// is leaving and no longer interactive (§ 3.2; the key rule is plan M8), and a second Esc
+    /// would beep. A key with ⌘ is a shortcut (⌘Q) and goes on. Another window's keys are its
+    /// own.
     func swallowsKey(inIsland: Bool, command: Bool) -> Bool {
         phase == .closing && inIsland && !command
     }
