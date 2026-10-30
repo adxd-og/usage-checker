@@ -19,8 +19,9 @@ final class IslandShapeModel: ObservableObject {
 }
 
 /// The island window's whole content (§ 3.1, § 3.2). On a notched display: the black shape
-/// at the motion's current progress, always dark, and today's popover content on top of it,
-/// centred under the notch strip and masked by the shape, so nothing shows outside the
+/// at the motion's current progress, always dark, and the island's content (`PopoverView`)
+/// on top of it, filling the body under the notch strip and masked by the shape, so
+/// nothing shows outside the
 /// island while it grows and shrinks. The panel has no shape of its own: the content's
 /// rounded body is the panel, with the shadow NSPopover drew around it (P1 ruling R14), and
 /// it fades in place. The content comes in and goes out as `IslandTransition.Stage` says, is

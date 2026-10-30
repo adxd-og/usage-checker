@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Opens and closes Omelette's window (notch-island spec 2026-10-29 § 3.1): the island grown
 /// out of the notch, or a plain panel under the status item on a display without one. It
-/// replaces 3.x's `NSPopover` and hosts today's popover content unchanged (§ 5, P1). Every
+/// replaces 3.x's `NSPopover` and hosts the island's content (`PopoverView`, § 3.3). Every
 /// decision is a pure rule: `IslandDisplayResolver` (which display, which window),
 /// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry or a
 /// click does), `IslandTransition` (the open and close in time, § 3.2). This class reads
@@ -23,9 +23,9 @@ final class IslandController: NSObject {
     /// `.task`s run again (hook status, the keep-awake fields' seed) and its timelines stop
     /// while closed (ruling R11).
     private let placeholder = NSView()
-    /// The agents list's caps per tab (popover height budget spec 2026-10-27): told the
-    /// screen before each open, written to `UserDefaults` when the island closes.
-    private let heights: PopoverHeightModel
+    /// The content's layout and height budget for the display it opens on (notch-island
+    /// spec § 3.3): told the screen before each open and on every re-placement.
+    private let layout: IslandLayoutModel
     /// The notch-sized panel at rest over the notch (D13), and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
@@ -56,19 +56,17 @@ final class IslandController: NSObject {
     override init() {
         let model = IslandModel()
         let shapeModel = IslandShapeModel()
-        let heights = PopoverHeightModel(
-            stored: UserDefaults.standard.string(forKey: PopoverHeightRules.fixedHeightsKey) ?? ""
-        )
+        let layout = IslandLayoutModel()
         self.model = model
         self.shapeModel = shapeModel
-        self.heights = heights
+        self.layout = layout
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
         self.restingView = RestingNotchView(frame: .zero)
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
-            content: PopoverView(state: AppState.shared, heights: heights)
+            content: PopoverView(state: AppState.shared, layout: layout)
         ))
         self.host = host
         self.frames = IslandFrameDriver(source: DisplayLinkFrameSource(view: host))
@@ -158,17 +156,6 @@ final class IslandController: NSObject {
         model.stage = transition.stage
         entry = nil
         placement = nil
-        persistPopoverHeights()
-    }
-
-    /// Writes each tab's fixed height and list floor when they changed, after a Reset all
-    /// settings only those this session sampled. Also called as the app quits, because Quit
-    /// in the footer ends the app with the island open.
-    func persistPopoverHeights() {
-        let key = PopoverHeightRules.fixedHeightsKey
-        heights.persistNow(current: UserDefaults.standard.string(forKey: key)) {
-            UserDefaults.standard.set($0, forKey: key)
-        }
     }
 
     /// Opens on `screen` the way `IslandTransition.route` says: from closed, placed and grown
@@ -190,15 +177,15 @@ final class IslandController: NSObject {
         // is when an update is worth noticing. Throttled to once an hour inside the updater.
         Updater.shared.checkInBackgroundIfDue()
         // The screen it opens on, handed in before the content appears, so its first layout
-        // already sizes the agents list for it (spec 2026-10-27).
-        heights.setScreen(visibleHeight: Self.visibleHeight(of: screen))
+        // already has its width and its budget (§ 3.3).
+        layout.place(on: screen, visibleHeight: Self.visibleHeight(of: screen))
         self.entry = entry
         if route != .reverse {
             // The shown status item, whatever opened the island: the panel hangs under it
             // when it is on this display (ruling R8).
             place(IslandDisplayResolver.placement(
                 on: screen, entry: entry, statusItemFrame: statusItemWindow()?.frame,
-                panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
+                panelWidth: IslandPresentationRules.width(screenWidth: screen.frame.width), menuBarHeight: Self.menuBarHeight
             ))
             // The content joins the window and lays out at the closed stage first, so every
             // fade has a rendered start, the first open after launch included.
@@ -415,7 +402,7 @@ final class IslandController: NSObject {
         guard let again = IslandDisplayResolver.replacement(
             for: placement, entry: entry, screens: screens,
             statusItemFrame: statusItemWindow()?.frame,
-            panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
+            panelWidth: Self.panelWidth(on: placement.screenID, in: screens), menuBarHeight: Self.menuBarHeight
         ) else {
             // Its display is gone: nothing left to animate on.
             finishClose()
@@ -424,7 +411,7 @@ final class IslandController: NSObject {
         // A closing island finishes where it is.
         guard isOpen else { return }
         if let screen = screens.first(where: { $0.id == again.screenID }) {
-            heights.setScreen(visibleHeight: Self.visibleHeight(of: screen))
+            layout.place(on: screen, visibleHeight: Self.visibleHeight(of: screen))
         }
         if again != placement {
             place(again)
@@ -447,6 +434,12 @@ final class IslandController: NSObject {
     /// app may have no main menu to ask; the status bar's thickness stands in.
     private static var menuBarHeight: CGFloat {
         NSApp.mainMenu.map(\.menuBarHeight).flatMap { $0 > 0 ? $0 : nil } ?? NSStatusBar.system.thickness
+    }
+
+    /// The panel's width on the display with `id`: the island's rule, so the two lay their
+    /// content out alike (§ 3.9). The island's own comes from the resolver.
+    private static func panelWidth(on id: UInt32, in screens: [IslandScreen]) -> CGFloat {
+        IslandPresentationRules.width(screenWidth: screens.first { $0.id == id }?.frame.width ?? 0)
     }
 
     /// What `PopoverHeightRules` budgets the agents list against on `screen`.

@@ -45,6 +45,8 @@ enum ProviderGridRules {
     static let habitatWidth: CGFloat = 150
     static let habitatGap: CGFloat = 12
     static let cardPadding: CGFloat = 14
+    /// Above and below the agents card's heading and list, inside its card.
+    static let agentsCardVerticalPadding: CGFloat = 8
 
     // MARK: - Columns and slots
 

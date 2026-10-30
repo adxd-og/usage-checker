@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// What the popover's body shows when there are no tiles to draw (spec 2026-10-25
+/// What the island's body shows when there are no tiles to draw (spec 2026-10-25
 /// § Package 1, Nothing on). Top level, not nested in the view, so the rule's answer is a
 /// plain value a test compares.
 enum PopoverEmptyBody: Equatable, Sendable {
@@ -10,21 +10,27 @@ enum PopoverEmptyBody: Equatable, Sendable {
     case loading
 }
 
+/// The island's content (notch-island spec 2026-10-29 § 3.3), in the island and in the
+/// panel alike: the strip beside the camera ("Omelette"; how long ago, and the spinner),
+/// then the habitat's column and one two-column grid — the provider tiles, the agents card
+/// beside the cost tile over keep awake, the footer. The rules decide (`ProviderGridRules`,
+/// `KeepAwakeCardLayout`, `IslandHeightRules`); this view lays out and measures. Until
+/// P3b's navigation, the segmented control over the grid still opens a provider's page
+/// (plan ruling R1).
 struct PopoverView: View {
     @ObservedObject var state: AppState
-    /// The agents list's cap per tab (popover height budget spec 2026-10-27), owned by
-    /// `IslandController` for the app's life. It re-renders this view only when a
-    /// cap moves, so a geometry sample costs no redraw of the tiles.
-    @ObservedObject var heights: PopoverHeightModel
+    /// The layout for the display the island opens on and the agents list's cap
+    /// (`IslandLayoutModel`), owned by `IslandController` for the app's life. It re-renders
+    /// this view only when one of them moves.
+    @ObservedObject var layout: IslandLayoutModel
     /// The display mode. Observed here rather than read once, so flipping the switch
-    /// in Settings repaints the popover under the cursor.
+    /// in Settings repaints the island under the cursor.
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var dashboard = DashboardState.shared
     @ObservedObject private var agents = AgentSessionStore.shared
 
     /// Whether each source's hooks are installed decides one line of copy, so it
-    /// is read once per popover appearance off the main thread instead of on
-    /// every layout pass.
+    /// is read once per open off the main thread instead of on every layout pass.
     @State private var claudeHooksInstalled = false
     @State private var codexHooksInstalled = false
     /// The one-time offer to install Claude's hooks, decided from the same read.
@@ -32,11 +38,6 @@ struct PopoverView: View {
     /// Whether Antigravity is installed, for its page's state help (`ProviderStateHelp`):
     /// read with the hooks, once per open, off the main thread.
     @State private var antigravityInstalled = false
-    /// The flush that ends the current tab switch's hold on the caps; a newer switch
-    /// cancels it. Never read by `body`, so setting it redraws nothing.
-    @State private var transitionFlush: Task<Void, Never>?
-    /// Under Reduce Motion the tab switch is instant, so its hold on the caps is shorter.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -44,75 +45,56 @@ struct PopoverView: View {
     /// Persisted tab selection (a service id, or `WindowRanking.allTab`).
     /// Self-heals: a stored provider that isn't currently displayed (toggled
     /// off, signed out of the list, first launch) resolves back to All, and the
-    /// stored value stays put until the user picks again.
+    /// stored value stays put until the user picks again. P3b drops it.
     @AppStorage("selectedProviderTab") private var selectedProviderTab: String = WindowRanking.allTab
 
-    // MARK: - Metrics (`Main.dc.html`)
+    // MARK: - Metrics (§ 3.3 tokens)
 
-    nonisolated static let width: CGFloat = 360
-    nonisolated static let padding: CGFloat = 14
-    nonisolated static let spacing: CGFloat = 12
+    nonisolated static let padding: CGFloat = ProviderGridRules.padding
+    /// The panel's body: chrome glass in the 24 pt corner. The island is the black shape
+    /// `IslandRootView` draws behind the content (§ 3.1, Appearance: glass only on chrome).
     nonisolated static let bodyCorner: OMCornerContext = .popover
     nonisolated static let bodyGlass: OMGlassKind = .chrome
-    nonisolated static let appIconSize: CGFloat = 30
-    nonisolated static let appIconSpacing: CGFloat = 10
-    nonisolated static let titleSize: CGFloat = 14
+    /// "Omelette" in the strip.
+    nonisolated static let stripTitleSize: CGFloat = 13
     nonisolated static let metaSize: CGFloat = 11.5
+    /// Between the camera and the strip's words on either side of it.
+    nonisolated static let stripNotchGap: CGFloat = 10
     nonisolated static var staleNoticeToken: OMColorToken { .warning }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Self.spacing) {
-            header
-            if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
-            if showsSegments { segments }
-            // A tab switch cross-fades, the new page sliding in from its side of the
-            // segmented control (`OMTransitionRules`).
-            content
-                .omTabTransition(
-                    selection: currentTab,
-                    order: [WindowRanking.allTab] + displayedServices.map(\.id),
-                    axis: .horizontal
-                )
-            // Keep awake with the lid closed (spec 2026-10-26, § UI): the same block on every tab.
-            KeepAwakeSection(interiorWidth: Self.width - 2 * Self.padding - 2 * KeepAwakeCardLayout.padding)
-            footer
+        let placed = layout.layout
+        let columns = placed.columns
+        VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
+            if placed.kind == .panel {
+                stripRow(notchWidth: 0)
+                    .frame(height: IslandHeightRules.panelHeaderHeight)
+            }
+            HStack(alignment: .top, spacing: ProviderGridRules.habitatGap) {
+                if placed.showsHabitat {
+                    habitatSlot
+                }
+                rightColumn(columns)
+            }
+            .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(Self.padding)
-        .frame(width: Self.width)
-        // The popover's own height, filed under the tab it was laid out for, from the
-        // same layout pass as that tab's list report (`AgentsSection.onListGeometry`),
-        // so the tab's `popover − list` does not move with the cap (spec 2026-10-27).
-        // Keep it an `onGeometryChange` that records at once: a pass of lag against the
-        // list would make the cap flip for ever.
-        .onGeometryChange(for: CGFloat.self) { proxy in
-            proxy.size.height
-        } action: { height in
-            heights.recordPopoverHeight(height, tab: currentTab)
-        }
-        // A tab switch: the caps wait out the cross-fade and are published once after it,
-        // so the overlapping pages' samples redraw nothing; the new tab starts from the
-        // current height (plan ruling R1).
-        .onChange(of: currentTab) { _, tab in
-            heights.tabChanged(to: tab, reduceMotion: reduceMotion)
-            transitionFlush?.cancel()
-            let model = heights
-            let window = PopoverHeightModel.transitionWindow(reduceMotion: reduceMotion)
-            transitionFlush = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(window))
-                guard !Task.isCancelled else { return }
-                model.flush()
+        .padding(.horizontal, Self.padding)
+        .padding(.top, placed.kind == .island ? IslandHeightRules.islandTopInset : Self.padding)
+        .padding(.bottom, placed.kind == .island ? 0 : Self.padding)
+        .frame(width: placed.bodyWidth, alignment: .topLeading)
+        // The strip beside the camera, above the content's own frame: the band
+        // `IslandGeometry` keeps for the notch, inside the island's shape (plan ruling R5).
+        .overlay(alignment: .top) {
+            if placed.kind == .island {
+                stripRow(notchWidth: placed.notchWidth)
+                    .padding(.horizontal, Self.padding)
+                    .frame(width: placed.bodyWidth, height: placed.stripHeight)
+                    .offset(y: -placed.stripHeight)
             }
         }
-        // The 3.0 body: chrome glass in the popover's 24 pt corner, over the window
-        // backdrop it refracts (spec § Tokens: the window background is the popover
-        // body's too). NSPopover draws its own frame and arrow around it.
-        .omGlass(Self.bodyGlass, in: OMCornerShape(Self.bodyCorner))
-        .background {
-            OMWindowBackground()
-                .clipShape(OMCornerShape(Self.bodyCorner))
-        }
+        .modifier(PanelBody(isPanel: placed.kind == .panel))
         // Same as the dashboard: a percentage or a reset time can be selected and
-        // copied straight out of the popover.
+        // copied straight out of the island.
         .textSelection(.enabled)
         .task { await refreshHookStatus() }
     }
@@ -125,7 +107,7 @@ struct PopoverView: View {
         // precise status" link are two answers to the same file read, and reading
         // it twice could disagree with itself.
         let read = await Task.detached(priority: .utility) { () -> (claude: HookInstallStatus, claudeSatisfied: Bool, codexSatisfied: Bool, claudePresent: Bool, antigravityInstalled: Bool) in
-            // "Satisfied" = nothing the popover's link could improve: installed,
+            // "Satisfied" = nothing the island's link could improve: installed,
             // owned by another tool (conflict), or no config file at all because
             // that CLI isn't on this machine. Only "not installed" / "outdated"
             // earn the "Enable precise status" link.
@@ -193,27 +175,21 @@ struct PopoverView: View {
 
     private var showsSegments: Bool { displayedServices.count > 1 }
 
-    /// With a single service there is no segmented control, so that service's
-    /// tab is the only thing to show; with several, the stored value decides
-    /// and an id that isn't on screen falls back to All.
+    /// One provider: its page is home. Several: the stored value decides, and an id that
+    /// isn't on screen falls back to All.
     private var currentTab: String {
-        showsSegments
+        if ProviderGridRules.providerPageIsHome(count: displayedServices.count) {
+            return displayedServices[0].id
+        }
+        return showsSegments
             ? WindowRanking.resolveTab(stored: selectedProviderTab, displayed: displayedServices)
-            : (displayedServices.first?.id ?? WindowRanking.allTab)
+            : WindowRanking.allTab
     }
 
     /// nil on the All tab.
     private var selectedService: ServiceSnapshot? {
         displayedServices.first { $0.id == currentTab }
     }
-
-    /// The All tab's rows: two tiles each, the last one alone when the count is odd.
-    nonisolated static func tileRows(_ services: [ServiceSnapshot]) -> [[ServiceSnapshot]] {
-        stride(from: 0, to: services.count, by: 2).map { Array(services[$0..<min($0 + 2, services.count)]) }
-    }
-
-    /// `Main.dc.html`'s grid gap.
-    nonisolated static let tileSpacing: CGFloat = 10
 
     // MARK: - Provider tab rules (pure, unit-tested)
 
@@ -293,9 +269,21 @@ struct PopoverView: View {
         return services.isEmpty ? .loading : nil
     }
 
+    /// A page switch, until P3b: no animation, and none of the views' own. The segment sets
+    /// its selection inside `withAnimation(.smooth(duration: 0.2))`; writing the selection
+    /// inside this transaction instead makes the page and its heights jump, so the agents
+    /// list's cap is never seen animating (plan ruling R1, review finding 3).
+    static var pageSwitch: Transaction {
+        var transaction = Transaction(animation: nil)
+        transaction.disablesAnimations = true
+        return transaction
+    }
+
+    /// Until P3b: All, then each provider, with the needs-you dot on a provider whose
+    /// session waits; ⌘1 is All as in 3.x.
     private var segments: some View {
         OMSegmentedControl(
-            items: [OMSegmentItem(id: WindowRanking.allTab, title: "All")]
+            items: [OMSegmentItem(id: WindowRanking.allTab, title: PopoverCopy.allSegment)]
                 + displayedServices.map { service in
                     OMSegmentItem(
                         id: service.id,
@@ -307,84 +295,261 @@ struct PopoverView: View {
                 },
             selection: Binding(
                 get: { currentTab },
-                set: { selectedProviderTab = $0 }
+                set: { tab in
+                    withTransaction(Self.pageSwitch) { selectedProviderTab = tab }
+                }
             ),
             metrics: .popover
         )
     }
 
-    // MARK: - Header
+    // MARK: - The strip
 
-    private var header: some View {
-        HStack(spacing: Self.appIconSpacing) {
-            // The real app icon, not a drawn stand-in — matches the welcome
-            // tour and tracks icon updates for free.
-            Image(nsImage: NSApp.applicationIconImage)
-                .resizable()
-                .interpolation(.high)
-                .frame(width: Self.appIconSize, height: Self.appIconSize)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Omelette")
-                    .font(.system(size: Self.titleSize, weight: .semibold))
-                    .foregroundStyle(.om(.text))
-                // Only the relative "Updated Xs ago" text needs a clock tick —
-                // keep the periodic timeline off the rest of the header.
-                TimelineView(.periodic(from: .now, by: 5)) { ctx in
-                    Text(PopoverCopy.metaLine(service: selectedService, fetchedAt: state.snapshot.fetchedAt, now: ctx.date))
+    /// "Omelette" on the left; how long ago the numbers came and, while a refresh runs, the
+    /// spinner on the right. On the island the camera sits between the two; in the panel
+    /// they share the row.
+    private func stripRow(notchWidth: CGFloat) -> some View {
+        HStack(spacing: 0) {
+            Text(PopoverCopy.appName)
+                .font(.system(size: Self.stripTitleSize, weight: .semibold))
+                .foregroundStyle(.om(.text))
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if notchWidth > 0 {
+                Color.clear
+                    .frame(width: notchWidth + 2 * Self.stripNotchGap)
+            }
+            HStack(spacing: 6) {
+                // Only the relative "Updated Xs ago" needs a clock tick.
+                TimelineView(.periodic(from: .now, by: 5)) { context in
+                    Text(PopoverCopy.metaLine(service: selectedService, fetchedAt: state.snapshot.fetchedAt, now: context.date))
                 }
                 .font(.system(size: Self.metaSize))
                 .foregroundStyle(.om(.secondary))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                if state.isLoading {
+                    ProgressView().controlSize(.small)
+                }
             }
-            Spacer()
-            if state.isLoading {
-                ProgressView().controlSize(.small)
-            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
         }
         .accessibilityElement(children: .combine)
     }
 
-    // MARK: - Content
+    // MARK: - The habitat
 
+    /// The habitat's column (§ 3.3): the pet lives here from P5c on. Until then an empty
+    /// surface keeps its 150 pt, so the grid has its final width (plan ruling R4).
+    private var habitatSlot: some View {
+        Color.clear
+            .frame(width: ProviderGridRules.habitatWidth)
+            .frame(maxHeight: .infinity)
+            .popoverSurface(.group)
+            .accessibilityHidden(true)
+    }
+
+    // MARK: - The right column
+
+    /// Everything right of the habitat, one grid: the stale notice, the segments (until
+    /// P3b), the tiles or a provider's page, the lower row, the footer. It reports its own
+    /// height; a part of the lower row that is not there takes its measurement with it.
+    private func rightColumn(_ columns: ProviderGridRules.Columns) -> some View {
+        VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
+            if state.snapshot.isStale && state.snapshot.hasAnyData { staleNotice }
+            if showsSegments { segments }
+            upper(columns)
+            lowerRow(columns)
+            footer
+        }
+        .frame(width: columns.right, alignment: .topLeading)
+        .onGeometryChange(for: CGFloat.self) { proxy in
+            proxy.size.height
+        } action: { height in
+            layout.record(rightColumn: height)
+        }
+        .onChange(of: lowerRowAgents == nil, initial: true) { _, absent in
+            if absent {
+                layout.record(agentsColumn: nil)
+                layout.record(list: nil)
+            }
+        }
+        .onChange(of: showsCostInLowerRow, initial: true) { _, shown in
+            if !shown { layout.record(costTile: nil) }
+        }
+    }
+
+    /// The tiles on All (with the hooks offer under them), a provider's page, or what
+    /// shows while nothing can.
     @ViewBuilder
-    private var content: some View {
+    private func upper(_ columns: ProviderGridRules.Columns) -> some View {
         switch Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) {
         case .nothingOn?:
             nothingOn
         case .loading?:
-            HStack {
-                ProgressView().controlSize(.small)
-                Text("Loading…")
-                    .font(.system(size: 12.5))
-                    .foregroundStyle(.om(.secondary))
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.vertical, OMSpacing.xs)
+            loadingRow
         case nil:
             if let service = selectedService {
-                // This tab's own burn rate, not the dashboard's selection. The two
-                // are separate persisted choices, so keying off the dashboard meant
-                // the verdict either went missing or, worse, described a provider
-                // that isn't on screen.
+                // This tab's own burn rate, not the dashboard's selection.
                 ProviderDetail(
                     service: service,
                     mode: settings.percentMode,
                     burn: dashboard.burn(for: service.id),
-                    hooksInstalled: AgentSource(rawValue: service.id) == .codex ? codexHooksInstalled : claudeHooksInstalled,
                     // The offer is about Claude's settings.json, so it belongs on
-                    // Claude's tab and nowhere else.
+                    // Claude's page and nowhere else.
                     showsHooksPrompt: hooksPromptVisible && AgentSource(rawValue: service.id) == .claude,
-                    onEnableAgents: openAgentsSettings,
                     onEnableHooks: enableClaudeHooks,
                     onDismissHooksPrompt: dismissHooksPrompt,
-                    agentsMaxListHeight: heights.cap(for: service.id),
-                    onAgentsListGeometry: { heights.recordAgentsList($0, tab: service.id) },
                     antigravityInstalled: antigravityInstalled
                 )
             } else {
-                allTab
+                tileGrid(columns)
+                if hooksPromptVisible {
+                    OMHooksPromptRow(onEnable: enableClaudeHooks, onDismiss: dismissHooksPrompt)
+                }
             }
         }
     }
+
+    /// The tile rows (`ProviderGridRules.grid`): an odd count's orphan slot holds the cost
+    /// tile.
+    private var tiles: ProviderGridRules.Grid {
+        ProviderGridRules.grid(
+            serviceIDs: displayedServices.map(\.id),
+            showsCostTile: ProviderGridRules.showsCostTile(displayedServices)
+        )
+    }
+
+    /// The provider tiles two a row, each row as tall as its taller tile; every bar starts
+    /// after one shared label column.
+    private func tileGrid(_ columns: ProviderGridRules.Columns) -> some View {
+        let labelWidth = ProviderGridRules.barLabelWidth(
+            labelWidths: displayedServices
+                .compactMap { OMProviderTile.barLabel(for: $0) }
+                .map { TextMeasure.width($0, size: OMProviderTile.barLabelSize) },
+            tileInterior: columns.half - 2 * OMProviderTile.padding
+        )
+        return VStack(spacing: ProviderGridRules.gap) {
+            ForEach(Array(tiles.tileRows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: ProviderGridRules.gap) {
+                    ForEach(Array(row.enumerated()), id: \.offset) { _, slot in
+                        tileSlot(slot, barLabelWidth: labelWidth)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func tileSlot(_ slot: ProviderGridRules.Slot, barLabelWidth: CGFloat) -> some View {
+        switch slot {
+        case .provider(let id):
+            if let service = displayedServices.first(where: { $0.id == id }) {
+                // Picking the tile is picking its segment, until P3b's drill-down.
+                OMProviderTile(
+                    service: service,
+                    mode: settings.percentMode,
+                    barLabelWidth: barLabelWidth,
+                    showsWaitingDot: ProviderGridRules.showsWaitingDot(serviceID: id, sessions: agents.sessions)
+                ) {
+                    withTransaction(Self.pageSwitch) { selectedProviderTab = id }
+                }
+            }
+        case .cost:
+            OMCostTile(services: displayedServices, today: state.todayCosts, fillsHeight: true)
+        case .empty:
+            Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+        }
+    }
+
+    /// What the lower row's agents card lists and whether its "Enable precise status" link
+    /// shows.
+    private struct LowerRowAgents {
+        let sessions: [AgentSession]
+        let grouped: Bool
+        let hooksInstalled: Bool
+    }
+
+    /// All: every session, grouped by state. A provider's page: that provider's sessions,
+    /// needs-you first; none for a provider without agents (plan ruling R2), nor while
+    /// loading or with every provider off.
+    private var lowerRowAgents: LowerRowAgents? {
+        guard Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil else { return nil }
+        guard let service = selectedService else {
+            // The link shows while either source is still guessing, never under the prompt
+            // row that offers the same thing.
+            return LowerRowAgents(
+                sessions: agents.sessions,
+                grouped: true,
+                hooksInstalled: (claudeHooksInstalled && codexHooksInstalled) || hooksPromptVisible
+            )
+        }
+        guard let source = AgentSource(rawValue: service.id) else { return nil }
+        let showsPrompt = hooksPromptVisible && source == .claude
+        return LowerRowAgents(
+            sessions: agents.sessions(for: source),
+            grouped: false,
+            hooksInstalled: (source == .codex ? codexHooksInstalled : claudeHooksInstalled) || showsPrompt
+        )
+    }
+
+    /// The cost tile over keep awake: on All, when an even provider count leaves no orphan
+    /// slot for it.
+    private var showsCostInLowerRow: Bool {
+        Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil
+            && selectedService == nil
+            && tiles.costInLowerRow
+    }
+
+    /// The grid's lower row (§ 3.3): the agents card | the cost tile over keep awake. Both
+    /// halves are as tall as the taller; each part reports its own height before the row
+    /// stretches it, so `IslandHeightRules` can size the agents list to the island.
+    private func lowerRow(_ columns: ProviderGridRules.Columns) -> some View {
+        HStack(alignment: .top, spacing: ProviderGridRules.gap) {
+            if let card = lowerRowAgents {
+                AgentsSection(
+                    sessions: card.sessions,
+                    grouped: card.grouped,
+                    hooksInstalled: card.hooksInstalled,
+                    embedded: true,
+                    maxListHeight: layout.agentsListCap,
+                    onListGeometry: { layout.record(list: $0) },
+                    onEnable: openAgentsSettings
+                )
+                .padding(.vertical, ProviderGridRules.agentsCardVerticalPadding)
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    layout.record(agentsColumn: height)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .popoverSurface(.group)
+            } else {
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
+            }
+            VStack(spacing: ProviderGridRules.gap) {
+                if showsCostInLowerRow {
+                    OMCostTile(services: displayedServices, today: state.todayCosts)
+                        .onGeometryChange(for: CGFloat.self) { proxy in
+                            proxy.size.height
+                        } action: { height in
+                            layout.record(costTile: height)
+                        }
+                }
+                // Keep awake with the lid closed (spec 2026-10-26, § UI): at this place on
+                // every view, so its typed fields survive a tab switch.
+                KeepAwakeSection(interiorWidth: columns.cardInterior) { height in
+                    layout.record(keepAwake: height)
+                }
+                .frame(maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Nothing to draw
 
     /// Every provider switched off: the fact, where to change it, and a link that opens
     /// Settings on Providers.
@@ -403,64 +568,24 @@ struct PopoverView: View {
         .padding(.vertical, OMSpacing.xs)
     }
 
-    /// Every provider at a glance; tapping a tile is the same as picking its tab. Two
-    /// tiles a row, each row as tall as its taller tile (the mockup's grid): a row
-    /// sized to its ideal height, with tiles that fill it.
-    private var allTab: some View {
-        let labelWidth = ProviderGridRules.barLabelWidth(
-            labelWidths: displayedServices
-                .compactMap { OMProviderTile.barLabel(for: $0) }
-                .map { TextMeasure.width($0, size: OMProviderTile.barLabelSize) },
-            tileInterior: (Self.width - 2 * Self.padding - Self.tileSpacing) / 2 - 2 * OMProviderTile.padding
-        )
-        return VStack(alignment: .leading, spacing: OMSpacing.m) {
-            VStack(spacing: Self.tileSpacing) {
-                ForEach(Array(Self.tileRows(displayedServices).enumerated()), id: \.offset) { _, row in
-                    HStack(alignment: .top, spacing: Self.tileSpacing) {
-                        ForEach(row) { service in
-                            OMProviderTile(
-                                service: service,
-                                mode: settings.percentMode,
-                                barLabelWidth: labelWidth,
-                                showsWaitingDot: ProviderGridRules.showsWaitingDot(serviceID: service.id, sessions: agents.sessions)
-                            ) {
-                                withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
-                            }
-                        }
-                        if row.count == 1 {
-                            Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
-                        }
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            if OMCostTile.total(displayedServices) > 0 {
-                OMCostTile(services: displayedServices, today: state.todayCosts)
-            }
-            if hooksPromptVisible {
-                OMHooksPromptRow(onEnable: enableClaudeHooks, onDismiss: dismissHooksPrompt)
-            }
-            AgentsSection(
-                sessions: agents.sessions,
-                grouped: true,
-                // On All the link should appear while either source is still
-                // guessing, so both have to be wired for it to disappear — and
-                // never while the prompt row above already offers the same thing.
-                hooksInstalled: (claudeHooksInstalled && codexHooksInstalled) || hooksPromptVisible,
-                maxListHeight: heights.cap(for: WindowRanking.allTab),
-                onListGeometry: { heights.recordAgentsList($0, tab: WindowRanking.allTab) },
-                onEnable: openAgentsSettings
-            )
+    private var loadingRow: some View {
+        HStack {
+            ProgressView().controlSize(.small)
+            Text(PopoverCopy.loading)
+                .font(.system(size: 12.5))
+                .foregroundStyle(.om(.secondary))
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, OMSpacing.xs)
     }
 
     /// Last-good data stays on screen; this row says why it isn't moving.
     private var staleNotice: some View {
         noticeRow(
             icon: "wifi.exclamationmark", token: Self.staleNoticeToken,
-            text: "Can't refresh — showing data from \(state.snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+            text: PopoverCopy.staleNotice(fetchedAt: state.snapshot.fetchedAt)
         )
-        .help(state.snapshot.lastError ?? "The last refresh attempt failed.")
+        .help(PopoverCopy.staleNoticeHelp(lastError: state.snapshot.lastError))
     }
 
     private func noticeRow(icon: String, token: OMColorToken, text: String) -> some View {
@@ -551,6 +676,25 @@ struct PopoverView: View {
     }
 }
 
+/// The panel's body: the content's own chrome glass over the window background, in the
+/// 24 pt corner. The island has none: it is the black shape behind the content.
+private struct PanelBody: ViewModifier {
+    let isPanel: Bool
+
+    func body(content: Content) -> some View {
+        if isPanel {
+            content
+                .omGlass(PopoverView.bodyGlass, in: OMCornerShape(PopoverView.bodyCorner))
+                .background {
+                    OMWindowBackground()
+                        .clipShape(OMCornerShape(PopoverView.bodyCorner))
+                }
+        } else {
+            content
+        }
+    }
+}
+
 /// ⌘ plus the rule's key for one footer action; nothing for an action without one.
 private struct FooterShortcut: ViewModifier {
     let action: PopoverAction
@@ -566,27 +710,18 @@ private struct FooterShortcut: ViewModifier {
 
 // MARK: - Provider tab
 
+/// A provider's page in the right column (until P3b's drill-down, opened from the segmented
+/// control or a tile): its state, the hero ring, the weekly limits, the dollars and the
+/// hooks offer, across the grid. Its agents are the lower row's card (plan ruling R2).
 private struct ProviderDetail: View {
     let service: ServiceSnapshot
     let mode: PercentDisplay.Mode
     let burn: BurnRatePrediction?
-    let hooksInstalled: Bool
     var showsHooksPrompt: Bool = false
-    let onEnableAgents: () -> Void
     var onEnableHooks: () -> Void = {}
     var onDismissHooksPrompt: () -> Void = {}
-    /// The agents list's cap on this screen and where its reports go
-    /// (`PopoverHeightModel.cap(for:)`); the defaults are today's fixed cap and nowhere.
-    var agentsMaxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
-    var onAgentsListGeometry: (AgentsListGeometry?) -> Void = { _ in }
     /// Whether Antigravity is installed, for its state help (`ProviderStateHelp`).
     var antigravityInstalled: Bool = false
-
-    @ObservedObject private var agents = AgentSessionStore.shared
-
-    /// Only the two sources phase 2 tracks get agent rows; the other providers
-    /// show no section at all rather than an empty one.
-    private var agentSource: AgentSource? { AgentSource(rawValue: service.id) }
 
     @State private var showUnusedWindows = false
 
@@ -636,18 +771,6 @@ private struct ProviderDetail: View {
                 .opacity(service.isRetained ? 0.55 : 1)
             if showsHooksPrompt {
                 OMHooksPromptRow(onEnable: onEnableHooks, onDismiss: onDismissHooksPrompt)
-            }
-            if let source = agentSource {
-                AgentsSection(
-                    sessions: agents.sessions(for: source),
-                    grouped: false,
-                    // The prompt row above is the same offer, said better; the
-                    // link would only repeat it.
-                    hooksInstalled: hooksInstalled || showsHooksPrompt,
-                    maxListHeight: agentsMaxListHeight,
-                    onListGeometry: onAgentsListGeometry,
-                    onEnable: onEnableAgents
-                )
             }
         }
     }
@@ -931,7 +1054,7 @@ private struct ServiceStateLabel: View {
 }
 
 #Preview("Popover — All") {
-    PopoverView(state: AppState.shared, heights: PopoverHeightModel(stored: ""))
+    PopoverView(state: AppState.shared, layout: IslandLayoutModel())
 }
 
 #Preview("Provider detail") {
@@ -957,10 +1080,8 @@ private struct ServiceStateLabel: View {
             fetchedAt: Date()
         ),
         mode: .used,
-        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false),
-        hooksInstalled: true,
-        onEnableAgents: {}
+        burn: BurnRatePrediction(secondsToLimit: 65 * 60, percentPerMinute: 1.0, bucketId: "five_hour", isStale: false)
     )
     .padding(OMSpacing.l)
-    .frame(width: 360)
+    .frame(width: 450)
 }
