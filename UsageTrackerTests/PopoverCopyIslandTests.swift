@@ -3,7 +3,7 @@ import XCTest
 
 /// Notch-island spec 2026-10-29 § 3.3 and plan ruling R15: the words the island's content
 /// moved out of the 3.x popover keep their text and go through `PopoverCopy` — the strip's
-/// title, the loading row, the cannot-refresh notice and its tooltip, the first segment.
+/// title, the loading row, the cannot-refresh notice and its tooltip.
 final class PopoverCopyIslandTests: XCTestCase {
     /// Sunday 2026-10-04 12:00 UTC.
     private let october4 = Date(timeIntervalSince1970: 1_791_115_200)
@@ -30,9 +30,5 @@ final class PopoverCopyIslandTests: XCTestCase {
         XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: "HTTP 503"), "HTTP 503")
         XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: nil), "The last refresh attempt failed.")
         XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: " "), "The last refresh attempt failed.", "a blank error is no reason")
-    }
-
-    func testTheFirstSegmentIsAll() {
-        XCTAssertEqual(PopoverCopy.allSegment, "All")
     }
 }

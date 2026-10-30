@@ -26,6 +26,8 @@ final class IslandController: NSObject {
     /// The content's layout and height budget for the display it opens on (notch-island
     /// spec § 3.3): told the screen before each open and on every re-placement.
     private let layout: IslandLayoutModel
+    /// Where the content is, All or a provider's page, and the move toward it (§ 3.4).
+    private let navigation: IslandNavigationModel
     /// The notch-sized panel at rest over the notch (D13), and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
@@ -57,16 +59,18 @@ final class IslandController: NSObject {
         let model = IslandModel()
         let shapeModel = IslandShapeModel()
         let layout = IslandLayoutModel()
+        let navigation = IslandNavigationModel()
         self.model = model
         self.shapeModel = shapeModel
         self.layout = layout
+        self.navigation = navigation
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
         self.restingView = RestingNotchView(frame: .zero)
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
-            content: PopoverView(state: AppState.shared, layout: layout)
+            content: PopoverView(state: AppState.shared, layout: layout, navigation: navigation)
         ))
         self.host = host
         self.frames = IslandFrameDriver(source: DisplayLinkFrameSource(view: host))

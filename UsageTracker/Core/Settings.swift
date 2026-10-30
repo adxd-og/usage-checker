@@ -263,7 +263,9 @@ final class SettingsStore: ObservableObject {
         keepAwakeDurationMinutes = Defaults.keepAwakeDurationMinutes
     }
 
-    /// PopoverView's persisted tab. Owned by the view, reset here.
+    /// The tab the 3.x popover (and 4.0 before its navigation) remembered. The island keeps no
+    /// page between opens (notch-island spec § 3.4), so nothing reads or writes it now; Reset
+    /// still removes the copy an older build left.
     private static let popoverTabKey = "selectedProviderTab"
 
     var menuBarHiddenServices: Set<String> {
