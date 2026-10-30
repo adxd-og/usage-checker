@@ -122,6 +122,10 @@ struct PetRuntime {
     private var running: Running?
     /// The event on stage; never together with `running`.
     private var playing: Playing?
+    /// Events asked for by hand, by id, in order; the first takes the stage at the next tick.
+    private var queued: [String] = []
+    /// The next tick clears the stage for `queued`.
+    private var clearsStageForQueue = false
 
     private struct Base {
         let pose: PetPose
@@ -142,6 +146,8 @@ struct PetRuntime {
         let event: PetEvent
         let since: Date
         let until: Date
+        /// Played by hand: nothing but the gate or a newer hand cuts it.
+        var byHand = false
         /// Coming back after the mood stopped looping; nil while it plays.
         var landing: Landing? = nil
     }
@@ -171,6 +177,27 @@ struct PetRuntime {
         clock.pause(at: now)
         running = nil
         playing = nil
+        queued = []
+        clearsStageForQueue = false
+        base = nil
+    }
+
+    // MARK: - By hand
+
+    /// Plays these events in order, the first at the next tick, whatever the mood and the slot
+    /// clock, replacing what is on stage: it draws nothing and moves no deadline. An id the pet does
+    /// not have is skipped. Only Debug's menu calls it (`PetKeeper.play`), through this same path.
+    mutating func play(_ ids: [String]) {
+        queued = ids
+        clearsStageForQueue = !ids.isEmpty
+    }
+
+    /// Ends the running event and the queue and forgets the last event: the animal changed.
+    mutating func dropEvents() {
+        playing = nil
+        queued = []
+        clearsStageForQueue = false
+        lastEventID = nil
         base = nil
     }
 
@@ -249,6 +276,7 @@ struct PetRuntime {
         }
 
         settleEvent(at: now, loops: loops, quiet: quiet)
+        startQueued(at: now, events: events, liftRoom: liftRoom)
 
         // The next due slot: a waiting stretch takes it, else an event, a walk, a blink or a nap.
         if running == nil, playing == nil, !quiet, loops, clock.isDue(at: now) {
@@ -329,10 +357,28 @@ struct PetRuntime {
         return candidates[random.index(below: candidates.count)]
     }
 
-    private mutating func startEvent(_ event: PetEvent, at now: Date) {
-        playing = Playing(event: event, since: now, until: now.addingTimeInterval(event.duration))
+    private mutating func startEvent(_ event: PetEvent, at now: Date, byHand: Bool = false) {
+        playing = Playing(event: event, since: now, until: now.addingTimeInterval(event.duration), byHand: byHand)
         lastEventID = event.id
         base = nil
+    }
+
+    /// The next event asked for by hand, once the stage is free; a new ask clears it first.
+    private mutating func startQueued(at now: Date, events: [PetEvent], liftRoom: Int) {
+        if clearsStageForQueue {
+            clearsStageForQueue = false
+            running = nil
+            playing = nil
+            base = nil
+        }
+        guard running == nil, playing == nil else { return }
+        while !queued.isEmpty {
+            let id = queued.removeFirst()
+            if let event = events.first(where: { $0.id == id }) {
+                startEvent(event.fitted(room: liftRoom), at: now, byHand: true)
+                return
+            }
+        }
     }
 
     private mutating func endEvent() {
@@ -351,6 +397,8 @@ struct PetRuntime {
         }
         if now >= current.until {
             endEvent()
+        } else if current.byHand {
+            return
         } else if !loops {
             let step = current.event.stepIndex(elapsed: now.timeIntervalSince(current.since))
             let offset = current.event.offsets[step]
