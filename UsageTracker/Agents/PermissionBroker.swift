@@ -137,6 +137,13 @@ final class PermissionBroker: ObservableObject {
         featureEnabled && hasHost && !userAtHost
     }
 
+    /// A question (`AskUserQuestion`) or a plan (`ExitPlanMode`) is never held: Allow / Deny
+    /// cannot pick an answer or approve a plan, so the request goes back to the terminal at
+    /// once and Claude Code asks there as usual (owner 2026-10-30). Every other tool can be.
+    nonisolated static func isAnswerable(toolName: String?) -> Bool {
+        toolName != "AskUserQuestion" && toolName != "ExitPlanMode"
+    }
+
     /// Called by the channel for every `permissionRequested` event, *before* the store
     /// applies it (so `pending(for:)` already answers inside `onNeedsYou`).
     func register(event: AgentEvent, reply: AgentReply, session: AgentSession?, now: Date = Date()) {
@@ -147,6 +154,11 @@ final class PermissionBroker: ObservableObject {
         // Ids are 128 random bits, so a repeat is a replay or a bug, never a second
         // question: overwriting the entry would leave a phantom row in `pending`.
         guard held[id] == nil else {
+            reply.send(nil)
+            return
+        }
+        // A question or a plan is the terminal's to ask: released, not counted as presence.
+        guard Self.isAnswerable(toolName: event.toolName) else {
             reply.send(nil)
             return
         }
