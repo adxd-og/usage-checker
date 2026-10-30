@@ -146,12 +146,6 @@ enum IslandEventRules {
         return closingSwallows ? .swallow : .pass
     }
 
-    /// Esc closes the island while it is the key window, from any tab (ruling R3; P3b's
-    /// navigation turns Esc in a provider page into Back). A key help popover takes its own.
-    static func escapeCloses(keyCode: UInt16, keyWindowIsIsland: Bool) -> Bool {
-        keyCode == escapeKeyCode && keyWindowIsIsland
-    }
-
     /// What a local event monitor hands back to AppKit: the handler's answer, nil included,
     /// so a swallowed Esc or notch-strip click stays swallowed. `?? event` would revive it:
     /// in the spike the revived Esc went down the responder chain and the Mac beeped. With

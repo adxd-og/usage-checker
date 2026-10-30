@@ -89,12 +89,6 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertFalse(IslandEventRules.isChildOfIsland(parentIsIsland: false, listedAsChild: false, className: "NSPanel"))
     }
 
-    func testEscClosesTheIslandOnlyWhileItIsTheKeyWindow() {
-        XCTAssertTrue(IslandEventRules.escapeCloses(keyCode: 53, keyWindowIsIsland: true))
-        XCTAssertFalse(IslandEventRules.escapeCloses(keyCode: 53, keyWindowIsIsland: false), "a key help popover takes its own Esc")
-        XCTAssertFalse(IslandEventRules.escapeCloses(keyCode: 36, keyWindowIsIsland: true), "Return")
-    }
-
     /// Review finding 1: the spike's `self?.handleKey(event) ?? event` turned a swallowed Esc
     /// back into the event, which went on down the responder chain and beeped.
     @MainActor

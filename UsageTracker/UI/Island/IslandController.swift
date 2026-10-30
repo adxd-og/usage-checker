@@ -7,9 +7,10 @@ import SwiftUI
 /// out of the notch, or a plain panel under the status item on a display without one. It
 /// replaces 3.x's `NSPopover` and hosts the island's content (`PopoverView`, § 3.3). Every
 /// decision is a pure rule: `IslandDisplayResolver` (which display, which window),
-/// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry or a
-/// click does), `IslandTransition` (the open and close in time, § 3.2). This class reads
-/// AppKit's state and the clock, and applies their answers.
+/// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry, a
+/// click or a key does), `IslandTransition` (the open and close in time, § 3.2),
+/// `IslandNavigation` and `IslandDrill` (All or a provider's page, and the move between them,
+/// § 3.4). This class reads AppKit's state and the clock, and applies their answers.
 @MainActor
 final class IslandController: NSObject {
     private let window: IslandWindow
@@ -238,6 +239,31 @@ final class IslandController: NSObject {
         window.makeFirstResponder(host)
     }
 
+    // MARK: - Navigation
+
+    /// Applies a navigation input (§ 3.4) at the motion's clock, with Reduce Motion as it is
+    /// now, over the providers on screen (`providers`, or the app's own list): a move starts the
+    /// frames that draw it, Esc at All closes. Returns the reducer's action.
+    @discardableResult
+    private func navigate(_ input: IslandNavigation.Input, providers: [String]? = nil) -> IslandNavigation.Action {
+        let now = eventTime()
+        let action = navigation.apply(
+            input,
+            providers: providers ?? AppState.shared.snapshot.services.map(\.id),
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion,
+            at: now
+        )
+        switch action {
+        case .go:
+            frames.start()
+        case .close:
+            close()
+        case .stay, .pass:
+            break
+        }
+        return action
+    }
+
     // MARK: - Dismissal
 
     /// A mouse-down in one of Omelette's own windows while the island is open (§ 3.1).
@@ -279,18 +305,33 @@ final class IslandController: NSObject {
         )
     }
 
-    /// Esc closes the island while it is the key window; a key help popover takes its own.
-    /// While the island closes, a plain key aimed at it goes nowhere; a ⌘ shortcut goes on
-    /// (`swallowsKey`).
+    /// The island's keys while it is the key window (§ 3.4): Esc goes back from a page and
+    /// closes at All; ⌘0 is All, ⌘1–⌘9 the providers on screen. `IslandEventRules.keyRoute`
+    /// decides: a navigation key is the island's in every phase — applied while open, swallowed
+    /// while it closes — so none ever reaches a field or the app behind, or beeps, a ⌘ digit with
+    /// no provider behind it included (owner 2026-10-30; Codex review finding 2). A key help
+    /// popover takes its own Esc. Any other key aimed at a closing island goes nowhere unless it
+    /// carries ⌘ (`swallowsKey`), so ⌘Q still quits.
     private func keyDown(_ event: NSEvent) -> NSEvent? {
-        if transition.swallowsKey(
-            inIsland: event.window === window, command: event.modifierFlags.contains(.command)
-        ) { return nil }
-        guard isOpen,
-              IslandEventRules.escapeCloses(keyCode: event.keyCode, keyWindowIsIsland: NSApp.keyWindow === window)
-        else { return event }
-        close()
-        return nil
+        let flags = event.modifierFlags
+        let key = IslandEventRules.navigationKey(
+            keyCode: event.keyCode,
+            command: flags.contains(.command), shift: flags.contains(.shift),
+            option: flags.contains(.option), control: flags.contains(.control),
+            keyWindowIsIsland: NSApp.keyWindow === window
+        )
+        let closingSwallows = transition.swallowsKey(
+            inIsland: event.window === window, command: flags.contains(.command)
+        )
+        switch IslandEventRules.keyRoute(key, isOpen: isOpen, closingSwallows: closingSwallows) {
+        case .navigate(let input):
+            navigate(input)
+            return nil
+        case .swallow:
+            return nil
+        case .pass:
+            return event
+        }
     }
 
     /// Another of Omelette's windows turned key: Dashboard or Settings opening from the
@@ -486,15 +527,17 @@ final class IslandController: NSObject {
         IslandFrameDriver.eventTime(now: clock(), lastFrame: lastFrameTime)
     }
 
-    /// One frame of the frame source: the transition at the frame's time, handed to the
-    /// views; the mouse re-checked against the shape as it moves (P0 strategy B); the window
-    /// ordered out on the close's last frame; the frames stopped once nothing moves.
+    /// One frame of the frame source: the transition and the page move (§ 3.2, Drill-down) at
+    /// the frame's time, handed to the views; the mouse re-checked against the shape as it
+    /// moves (P0 strategy B); the window ordered out on the close's last frame; the frames
+    /// stopped once nothing moves.
     private func frame(_ now: TimeInterval) {
         lastFrameTime = now
         settle(at: now)
         guard transition.phase != .closed else { return }
+        navigation.advance(to: now)
         updateMouseIgnoring()
-        if !transition.needsFrames {
+        if !transition.needsFrames, !navigation.isMoving {
             frames.stop()
         }
     }
@@ -553,8 +596,8 @@ final class IslandController: NSObject {
         }) {
             monitors.append(monitor)
         }
-        // Esc, through a local key monitor (P0 run 1: six of six); a swallowed Esc stays
-        // swallowed, so it never reaches the field or the app behind.
+        // Esc and ⌘ digits, through a local key monitor (P0 run 1: six of six); a swallowed key
+        // stays swallowed, so it never reaches the field or the app behind.
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             IslandEventRules.forward(event, to: self?.keyDown)
         }) {
