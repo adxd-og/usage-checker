@@ -128,4 +128,13 @@ final class ClaudeSignInCopyTests: XCTestCase {
         XCTAssertEqual(ClaudeKeychainError.notFound.errorDescription, ClaudeSignInCopy.notFoundMessage)
         XCTAssertEqual(ClaudeKeychainError.interactionRequired.errorDescription, ClaudeSignInCopy.deniedMessage)
     }
+
+    // MARK: - The pet (notch-island spec 2026-10-29 § 3.5, Mood rule row 2)
+
+    func testThePetSaysWhatIsWrongInAFewWordsPerWayOut() {
+        XCTAssertEqual(ClaudeSignInCopy.petLine(.signIn), "Claude is signed out")
+        XCTAssertEqual(ClaudeSignInCopy.petLine(.install), "Claude Code isn't installed")
+        XCTAssertEqual(ClaudeSignInCopy.petLine(.keychainAccess), "Claude needs keychain access")
+        XCTAssertEqual(ClaudeSignInCopy.petLine(.noAction), "Claude's sign-in can't be read")
+    }
 }
