@@ -41,4 +41,10 @@ struct PetLibrary: Equatable, Sendable {
         }
         return PetLibrary(manifests: manifests, checks: checks)
     }
+
+    /// The pets the app ships: `bundle`'s Contents/Resources/Pets.
+    static func bundled(in bundle: Bundle = .main) -> PetLibrary {
+        guard let resources = bundle.resourceURL else { return .empty }
+        return load(from: resources.appendingPathComponent(PetContract.folderName, isDirectory: true))
+    }
 }
