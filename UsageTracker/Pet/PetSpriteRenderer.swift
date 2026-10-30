@@ -5,7 +5,8 @@ import Foundation
 /// bead a `pixelsPerBead` × `pixelsPerBead` block of device pixels in its role's colour; the
 /// transparent bead and any role the palette lacks stay fully transparent. The bytes are
 /// written directly, with no drawing call: no antialiasing, no colour matching, no
-/// interpolation, so a bead is exactly its palette colour. sRGB, 8 bits per channel, RGBA,
+/// interpolation, so a bead's bytes are exactly its palette colour in sRGB (the display's
+/// own colour profile still applies when it is drawn). 8 bits per channel, RGBA,
 /// premultiplied (every colour is opaque or clear, so premultiplying changes nothing). Pure.
 enum PetSpriteRenderer {
     static func image(_ map: PetCharMap, palette: [Unicode.Scalar: PetRGB], pixelsPerBead: Int) -> CGImage? {

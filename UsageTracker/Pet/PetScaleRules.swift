@@ -10,7 +10,8 @@ enum PetScaleRules {
     struct Scale: Equatable, Sendable {
         /// Device pixels per bead side; the sprite cache renders at this size.
         let pixelsPerBead: Int
-        /// Device pixels per point of the display drawn on (1 when it was not a positive number).
+        /// Device pixels per point of the display drawn on: 1 when it was not a positive number,
+        /// at most `maxBackingScale`.
         let backingScale: CGFloat
 
         /// Points per bead: 1.5 with 3 px at 2×, 1 with 1 px at 1×.
@@ -26,7 +27,8 @@ enum PetScaleRules {
     /// The largest backing scale taken at its word.
     static let maxBackingScale: CGFloat = 8
 
-    /// Absorbs float error so 52.5 pt × 2 / 35 counts as the 3 it is.
+    /// Absorbs float error at fractional scales: a box exactly as big as the sprite at 3 px
+    /// per bead on a 2.6× display computes one ulp under 3.
     private static let tolerance: CGFloat = 1e-6
 
     /// The scale for a sprite `beads` wide drawn in `box` (points) on a display at
