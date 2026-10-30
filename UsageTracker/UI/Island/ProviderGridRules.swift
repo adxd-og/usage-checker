@@ -103,4 +103,26 @@ enum ProviderGridRules {
         guard let source = AgentSource(rawValue: serviceID) else { return false }
         return sessions.contains { $0.source == source && $0.state == .needsYou }
     }
+
+    /// A provider page's weekly-limits card (§ 3.3, decisions moved out of views).
+    struct WeeklyRows: Equatable, Sendable {
+        /// The rows, in order: windows in use and every `.weekly` window, then the
+        /// untouched ones when unfolded or when only one is untouched; never the hero.
+        let shown: [UsageBucket]
+        /// Untouched model-specific windows (`PopoverView.foldsWhenUnused`).
+        let unusedCount: Int
+        /// "N unused windows" folds them only when there are two or more: a toggle row
+        /// costs as much as the row it hides.
+        var showsToggle: Bool { unusedCount > 1 }
+    }
+
+    /// Untouched model-specific windows are noise most of the day, so two or more fold
+    /// behind a disclosure row; a weekly window keeps its row even at zero.
+    static func weeklyRows(for service: ServiceSnapshot, hero: UsageBucket?, showsUnused: Bool) -> WeeklyRows {
+        let weekly = service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific }
+        let visible = weekly.filter { !PopoverView.foldsWhenUnused($0) }
+        let unused = weekly.filter { PopoverView.foldsWhenUnused($0) }
+        let unfolded = showsUnused || unused.count == 1 ? unused : []
+        return WeeklyRows(shown: (visible + unfolded).filter { $0.id != hero?.id }, unusedCount: unused.count)
+    }
 }

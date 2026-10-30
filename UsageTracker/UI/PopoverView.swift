@@ -572,11 +572,6 @@ private struct ProviderDetail: View {
 
     private var sessionBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .session } }
     private var weeklyBuckets: [UsageBucket] { service.buckets.filter { $0.kind == .weekly || $0.kind == .modelSpecific } }
-    /// Untouched model-specific windows are noise most of the day — fold them
-    /// behind a disclosure row. A weekly window keeps its row even at zero
-    /// (`PopoverView.foldsWhenUnused`).
-    private var visibleWeekly: [UsageBucket] { weeklyBuckets.filter { !PopoverView.foldsWhenUnused($0) } }
-    private var unusedWeekly: [UsageBucket] { weeklyBuckets.filter { PopoverView.foldsWhenUnused($0) } }
     /// The session window when the service has one: "can I keep working right
     /// now" is what this tab is for, and every other window still gets a row
     /// below. Only a service without a session falls back to the worst window.
@@ -584,10 +579,9 @@ private struct ProviderDetail: View {
     /// Any *additional* session window — usually none, now that the first one is
     /// the hero. A second session window would otherwise vanish from the tab.
     private var sessionRows: [UsageBucket] { WindowRanking.sessionRows(for: service, hero: hero) }
-    /// Weekly windows other than the one already shown as the hero.
-    private var weeklyForRow: [UsageBucket] {
-        let shown = visibleWeekly + (showUnusedWindows ? unusedWeekly : (unusedWeekly.count == 1 ? unusedWeekly : []))
-        return shown.filter { $0.id != hero?.id }
+    /// The weekly-limit rows and the fold (`ProviderGridRules.weeklyRows`).
+    private var weeklyRows: ProviderGridRules.WeeklyRows {
+        ProviderGridRules.weeklyRows(for: service, hero: hero, showsUnused: showUnusedWindows)
     }
     private var nothingToShow: Bool { PopoverView.nothingToShow(service) }
 
@@ -664,7 +658,7 @@ private struct ProviderDetail: View {
                         : BurnVerdict.make(burn: burn, sessionBuckets: sessionBuckets)
                 )
             }
-            if !sessionRows.isEmpty || !weeklyForRow.isEmpty || unusedWeekly.count > 1 {
+            if !sessionRows.isEmpty || !weeklyRows.shown.isEmpty || weeklyRows.showsToggle {
                 limitsGroup
             }
             if PopoverView.showsSpendGroup(service: service, hasHero: hero != nil) {
@@ -693,9 +687,9 @@ private struct ProviderDetail: View {
                     help: Self.resetTooltip(bucket)
                 )
             }
-            if !weeklyForRow.isEmpty {
+            if !weeklyRows.shown.isEmpty {
                 OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
-                ForEach(weeklyForRow) { bucket in
+                ForEach(weeklyRows.shown) { bucket in
                     // The ring's tooltip and spoken line carry over: "when exactly?"
                     // for the pointer, the full reset date for VoiceOver.
                     OMKeyValueRow(
@@ -779,7 +773,7 @@ private struct ProviderDetail: View {
     // are at least two untouched windows (a single one is shown inline).
     @ViewBuilder
     private var unusedToggle: some View {
-        if unusedWeekly.count > 1 {
+        if weeklyRows.showsToggle {
             Button {
                 withAnimation(.smooth(duration: 0.2)) { showUnusedWindows.toggle() }
             } label: {
@@ -787,7 +781,7 @@ private struct ProviderDetail: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 8, weight: .bold))
                         .rotationEffect(.degrees(showUnusedWindows ? 90 : 0))
-                    Text(showUnusedWindows ? "Hide unused windows" : "\(unusedWeekly.count) unused windows")
+                    Text(PopoverCopy.unusedWindowsToggle(count: weeklyRows.unusedCount, unfolded: showUnusedWindows))
                         .font(.system(size: 11.5))
                 }
                 .foregroundStyle(.om(.secondary))

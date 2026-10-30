@@ -33,4 +33,10 @@ enum PopoverCopy {
             .joined(separator: " ")
         return "\(name) · \(updated)"
     }
+
+    /// The fold under a provider page's weekly limits: how many untouched windows it hides,
+    /// or, unfolded, how to hide them again.
+    static func unusedWindowsToggle(count: Int, unfolded: Bool) -> String {
+        unfolded ? "Hide unused windows" : "\(count) unused windows"
+    }
 }
