@@ -82,4 +82,23 @@ final class PetActionRulesTests: XCTestCase {
         XCTAssertFalse(PetActionRules.revealReady(.keepAwake, agentsCardShown: false, moving: true))
         XCTAssertTrue(PetActionRules.revealReady(.keepAwake, agentsCardShown: false, moving: false), "keep awake is on every page")
     }
+
+    /// Codex's re-review of the plan: a reveal belongs to the page it was asked for. Click the
+    /// working pet on Grok's page (Back to All, then All's agents card), press ⌘1 before Back has
+    /// settled: the destination is Claude's page now, whose own agents card must not be scrolled to.
+    func testANewerNavigationDropsAPendingReveal() {
+        XCTAssertTrue(PetActionRules.revealStillWanted(askedOn: .all, destination: .all), "Back to All still under way or settled")
+        XCTAssertFalse(
+            PetActionRules.revealStillWanted(askedOn: .all, destination: .provider("claude")),
+            "⌘1 before Back settled: dropped"
+        )
+        XCTAssertTrue(
+            PetActionRules.revealStillWanted(askedOn: .provider("grok"), destination: .provider("grok")),
+            "keep awake asked on Grok's page, still there"
+        )
+        XCTAssertFalse(
+            PetActionRules.revealStillWanted(askedOn: .provider("grok"), destination: .all),
+            "any move away drops it"
+        )
+    }
 }

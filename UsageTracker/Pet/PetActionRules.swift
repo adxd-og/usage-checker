@@ -81,4 +81,12 @@ enum PetActionRules {
         case .keepAwake: return true
         }
     }
+
+    /// A pending reveal still belongs to where the island is going: the navigation's destination
+    /// is the page it was asked on (All after the click's own Back). Any newer move — ⌘1 before
+    /// Back settled, a tile, a logo — drops it, so another page's card is never scrolled to
+    /// (Codex's re-review of the P5c plan).
+    static func revealStillWanted(askedOn: IslandNavigation.Page, destination: IslandNavigation.Page) -> Bool {
+        askedOn == destination
+    }
 }
