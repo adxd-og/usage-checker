@@ -12,10 +12,12 @@ struct OMColoredText: Equatable, Sendable {
     let token: OMColorToken
 }
 
-/// The All tab's provider tile (`Main.dc.html`, `Popover-All-Light.dc.html`): logo,
-/// name and — on its own line, so nothing truncates — the plan; the hero window as a
-/// slim ring with its label and time left; the all-models weekly as a thin bar under
-/// its figure.
+/// A provider's tile in the island's grid (`Main.dc.html`; notch-island spec 2026-10-29
+/// § 3.3): logo, name and — on its own line — the plan, with the needs-you dot on the right
+/// while one of its sessions waits; the hero window as a slim ring with its label and time
+/// left; the all-models weekly as a thin bar between its label, in the column every tile in
+/// the grid shares, and its figure. Captions shrink first and truncate at their tail last;
+/// they never overflow.
 ///
 /// A provider that can't report right now keeps whatever it last reported: the ring
 /// stays, muted and dimmed, the line under the name says why ("Not running"), and the
@@ -24,6 +26,10 @@ struct OMColoredText: Equatable, Sendable {
 struct OMProviderTile: View {
     let service: ServiceSnapshot
     let mode: PercentDisplay.Mode
+    /// The bar-label column every tile in the grid shares (`ProviderGridRules.barLabelWidth`).
+    let barLabelWidth: CGFloat
+    /// One of this provider's sessions waits for the user (`ProviderGridRules.showsWaitingDot`).
+    var showsWaitingDot: Bool = false
     let action: () -> Void
 
     private var hero: UsageBucket? { WindowRanking.tileHero(for: service) }
@@ -51,6 +57,8 @@ struct OMProviderTile: View {
     /// figure takes `barValueWidth`.
     nonisolated static let barGap: CGFloat = 8
     nonisolated static let barValueWidth: CGFloat = 36
+    /// The needs-you dot in the tile's header (the prototype's 7 px dot).
+    nonisolated static let waitingDotDiameter: CGFloat = 7
 
     var body: some View {
         Button(action: action) {
@@ -72,23 +80,33 @@ struct OMProviderTile: View {
 
     private var header: some View {
         HStack(spacing: Self.rowSpacing) {
-            ProviderIconView(serviceID: service.id, sfFallback: service.icon, size: Self.logoGlyph)
-                .foregroundStyle(.om(.text))
-                .frame(width: Self.logoSize, height: Self.logoSize)
-            VStack(alignment: .leading, spacing: 0) {
-                Text(service.displayName)
-                    .font(.system(size: Self.nameSize, weight: .semibold))
+            HStack(spacing: Self.rowSpacing) {
+                ProviderIconView(serviceID: service.id, sfFallback: service.icon, size: Self.logoGlyph)
                     .foregroundStyle(.om(.text))
-                if let subtitle = Self.subtitle(for: service) {
-                    Text(subtitle.text)
-                        .font(.system(size: Self.subtitleSize))
-                        .foregroundStyle(.om(subtitle.token))
+                    .frame(width: Self.logoSize, height: Self.logoSize)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(service.displayName)
+                        .font(.system(size: Self.nameSize, weight: .semibold))
+                        .foregroundStyle(.om(.text))
+                    if let subtitle = Self.subtitle(for: service) {
+                        Text(subtitle.text)
+                            .font(.system(size: Self.subtitleSize))
+                            .foregroundStyle(.om(subtitle.token))
+                    }
                 }
+                .lineLimit(1)
             }
-            .lineLimit(1)
+            // A retained provider dims its name; a waiting session is live news, so the dot
+            // keeps full strength.
+            .opacity(contentOpacity)
             Spacer(minLength: 0)
+            if showsWaitingDot {
+                Circle()
+                    .fill(.om(OMSegmentedControl.needsYouDotToken))
+                    .frame(width: Self.waitingDotDiameter, height: Self.waitingDotDiameter)
+                    .accessibilityHidden(true)
+            }
         }
-        .opacity(contentOpacity)
     }
 
     @ViewBuilder
@@ -118,31 +136,37 @@ struct OMProviderTile: View {
                 .font(.system(size: Self.captionTitleSize))
                 .foregroundStyle(.om(.secondary))
                 .lineLimit(1)
+                .truncationMode(.tail)
             if let value = caption.value {
+                // Shrinks first, truncates last (§ 3.3: never overflow).
                 OMFigureText(text: value, size: Self.captionValueSize, unitSize: Self.captionUnitSize, unitWeight: .medium)
+                    .lineLimit(1)
                     .minimumScaleFactor(0.8)
+                    .truncationMode(.tail)
             }
         }
     }
 
-    /// The all-models weekly (or the next window) as "Week 41%" over a thin bar, for a
-    /// live tile and, dimmed, for a retained one.
+    /// The all-models weekly (or the next window) as "Week ▬▬▬ 41%" on one line: the label
+    /// in the grid's shared column, so every tile's bar starts at the same x, then the bar,
+    /// then the figure. For a live tile and, dimmed, for a retained one.
     @ViewBuilder
     private var footer: some View {
         if let secondary, service.state == .ok || service.isRetained {
             let line = Self.secondaryLine(secondary, mode: mode)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 4) {
-                    Text(line.title)
-                        .font(.system(size: Self.barLabelSize))
-                        .foregroundStyle(.om(.secondary))
-                    Spacer(minLength: 0)
-                    Text(line.value ?? "")
-                        .font(OMFont.numerals(size: Self.barLabelSize, weight: .semibold))
-                        .foregroundStyle(.om(.text))
-                }
-                .lineLimit(1)
+            HStack(spacing: Self.barGap) {
+                Text(line.title)
+                    .font(.system(size: Self.barLabelSize))
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: barLabelWidth, alignment: .leading)
                 BarSegment(used: secondary.clampedPercent, mode: mode, height: Self.barHeight, style: .slim)
+                Text(line.value ?? "")
+                    .font(OMFont.numerals(size: Self.barLabelSize, weight: .semibold))
+                    .foregroundStyle(.om(.text))
+                    .lineLimit(1)
+                    .frame(width: Self.barValueWidth, alignment: .trailing)
             }
             .opacity(contentOpacity)
         }
@@ -267,17 +291,17 @@ struct OMProviderTile: View {
     let signedOut = ServiceSnapshot(id: "codex", displayName: "Codex", icon: "terminal", plan: nil, accountLabel: nil, buckets: [], extraUsage: nil, weekCost: nil, state: .notSignedIn, stateMessage: "Sign in", fetchedAt: Date())
     return VStack(spacing: 10) {
         HStack(alignment: .top, spacing: 10) {
-            OMProviderTile(service: ok, mode: .used) {}
-            OMProviderTile(service: retained, mode: .used) {}
+            OMProviderTile(service: ok, mode: .used, barLabelWidth: 40, showsWaitingDot: true) {}
+            OMProviderTile(service: retained, mode: .used, barLabelWidth: 40) {}
         }
         .fixedSize(horizontal: false, vertical: true)
         HStack(alignment: .top, spacing: 10) {
-            OMProviderTile(service: signedOut, mode: .used) {}
+            OMProviderTile(service: signedOut, mode: .used, barLabelWidth: 40) {}
             Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
     .padding(14)
-    .frame(width: 360)
+    .frame(width: 450)
     .background(OMWindowBackground())
 }

@@ -407,12 +407,23 @@ struct PopoverView: View {
     /// tiles a row, each row as tall as its taller tile (the mockup's grid): a row
     /// sized to its ideal height, with tiles that fill it.
     private var allTab: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.m) {
+        let labelWidth = ProviderGridRules.barLabelWidth(
+            labelWidths: displayedServices
+                .compactMap { OMProviderTile.barLabel(for: $0) }
+                .map { TextMeasure.width($0, size: OMProviderTile.barLabelSize) },
+            tileInterior: (Self.width - 2 * Self.padding - Self.tileSpacing) / 2 - 2 * OMProviderTile.padding
+        )
+        return VStack(alignment: .leading, spacing: OMSpacing.m) {
             VStack(spacing: Self.tileSpacing) {
                 ForEach(Array(Self.tileRows(displayedServices).enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .top, spacing: Self.tileSpacing) {
                         ForEach(row) { service in
-                            OMProviderTile(service: service, mode: settings.percentMode) {
+                            OMProviderTile(
+                                service: service,
+                                mode: settings.percentMode,
+                                barLabelWidth: labelWidth,
+                                showsWaitingDot: ProviderGridRules.showsWaitingDot(serviceID: service.id, sessions: agents.sessions)
+                            ) {
                                 withAnimation(.smooth(duration: 0.2)) { selectedProviderTab = service.id }
                             }
                         }
