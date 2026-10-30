@@ -130,6 +130,8 @@ actor HistoryStore {
     private var records: [HistoryRecord] = []
     private var loaded = false
     private let maxAge: TimeInterval = 90 * 24 * 3600
+    /// The clock the 90-day prune measures against; tests pin it.
+    private let now: @Sendable () -> Date
     private let minIntervalBetweenSnapshots: TimeInterval = 30
     /// Records rotated out of memory but still sitting in the on-disk log;
     /// the file is compacted once enough of them pile up.
@@ -158,7 +160,8 @@ actor HistoryStore {
 
     /// Injectable log location — the tests point it at a temp directory instead of
     /// the real Application Support log.
-    init(directory: URL = HistoryStore.defaultDirectory) {
+    init(directory: URL = HistoryStore.defaultDirectory, now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
         self.fileURL = directory.appendingPathComponent("history.jsonl")
         self.legacyURL = directory.appendingPathComponent("history.json")
     }
@@ -282,7 +285,7 @@ actor HistoryStore {
     }
 
     private func rotateIfNeeded() {
-        let cutoff = Date().addingTimeInterval(-maxAge)
+        let cutoff = now().addingTimeInterval(-maxAge)
         let before = records.count
         records.removeAll { $0.timestamp < cutoff }
         staleOnDisk += before - records.count

@@ -238,7 +238,8 @@ final class HistoryStoreTests: XCTestCase {
             to: directory.appendingPathComponent("history.jsonl"), atomically: true, encoding: .utf8
         )
 
-        let store = HistoryStore(directory: directory)
+        // Pinned two days after the record, inside the 90-day window whatever the date.
+        let store = HistoryStore(directory: directory, now: { Date(timeIntervalSince1970: 1_785_751_200) })
         let records = await store.all(service: "claude")
 
         let codexRecords = await store.all(service: "codex")
