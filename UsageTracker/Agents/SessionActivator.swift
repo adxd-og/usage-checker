@@ -8,6 +8,15 @@ import AppKit
 enum SessionActivator {
     static let terminalBundleID = "com.apple.Terminal"
     static let iTermBundleID = "com.googlecode.iterm2"
+    /// Finder: where a jump with no window left lands, on the project folder.
+    static let finderBundleID = "com.apple.finder"
+    /// Omelette activating itself is asynchronous: after a refused hand-over the jump looks for
+    /// Omelette's activation every 50 ms, for at most half a second, before it hands it on again.
+    static let selfActivationChecks: [TimeInterval] = Array(repeating: 0.05, count: 10)
+    /// Activation is asynchronous: a jump looks at the app in front after each of these waits and
+    /// calls itself a failure after the last (P0 run 1: every route had its target in front 300 ms
+    /// after the request).
+    static let landingChecks: [TimeInterval] = [0.3, 0.3]
 
     /// A cmux tab's whole address. cmux exposes no tty and no per-tab pid, so this is
     /// the only way to name the tab a session is running in.
@@ -88,8 +97,34 @@ enum SessionActivator {
         return .finder
     }
 
+    /// Brings the session back. `landed`, when given, hears whether the session's app came to the
+    /// front (notch-island spec 2026-10-29 § 3.5, Jump from the island): from the non-activating
+    /// island Omelette may not be the active app, so the activation's answer and the app in front
+    /// afterwards are both checked; the island closes when it landed and stays when it did not. A
+    /// failure stays silent either way. nil: nobody waits for the answer (the Dashboard, a
+    /// notification). The work runs in one main-actor task, so the waits never block a click.
     @MainActor
-    static func jump(to session: AgentSession) {
+    static func jump(to session: AgentSession, landed: (@MainActor @Sendable (Bool) -> Void)? = nil) {
+        Task { @MainActor in
+            let target = await bringBack(session)
+            guard let landed else { return }
+            guard let target else {
+                landed(false)
+                return
+            }
+            let didLand = await confirmLanding(
+                on: target,
+                frontmost: { PresenceMonitor.systemFrontmost() },
+                wait: { try? await Task.sleep(for: .seconds($0)) }
+            )
+            landed(didLand)
+        }
+    }
+
+    /// The session's window to the front by its route: the app it asked to come forward; nil when
+    /// nothing could be.
+    @MainActor
+    private static func bringBack(_ session: AgentSession) async -> AgentHostInfo? {
         switch route(for: session.host) {
         case .cmux(let target):
             // cmux's socket is the only thing that can select the tab, and the
@@ -99,50 +134,48 @@ enum SessionActivator {
                 lines: CmuxRPC.requests(workspace: target.workspace, surface: target.surface),
                 to: target.socketPath
             )
-            activate(pid: session.host.pid, bundleID: session.host.bundleID)
+            return await activate(pid: session.host.pid, bundleID: session.host.bundleID)
         case .tmux(let target):
             // Two short tmux calls and a walk up the client's parents, all off the
             // main actor; only the activation and the Apple Event come back here.
-            let cwd = session.cwd
-            Task { @MainActor in
-                guard let client = await TmuxJump.selectPane(target) else {
-                    // Nothing is attached: the session is running in a detached tmux
-                    // and there is no window to bring forward.
-                    revealInFinder(cwd)
-                    return
-                }
-                let clientPID = client.pid
-                let terminal = await Task.detached { HostWalk.describe(from: clientPID) }.value
-                activate(pid: terminal.pid, bundleID: terminal.bundleID)
-                if let source = tmuxScript(bundleID: terminal.bundleID, client: client) { run(source) }
+            guard let client = await TmuxJump.selectPane(target) else {
+                // Nothing is attached: the session is running in a detached tmux
+                // and there is no window to bring forward.
+                return revealInFinder(session.cwd)
             }
+            let clientPID = client.pid
+            let terminal = await Task.detached { HostWalk.describe(from: clientPID) }.value
+            let brought = await activate(pid: terminal.pid, bundleID: terminal.bundleID)
+            if let source = tmuxScript(bundleID: terminal.bundleID, client: client) { run(source) }
+            return brought
         case .process(let pid):
             guard let app = NSRunningApplication(processIdentifier: pid) else {
                 // The terminal has quit since the event; the folder is what is left.
-                revealInFinder(session.cwd)
-                return
+                return revealInFinder(session.cwd)
             }
-            // macOS 14 activation model: hand Omelette's own activation to the
-            // terminal — the user just clicked a row, so we are the active app and
-            // may pass that on. (`.activateIgnoringOtherApps` is deprecated on 14.)
-            app.activate(from: .current, options: [.activateAllWindows])
+            // macOS 14 activation model: hand Omelette's own activation to the terminal;
+            // `bringForward` takes Omelette's first when there was none to hand on, as from the
+            // island. (`.activateIgnoringOtherApps` is deprecated on 14.)
+            let brought = await bringForward(app)
             if let bundleID = app.bundleIdentifier,
                let tty = session.host.tty, !tty.isEmpty,
                let source = script(for: bundleID, tty: tty) {
                 run(source)
             }
+            return brought
         case .finder:
-            revealInFinder(session.cwd)
+            return revealInFinder(session.cwd)
         }
     }
 
     /// No host process (passive scan, a detached tmux, or the terminal has since
     /// quit): the project folder is the only thing left that still identifies the
-    /// session.
+    /// session. Finder, which it asks to come forward; nil with no folder to show.
     @MainActor
-    private static func revealInFinder(_ cwd: String?) {
-        guard let cwd, !cwd.isEmpty else { return }
+    private static func revealInFinder(_ cwd: String?) -> AgentHostInfo? {
+        guard let cwd, !cwd.isEmpty else { return nil }
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: cwd)])
+        return AgentHostInfo(pid: nil, bundleID: finderBundleID, tty: nil)
     }
 
     /// The AppleScript for a tmux jump. The tty is always the attached *client's* —
@@ -158,17 +191,67 @@ enum SessionActivator {
     /// Bring the host app to the front: its own process when the pid is still valid,
     /// otherwise whichever running app carries that bundle id. Deliberately not
     /// `NSWorkspace.openApplication`, which would *launch* a terminal that has since
-    /// quit — starting an empty cmux is not a jump to a session.
+    /// quit — starting an empty cmux is not a jump to a session. The app it asked to come
+    /// forward; nil when there was none, or AppKit refused.
     @MainActor
-    private static func activate(pid: Int32?, bundleID: String?) {
+    private static func activate(pid: Int32?, bundleID: String?) async -> AgentHostInfo? {
         if let pid, let app = NSRunningApplication(processIdentifier: pid) {
-            app.activate(from: .current, options: [.activateAllWindows])
-            return
+            return await bringForward(app)
         }
         guard let bundleID,
               let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first
-        else { return }
-        app.activate(from: .current, options: [.activateAllWindows])
+        else { return nil }
+        return await bringForward(app)
+    }
+
+    /// `app` to the front by `bringForward(activate:activateSelf:selfIsActive:wait:)`: the app it
+    /// asked to come forward, nil when the activation could not be handed on.
+    @MainActor
+    private static func bringForward(_ app: NSRunningApplication) async -> AgentHostInfo? {
+        let asked = await bringForward(
+            activate: { app.activate(from: .current, options: [.activateAllWindows]) },
+            activateSelf: { NSApp.activate() },
+            selfIsActive: { NSApp.isActive },
+            wait: { try? await Task.sleep(for: .seconds($0)) }
+        )
+        return asked ? AgentHostInfo(pid: app.processIdentifier, bundleID: app.bundleIdentifier, tty: nil) : nil
+    }
+
+    /// The activation from the island (notch-island spec 2026-10-29 § 3.5): Omelette hands its own
+    /// activation on (`activate(from: .current)`). From a panel that never made Omelette active
+    /// there may be none to hand on and AppKit says no; then Omelette activates itself — which
+    /// AppKit completes later — and hands it on once more only once it is active, looking every
+    /// `selfActivationChecks` step (Codex review 1). Never active: no second hand-over, false.
+    @MainActor
+    static func bringForward(
+        activate: @MainActor () -> Bool,
+        activateSelf: @MainActor () -> Void,
+        selfIsActive: @MainActor () -> Bool,
+        wait: @MainActor (TimeInterval) async -> Void
+    ) async -> Bool {
+        if activate() { return true }
+        activateSelf()
+        for delay in selfActivationChecks {
+            if selfIsActive() { break }
+            await wait(delay)
+        }
+        guard selfIsActive() else { return false }
+        return activate()
+    }
+
+    /// The jump landed: after one of `landingChecks`' waits the app in front is `target` — by pid
+    /// when it has one, else by bundle id (`PresenceMonitor.matches`).
+    @MainActor
+    static func confirmLanding(
+        on target: AgentHostInfo,
+        frontmost: @MainActor () -> PresenceMonitor.Frontmost?,
+        wait: @MainActor (TimeInterval) async -> Void
+    ) async -> Bool {
+        for delay in landingChecks {
+            await wait(delay)
+            if PresenceMonitor.matches(frontmost: frontmost(), host: target) { return true }
+        }
+        return false
     }
 
     /// AppleScript that selects the tab/session whose tty matches, for the two
