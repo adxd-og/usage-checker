@@ -346,15 +346,19 @@ final class IslandController: NSObject {
             workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
         }
         // The motion's frames pause while the displays sleep and stop for good if the island's
-        // window ever closes (it is normally only ordered out).
+        // window ever closes (it is normally only ordered out). Any wake signal resumes them:
+        // a missed screensDidWake must not leave a pending motion frozen.
         workspace.addObserver(
             self, selector: #selector(displaysSlept(_:)),
             name: NSWorkspace.screensDidSleepNotification, object: nil
         )
-        workspace.addObserver(
-            self, selector: #selector(displaysWoke(_:)),
-            name: NSWorkspace.screensDidWakeNotification, object: nil
-        )
+        for name in [
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ] {
+            workspace.addObserver(self, selector: #selector(displaysWoke(_:)), name: name, object: nil)
+        }
         NotificationCenter.default.addObserver(
             self, selector: #selector(islandWillClose(_:)),
             name: NSWindow.willCloseNotification, object: window
