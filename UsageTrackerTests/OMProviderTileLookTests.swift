@@ -80,14 +80,4 @@ final class OMProviderTileLookTests: XCTestCase {
         XCTAssertEqual(OMProviderTile.barHeight, 4)
         XCTAssertEqual(OMProviderTile.retainedOpacity, 0.55)
     }
-
-    func testTheAllTabLaysTilesTwoARow() {
-        let services = ["claude", "codex", "antigravity", "grok", "anthropic-admin"].map { Fixture.snapshot(id: $0) }
-        XCTAssertEqual(PopoverView.tileRows(Array(services.prefix(4))).map { $0.map(\.id) },
-                       [["claude", "codex"], ["antigravity", "grok"]])
-        XCTAssertEqual(PopoverView.tileRows(services).map { $0.map(\.id) },
-                       [["claude", "codex"], ["antigravity", "grok"], ["anthropic-admin"]])
-        XCTAssertTrue(PopoverView.tileRows([]).isEmpty)
-        XCTAssertEqual(PopoverView.tileSpacing, 10)
-    }
 }

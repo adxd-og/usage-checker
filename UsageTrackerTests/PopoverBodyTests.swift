@@ -1,27 +1,25 @@
 import XCTest
 @testable import Omelette
 
-/// Liquid-glass redesign spec § Principles 1 (glass on the popover body), § Tokens
-/// ("popover 24", chrome glass, window background: "popover body"). `Main.dc.html`:
-/// 360 pt wide, 14 pt in, 12 pt between sections; a 30 pt icon, a 14 pt title, an
-/// 11.5 pt meta line.
+/// Notch-island spec 2026-10-29 § 3.3 (tokens: padding 14, titles 13, secondary 11.5) and
+/// the liquid-glass spec § Tokens ("popover 24", chrome glass): the island's content is
+/// inset 14 pt; the strip beside the camera says "Omelette" at 13 pt over an 11.5 pt meta
+/// line; the panel keeps the chrome glass body in the 24 pt corner.
 final class PopoverBodyTests: XCTestCase {
-    func testThePopoverIsThreeSixtyWideWithFourteenPointInsets() {
-        XCTAssertEqual(PopoverView.width, 360)
+    func testTheContentIsInsetFourteenPoints() {
         XCTAssertEqual(PopoverView.padding, 14)
-        XCTAssertEqual(PopoverView.spacing, 12)
+        XCTAssertEqual(PopoverView.padding, ProviderGridRules.padding)
     }
 
-    func testTheBodyIsChromeGlassWithTheTwentyFourPointCorner() {
+    func testThePanelsBodyIsChromeGlassWithTheTwentyFourPointCorner() {
         XCTAssertEqual(PopoverView.bodyGlass, .chrome)
         XCTAssertEqual(OMRadius.corner(for: PopoverView.bodyCorner), .rounded(24))
     }
 
-    func testTheHeaderIsTheMockups() {
-        XCTAssertEqual(PopoverView.appIconSize, 30)
-        XCTAssertEqual(PopoverView.appIconSpacing, 10)
-        XCTAssertEqual(PopoverView.titleSize, 14)
+    func testTheStripIsAThirteenPointTitleAndAnElevenAndAHalfPointMetaLine() {
+        XCTAssertEqual(PopoverView.stripTitleSize, 13)
         XCTAssertEqual(PopoverView.metaSize, 11.5)
+        XCTAssertEqual(PopoverView.stripNotchGap, 10)
     }
 
     func testTheCannotRefreshNoticeIsAmber() {

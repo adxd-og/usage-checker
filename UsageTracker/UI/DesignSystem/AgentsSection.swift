@@ -7,13 +7,16 @@ struct AgentGroup: Identifiable, Equatable {
     var id: String { state.rawValue }
 }
 
-/// What the popover's agents list tells its host (popover height budget spec
-/// 2026-10-27): the list's frame as shown (its content, up to the cap) and the
-/// height of its first two rows with the hairline between them, the least the
-/// host may cap it to (`AgentsSection.minimumListHeight`).
+/// What the agents list tells its host (popover height budget spec 2026-10-27;
+/// notch-island spec 2026-10-29 § 3.3): the list's frame as shown (its rows, up to the
+/// cap), the height of its first two rows with the hairline between them, the least the
+/// host may cap it to (`AgentsSection.minimumListHeight`), and the rows' own height,
+/// which is what it would show under a larger cap.
 struct AgentsListGeometry: Equatable, Sendable {
     let shownHeight: CGFloat
     let minimumHeight: CGFloat
+    /// nil until the rows have measured themselves.
+    var contentHeight: CGFloat? = nil
 }
 
 /// The popover's agent list (`Main.dc.html`): a sentence-case heading with the session
@@ -21,21 +24,26 @@ struct AgentsListGeometry: Equatable, Sendable {
 /// rows run in state order — needs you, working, done, idle — with provider logos,
 /// because rows from every provider mix there; on a provider tab (flat) whatever needs
 /// you comes first, then the most recent. Each row says its own state, so there are no
-/// uppercase group headings (spec § Principles 3). The list is the only part of the
-/// popover that scrolls — the header, segments and footer must not move when an agent
-/// starts a long run.
+/// uppercase group headings (spec § Principles 3). The list is the part that scrolls, so
+/// the header, segments and footer stay put when an agent starts a long run — until even
+/// two rows cannot fit and the island's whole right column scrolls instead (§ 3.3).
 struct AgentsSection: View {
     let sessions: [AgentSession]
     let grouped: Bool
     let hooksInstalled: Bool
     var title: String = AgentsSection.defaultTitle
+    /// Drawn inside a card its host draws around the whole section (the island's lower
+    /// row, notch-island spec 2026-10-29 § 3.3): the list has no surface of its own, and the
+    /// heading and the link line up with the rows' text.
+    var embedded: Bool = false
     /// `.infinity` means "grow to fit and never scroll" — what a host that already
     /// scrolls (the dashboard page) needs, since a scroll view inside a scroll view
     /// swallows the wheel.
     var maxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
     /// Called with the list's shown height and its two-row floor whenever either
-    /// changes, and with nil when the section has no sessions. The popover sizes the
-    /// list to the screen from it (`PopoverHeightRules`); nil everywhere else.
+    /// changes, and with nil when the section has no sessions. The island sizes the
+    /// list to the screen from it (`IslandLayoutModel`, `IslandHeightRules`); nil
+    /// everywhere else.
     var onListGeometry: ((AgentsListGeometry?) -> Void)? = nil
     let onEnable: () -> Void
 
@@ -63,7 +71,7 @@ struct AgentsSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
             OMSectionHeader(title: title, trailing: sessions.isEmpty ? nil : Self.sessionsCaption(sessions.count))
-                .padding(.horizontal, Self.headerInset)
+                .padding(.horizontal, textInset)
             Group {
                 if sessions.isEmpty {
                     emptyRow
@@ -72,12 +80,12 @@ struct AgentsSection: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .popoverSurface(Self.surface)
+            .modifier(ListSurface(embedded: embedded))
             if !hooksInstalled {
                 Button("Enable precise status", action: onEnable)
                     .buttonStyle(.omLink)
                     .help("Install Omelette's hooks so states are exact instead of guessed from log files")
-                    .padding(.horizontal, Self.headerInset)
+                    .padding(.horizontal, textInset)
             }
         }
         // A section with no sessions has no list to size: the host drops the last report.
@@ -142,7 +150,7 @@ struct AgentsSection: View {
         .scrollIndicators(listHeight > maxListHeight ? .automatic : .never)
         .scrollDisabled(listHeight <= maxListHeight)
         // A scrolled row never paints past the card's corners.
-        .clipShape(OMCornerShape(Self.surface.corner))
+        .clipShape(embedded ? AnyShape(Rectangle()) : AnyShape(OMCornerShape(Self.surface.corner)))
     }
 
     /// The 1 pt line between rows, inset to the rows' text edge.
@@ -187,6 +195,11 @@ struct AgentsSection: View {
         CGFloat(sessions.count) * Self.estimatedRowHeight + CGFloat(max(0, sessions.count - 1)) * Self.hairlineHeight
     }
 
+    /// The heading's and the link's inset: the card's edge, or the rows' text when embedded.
+    private var textInset: CGFloat {
+        embedded ? OMAgentRow.horizontalPadding : Self.headerInset
+    }
+
     /// The list's report as of this body (ruling R2): its shown height and the floor of
     /// the rows that lead it now. nil while there is nothing to list or the frame has
     /// not been laid out yet, so a section that just appeared never wipes a report the
@@ -198,8 +211,22 @@ struct AgentsSection: View {
             minimumHeight: Self.minimumListHeight(
                 rowIDs: Self.rows(sessions, grouped: grouped).map(\.id),
                 rowHeights: rowHeights
-            )
+            ),
+            contentHeight: listHeight > 0 ? listHeight : nil
         )
+    }
+}
+
+/// The list's own group card, unless the host draws one around the whole section.
+private struct ListSurface: ViewModifier {
+    let embedded: Bool
+
+    func body(content: Content) -> some View {
+        if embedded {
+            content
+        } else {
+            content.popoverSurface(AgentsSection.surface)
+        }
     }
 }
 

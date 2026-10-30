@@ -42,7 +42,7 @@ enum IslandDisplayResolver {
         /// The notch in global coordinates; nil for the panel.
         let notch: CGRect?
         /// The body's width: the island's from `IslandPresentationRules`, the panel's as
-        /// handed in (today's content until P3a, plan ruling R1).
+        /// handed in (the same rule, from `IslandController`).
         let bodyWidth: CGFloat
     }
 

@@ -102,9 +102,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AgentChannel.shared.stop()
         // A background agy run (Antigravity closed) must not outlive the app.
         ChildProcessRegistry.shared.terminateAll()
-        // Quit in the island's footer ends the app with the island open: its heights
-        // are written here, since its close never comes.
-        island?.persistPopoverHeights()
         flushCostCache()
     }
 

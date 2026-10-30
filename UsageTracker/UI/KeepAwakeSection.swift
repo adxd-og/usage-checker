@@ -1,13 +1,23 @@
 import SwiftUI
 
-/// Keep awake with the lid closed (spec 2026-10-26, § UI): the popover's block between the
-/// content and the footer. One status line by state (`KeepAwakeCopy.status`), the failure
-/// when there is one, and the fields with Apply in every state (plan D1), so Apply while
-/// armed replaces the deadline and Apply after an end starts a new one. A total over the
-/// ceiling is applied as the ceiling, and the fields redraw in canonical form after Apply.
+/// Keep awake with the lid closed (spec 2026-10-26, § UI) as the island's card
+/// (notch-island spec 2026-10-29 § 3.3, Keep-awake card): the title, one status line by
+/// state (`KeepAwakeCopy.status`) and the failure when there is one at the top; the fields
+/// with Apply — and Cancel while armed, and the spinner while a request runs — at the
+/// card's bottom, which reaches the agents card's (owner, prototype v9).
+/// `KeepAwakeCardLayout` says whether fields and buttons share a row. Behaviour unchanged:
+/// Apply in every state (plan D1), so Apply while armed replaces the deadline and Apply
+/// after an end starts a new one; a total over the ceiling is applied as the ceiling, and
+/// the fields redraw in canonical form after Apply.
 struct KeepAwakeSection: View {
+    /// The card's width inside its padding (`ProviderGridRules.Columns.cardInterior`).
+    let interiorWidth: CGFloat
+    /// The card's own height before the grid stretches it (`KeepAwakeCardLayout.naturalHeight`),
+    /// for `IslandHeightRules`; nil until both halves have measured themselves.
+    var onNaturalHeight: (CGFloat?) -> Void = { _ in }
+
     @ObservedObject private var model = KeepAwakeModel.shared
-    /// The fields' text, seeded from the last applied duration on every popover open and read
+    /// The fields' text, seeded from the last applied duration on every island open and read
     /// on every keystroke through `KeepAwakeCopy.fieldNumber`, so Apply sees what is typed.
     @State private var daysText = Self.seedText.days
     @State private var hoursText = Self.seedText.hours
@@ -15,6 +25,9 @@ struct KeepAwakeSection: View {
     /// Ends up to this moment are dismissed (plan D3). Persisted, because the helper keeps
     /// reporting an end across restarts; the helper is never told.
     @AppStorage(KeepAwakeSection.dismissedEndKey) private var dismissedEndAt: Double = 0
+    /// The status block's and the controls' own heights, as last laid out.
+    @State private var topHeight: CGFloat = 0
+    @State private var controlsHeight: CGFloat = 0
 
     nonisolated static let dismissedEndKey = "keepAwakeDismissedEndAt"
 
@@ -31,31 +44,68 @@ struct KeepAwakeSection: View {
         return (String(parts.days), String(parts.hours), String(parts.minutes))
     }
 
+    /// Fields and buttons on one row, or two, from the widths this Mac's font gives them.
+    private var arrangement: KeepAwakeCardLayout.Arrangement {
+        KeepAwakeCardLayout.arrangement(interiorWidth: interiorWidth, widths: KeepAwakeCardLayout.measuredWidths())
+    }
+
+    /// The card's own height once both halves have measured themselves.
+    private var naturalHeight: CGFloat? {
+        guard topHeight > 0, controlsHeight > 0 else { return nil }
+        return KeepAwakeCardLayout.naturalHeight(top: topHeight, controls: controlsHeight)
+    }
+
+    /// Armed now: Cancel shows beside Apply.
+    private var isArmed: Bool {
+        let status = KeepAwakeCopy.status(
+            registration: model.registration, state: model.state, dismissedThrough: dismissedEndAt, now: Date()
+        )
+        if case .armed = status { return true }
+        return false
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: OMSpacing.s) {
-            OMSectionHeader(title: KeepAwakeCopy.title)
-            TimelineView(.periodic(from: KeepAwakeCopy.tickAnchor(deadline: model.state.deadline, now: Date()), by: 60)) { context in
-                statusRow(
-                    KeepAwakeCopy.status(
-                        registration: model.registration,
-                        state: model.state,
-                        dismissedThrough: dismissedEndAt,
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: OMSpacing.s) {
+                OMSectionHeader(title: KeepAwakeCopy.title)
+                TimelineView(.periodic(from: KeepAwakeCopy.tickAnchor(deadline: model.state.deadline, now: Date()), by: 60)) { context in
+                    statusRow(
+                        KeepAwakeCopy.status(
+                            registration: model.registration,
+                            state: model.state,
+                            dismissedThrough: dismissedEndAt,
+                            now: context.date
+                        ),
                         now: context.date
-                    ),
-                    now: context.date
-                )
+                    )
+                }
+                if let failure = model.failure {
+                    Text(KeepAwakeFailureCopy.text(failure))
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.om(.critical))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            if let failure = model.failure {
-                Text(KeepAwakeFailureCopy.text(failure))
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.om(.critical))
-                    .fixedSize(horizontal: false, vertical: true)
+            .onGeometryChange(for: CGFloat.self) { proxy in
+                proxy.size.height
+            } action: { height in
+                topHeight = height
             }
+            // The controls sit at the card's bottom when the row stretches it.
+            Spacer(minLength: KeepAwakeCardLayout.controlsGap)
             controls
+                .onGeometryChange(for: CGFloat.self) { proxy in
+                    proxy.size.height
+                } action: { height in
+                    controlsHeight = height
+                }
         }
-        .padding(PopoverView.groupPadding)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(KeepAwakeCardLayout.padding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .popoverSurface(.group)
+        .onChange(of: naturalHeight, initial: true) { _, height in
+            onNaturalHeight(height)
+        }
         .task {
             (daysText, hoursText, minutesText) = Self.seedText
             await model.refresh()
@@ -79,17 +129,11 @@ struct KeepAwakeSection: View {
         case .idle:
             EmptyView()
         case .armed(let deadline):
-            HStack {
-                Text(KeepAwakeCopy.armedLine(deadline: deadline, now: now))
-                    .font(.system(size: OMKeyValueRow.labelSize, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.om(.text))
-                Spacer(minLength: OMSpacing.s)
-                Button(KeepAwakeCopy.cancelButton) { Task { await model.cancel() } }
-                    .buttonStyle(.omCapsule(.small))
-                    .disabled(model.isWorking)
-                    .opacity(model.isWorking ? SettingsRowRules.disabledOpacity : 1)
-            }
+            Text(KeepAwakeCopy.armedLine(deadline: deadline, now: now))
+                .font(.system(size: OMKeyValueRow.labelSize, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(.om(.text))
+                .fixedSize(horizontal: false, vertical: true)
         case .approval:
             VStack(alignment: .leading, spacing: OMSpacing.s) {
                 Text(KeepAwakeCopy.approvalText)
@@ -100,10 +144,11 @@ struct KeepAwakeSection: View {
                     .buttonStyle(.omCapsule(.small))
             }
         case .ended(let at, let reason):
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text(KeepAwakeCopy.endedLine(at: at, reason: reason, now: now))
                     .font(.system(size: 11.5))
                     .foregroundStyle(.om(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: OMSpacing.s)
                 Button(KeepAwakeCopy.dismissButton) { dismissedEndAt = Date().timeIntervalSince1970 }
                     .buttonStyle(.omText)
@@ -113,23 +158,20 @@ struct KeepAwakeSection: View {
         }
     }
 
+    /// The fields, then Apply, Cancel while armed and the spinner while a request runs: on
+    /// one row or the buttons under the fields (`arrangement`); the entry notice under both.
     private var controls: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
-            HStack(spacing: OMSpacing.s) {
-                field(.days, text: $daysText)
-                field(.hours, text: $hoursText)
-                field(.minutes, text: $minutesText)
-                Spacer(minLength: 0)
-                if model.isWorking {
-                    ProgressView().controlSize(.small)
+            switch arrangement {
+            case .oneRow:
+                HStack(spacing: KeepAwakeCardLayout.spacing) {
+                    fields
+                    Spacer(minLength: 0)
+                    buttons
                 }
-                // The capsule style does not dim by itself (SettingsRowRules.disabledOpacity):
-                // a disabled Apply must look disabled, or 7 d 24 h reads as applicable.
-                let canApply = KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking)
-                Button(KeepAwakeCopy.applyButton, action: apply)
-                    .buttonStyle(.omCapsule(.small))
-                    .disabled(!canApply)
-                    .opacity(canApply ? 1 : SettingsRowRules.disabledOpacity)
+            case .twoRows:
+                fields
+                buttons
             }
             if let notice = KeepAwakeCopy.entryNotice(days: parts.days, hours: parts.hours, minutes: parts.minutes) {
                 Text(notice)
@@ -140,15 +182,44 @@ struct KeepAwakeSection: View {
         }
     }
 
+    private var fields: some View {
+        HStack(spacing: KeepAwakeCardLayout.spacing) {
+            field(.days, text: $daysText)
+            field(.hours, text: $hoursText)
+            field(.minutes, text: $minutesText)
+        }
+    }
+
+    private var buttons: some View {
+        HStack(spacing: KeepAwakeCardLayout.spacing) {
+            // The capsule style does not dim by itself (SettingsRowRules.disabledOpacity):
+            // a disabled Apply must look disabled, or 7 d 24 h reads as applicable.
+            let canApply = KeepAwakeCopy.canApply(days: parts.days, hours: parts.hours, minutes: parts.minutes, isWorking: model.isWorking)
+            Button(KeepAwakeCopy.applyButton, action: apply)
+                .buttonStyle(.omCapsule(.small))
+                .disabled(!canApply)
+                .opacity(canApply ? 1 : SettingsRowRules.disabledOpacity)
+            if isArmed {
+                Button(KeepAwakeCopy.cancelButton) { Task { await model.cancel() } }
+                    .buttonStyle(.omCapsule(.small))
+                    .disabled(model.isWorking)
+                    .opacity(model.isWorking ? SettingsRowRules.disabledOpacity : 1)
+            }
+            if model.isWorking {
+                ProgressView().controlSize(.small)
+            }
+        }
+    }
+
     /// A number typed by hand and its unit, read as typed.
     private func field(_ unit: KeepAwakeCopy.DurationUnit, text: Binding<String>) -> some View {
-        HStack(spacing: 3) {
-            TextField("0", text: text)
+        HStack(spacing: KeepAwakeCardLayout.unitSpacing) {
+            TextField(KeepAwakeCopy.fieldPlaceholder, text: text)
                 .textFieldStyle(.roundedBorder)
                 .font(.system(size: OMKeyValueRow.captionSize))
                 .monospacedDigit()
                 .multilineTextAlignment(.trailing)
-                .frame(width: 44)
+                .frame(width: KeepAwakeCardLayout.fieldWidth)
                 .accessibilityLabel(unit.name)
                 .accessibilityValue(KeepAwakeCopy.unitValue(KeepAwakeCopy.fieldNumber(text.wrappedValue), unit: unit))
             Text(unit.symbol)

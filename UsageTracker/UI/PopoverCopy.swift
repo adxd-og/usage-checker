@@ -33,4 +33,38 @@ enum PopoverCopy {
             .joined(separator: " ")
         return "\(name) · \(updated)"
     }
+
+    /// The fold under a provider page's weekly limits: how many untouched windows it hides,
+    /// or, unfolded, how to hide them again.
+    static func unusedWindowsToggle(count: Int, unfolded: Bool) -> String {
+        unfolded ? "Hide unused windows" : "\(count) unused windows"
+    }
+
+    // MARK: - The island's own words (notch-island spec 2026-10-29 § 3.3)
+
+    /// The strip's title, left of the camera.
+    static let appName = "Omelette"
+    /// The body before the first poll lands.
+    static let loading = "Loading…"
+    /// The segmented control's first segment, until P3b's navigation.
+    static let allSegment = "All"
+    /// The cannot-refresh notice's tooltip when the failed refresh left no error message.
+    static let staleNoticeFallback = "The last refresh attempt failed."
+
+    /// "Can't refresh — showing data from 12:50": the numbers on screen are the last good
+    /// ones, from then.
+    static func staleNotice(fetchedAt: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let time = fetchedAt.formatted(Date.FormatStyle(
+            date: .omitted, time: .shortened, locale: locale, calendar: calendar, timeZone: calendar.timeZone
+        ))
+        return "Can't refresh — showing data from \(time)"
+    }
+
+    /// The notice's tooltip: why the refresh failed, when the poll said something.
+    static func staleNoticeHelp(lastError: String?) -> String {
+        guard let lastError, !lastError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return staleNoticeFallback
+        }
+        return lastError
+    }
 }

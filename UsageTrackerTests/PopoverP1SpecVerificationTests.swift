@@ -217,11 +217,10 @@ final class PopoverFooterVerificationTests: XCTestCase {
     }
 }
 
-// MARK: - Popover body (spec § Tokens: "Radii: popover 24"; § Facts: "fixed 360 pt width")
+// MARK: - Popover body (spec § Tokens: "Radii: popover 24"; the width is the island's since 4.0)
 
 final class PopoverBodyMetricsVerificationTests: XCTestCase {
-    func testTheBodyIs360PointsWideWithA24PointCorner() {
-        XCTAssertEqual(PopoverView.width, 360)
+    func testTheBodyHasA24PointCorner() {
         XCTAssertEqual(OMRadius.corner(for: PopoverView.bodyCorner), .rounded(24))
     }
 
