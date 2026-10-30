@@ -442,7 +442,8 @@ final class IslandController: NSObject {
         IslandPresentationRules.width(screenWidth: screens.first { $0.id == id }?.frame.width ?? 0)
     }
 
-    /// What `PopoverHeightRules` budgets the agents list against on `screen`.
+    /// The visible height `IslandLayoutModel.place` takes for `screen`: the panel's budget
+    /// comes from it (plan ruling R7); the island budgets from its own window instead.
     private static func visibleHeight(of screen: IslandScreen) -> CGFloat {
         PopoverHeightRules.screenVisibleHeight(
             frameMaxY: screen.frame.maxY,
