@@ -75,4 +75,9 @@ final class PetScaleRulesTests: XCTestCase {
         XCTAssertEqual((moved * 2).rounded(), moved * 2, "a whole-bead step from a snapped origin lands on a device pixel")
         XCTAssertEqual(PetScaleRules.scale(beads: 35, fitting: habitat, backingScale: 1).points(beads: 2), 2)
     }
+
+    /// A nonsense backing scale is capped, so the bead count never overflows.
+    func testANonsenseBackingScaleIsCappedAtEight() {
+        XCTAssertEqual(PetScaleRules.scale(beads: 35, fitting: CGSize(width: CGFloat.nan, height: .nan), backingScale: 1e300).pixelsPerBead, 12)
+    }
 }

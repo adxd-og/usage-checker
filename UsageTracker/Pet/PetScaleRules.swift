@@ -23,16 +23,19 @@ enum PetScaleRules {
     /// The pet's design size per bead (spec § 3.5: 35 beads drawn at 52.5 pt).
     static let maxPointsPerBead: CGFloat = 1.5
 
+    /// The largest backing scale taken at its word.
+    static let maxBackingScale: CGFloat = 8
+
     /// Absorbs float error so 52.5 pt × 2 / 35 counts as the 3 it is.
     private static let tolerance: CGFloat = 1e-6
 
     /// The scale for a sprite `beads` wide drawn in `box` (points) on a display at
-    /// `backingScale`. A box that is not a finite number (not measured yet) limits nothing; a
-    /// box too small for one pixel per bead still gets one.
+    /// `backingScale`. Only a finite side of the box limits (a side not measured yet limits
+    /// nothing, whichever it is); a box too small for one pixel per bead still gets one.
     static func scale(beads: Int, fitting box: CGSize, backingScale: CGFloat) -> Scale {
         let scale = usable(backingScale)
         let byDesign = (maxPointsPerBead * scale + tolerance).rounded(.down)
-        let side = min(box.width, box.height)
+        let side = [box.width, box.height].filter(\.isFinite).min() ?? .infinity
         let byBox = beads > 0 && side.isFinite
             ? (side * scale / CGFloat(beads) + tolerance).rounded(.down)
             : byDesign
@@ -47,6 +50,7 @@ enum PetScaleRules {
     }
 
     private static func usable(_ backingScale: CGFloat) -> CGFloat {
-        backingScale.isFinite && backingScale > 0 ? backingScale : 1
+        // Real displays are 1×–3×; the cap keeps a nonsense reading from overflowing `Int`.
+        backingScale.isFinite && backingScale > 0 ? min(backingScale, maxBackingScale) : 1
     }
 }
