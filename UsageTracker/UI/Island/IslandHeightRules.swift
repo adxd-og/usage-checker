@@ -73,6 +73,25 @@ enum IslandHeightRules {
         (costTile.map { $0 + ProviderGridRules.gap } ?? 0) + (keepAwake ?? 0)
     }
 
+    /// A page move's heights as drawn in one layout pass (P3b, § 3.2 Drill-down): the stage and
+    /// the lower row between two pages' heights, and the destination's stage at rest.
+    struct MoveHeights: Equatable, Sendable {
+        var stageDrawn: CGFloat
+        var stageAtRest: CGFloat
+        var lowerRowDrawn: CGFloat
+    }
+
+    /// The right column as it will lay out at rest on a move's destination, from the column as
+    /// drawn in the same pass: less the stage and the lower row as drawn, plus the destination's
+    /// stage at rest and the lower row as it lays out (its taller half). Everything the move draws
+    /// in between is left out, so what `outcome` calls `fixed` — the column but its lower row —
+    /// no longer depends on the agents list, and the list's cap cannot chase its own height
+    /// (P3b plan ruling R2).
+    static func restingColumn(drawn: CGFloat, move: MoveHeights, samples: Samples) -> CGFloat {
+        drawn - move.stageDrawn - move.lowerRowDrawn + move.stageAtRest
+            + max(samples.agentsColumn ?? 0, otherColumn(costTile: samples.costTile, keepAwake: samples.keepAwake))
+    }
+
     /// The agents list's cap and whether the right column scrolls. Without a budget or a
     /// measured column the list keeps today's 260; without a list there is nothing to cap.
     static func outcome(rightBudget: CGFloat?, samples: Samples) -> Outcome {

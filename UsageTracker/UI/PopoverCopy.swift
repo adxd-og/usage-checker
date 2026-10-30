@@ -46,8 +46,6 @@ enum PopoverCopy {
     static let appName = "Omelette"
     /// The body before the first poll lands.
     static let loading = "Loading…"
-    /// The segmented control's first segment, until P3b's navigation.
-    static let allSegment = "All"
     /// The cannot-refresh notice's tooltip when the failed refresh left no error message.
     static let staleNoticeFallback = "The last refresh attempt failed."
 

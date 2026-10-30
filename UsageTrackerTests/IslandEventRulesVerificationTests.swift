@@ -61,7 +61,12 @@ final class IslandEventRulesVerificationTests: XCTestCase {
 
     func testEscapeFromAnyOtherKeyNeverClosesWhileTheIslandIsKey() {
         for code: UInt16 in [0, 36, 48, 51, 52, 54, 123, 126] {
-            XCTAssertFalse(IslandEventRules.escapeCloses(keyCode: code, keyWindowIsIsland: true), "\(code)")
+            XCTAssertNil(
+                IslandEventRules.navigationKey(
+                    keyCode: code, command: false, shift: false, option: false, control: false, keyWindowIsIsland: true
+                ),
+                "\(code)"
+            )
         }
         XCTAssertEqual(IslandEventRules.escapeKeyCode, 53)
     }

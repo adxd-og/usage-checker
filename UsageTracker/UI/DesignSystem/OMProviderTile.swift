@@ -23,6 +23,10 @@ struct OMColoredText: Equatable, Sendable {
 /// stays, muted and dimmed, the line under the name says why ("Not running"), and the
 /// ring's caption dates the numbers ("Last known 12:50"). A provider with nothing to
 /// show is its name and its state in colour. No chips (spec § Principles 2).
+///
+/// A button: a click opens the provider's page (§ 3.4). Under the pointer it rises a point,
+/// lights up and shows a chevron, which keyboard focus shows too; VoiceOver hears its numbers,
+/// a waiting agent and the hint "Opens details".
 struct OMProviderTile: View {
     let service: ServiceSnapshot
     let mode: PercentDisplay.Mode
@@ -31,6 +35,11 @@ struct OMProviderTile: View {
     /// One of this provider's sessions waits for the user (`ProviderGridRules.showsWaitingDot`).
     var showsWaitingDot: Bool = false
     let action: () -> Void
+    /// The pointer is over the tile.
+    @State private var hovering = false
+    /// The tile holds keyboard focus (Tab through the grid, § 3.8).
+    @FocusState private var focused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hero: UsageBucket? { WindowRanking.tileHero(for: service) }
     private var secondary: UsageBucket? { WindowRanking.secondaryBucket(for: service) }
@@ -59,6 +68,10 @@ struct OMProviderTile: View {
     nonisolated static let barValueWidth: CGFloat = 36
     /// The needs-you dot in the tile's header (the prototype's 7 px dot).
     nonisolated static let waitingDotDiameter: CGFloat = 7
+    /// How far a tile rises under the pointer (§ 3.4, tile hover; plan ruling R11).
+    nonisolated static let hoverLift: CGFloat = 1
+    /// The chevron right of the needs-you dot: a click opens the provider's page.
+    nonisolated static let chevronSize: CGFloat = 10
 
     var body: some View {
         Button(action: action) {
@@ -72,10 +85,16 @@ struct OMProviderTile: View {
             .popoverSurface(Self.surface)
             .contentShape(OMCornerShape(Self.surface.corner))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(TileButtonStyle())
         .focusEffectDisabled()
+        .focused($focused)
+        .onHover { hovering = $0 }
+        // Rises under the pointer; under Reduce Motion it switches without easing.
+        .offset(y: Self.liftOffset(hovering: hovering))
+        .animation(OMButtonRules.hoverFade(reduceMotion: reduceMotion).map { .easeOut(duration: $0) }, value: hovering)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Self.accessibilityText(for: service, hero: hero, mode: mode))
+        .accessibilityLabel(Self.accessibilityText(for: service, hero: hero, mode: mode, waiting: showsWaitingDot))
+        .accessibilityHint(IslandNavigationCopy.tileHint)
     }
 
     private var header: some View {
@@ -106,6 +125,12 @@ struct OMProviderTile: View {
                     .frame(width: Self.waitingDotDiameter, height: Self.waitingDotDiameter)
                     .accessibilityHidden(true)
             }
+            // "Opens details": always laid out, so the header never shifts when it shows.
+            Image(systemName: "chevron.right")
+                .font(.system(size: Self.chevronSize, weight: .semibold))
+                .foregroundStyle(.om(.secondary))
+                .opacity(Self.showsChevron(hovering: hovering, focused: focused) ? 1 : 0)
+                .accessibilityHidden(true)
         }
     }
 
@@ -246,15 +271,33 @@ struct OMProviderTile: View {
     }
 
     /// Pure so the wording is unit-tested: VoiceOver can't see that the ring is
-    /// dimmed, so the label has to say the numbers are last known.
+    /// dimmed, so the label has to say the numbers are last known; nor the needs-you dot,
+    /// so the label says an agent waits (§ 3.8).
     nonisolated static func accessibilityText(
-        for service: ServiceSnapshot, hero: UsageBucket?, mode: PercentDisplay.Mode = .used
+        for service: ServiceSnapshot, hero: UsageBucket?, mode: PercentDisplay.Mode = .used, waiting: Bool = false
     ) -> String {
         let state = RetainedCopy.chipText(for: service.state)
-        guard let hero else { return "\(service.displayName), \(state)" }
-        let reading = "\(hero.label) \(PercentDisplay.spoken(hero.clampedPercent, mode: mode))"
-        guard service.isRetained else { return "\(service.displayName), \(reading)" }
-        return "\(service.displayName), \(reading), last known, \(state)"
+        let text: String
+        if let hero {
+            let reading = "\(hero.label) \(PercentDisplay.spoken(hero.clampedPercent, mode: mode))"
+            text = service.isRetained
+                ? "\(service.displayName), \(reading), last known, \(state)"
+                : "\(service.displayName), \(reading)"
+        } else {
+            text = "\(service.displayName), \(state)"
+        }
+        return waiting ? "\(text), \(IslandNavigationCopy.waitingPhrase)" : text
+    }
+
+    /// Up by `hoverLift` under the pointer, in place otherwise.
+    nonisolated static func liftOffset(hovering: Bool) -> CGFloat {
+        hovering ? -hoverLift : 0
+    }
+
+    /// The chevron says a click opens the provider's page: shown under the pointer and while
+    /// the tile holds keyboard focus.
+    nonisolated static func showsChevron(hovering: Bool, focused: Bool) -> Bool {
+        hovering || focused
     }
 
     /// The two lines beside the ring. A live window counts down ("Session / 11m
@@ -280,6 +323,18 @@ struct OMProviderTile: View {
             return OMTileCaption(title: title, value: SpendLimitCopy.caption(service.extraUsage, compact: true))
         }
         return OMTileCaption(title: title, value: nil)
+    }
+}
+
+/// The tile's button: the shared hover state layer in the tile's corner (`OMHoverHighlight`,
+/// stronger while pressed), no chrome of its own.
+private struct TileButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .modifier(OMHoverHighlight(
+                shape: OMCornerShape(OMProviderTile.surface.corner),
+                isPressed: configuration.isPressed
+            ))
     }
 }
 

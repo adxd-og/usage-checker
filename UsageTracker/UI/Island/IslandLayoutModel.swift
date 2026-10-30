@@ -51,7 +51,9 @@ extension IslandLayout {
 /// content reports what it measured. It publishes only what moved, so a measurement that
 /// changes nothing redraws nothing. One set of measurements for whatever the island
 /// shows, kept for the app's life: every open after the first starts from the last one
-/// (plan ruling R6). The arithmetic is `IslandHeightRules`'.
+/// (plan ruling R6). During a page move the rules read the destination as it will lay out at
+/// rest (`IslandHeightRules.restingColumn`); the island shows the column as drawn (P3b plan
+/// ruling R2). The arithmetic is `IslandHeightRules`'.
 @MainActor
 final class IslandLayoutModel: ObservableObject {
     /// The habitat's column is reserved wherever the screen allows it (D12, plan ruling
@@ -69,6 +71,8 @@ final class IslandLayoutModel: ObservableObject {
     /// The right column's budget on the current display; nil before the first `place`.
     private(set) var rightBudget: CGFloat?
     private(set) var samples = IslandHeightRules.Samples()
+    /// The page move drawn in the pass the right column was last measured in; nil at rest.
+    private(set) var move: IslandHeightRules.MoveHeights?
 
     /// The display the island is about to open on, or was re-placed on.
     func place(on screen: IslandScreen, visibleHeight: CGFloat) {
@@ -83,6 +87,15 @@ final class IslandLayoutModel: ObservableObject {
     func record(costTile: CGFloat?) { update(\.costTile, costTile) }
     func record(keepAwake: CGFloat?) { update(\.keepAwake, keepAwake) }
 
+    /// The right column as drawn, with the move drawn in the same pass (nil at rest): the two
+    /// arrive together, so the rules never pair a column with another pass's move.
+    func record(rightColumn: CGFloat?, move: IslandHeightRules.MoveHeights?) {
+        guard samples.rightColumn != rightColumn || self.move != move else { return }
+        samples.rightColumn = rightColumn
+        self.move = move
+        publish()
+    }
+
     /// The agents list's report; nil when it emptied or left.
     func record(list: AgentsListGeometry?) {
         guard samples.list != list else { return }
@@ -96,9 +109,14 @@ final class IslandLayoutModel: ObservableObject {
         publish()
     }
 
-    /// Recomputes the outcome and assigns only what changed.
+    /// Recomputes the outcome and assigns only what changed. During a move the rules read the
+    /// destination as it will lay out at rest; the viewport below keeps the column as drawn.
     private func publish() {
-        let outcome = IslandHeightRules.outcome(rightBudget: rightBudget, samples: samples)
+        var laidOut = samples
+        if let move, let drawn = samples.rightColumn {
+            laidOut.rightColumn = IslandHeightRules.restingColumn(drawn: drawn, move: move, samples: samples)
+        }
+        let outcome = IslandHeightRules.outcome(rightBudget: rightBudget, samples: laidOut)
         if outcome.agentsListCap != agentsListCap { agentsListCap = outcome.agentsListCap }
         if outcome.scrolls != scrolls { scrolls = outcome.scrolls }
         let viewport = outcome.scrolls ? rightBudget : samples.rightColumn.map { $0.rounded(.up) }

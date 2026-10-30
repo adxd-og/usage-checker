@@ -4,9 +4,6 @@ import Foundation
 /// Extracted from PopoverView so they can be unit-tested and reused by the
 /// widget/floating window later.
 enum WindowRanking {
-    /// Sentinel for the "All providers" segment.
-    static let allTab = "all"
-
     /// The most-constrained window of a service — the one that answers "can I
     /// keep working right now?". Bonus pools (promo, prepaid credit) and
     /// model-scoped windows do not compete unless they are all the account has;
@@ -78,12 +75,6 @@ enum WindowRanking {
         if label == "All models" { return "All" }
         if label.hasSuffix(" only") { return String(label.dropLast(" only".count)) }
         return label
-    }
-
-    /// Persisted tab self-heal: a stored id that is not on screen falls back to All.
-    static func resolveTab(stored: String, displayed: [ServiceSnapshot]) -> String {
-        if displayed.contains(where: { $0.id == stored }) { return stored }
-        return allTab
     }
 
     /// "2h 15m left"; "resets now" once the reset time has passed; nil when unknown.
