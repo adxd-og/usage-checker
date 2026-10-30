@@ -168,13 +168,6 @@ struct PopoverView: View {
         withAnimation(.smooth(duration: 0.2)) { hooksPromptVisible = false }
     }
 
-    /// Amber dot on a provider segment while one of its sessions waits for you.
-    /// Providers without an agent integration (Antigravity, Grok) never light up.
-    private func hasWaitingSession(_ serviceID: String) -> Bool {
-        guard let source = AgentSource(rawValue: serviceID) else { return false }
-        return agents.sessions(for: source).contains { $0.state == .needsYou }
-    }
-
     private func openAgentsSettings() {
         SettingsRoute.shared.pendingTab = SettingsRoute.agentsTab
         NSApp.activate(ignoringOtherApps: true)
@@ -303,7 +296,7 @@ struct PopoverView: View {
                         title: service.displayName,
                         serviceID: service.id,
                         sfFallback: service.icon,
-                        showsDot: hasWaitingSession(service.id)
+                        showsDot: ProviderGridRules.showsWaitingDot(serviceID: service.id, sessions: agents.sessions)
                     )
                 },
             selection: Binding(

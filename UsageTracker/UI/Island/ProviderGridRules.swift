@@ -94,4 +94,13 @@ enum ProviderGridRules {
         let room = tileInterior - OMProviderTile.barValueWidth - 2 * OMProviderTile.barGap - minimumBarTrack
         return max(0, min(widest.rounded(.up), room.rounded(.down)))
     }
+
+    // MARK: - Decisions moved out of views (§ 3.3)
+
+    /// A provider carries the needs-you dot while one of its own sessions waits for the
+    /// user. Providers without an agent integration (Antigravity, Grok) never do.
+    static func showsWaitingDot(serviceID: String, sessions: [AgentSession]) -> Bool {
+        guard let source = AgentSource(rawValue: serviceID) else { return false }
+        return sessions.contains { $0.source == source && $0.state == .needsYou }
+    }
 }
