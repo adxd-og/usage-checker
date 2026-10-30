@@ -76,6 +76,12 @@ targets:
           copyFiles:
             destination: wrapper
             subpath: Contents/Library/LaunchDaemons
+      # The pets (notch-island spec 2026-10-29 § 3.5): a folder reference, so the bundle keeps
+      # Contents/Resources/Pets/<animal>/pet.json and a new animal is a new folder, no project
+      # change. Outside UsageTracker/ on purpose: inside a group source, xcodegen 2.45.4 copies
+      # every pet.json flat into Contents/Resources, where the four collide.
+      - path: Pets
+        type: folder
     resources:
       - path: UsageTracker/Resources
     dependencies:
