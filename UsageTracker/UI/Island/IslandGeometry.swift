@@ -5,9 +5,10 @@ import SwiftUI
 /// coordinates with the origin at the top left, as SwiftUI draws, computed from the frame
 /// AppKit applied: window origins snap to whole points (P0: 656.5 → 656.0). Pure.
 ///
-/// P1's shape is plain: the island a rectangle hanging from the screen's top with rounded
-/// bottom corners, the panel the popover's rounded rectangle. P2 gives the island its
-/// concave shoulders and its motion through this same path.
+/// The island's shape moves (§ 3.2): at progress 0 it is the notch with the resting notch's
+/// corners, at 1 the open body with concave shoulders where its top edge meets the sides,
+/// past 1 while the open spring overshoots, always inside the window. The panel's shape is
+/// the popover's rounded rectangle and does not move.
 struct IslandGeometry: Equatable, Sendable {
     enum Region: Equatable, Sendable {
         /// Over the notch: a click here on the open island closes it (§ 3.1, Dismissal).
@@ -32,6 +33,10 @@ struct IslandGeometry: Equatable, Sendable {
     static let islandBottomPadding: CGFloat = 14
     /// The resting notch's bottom corners (D13; the spike's closed radius).
     static let restingBottomRadius: CGFloat = 8
+    /// The open island's shoulders: concave fillets where the top edge meets the sides
+    /// (§ 3.2; the spike's open value). At the notch they are 0, so the shape there is the
+    /// resting notch exactly.
+    static let openShoulder: CGFloat = 12
 
     init(placement: IslandDisplayResolver.Placement, appliedFrame: CGRect) {
         kind = placement.kind
@@ -63,31 +68,65 @@ struct IslandGeometry: Equatable, Sendable {
         return CGPoint(x: body.midX - contentSize.width / 2, y: stripHeight)
     }
 
-    /// The shape: the island square at the top and rounded at the bottom, the panel the
-    /// popover's rounded rectangle (`OMRadius.popover`, the corner the content draws).
-    func path(contentSize: CGSize) -> Path {
-        let body = bodyRect(contentSize: contentSize)
+    /// The island's body at `progress`: from the notch (0) to `bodyRect` (1), past it while
+    /// the open spring overshoots, kept inside the window. Shoulders not included. The panel's
+    /// is `bodyRect` at any progress.
+    func shapeRect(contentSize: CGSize, progress: Double) -> CGRect {
+        let open = bodyRect(contentSize: contentSize)
+        guard kind == .island, let notch else { return open }
+        let p = CGFloat(max(progress, 0))
+        let minX = max(notch.minX + (open.minX - notch.minX) * p, 0)
+        let maxX = min(notch.maxX + (open.maxX - notch.maxX) * p, windowSize.width)
+        let maxY = min(notch.maxY + (open.maxY - notch.maxY) * p, windowSize.height)
+        return CGRect(x: minX, y: 0, width: max(maxX - minX, 0), height: max(maxY, 0))
+    }
+
+    /// The shape at `progress` (1 when omitted: the island open). The island: square at the
+    /// top, rounded at the bottom from the resting notch's 8 pt to 24, with concave shoulders
+    /// growing from 0 to `openShoulder`, never wider than the room the window leaves beside the
+    /// body. The panel: the popover's rounded rectangle (`OMRadius.popover`, the corner the
+    /// content draws).
+    func path(contentSize: CGSize, progress: Double = 1) -> Path {
         switch kind {
+        case .panel:
+            return OMCornerShape(.popover).path(in: bodyRect(contentSize: contentSize))
         case .island:
-            return Path(
+            let body = shapeRect(contentSize: contentSize, progress: progress)
+            let p = CGFloat(min(max(progress, 0), 1))
+            let radius = Self.restingBottomRadius + (Self.islandBottomRadius - Self.restingBottomRadius) * p
+            var path = Path(
                 roundedRect: body,
                 cornerRadii: RectangleCornerRadii(
                     topLeading: 0,
-                    bottomLeading: Self.islandBottomRadius,
-                    bottomTrailing: Self.islandBottomRadius,
+                    bottomLeading: radius,
+                    bottomTrailing: radius,
                     topTrailing: 0
                 ),
                 style: .continuous
             )
-        case .panel:
-            return OMCornerShape(.popover).path(in: body)
+            let shoulder = min(Self.openShoulder * p, body.minX, windowSize.width - body.maxX, body.height)
+            if shoulder > 0 {
+                // Each shoulder: the corner between the top edge and the side, less a quarter
+                // circle (a quadratic, as the spike drew it), so the black flows into the side.
+                for (side, outward) in [(body.minX, -shoulder), (body.maxX, shoulder)] {
+                    path.move(to: CGPoint(x: side + outward, y: 0))
+                    path.addLine(to: CGPoint(x: side, y: 0))
+                    path.addLine(to: CGPoint(x: side, y: shoulder))
+                    path.addQuadCurve(to: CGPoint(x: side + outward, y: 0), control: CGPoint(x: side, y: 0))
+                    path.closeSubpath()
+                }
+            }
+            return path
         }
     }
 
-    /// Where a point in the window lands.
-    func region(of point: CGPoint, contentSize: CGSize) -> Region {
+    /// Where a point in the window lands while the shape is at `progress` (1 when omitted).
+    /// Only what is drawn counts: the notch strip is the part of the drawn shape over the
+    /// notch, so a point in the notch's rect but outside a rounded corner is outside.
+    func region(of point: CGPoint, contentSize: CGSize, progress: Double = 1) -> Region {
+        guard path(contentSize: contentSize, progress: progress).contains(point) else { return .outside }
         if let notch, notch.contains(point) { return .notchStrip }
-        return path(contentSize: contentSize).contains(point) ? .body : .outside
+        return .body
     }
 
     /// A global point in the coordinates of a window at `windowFrame`.

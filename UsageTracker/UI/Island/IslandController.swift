@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import QuartzCore
 import SwiftUI
 
 /// Opens and closes Omelette's window (notch-island spec 2026-10-29 § 3.1): the island grown
@@ -7,12 +8,15 @@ import SwiftUI
 /// replaces 3.x's `NSPopover` and hosts today's popover content unchanged (§ 5, P1). Every
 /// decision is a pure rule: `IslandDisplayResolver` (which display, which window),
 /// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry or a
-/// click does). This class reads AppKit's state and applies their answers. No motion until
-/// P2: the window is ordered in and out (ruling R2).
+/// click does), `IslandTransition` (the open and close in time, § 3.2). This class reads
+/// AppKit's state and the clock, and applies their answers.
 @MainActor
 final class IslandController: NSObject {
     private let window: IslandWindow
     private let model: IslandModel
+    /// The shape's progress, apart from `model` so a frame of the motion redraws the shape and
+    /// its mask, never the content.
+    private let shapeModel: IslandShapeModel
     private let host: NSHostingView<IslandRootView<PopoverView>>
     /// The window's content while closed. The content leaves the window on every close and
     /// joins it on every open, as it did NSPopover's, so each open is an appearance: its
@@ -26,11 +30,21 @@ final class IslandController: NSObject {
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
 
-    private(set) var isOpen = false
+    /// The open and close in time (§ 3.2); `frames` ticks it while something moves.
+    private var transition = IslandTransition()
+    private let frames: IslandFrameDriver
+    /// The motion's clock, in the display link's time base.
+    private let clock: () -> TimeInterval = { CACurrentMediaTime() }
+    /// The last frame's time, ahead of `clock()`: opens and closes act no earlier (`eventTime()`).
+    private var lastFrameTime: TimeInterval?
+
+    /// Opening or open. A closing island counts as closed: an entry turns it around.
+    var isOpen: Bool { transition.isOpen }
     /// The current open's entry and placement; nil while closed.
     private var entry: IslandEntry?
     private var placement: IslandDisplayResolver.Placement?
-    /// Event monitors, installed only while open: closed, the island adds no work (§ 3.8).
+    /// Event monitors, installed from an open until the close's last frame: closed, the island
+    /// adds no work (§ 3.8).
     private var monitors: [Any] = []
     private var contentSizeObserver: AnyCancellable?
     nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
@@ -41,21 +55,29 @@ final class IslandController: NSObject {
 
     override init() {
         let model = IslandModel()
+        let shapeModel = IslandShapeModel()
         let heights = PopoverHeightModel(
             stored: UserDefaults.standard.string(forKey: PopoverHeightRules.fixedHeightsKey) ?? ""
         )
         self.model = model
+        self.shapeModel = shapeModel
         self.heights = heights
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
         self.restingView = RestingNotchView(frame: .zero)
-        self.host = NSHostingView(rootView: IslandRootView(
+        let host = NSHostingView(rootView: IslandRootView(
             model: model,
+            shape: shapeModel,
             content: PopoverView(state: AppState.shared, heights: heights)
         ))
+        self.host = host
+        self.frames = IslandFrameDriver(source: DisplayLinkFrameSource(view: host))
         super.init()
         // The window keeps the frame it is given; the content never resizes it.
         host.sizingOptions = []
+        frames.onFrame = { [weak self] now in
+            self?.frame(now)
+        }
         resting.contentView = restingView
         restingView.onPress = { [weak self] option in
             self?.notchPressed(option: option)
@@ -108,15 +130,32 @@ final class IslandController: NSObject {
         }
     }
 
-    /// Closes the island; nothing when it is closed.
+    /// Closes the island with its motion (§ 3.2): the content fades out, then the shape
+    /// shrinks back into the notch; the panel fades out; Reduce Motion cross-fades. Nothing
+    /// when it is closed or already closing.
     func close() {
-        guard isOpen else { return }
-        isOpen = false
-        // From the first frame of a close the whole window ignores the mouse (P0 run 1).
+        let now = eventTime()
+        settle(at: now)
+        guard isOpen, let placement else { return }
+        // From the first frame of a close the whole window ignores the mouse until the next
+        // open (P0 run 1: a still pointer reached the shrinking island at p = 0.285).
+        window.ignoresMouseEvents = true
+        transition.close(style: style(for: placement.kind), at: now)
+        apply(at: now)
+        frames.start()
+    }
+
+    /// The close's last frame, a move to another display, or a display that vanished: the
+    /// window leaves the screen and the content leaves the window (P1 ruling R11), at once.
+    private func finishClose() {
+        frames.stop()
+        transition.reset()
         window.ignoresMouseEvents = true
         removeMonitors()
         window.orderOut(nil)
         window.contentView = placeholder
+        shapeModel.progress = 0
+        model.stage = transition.stage
         entry = nil
         placement = nil
         persistPopoverHeights()
@@ -132,8 +171,20 @@ final class IslandController: NSObject {
         }
     }
 
+    /// Opens on `screen` the way `IslandTransition.route` says: from closed, placed and grown
+    /// out of the notch; while closing on the same display, turned around from where it is
+    /// (§ 3.2, Interrupt); open or closing elsewhere, closed at once and opened afresh there,
+    /// since one window cannot move in two places.
     private func open(_ entry: IslandEntry, on screen: IslandScreen) {
-        if isOpen { close() }
+        let now = eventTime()
+        // Whether the island holds the keyboard, read before anything below orders it out.
+        let islandWasKey = window.isKeyWindow
+        // Deadlines due by now first, as a frame would have applied them: a close may have ended.
+        settle(at: now)
+        let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
+        if route == .moveAndOpen {
+            finishClose()
+        }
         AppState.shared.refreshForPopover()
         // Same moment, same reasoning as the refresh: the user is looking at the app, so this
         // is when an update is worth noticing. Throttled to once an hour inside the updater.
@@ -142,21 +193,40 @@ final class IslandController: NSObject {
         // already sizes the agents list for it (spec 2026-10-27).
         heights.setScreen(visibleHeight: Self.visibleHeight(of: screen))
         self.entry = entry
-        // The shown status item, whatever opened the island: the panel hangs under it when it
-        // is on this display (ruling R8).
-        place(IslandDisplayResolver.placement(
-            on: screen, entry: entry, statusItemFrame: statusItemWindow()?.frame,
-            panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
-        ))
-        window.contentView = host
-        isOpen = true
-        if entry.becomesKey {
-            makeKey()
-        } else {
-            window.orderFrontRegardless()
+        if route != .reverse {
+            // The shown status item, whatever opened the island: the panel hangs under it
+            // when it is on this display (ruling R8).
+            place(IslandDisplayResolver.placement(
+                on: screen, entry: entry, statusItemFrame: statusItemWindow()?.frame,
+                panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
+            ))
+            // The content joins the window and lays out at the closed stage first, so every
+            // fade has a rendered start, the first open after launch included.
+            window.contentView = host
+            host.layoutSubtreeIfNeeded()
         }
-        installMonitors()
+        guard let placement else { return }
+        transition.open(style: style(for: placement.kind), at: now)
+        apply(at: now)
+        switch IslandTransition.keyAction(entryBecomesKey: entry.becomesKey, islandIsKey: islandWasKey) {
+        case .makeKey:
+            makeKey()
+        case .orderFront:
+            window.orderFrontRegardless()
+        case .handBack:
+            window.orderFrontRegardless()
+            // `resignKey()` is AppKit's own to call, and ordering the window out and back would
+            // leave Omelette active with no key window, typing going nowhere. The island turned
+            // key by making Omelette active (`makeKey`), so the inverse is deactivating it: the
+            // app that was active before gets the keyboard back, and the island stays up, since
+            // it does not hide on deactivation.
+            NSApp.deactivate()
+        }
+        if route != .reverse {
+            installMonitors()
+        }
         updateMouseIgnoring()
+        frames.start()
     }
 
     /// Opened by a click: key, with the content as first responder, so typing, Tab, paste,
@@ -191,7 +261,7 @@ final class IslandController: NSObject {
                 screenPoint: window.convertPoint(toScreen: event.locationInWindow),
                 windowFrame: window.frame
             )
-            return .island(geometry.region(of: point, contentSize: model.contentSize))
+            return .island(geometry.region(of: point, contentSize: model.contentSize, progress: shapeModel.progress))
         }
         if target === resting { return .restingNotch }
         if target === statusItemWindow() { return .statusItem }
@@ -209,7 +279,12 @@ final class IslandController: NSObject {
     }
 
     /// Esc closes the island while it is the key window; a key help popover takes its own.
+    /// While the island closes, a plain key aimed at it goes nowhere; a ⌘ shortcut goes on
+    /// (`swallowsKey`).
     private func keyDown(_ event: NSEvent) -> NSEvent? {
+        if transition.swallowsKey(
+            inIsland: event.window === window, command: event.modifierFlags.contains(.command)
+        ) { return nil }
         guard isOpen,
               IslandEventRules.escapeCloses(keyCode: event.keyCode, keyWindowIsIsland: NSApp.keyWindow === window)
         else { return event }
@@ -237,7 +312,7 @@ final class IslandController: NSObject {
         }
         resting.setFrame(IslandDisplayResolver.restingFrame(notch: notch), display: false)
         restingView.notchPath = IslandGeometry.restingPath(notch: notch, appliedFrame: resting.frame)
-        if isOpen {
+        if transition.phase != .closed {
             resting.order(.below, relativeTo: window.windowNumber)
         } else {
             resting.orderFrontRegardless()
@@ -273,10 +348,44 @@ final class IslandController: NSObject {
         ] {
             workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
         }
+        // The motion's frames pause while the displays sleep and stop for good if the island's
+        // window ever closes (it is normally only ordered out). Any wake signal resumes them:
+        // a missed screensDidWake must not leave a pending motion frozen.
+        workspace.addObserver(
+            self, selector: #selector(displaysSlept(_:)),
+            name: NSWorkspace.screensDidSleepNotification, object: nil
+        )
+        for name in [
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ] {
+            workspace.addObserver(self, selector: #selector(displaysWoke(_:)), name: name, object: nil)
+        }
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(islandWillClose(_:)),
+            name: NSWindow.willCloseNotification, object: window
+        )
         DistributedNotificationCenter.default().addObserver(
             self, selector: #selector(woke(_:)),
             name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
         )
+    }
+
+    /// The displays went to sleep: no frames until they wake (§ 3.8).
+    @objc private func displaysSlept(_ note: Notification) {
+        frames.displaysSlept()
+    }
+
+    /// The displays woke: frames resume only if the motion is still pending; its first frame
+    /// settles every deadline that passed meanwhile.
+    @objc private func displaysWoke(_ note: Notification) {
+        frames.displaysWoke()
+    }
+
+    /// The island's window closing for good: no more frames.
+    @objc private func islandWillClose(_ note: Notification) {
+        frames.stop()
     }
 
     /// A display came, went or changed mode; a lid open is one of these.
@@ -300,7 +409,7 @@ final class IslandController: NSObject {
     private func replace() {
         let screens = IslandScreen.current()
         placeResting(screens)
-        guard isOpen, let entry, let placement else { return }
+        guard transition.phase != .closed, let entry, let placement else { return }
         // The status item as it is now: it moves with the displays, and the resolver
         // prefers it over the frame a status-item entry was clicked on.
         guard let again = IslandDisplayResolver.replacement(
@@ -308,9 +417,12 @@ final class IslandController: NSObject {
             statusItemFrame: statusItemWindow()?.frame,
             panelWidth: PopoverView.width, menuBarHeight: Self.menuBarHeight
         ) else {
-            close()
+            // Its display is gone: nothing left to animate on.
+            finishClose()
             return
         }
+        // A closing island finishes where it is.
+        guard isOpen else { return }
         if let screen = screens.first(where: { $0.id == again.screenID }) {
             heights.setScreen(visibleHeight: Self.visibleHeight(of: screen))
         }
@@ -347,14 +459,68 @@ final class IslandController: NSObject {
         )
     }
 
+    // MARK: - Motion
+
+    /// Brings the transition up to `now`, as a frame would: every deadline due by then is
+    /// applied and shown, and a close that has ended finishes. Every open and close starts
+    /// here, so what they act on never depends on whether a frame came first.
+    private func settle(at now: TimeInterval) {
+        guard transition.phase != .closed else { return }
+        transition.advance(to: now)
+        apply(at: now)
+        if transition.phase == .closed {
+            finishClose()
+        }
+    }
+
+    /// The time an open or a close acts at: now, but never behind the last drawn frame.
+    private func eventTime() -> TimeInterval {
+        IslandFrameDriver.eventTime(now: clock(), lastFrame: lastFrameTime)
+    }
+
+    /// One frame of the frame source: the transition at the frame's time, handed to the
+    /// views; the mouse re-checked against the shape as it moves (P0 strategy B); the window
+    /// ordered out on the close's last frame; the frames stopped once nothing moves.
+    private func frame(_ now: TimeInterval) {
+        lastFrameTime = now
+        settle(at: now)
+        guard transition.phase != .closed else { return }
+        updateMouseIgnoring()
+        if !transition.needsFrames {
+            frames.stop()
+        }
+    }
+
+    /// The shape's progress on every call, the stage only when it changed, so the content's
+    /// views are re-evaluated a handful of times per open, never per frame.
+    private func apply(at now: TimeInterval) {
+        let progress = transition.progress(at: now)
+        if shapeModel.progress != progress {
+            shapeModel.progress = progress
+        }
+        if model.stage != transition.stage {
+            model.stage = transition.stage
+        }
+    }
+
+    /// Read at every open and close, so a Reduce Motion switch applies to the next one.
+    private func style(for kind: IslandDisplayResolver.Kind) -> IslandMotion.Style {
+        IslandMotion.style(kind: kind, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
     // MARK: - Clicks through the transparent part
 
-    /// The window takes the mouse only while the pointer is inside the shape, checked on
-    /// every mouse move and whenever the shape changes (P0 run 1, strategy B: 0 misses).
+    /// The window takes the mouse only while the pointer is inside the shape as it is drawn
+    /// now, checked on every mouse move, every frame of the motion and every content-size
+    /// change (P0 run 1, strategy B: 0 misses). Closing, the window ignores the mouse
+    /// whatever the shape (`close()`).
     private func updateMouseIgnoring(contentSize: CGSize? = nil) {
         guard isOpen, let geometry = model.geometry else { return }
         let point = IslandGeometry.windowPoint(screenPoint: NSEvent.mouseLocation, windowFrame: window.frame)
-        let inside = geometry.region(of: point, contentSize: contentSize ?? model.contentSize) != .outside
+        let region = geometry.region(
+            of: point, contentSize: contentSize ?? model.contentSize, progress: shapeModel.progress
+        )
+        let inside = region != .outside
         if window.ignoresMouseEvents == inside {
             window.ignoresMouseEvents = !inside
         }
