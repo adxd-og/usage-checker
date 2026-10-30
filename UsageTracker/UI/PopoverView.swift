@@ -74,7 +74,7 @@ struct PopoverView: View {
                 if placed.showsHabitat {
                     habitatSlot
                 }
-                rightColumn(columns)
+                rightViewport(columns)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
@@ -377,6 +377,22 @@ struct PopoverView: View {
         .onChange(of: showsCostInLowerRow, initial: true) { _, shown in
             if !shown { layout.record(costTile: nil) }
         }
+    }
+
+    /// The right column on screen, inside one scroll view that is always there (plan ruling
+    /// R8). While the column fits, the frame is the column's own height rounded up, so there
+    /// is nothing to scroll and `.basedOnSize` keeps it from bouncing; when even the agents
+    /// list's first two rows cannot fit the budget, the frame is the budget and it scrolls
+    /// (§ 3.3: no clipping). Never `scrollDisabled`: that is an environment value and would
+    /// also stop the agents list past its cap and an expanded agent detail inside it (review
+    /// finding 1). One structure either way, so no card is rebuilt when scrolling starts or
+    /// stops.
+    private func rightViewport(_ columns: ProviderGridRules.Columns) -> some View {
+        ScrollView(.vertical) {
+            rightColumn(columns)
+        }
+        .scrollBounceBehavior(.basedOnSize, axes: .vertical)
+        .frame(width: columns.right, height: layout.rightColumnViewport ?? 0)
     }
 
     /// The tiles on All (with the hooks offer under them), a provider's page, or what
