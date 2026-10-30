@@ -389,15 +389,22 @@ final class IslandTransitionTests: XCTestCase {
 
     func testOnlyAClosingIslandSwallowsKeysAndOnlyItsOwn() {
         var t = IslandTransition()
-        XCTAssertFalse(t.swallowsKey(inIsland: true), "closed")
+        XCTAssertFalse(t.swallowsKey(inIsland: true, command: false), "closed")
         t.open(style: .spring, at: 0)
         t.advance(to: 0.05)
-        XCTAssertFalse(t.swallowsKey(inIsland: true), "opening: Esc still closes")
+        XCTAssertFalse(t.swallowsKey(inIsland: true, command: false), "opening: Esc still closes")
         t.advance(to: 0.125)
         t.advance(to: 1)
-        XCTAssertFalse(t.swallowsKey(inIsland: true), "open")
+        XCTAssertFalse(t.swallowsKey(inIsland: true, command: false), "open")
         t.close(style: .spring, at: 1)
-        XCTAssertTrue(t.swallowsKey(inIsland: true), "closing")
-        XCTAssertFalse(t.swallowsKey(inIsland: false), "another window's keys are its own")
+        XCTAssertTrue(t.swallowsKey(inIsland: true, command: false), "closing")
+        XCTAssertFalse(t.swallowsKey(inIsland: false, command: false), "another window's keys are its own")
+    }
+
+    func testACommandKeyPassesWhileTheIslandCloses() {
+        var t = openIsland(at: 0)
+        t.close(style: .spring, at: 2)
+        XCTAssertTrue(t.swallowsKey(inIsland: true, command: false), "Esc or typing: swallowed")
+        XCTAssertFalse(t.swallowsKey(inIsland: true, command: true), "⌘Q and other shortcuts go on")
     }
 }

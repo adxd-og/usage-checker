@@ -86,10 +86,11 @@ struct IslandTransition: Equatable, Sendable {
         shape.value(at: time)
     }
 
-    /// A key aimed at the island while it closes goes nowhere: its content is leaving and no
-    /// longer interactive (§ 3.2), and a second Esc would beep. Another window's keys are its own.
-    func swallowsKey(inIsland: Bool) -> Bool {
-        phase == .closing && inIsland
+    /// A plain key aimed at the island while it closes (Esc, typing) goes nowhere: its content
+    /// is leaving and no longer interactive (§ 3.2), and a second Esc would beep. A key with ⌘
+    /// is a shortcut (⌘Q) and goes on. Another window's keys are its own.
+    func swallowsKey(inIsland: Bool, command: Bool) -> Bool {
+        phase == .closing && inIsland && !command
     }
 
     static func route(phase: Phase, sameDisplay: Bool) -> OpenRoute {
