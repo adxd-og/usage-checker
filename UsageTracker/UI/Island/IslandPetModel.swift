@@ -3,7 +3,7 @@ import Foundation
 
 /// What the island tells its pet (notch-island spec 2026-10-29 § 3.5 "Animate only when", § 3.8,
 /// "Jump from the island"): the gate's conditions the island knows — its transition open, the
-/// habitat on screen, its window not occluded, the display awake, the screen unlocked, Reduce
+/// habitat on screen, its window on screen, the display awake, the screen unlocked, Reduce
 /// Motion off — and the jumps that may close it. Owned by `IslandController` for the app's life;
 /// only the habitat observes it, so a gate edge redraws the habitat, never the right column. It
 /// publishes only a change, and every change of the gate pauses or resumes the app's pet runtime

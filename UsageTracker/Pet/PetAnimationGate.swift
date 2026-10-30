@@ -1,7 +1,7 @@
 import Foundation
 
 /// When the pet animates (notch-island spec 2026-10-29 § 3.5 "Animate only when", § 3.8
-/// battery): its surface open (the island's transition `open`), the window not occluded, the
+/// battery): its surface open (the island's transition `open`), the window on screen, the
 /// display awake, the screen not locked and Reduce Motion off. Otherwise the still frame and
 /// no timeline at all, so a collapsed island's pet adds no timer and no wakeup. Settings ›
 /// Pet's previews use the same gate with their window as the surface (§ 3.7). Pure.
@@ -10,7 +10,8 @@ enum PetAnimationGate {
         /// The island's transition is `open` (`islandOpen`); for Settings' previews, their
         /// window is on screen.
         var surfaceOpen: Bool
-        /// The window is not occluded (`WindowVisibilityReader`).
+        /// The window is on screen: the island's while it is ordered in (its occlusion state is
+        /// not reliable at that level, measured 2026-10-30); for Settings' previews, not occluded.
         var windowVisible: Bool
         var displayAwake: Bool
         var screenLocked: Bool

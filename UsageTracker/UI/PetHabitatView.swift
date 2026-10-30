@@ -60,11 +60,6 @@ struct PetHabitatView: View {
             }
         }
         .frame(width: ProviderGridRules.habitatWidth, height: height, alignment: .topLeading)
-        // Occluded, or out of the window once the island has closed. Reported a turn later: the
-        // reader can speak from inside a view update.
-        .background(WindowVisibilityReader { [pet = self.pet] visible in
-            Task { @MainActor in pet.setWindowVisible(visible) }
-        })
         // The habitat in the island's content is one of the gate's conditions.
         .onAppear {
             pet.setHabitatShown(true)
