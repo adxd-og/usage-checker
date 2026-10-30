@@ -59,17 +59,20 @@ struct PetFrame: Equatable, Sendable {
     let facesLeft: Bool
     /// The bit playing; nil while the pose's own animation does.
     let bit: PetBit?
+    /// A pat's heart is up.
+    let showsHeart: Bool
 }
 
 /// The pet's life inside its mood (notch-island spec 2026-10-29 § 3.5 Runtime, § 3.9
-/// `PetRuntime`): which frame shows, where on the floor, when the idle loop plays a bit, and
-/// the stretch after a limit reset. One per app, so it outlives the panel: the visible open
-/// time, the next bit's deadline, where the pet stands and the last reset per window carry
-/// from one open to the next. Time comes in as `now`, chance from an injected `PetRandom`; nothing here
-/// starts a timer. The habitat calls `resume` and `pause` when `PetAnimationGate` turns on and
-/// off, and `tick` on each frame of its one `TimelineView` while it is on, at the returned
-/// frame's `fps`; the app hands it every poll through `observe`. Motion never leaves the
-/// habitat: the pet stays within `roamBeads` of floor and moves in whole beads. Pure.
+/// `PetRuntime`): which frame shows, where on the floor, when the idle loop plays a bit, the
+/// stretch after a limit reset and the pat. One per app, so it outlives the panel: the visible
+/// open time, the next bit's deadline, where the pet stands, the last reset per window and the
+/// pat carry from one open to the next. Time comes in as `now`, chance from an injected
+/// `PetRandom`; nothing here starts a timer. The habitat calls `resume` and `pause` when
+/// `PetAnimationGate` turns on and off, and `tick` on each frame of its one `TimelineView`
+/// while it is on, at the returned frame's `fps`; the app hands it every poll through
+/// `observe`. Motion never leaves the habitat: the pet stays within `roamBeads` of floor and
+/// moves in whole beads. Pure.
 struct PetRuntime {
     /// The farthest a walk goes: 16 beads, 2 s at the walk's 8 fps.
     static let walkBeads = 16
@@ -77,6 +80,8 @@ struct PetRuntime {
     static let napCycles = 2
     /// A reset the pet could not stretch for within 10 min is let go.
     static let stretchFreshness: TimeInterval = 600
+    /// How long a pat's heart stays up (§ 3.5: "a pat (♥ 1.2 s)").
+    static let patDuration: TimeInterval = 1.2
 
     private let random: PetRandom
     /// The visible open time and the next bit's deadline.
@@ -89,8 +94,10 @@ struct PetRuntime {
     private(set) var facesLeft = false
     /// When a live poll showed a reset the pet has not stretched for yet.
     private(set) var stretchSeenAt: Date?
-    /// The pose's own animation and since when; nil after a pause or a bit, so it starts again
-    /// from its first frame.
+    /// Until when a pat's heart is up.
+    private(set) var patUntil: Date?
+    /// The pose's own animation and since when; nil after a pause, a bit or a pat, so it starts
+    /// again from its first frame.
     private var base: Base?
     private var running: Running?
 
@@ -137,6 +144,24 @@ struct PetRuntime {
         if !resets.observe(services, now: now).isEmpty { stretchSeenAt = now }
     }
 
+    // MARK: - Pat
+
+    /// A click on the idle pet (§ 3.5 row 7, D11): its heart is up for 1.2 s, a running bit
+    /// stops, and the next slot (a waiting stretch's too) is due 20–40 s of visible time later,
+    /// so nothing starts under the heart.
+    mutating func pat(at now: Date) {
+        patUntil = now.addingTimeInterval(Self.patDuration)
+        running = nil
+        base = nil
+        clock.reschedule(at: now, random: random)
+    }
+
+    /// The heart is up at `now`: for a still pet too (Reduce Motion), which the habitat draws
+    /// without a timeline.
+    func showsHeart(at now: Date) -> Bool {
+        patUntil.map { now < $0 } ?? false
+    }
+
     // MARK: - Stills
 
     /// The frame while the gate is off, the entrance included (§ 3.5: "otherwise the still
@@ -149,9 +174,9 @@ struct PetRuntime {
     // MARK: - Frames
 
     /// The frame at `now` for a mood showing `pose`; `loops`: the mood runs the idle loop (Idle,
-    /// Agent working: `PetMoodRules.runsIdleLoop`), where bits and the stretch play.
-    /// `activity` is the user's, `animations` the pet's, `roamBeads` the floor beside the pet
-    /// in beads (the habitat's width in beads less the pet's).
+    /// Agent working: `PetMoodRules.runsIdleLoop`), where bits, the stretch and the pat's heart
+    /// play. `activity` is the user's, `animations` the pet's, `roamBeads` the floor beside
+    /// the pet in beads (the habitat's width in beads less the pet's).
     mutating func tick(
         at now: Date,
         pose: PetPose,
@@ -164,6 +189,8 @@ struct PetRuntime {
         let roam = max(0, roamBeads)
         xBeads = min(xBeads, roam)
         if let seen = stretchSeenAt, now.timeIntervalSince(seen) > Self.stretchFreshness { stretchSeenAt = nil }
+        if let until = patUntil, now >= until { patUntil = nil }
+        let patted = loops && patUntil != nil
         let quiet = activity.isBusy
 
         if let current = running {
@@ -195,12 +222,15 @@ struct PetRuntime {
                 let steps = min(current.beads, Int((elapsed * animation.fps).rounded(.down)))
                 xBeads = clamped(current.fromX + current.step * steps, roam: roam)
             }
-            return show(animation, elapsed: elapsed, bit: current.bit)
+            return show(animation, elapsed: elapsed, bit: current.bit, heart: patted)
         }
 
         if base?.pose != pose { base = Base(pose: pose, since: now) }
         let since = base?.since ?? now
-        return show(animations[pose.animation], elapsed: max(0, now.timeIntervalSince(since)), bit: nil)
+        return show(
+            animations[pose.animation], elapsed: max(0, now.timeIntervalSince(since)),
+            bit: nil, heart: patted
+        )
     }
 
     // MARK: - Private
@@ -235,9 +265,17 @@ struct PetRuntime {
         base = nil
     }
 
-    private func show(_ animation: PetAnimation, elapsed: TimeInterval, bit: PetBit?) -> PetFrame {
+    private func show(
+        _ animation: PetAnimation,
+        elapsed: TimeInterval,
+        bit: PetBit?,
+        heart: Bool
+    ) -> PetFrame {
         let index = Int((elapsed * animation.fps).rounded(.down)) % animation.frames.count
-        return PetFrame(frame: animation.frames[index], fps: animation.fps, xBeads: xBeads, facesLeft: facesLeft, bit: bit)
+        return PetFrame(
+            frame: animation.frames[index], fps: animation.fps, xBeads: xBeads,
+            facesLeft: facesLeft, bit: bit, showsHeart: heart
+        )
     }
 
     private func clamped(_ x: Int, roam: Int) -> Int {
