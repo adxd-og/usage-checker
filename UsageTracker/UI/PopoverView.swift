@@ -26,6 +26,9 @@ struct PopoverView: View {
     /// Where the content is, All or a provider's page, and the move toward it
     /// (`IslandNavigationModel`, § 3.4), owned by `IslandController` for the app's life.
     @ObservedObject var navigation: IslandNavigationModel
+    /// What the island tells its pet (`IslandPetModel`, § 3.5): the gate's conditions, the app's pet
+    /// runtime, the jumps and the close. Not observed here: only the habitat redraws for it.
+    let pet: IslandPetModel
     /// The display mode. Observed here rather than read once, so flipping the switch
     /// in Settings repaints the island under the cursor.
     @ObservedObject private var settings = SettingsStore.shared
@@ -41,6 +44,12 @@ struct PopoverView: View {
     /// Whether Antigravity is installed, for its page's state help (`ProviderStateHelp`):
     /// read with the hooks, once per open, off the main thread.
     @State private var antigravityInstalled = false
+    /// A card a pet click asked to show, waiting until it is on screen and the page has settled
+    /// (`PetActionRules.revealReady`, Codex review 2).
+    @State private var pendingReveal: PetCard?
+    /// The navigation's destination when the reveal was asked for (All after the click's own
+    /// Back): a newer move drops the reveal (`PetActionRules.revealStillWanted`).
+    @State private var revealAskedOn: IslandNavigation.Page = .all
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -71,13 +80,30 @@ struct PopoverView: View {
                 stripRow(notchWidth: 0)
                     .frame(height: IslandHeightRules.panelHeaderHeight)
             }
-            HStack(alignment: .top, spacing: ProviderGridRules.habitatGap) {
-                if placed.showsHabitat {
-                    habitatSlot
+            // One scroll reader for the habitat and the right column: a pet click can bring a card
+            // into view once it is there (`pendingReveal`).
+            ScrollViewReader { scroll in
+                HStack(alignment: .top, spacing: ProviderGridRules.habitatGap) {
+                    if placed.showsHabitat {
+                        habitat
+                    }
+                    rightViewport(columns)
                 }
-                rightViewport(columns)
+                .fixedSize(horizontal: false, vertical: true)
+                .onChange(of: revealReady, initial: true) { _, ready in
+                    guard ready, let card = pendingReveal else { return }
+                    pendingReveal = nil
+                    scroll.scrollTo(Self.cardID(card), anchor: .bottom)
+                }
+                // A newer move than the one the click asked for — ⌘1 before Back settled, a tile,
+                // a logo — drops the pending reveal (Codex's re-review of the plan).
+                .onChange(of: navigation.page) { _, destination in
+                    guard pendingReveal != nil,
+                          !PetActionRules.revealStillWanted(askedOn: revealAskedOn, destination: destination)
+                    else { return }
+                    pendingReveal = nil
+                }
             }
-            .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, Self.padding)
         .padding(.top, placed.kind == .island ? IslandHeightRules.islandTopInset : Self.padding)
@@ -371,14 +397,75 @@ struct PopoverView: View {
 
     // MARK: - The habitat
 
-    /// The habitat's column (§ 3.3): the pet lives here from P5c on. Until then empty space
-    /// keeps its 150 pt, so the grid has its final width (plan ruling R4). No fill and no
-    /// edge: the pet stands on the island itself (owner 2026-10-30).
-    private var habitatSlot: some View {
-        Color.clear
-            .frame(width: ProviderGridRules.habitatWidth)
-            .frame(maxHeight: .infinity)
-            .accessibilityHidden(true)
+    /// The habitat's column (§ 3.3, § 3.5): the pet on the floor at its bottom, as tall as the
+    /// right column on screen. No fill and no edge: the pet stands on the island itself (owner
+    /// 2026-10-30).
+    private var habitat: some View {
+        PetHabitatView(
+            pet: pet,
+            height: layout.rightColumnViewport ?? 0,
+            page: navigation.page,
+            providers: providerIDs,
+            onEffect: { perform($0) }
+        )
+    }
+
+    // MARK: - The pet's click (§ 3.5, D11)
+
+    /// The cards a pet click brings into view (`PetEffect.reveal`).
+    nonisolated static let agentsCardID = "islandAgentsCard"
+    nonisolated static let keepAwakeCardID = "islandKeepAwakeCard"
+
+    nonisolated static func cardID(_ card: PetCard) -> String {
+        switch card {
+        case .agents: agentsCardID
+        case .keepAwake: keepAwakeCardID
+        }
+    }
+
+    /// The pending card can be scrolled to now: it is still wanted where the island is going, it
+    /// is on screen and no page move runs.
+    private var revealReady: Bool {
+        guard let card = pendingReveal,
+              PetActionRules.revealStillWanted(askedOn: revealAskedOn, destination: navigation.page)
+        else { return false }
+        return PetActionRules.revealReady(card, agentsCardShown: lowerRowAgents != nil, moving: navigation.isMoving)
+    }
+
+    /// One effect of a click on the pet (`PetActionRules`; a pat is the habitat's own): a move of
+    /// the content, a card brought into view once it is there, a jump that closes the island once
+    /// the session's window is in front (if it is still this open's latest jump), Claude's sign-in
+    /// or install page with the island closed, Settings on its tab (the island closes as Settings
+    /// turns key).
+    private func perform(_ effect: PetEffect) {
+        switch effect {
+        case .jump(let id):
+            guard let session = agents.sessions.first(where: { $0.id == id }) else { return }
+            let close = pet.jumpStarted()
+            SessionActivator.jump(to: session) { landed in
+                if landed { close() }
+            }
+        case .navigate(let input):
+            navigation.request(input, providers: providerIDs)
+        case .reveal(let card):
+            // The click's own move (Back) has already been requested: its destination is the
+            // page this reveal belongs to.
+            revealAskedOn = navigation.page
+            pendingReveal = card
+        case .signIn:
+            Task { await ClaudeSignInModel.shared.signIn() }
+        case .openInstallPage:
+            _ = NSWorkspace.shared.open(ClaudeSignInCopy.installURL)
+        case .openSettings(let tab):
+            SettingsRoute.shared.pendingTab = tab.rawValue
+            NSApp.activate(ignoringOtherApps: true)
+            openSettings()
+        case .closeIsland:
+            pet.closeIsland()
+        case .pat:
+            // The habitat's own: it pats the keeper and redraws its heart.
+            break
+        }
     }
 
     // MARK: - The right column
@@ -705,6 +792,9 @@ struct PopoverView: View {
                     embedded: true,
                     maxListHeight: layout.agentsListCap,
                     onListGeometry: { layout.record(list: $0) },
+                    // A jump that landed closes the island, if it is still this open's latest
+                    // (§ 3.5); a failed one leaves it open.
+                    onJumpStarted: { [pet = self.pet] in pet.jumpStarted() },
                     onEnable: openAgentsSettings
                 )
                 .padding(.vertical, ProviderGridRules.agentsCardVerticalPadding)
@@ -715,6 +805,7 @@ struct PopoverView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .popoverSurface(.group)
+                .id(Self.agentsCardID)
             }
             VStack(spacing: ProviderGridRules.gap) {
                 if showsCostInLowerRow {
@@ -733,6 +824,8 @@ struct PopoverView: View {
                     layout.record(keepAwake: height)
                 }
                 .frame(maxHeight: .infinity)
+                // A constant id: a pet click can scroll to it, and its identity never changes.
+                .id(Self.keepAwakeCardID)
             }
             .frame(width: row.otherWidth)
         }
@@ -1267,7 +1360,10 @@ private struct ServiceStateLabel: View {
 }
 
 #Preview("Popover — All") {
-    PopoverView(state: AppState.shared, layout: IslandLayoutModel(), navigation: IslandNavigationModel())
+    PopoverView(
+        state: AppState.shared, layout: IslandLayoutModel(), navigation: IslandNavigationModel(),
+        pet: IslandPetModel(keeper: PetKeeper(random: .system()))
+    )
 }
 
 #Preview("Provider detail") {

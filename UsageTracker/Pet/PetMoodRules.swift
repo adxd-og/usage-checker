@@ -1,8 +1,8 @@
 import Foundation
 
 /// The pet's mood (notch-island spec 2026-10-29 § 3.5 "Mood rule"): the first row of the
-/// priority table that holds. The pose, place, words and click of each are
-/// `PetMoodRules.presentation(of:…)`'s.
+/// priority table that holds. The pose, words and click of each are
+/// `PetMoodRules.presentation(of:…)`'s; every mood stands on the habitat's floor.
 enum PetMood: Equatable, Sendable {
     /// 1. Agent sessions wait for the user: every waiting one, the most recently active first.
     case needsYou([AgentSession])
@@ -37,7 +37,7 @@ struct PetMoodInput: Equatable, Sendable {
 /// The pet's priority table (notch-island spec 2026-10-29 § 3.5 "Mood rule", § 3.9
 /// `PetMoodRules`). Pure.
 enum PetMoodRules {
-    /// Keep awake puts the pet to sleep on the sill from 22:00 …
+    /// Keep awake puts the pet to sleep on the floor from 22:00 …
     static let nightStartHour = 22
     /// … to 06:00, on the clock of the calendar's time zone.
     static let nightEndHour = 6

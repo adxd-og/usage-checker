@@ -45,6 +45,10 @@ struct AgentsSection: View {
     /// list to the screen from it (`IslandLayoutModel`, `IslandHeightRules`); nil
     /// everywhere else.
     var onListGeometry: ((AgentsListGeometry?) -> Void)? = nil
+    /// The island's: called as a row's jump starts, it hands back what to call once the session's
+    /// window is in front — the island closes then, if it is still that open's latest jump
+    /// (notch-island spec 2026-10-29 § 3.5, Jump from the island). nil elsewhere.
+    var onJumpStarted: (@MainActor () -> (@MainActor @Sendable () -> Void))? = nil
     let onEnable: () -> Void
 
     nonisolated static let defaultTitle = "Agents"
@@ -169,9 +173,20 @@ struct AgentsSection: View {
             showsProviderIcon: grouped,
             onAllow: { Self.answer(session, .allow) },
             onDeny: { Self.answer(session, .deny) },
-            action: { SessionActivator.jump(to: session) }
+            action: { Self.jump(to: session, onLanded: onJumpStarted?()) }
         )
         .opacity(Self.rowOpacity(session.state))
+    }
+
+    /// A row's jump; with `onLanded`, told once the session's app is in front, never on failure.
+    static func jump(to session: AgentSession, onLanded: (@MainActor @Sendable () -> Void)?) {
+        guard let onLanded else {
+            SessionActivator.jump(to: session)
+            return
+        }
+        SessionActivator.jump(to: session) { landed in
+            if landed { onLanded() }
+        }
     }
 
     /// A row can outlive the request it was drawn for — the hold expires, or you

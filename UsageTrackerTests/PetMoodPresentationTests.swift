@@ -1,8 +1,9 @@
 import XCTest
 @testable import Omelette
 
-/// Notch-island spec 2026-10-29 § 3.5 "Mood rule": one priority table → pose, habitat position,
-/// mood line, accessibility label, click action, row by row; D11: the click is the top mood's
+/// Notch-island spec 2026-10-29 § 3.5 "Mood rule": one priority table → pose, mood line,
+/// accessibility label, click action, row by row — every mood on the habitat's floor (owner
+/// 2026-10-30, P5c plan: the mood shows through pose and line); D11: the click is the top mood's
 /// action, a pat when idle. The idle loop runs in the calm rows, Idle and Agent working (owner
 /// 2026-10-30; the spec's table gives it to Idle alone).
 final class PetMoodPresentationTests: XCTestCase {
@@ -43,26 +44,25 @@ final class PetMoodPresentationTests: XCTestCase {
         ]
     }
 
-    func testEachRowHasItsPosePlaceAndClick() throws {
-        let expected: [(PetPose, PetPlace, PetAction)] = [
-            (.look, .agentsCard, .jump(sessionID: "claude:s1")),
-            (.look, .agentsCard, .needsYouList),
-            (.look, .tile(serviceID: "claude"), .claudeRecovery(.signIn)),
-            (.look, .tile(serviceID: "claude"), .claudeRecovery(.install)),
-            (.look, .tile(serviceID: "claude"), .claudeRecovery(.keychainAccess)),
-            (.look, .tile(serviceID: "claude"), .nothing),
-            (.look, .tile(serviceID: "codex"), .providerPage(serviceID: "codex")),
-            (.sleep, .sill, .keepAwakeCard),
-            (.idle, .middle, .agentsCard),
-            (.sleep, .floor, .providersSettings),
-            (.idle, .anywhere, .pat),
+    func testEachRowHasItsPoseAndClick() throws {
+        let expected: [(PetPose, PetAction)] = [
+            (.look, .jump(sessionID: "claude:s1")),
+            (.look, .needsYouList),
+            (.look, .claudeRecovery(.signIn)),
+            (.look, .claudeRecovery(.install)),
+            (.look, .claudeRecovery(.keychainAccess)),
+            (.look, .nothing),
+            (.look, .providerPage(serviceID: "codex")),
+            (.sleep, .keepAwakeCard),
+            (.idle, .agentsCard),
+            (.sleep, .providersSettings),
+            (.idle, .pat),
         ]
         let moods = try moods()
         XCTAssertEqual(moods.count, expected.count)
-        for (mood, (pose, place, action)) in zip(moods, expected) {
+        for (mood, (pose, action)) in zip(moods, expected) {
             let presentation = shown(mood)
             XCTAssertEqual(presentation.pose, pose, "\(mood)")
-            XCTAssertEqual(presentation.place, place, "\(mood)")
             XCTAssertEqual(presentation.action, action, "\(mood)")
         }
     }

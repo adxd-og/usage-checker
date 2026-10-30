@@ -29,6 +29,9 @@ final class IslandController: NSObject {
     private let layout: IslandLayoutModel
     /// Where the content is, All or a provider's page, and the move toward it (§ 3.4).
     private let navigation: IslandNavigationModel
+    /// What the island tells its pet (§ 3.5): its phase, the display, the lock, Reduce Motion, the
+    /// opens and closes for the jumps; it holds the app's one pet runtime.
+    private let pet: IslandPetModel
     /// The notch-sized panel at rest over the notch (D13), and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
@@ -64,17 +67,19 @@ final class IslandController: NSObject {
         let shapeModel = IslandShapeModel()
         let layout = IslandLayoutModel()
         let navigation = IslandNavigationModel()
+        let pet = IslandPetModel(keeper: PetKeeper(random: .system()))
         self.model = model
         self.shapeModel = shapeModel
         self.layout = layout
         self.navigation = navigation
+        self.pet = pet
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
         self.restingView = RestingNotchView(frame: .zero)
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
-            content: PopoverView(state: AppState.shared, layout: layout, navigation: navigation)
+            content: PopoverView(state: AppState.shared, layout: layout, navigation: navigation, pet: pet)
         ))
         self.host = host
         self.frames = IslandFrameDriver(source: DisplayLinkFrameSource(view: host))
@@ -88,6 +93,17 @@ final class IslandController: NSObject {
         // Reduce Motion and the frames are here (plan ruling R13).
         navigation.onRequest = { [weak self] input, providers in
             _ = self?.navigate(input, providers: providers)
+        }
+        // The pet (§ 3.5): every snapshot from launch reaches its reset watch; at each frame it
+        // reads what the user is doing on the island; Reduce Motion as it is now; a click that
+        // leaves the island closes it.
+        pet.keeper.watch(AppState.shared.$snapshot.map(\.services))
+        pet.keeper.activity = { [weak self] in
+            self?.userActivity() ?? .none
+        }
+        pet.setReduceMotion(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+        pet.closeIsland = { [weak self] in
+            self?.close()
         }
         resting.contentView = restingView
         restingView.onPress = { [weak self] option in
@@ -148,6 +164,8 @@ final class IslandController: NSObject {
         let now = eventTime()
         settle(at: now)
         guard isOpen, let placement else { return }
+        // A jump started before this close can no longer close the island (Codex review 3).
+        pet.islandClosed()
         // From the first frame of a close the whole window ignores the mouse until the next
         // open (P0 run 1: a still pointer reached the shrinking island at p = 0.285).
         window.ignoresMouseEvents = true
@@ -167,6 +185,7 @@ final class IslandController: NSObject {
         window.contentView = placeholder
         shapeModel.progress = 0
         model.stage = transition.stage
+        pet.show(phase: transition.phase)
         entry = nil
         placement = nil
     }
@@ -216,6 +235,8 @@ final class IslandController: NSObject {
             host.layoutSubtreeIfNeeded()
         }
         guard let placement else { return }
+        // Every open, a turned-around close included, starts a new generation of jumps.
+        pet.islandOpened()
         transition.open(style: style(for: placement.kind), at: now)
         apply(at: now)
         switch IslandTransition.keyAction(entryBecomesKey: entry.becomesKey, islandIsKey: islandWasKey) {
@@ -451,22 +472,52 @@ final class IslandController: NSObject {
             self, selector: #selector(woke(_:)),
             name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
         )
+        // The pet holds still behind the lock screen and under Reduce Motion (§ 3.5, Animate only
+        // when), from the moment either changes.
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(screenLocked(_:)),
+            name: Notification.Name("com.apple.screenIsLocked"), object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(screenUnlocked(_:)),
+            name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
+        )
+        workspace.addObserver(
+            self, selector: #selector(displayOptionsChanged(_:)),
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil
+        )
     }
 
     /// The displays went to sleep: no frames until they wake (§ 3.8).
     @objc private func displaysSlept(_ note: Notification) {
         frames.displaysSlept()
+        pet.setDisplayAwake(false)
     }
 
     /// The displays woke: frames resume only if the motion is still pending; its first frame
     /// settles every deadline that passed meanwhile.
     @objc private func displaysWoke(_ note: Notification) {
         frames.displaysWoke()
+        pet.setDisplayAwake(true)
     }
 
     /// The island's window closing for good: no more frames.
     @objc private func islandWillClose(_ note: Notification) {
         frames.stop()
+    }
+
+    /// The screen locked or unlocked: the pet's gate (§ 3.5).
+    @objc private func screenLocked(_ note: Notification) {
+        pet.setScreenLocked(true)
+    }
+
+    @objc private func screenUnlocked(_ note: Notification) {
+        pet.setScreenLocked(false)
+    }
+
+    /// Reduce Motion switched in System Settings: the pet's gate (§ 3.5).
+    @objc private func displayOptionsChanged(_ note: Notification) {
+        pet.setReduceMotion(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
     }
 
     /// A display came, went or changed mode; a lid open is one of these.
@@ -591,11 +642,32 @@ final class IslandController: NSObject {
         if model.stage != transition.stage {
             model.stage = transition.stage
         }
+        // The pet animates only while the island is open (§ 3.5): its clock stops on a close's
+        // first frame. The model acts on a change only.
+        pet.show(phase: transition.phase)
     }
 
     /// Read at every open and close, so a Reduce Motion switch applies to the next one.
     private func style(for kind: IslandDisplayResolver.Kind) -> IslandMotion.Style {
         IslandMotion.style(kind: kind, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    // MARK: - The pet
+
+    /// What the user is doing on the island, read by the pet at each frame (§ 3.5 Runtime: no bit
+    /// while the pointer is over the right column or a field has focus): the pointer in the
+    /// content's coordinates, and the field editor as the window's first responder.
+    private func userActivity() -> PetUserActivity {
+        var activity = PetUserActivity.none
+        if let geometry = model.geometry {
+            let point = IslandGeometry.windowPoint(screenPoint: NSEvent.mouseLocation, windowFrame: window.frame)
+            let origin = geometry.contentOrigin(contentSize: model.contentSize)
+            activity.pointerOverContent = PetHabitatRules.pointerOverContent(
+                CGPoint(x: point.x - origin.x, y: point.y - origin.y), contentSize: model.contentSize
+            )
+        }
+        activity.fieldFocused = window.firstResponder is NSText
+        return activity
     }
 
     // MARK: - Clicks through the transparent part
