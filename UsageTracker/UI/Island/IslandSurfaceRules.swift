@@ -18,4 +18,11 @@ enum IslandSurfaceRules {
         case .panel: return reduceTransparency ? .windowBackground : .contentsOwn
         }
     }
+
+    /// The content's tiles and cards wear the island's nearly transparent surfaces on the
+    /// island only; the panel keeps its cards (§ 3.1, Surfaces on the island; owner
+    /// 2026-10-30; `OMPopoverSurface.style(onIsland:)`).
+    static func surfacesOnIsland(kind: IslandDisplayResolver.Kind) -> Bool {
+        kind == .island
+    }
 }

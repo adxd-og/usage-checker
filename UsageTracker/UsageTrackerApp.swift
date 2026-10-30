@@ -134,17 +134,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// A click on a notification or a double click on the app in Finder (notch-island spec
+    /// 2026-10-29 § 3.1, Reopen): with no window on screen it opens the island, never the
+    /// hidden Dashboard (`ReopenRules`).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { focusExistingWindow() }
-        return true
-    }
-
-    private func focusExistingWindow() {
-        NSApp.activate()
-        for window in NSApp.windows where window.canBecomeMain && !window.isMiniaturized {
-            window.makeKeyAndOrderFront(nil)
-            return
+        let action = ReopenRules.action(hasVisibleWindows: flag)
+        if action == .openIsland {
+            island?.handle(.notification(pointer: NSEvent.mouseLocation))
         }
+        return action.appKitHandlesReopen
     }
 
     private func scheduleOnboardingIfNeeded() {

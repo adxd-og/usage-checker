@@ -520,10 +520,13 @@ struct PopoverView: View {
 
     /// The grid's lower row (§ 3.3): the agents card | the cost tile over keep awake. Both
     /// halves are as tall as the taller; each part reports its own height before the row
-    /// stretches it, so `IslandHeightRules` can size the agents list to the island.
+    /// stretches it, so `IslandHeightRules` can size the agents list to the island. With no
+    /// agents card the cost tile over keep awake spans the row (`ProviderGridRules.lowerRow`).
     private func lowerRow(_ columns: ProviderGridRules.Columns) -> some View {
-        HStack(alignment: .top, spacing: ProviderGridRules.gap) {
-            if let card = lowerRowAgents {
+        let agentsCard = lowerRowAgents
+        let row = ProviderGridRules.lowerRow(columns: columns, hasAgentsCard: agentsCard != nil)
+        return HStack(alignment: .top, spacing: ProviderGridRules.gap) {
+            if let card = agentsCard {
                 AgentsSection(
                     sessions: card.sessions,
                     grouped: card.grouped,
@@ -541,8 +544,6 @@ struct PopoverView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .popoverSurface(.group)
-            } else {
-                Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
             }
             VStack(spacing: ProviderGridRules.gap) {
                 if showsCostInLowerRow {
@@ -554,13 +555,15 @@ struct PopoverView: View {
                         }
                 }
                 // Keep awake with the lid closed (spec 2026-10-26, § UI): at this place on
-                // every view, so its typed fields survive a tab switch.
-                KeepAwakeSection(interiorWidth: columns.cardInterior) { height in
+                // every view, so its typed fields survive a tab switch. Only its width moves
+                // when the agents card comes or goes; the card is the row's optional first
+                // child, never an if/else around this one.
+                KeepAwakeSection(interiorWidth: row.keepAwakeInterior) { height in
                     layout.record(keepAwake: height)
                 }
                 .frame(maxHeight: .infinity)
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: row.otherWidth)
         }
         .fixedSize(horizontal: false, vertical: true)
     }

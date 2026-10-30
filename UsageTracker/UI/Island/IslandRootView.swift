@@ -53,6 +53,9 @@ struct IslandRootView<Content: View>: View {
                             .fill(Color(nsColor: .windowBackgroundColor))
                     }
                     content
+                        // Tiles and cards nearly transparent on the island, the panel's own
+                        // elsewhere (§ 3.1, Surfaces on the island; `OMPopoverSurface.style`).
+                        .environment(\.popoverSurfaceOnIsland, IslandSurfaceRules.surfacesOnIsland(kind: geometry.kind))
                         .fixedSize()
                         .onGeometryChange(for: CGSize.self) { proxy in
                             proxy.size

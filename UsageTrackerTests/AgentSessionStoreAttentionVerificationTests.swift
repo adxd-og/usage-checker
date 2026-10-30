@@ -144,9 +144,10 @@ final class AgentSessionStoreAttentionVerificationTests: XCTestCase {
         XCTAssertEqual(session?.state, .needsYou)
     }
 
-    func testPendingPermissionCarriesTheAttentionFromTheEventItself() {
-        // Spec/plan attack surface: `PendingPermission.attention` must be set from
-        // the registering event, independent of anything already on the session.
+    func testAQuestionsPermissionRequestIsNeverHeldWhateverItsAttention() {
+        // Was: a held AskUserQuestion carried its attention. Owner ruling 2026-10-30
+        // (notch-island spec § 3.1 notes): Allow / Deny never answers a question or a
+        // plan, so the broker releases it to the terminal and nothing is pending.
         let store = makeStore()
         let presence = PresenceMonitor(frontmost: { (1, "com.other.app") }, hostHasVisibleWindow: { _ in true })
         let broker = PermissionBroker(store: store, presence: presence, featureEnabled: { true })
@@ -162,8 +163,7 @@ final class AgentSessionStoreAttentionVerificationTests: XCTestCase {
         )
         broker.register(event: questionPermission, reply: reply, session: nil, now: t0)
 
-        XCTAssertEqual(broker.pending.first?.attention, .question(count: 1, multiSelect: false))
-        XCTAssertEqual(broker.pending.first?.detail, "Tabs or spaces?\n• Tabs")
+        XCTAssertTrue(broker.pending.isEmpty, "a question goes back to the terminal; no Allow / Deny row")
     }
 
     // MARK: - Clearing

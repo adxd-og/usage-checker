@@ -97,4 +97,30 @@ final class ProviderGridRulesTests: XCTestCase {
             .init(content: 612, right: 612, half: 301)
         )
     }
+
+    // MARK: - The lower row (owner 2026-10-30)
+
+    func testWithAnAgentsCardTheLowerRowSplitsIntoTwoHalves() {
+        let columns = ProviderGridRules.columns(bodyWidth: 640, showsHabitat: true)
+        let row = ProviderGridRules.lowerRow(columns: columns, hasAgentsCard: true)
+        XCTAssertEqual(row, .init(agentsWidth: 220, otherWidth: 220))
+        XCTAssertEqual(row.keepAwakeInterior, 192, "keep awake lays out in a half's card interior")
+    }
+
+    func testWithoutAnAgentsCardKeepAwakeSpansTheWholeRow() {
+        // Grok's or Antigravity's page: no agents card, so the cost tile over keep awake
+        // takes the grid's full 450 and keep awake lays out in 450 − 2 × 14.
+        let columns = ProviderGridRules.columns(bodyWidth: 640, showsHabitat: true)
+        let row = ProviderGridRules.lowerRow(columns: columns, hasAgentsCard: false)
+        XCTAssertEqual(row, .init(agentsWidth: nil, otherWidth: 450))
+        XCTAssertEqual(row.keepAwakeInterior, 422)
+    }
+
+    func testTheFullWidthRowFollowsTheIslandsWidth() {
+        let wide = ProviderGridRules.columns(bodyWidth: 720, showsHabitat: true)
+        XCTAssertEqual(ProviderGridRules.lowerRow(columns: wide, hasAgentsCard: false).keepAwakeInterior, 502)
+        let narrow = ProviderGridRules.columns(bodyWidth: 560, showsHabitat: false)
+        XCTAssertEqual(ProviderGridRules.lowerRow(columns: narrow, hasAgentsCard: false).keepAwakeInterior, 504)
+        XCTAssertEqual(ProviderGridRules.lowerRow(columns: narrow, hasAgentsCard: true).keepAwakeInterior, 233)
+    }
 }

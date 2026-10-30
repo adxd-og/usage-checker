@@ -78,6 +78,21 @@ final class PermissionBrokerTests: XCTestCase {
         }
     }
 
+    // Owner 2026-10-30: Allow / Deny cannot answer a multiple-choice question or approve a
+    // plan, so those two tools are never held; the terminal asks as usual.
+
+    func testAQuestionIsNeverAnsweredWithAllowOrDeny() {
+        XCTAssertFalse(PermissionBroker.isAnswerable(toolName: "AskUserQuestion"))
+    }
+
+    func testAPlanIsNeverAnsweredWithAllowOrDeny() {
+        XCTAssertFalse(PermissionBroker.isAnswerable(toolName: "ExitPlanMode"))
+    }
+
+    func testAnOrdinaryToolIsStillAnsweredWithAllowOrDeny() {
+        XCTAssertTrue(PermissionBroker.isAnswerable(toolName: "Bash"))
+    }
+
     // MARK: - register
 
     func testHoldsWhenTheUserIsAwayAndPublishesPending() {
@@ -102,18 +117,36 @@ final class PermissionBrokerTests: XCTestCase {
         XCTAssertNil(line(peer), "nothing goes to the helper while held")
     }
 
-    func testAHeldRequestForAQuestionCarriesItsAttention() {
-        let broker = makeBroker()
-        let (reply, _) = reply()
-        let event = AgentEvent(
-            source: .claude, kind: .permissionRequested, sessionID: "s1",
-            cwd: "/Users/tester/Projects/alpha", toolName: "AskUserQuestion",
-            toolSummary: "Question: Tabs or spaces?", toolDetail: "Tabs or spaces?",
-            attention: .question(count: 1, multiSelect: false),
-            isSubagent: false, host: iterm, receivedAt: t0, requestID: AgentFixture.requestID
-        )
-        broker.register(event: event, reply: reply, session: nil, now: t0)
-        XCTAssertEqual(broker.pending.first?.attention, .question(count: 1, multiSelect: false))
+    /// Replaces "a held request for a question carries its attention": owner 2026-10-30, a
+    /// question or a plan is never held.
+    func testARequestForAQuestionOrAPlanGoesBackToTheTerminalAtOnce() {
+        let questions: [(tool: String, attention: AgentAttention)] = [
+            ("AskUserQuestion", .question(count: 1, multiSelect: false)),
+            ("ExitPlanMode", .plan),
+        ]
+        for (tool, attention) in questions {
+            let broker = makeBroker()
+            var announced = 0
+            broker.onPending = { _ in announced += 1 }
+            let (reply, peer) = reply()
+            let event = AgentEvent(
+                source: .claude, kind: .permissionRequested, sessionID: "s1",
+                cwd: "/Users/tester/Projects/alpha", toolName: tool,
+                toolSummary: "Question: Tabs or spaces?", toolDetail: "Tabs or spaces?",
+                attention: attention,
+                isSubagent: false, host: iterm, receivedAt: t0, requestID: AgentFixture.requestID
+            )
+
+            broker.register(event: event, reply: reply, session: nil, now: t0)
+
+            XCTAssertTrue(broker.pending.isEmpty, "\(tool) is not held")
+            XCTAssertEqual(announced, 0, "\(tool): no Allow / Deny banner")
+            XCTAssertEqual(
+                line(peer), #"{"v":2,"request_id":"0123456789abcdef0123456789abcdef","decision":null}"#,
+                "\(tool): released with no decision, so the terminal asks"
+            )
+            XCTAssertEqual(broker.releasedForPresenceCount, 0, "\(tool): not a presence release")
+        }
     }
 
     func testAHeldRequestCarriesTheFullTextAsWellAsTheHeadline() {
