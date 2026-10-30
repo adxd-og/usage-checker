@@ -20,15 +20,13 @@ final class PetActionRulesTests: XCTestCase {
         XCTAssertEqual(effects(.jump(sessionID: "claude:s1"), on: codex), [.jump(sessionID: "claude:s1")])
     }
 
-    func testTheNeedsYouListAndTheWorkingAgentsAreAllsAgentsCard() {
-        for action in [PetAction.needsYouList, .agentsCard] {
-            XCTAssertEqual(effects(action), [.reveal(.agents)], "\(action) at All")
-            XCTAssertEqual(effects(action, on: codex), [.navigate(.back), .reveal(.agents)], "\(action) from a page")
-            XCTAssertEqual(
-                effects(action, on: .provider("grok"), providers: ["grok"]), [.reveal(.agents)],
-                "\(action): one provider's page is home"
-            )
-        }
+    func testTheNeedsYouListIsAllsAgentsCard() {
+        XCTAssertEqual(effects(.needsYouList), [.reveal(.agents)], "at All")
+        XCTAssertEqual(effects(.needsYouList, on: codex), [.navigate(.back), .reveal(.agents)], "from a page")
+        XCTAssertEqual(
+            effects(.needsYouList, on: .provider("grok"), providers: ["grok"]), [.reveal(.agents)],
+            "one provider's page is home"
+        )
     }
 
     func testClaudesSignInAndInstallLinkLeaveTheIslandForTheirApp() {
@@ -67,7 +65,7 @@ final class PetActionRulesTests: XCTestCase {
         XCTAssertFalse(PetActionRules.isActionable(.claudeRecovery(.noAction)))
         let acting: [PetAction] = [
             .jump(sessionID: "claude:s1"), .needsYouList, .claudeRecovery(.signIn), .claudeRecovery(.install),
-            .claudeRecovery(.keychainAccess), .providerPage(serviceID: "claude"), .keepAwakeCard, .agentsCard,
+            .claudeRecovery(.keychainAccess), .providerPage(serviceID: "claude"), .keepAwakeCard,
             .providersSettings, .pat,
         ]
         for action in acting {
@@ -84,8 +82,9 @@ final class PetActionRulesTests: XCTestCase {
     }
 
     /// Codex's re-review of the plan: a reveal belongs to the page it was asked for. Click the
-    /// working pet on Grok's page (Back to All, then All's agents card), press ⌘1 before Back has
-    /// settled: the destination is Claude's page now, whose own agents card must not be scrolled to.
+    /// pet with several agents waiting on Grok's page (Back to All, then All's agents card), press
+    /// ⌘1 before Back has settled: the destination is Claude's page now, whose own agents card
+    /// must not be scrolled to.
     func testANewerNavigationDropsAPendingReveal() {
         XCTAssertTrue(PetActionRules.revealStillWanted(askedOn: .all, destination: .all), "Back to All still under way or settled")
         XCTAssertFalse(

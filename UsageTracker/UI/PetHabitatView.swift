@@ -34,7 +34,7 @@ struct PetHabitatView: View {
     /// The last pat: a still pet redraws once its heart is due to go.
     @State private var lastPat: Date?
 
-    /// A pat's heart over the pet's head (§ 3.5 row 7, "♥ 1.2 s").
+    /// A pat's heart over the pet's head (§ 3.5 rows 5 and 7, "♥ 1.2 s").
     nonisolated static let heartSize: CGFloat = 11
     nonisolated static let heartColor = Color.pink
 

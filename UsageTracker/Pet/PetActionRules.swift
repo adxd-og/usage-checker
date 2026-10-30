@@ -35,7 +35,7 @@ enum PetActionRules {
         switch action {
         case .jump(let id):
             return [.jump(sessionID: id)]
-        case .needsYouList, .agentsCard:
+        case .needsYouList:
             // All's agents card lists every session, the waiting ones first.
             return IslandNavigation.isDrilledIn(page, providers: providers)
                 ? [.navigate(.back), .reveal(.agents)]

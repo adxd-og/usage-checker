@@ -54,7 +54,7 @@ final class PetMoodPresentationTests: XCTestCase {
             (.look, .nothing),
             (.look, .providerPage(serviceID: "codex")),
             (.sleep, .keepAwakeCard),
-            (.idle, .agentsCard),
+            (.idle, .pat),
             (.sleep, .providersSettings),
             (.idle, .pat),
         ]
@@ -64,6 +64,16 @@ final class PetMoodPresentationTests: XCTestCase {
             let presentation = shown(mood)
             XCTAssertEqual(presentation.pose, pose, "\(mood)")
             XCTAssertEqual(presentation.action, action, "\(mood)")
+        }
+    }
+
+    /// The owner's note of 2026-10-30 (first look at the pet): the pet never takes the user off
+    /// the page just because agents are working.
+    func testAClickWhileAgentsWorkIsAPatOnEveryPage() {
+        let action = shown(.working(count: 2)).action
+        XCTAssertEqual(action, shown(.idle).action)
+        for page in [IslandNavigation.Page.all, .provider("codex")] {
+            XCTAssertEqual(PetActionRules.effects(of: action, page: page, providers: ["claude", "codex"]), [.pat], "\(page)")
         }
     }
 

@@ -101,7 +101,8 @@ final class PetMoodCopyTests: XCTestCase {
             label(.keepAwakeNight(deadline: midnight.addingTimeInterval(26 * 3_600)), at: midnight.addingTimeInterval(25 * 3_600)),
             "Cat is asleep, the Mac stays awake until 2:00, double-tap to open keep awake"
         )
-        XCTAssertEqual(label(.working(count: 2)), "Cat: 2 working, double-tap to see the agents")
+        XCTAssertEqual(label(.working(count: 2)), "Cat: 2 working, double-tap to pat")
+        XCTAssertEqual(label(.working(count: 1)), "Cat: 1 working, double-tap to pat")
         XCTAssertEqual(label(.nothingOn), "Cat is asleep, nothing is on, double-tap to open Providers settings")
         XCTAssertEqual(label(.idle), "Cat, double-tap to pat")
     }

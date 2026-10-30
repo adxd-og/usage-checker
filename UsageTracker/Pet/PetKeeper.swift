@@ -62,7 +62,7 @@ final class PetKeeper {
         )
     }
 
-    /// A click on the idle pet (§ 3.5 row 7): its heart for 1.2 s.
+    /// A pat (§ 3.5 Mood rule, rows 5 and 7): its heart for 1.2 s.
     func pat(at now: Date) {
         runtime.pat(at: now)
     }
