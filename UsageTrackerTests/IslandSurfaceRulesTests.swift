@@ -14,4 +14,10 @@ final class IslandSurfaceRulesTests: XCTestCase {
         XCTAssertEqual(IslandSurfaceRules.backing(kind: .panel, reduceTransparency: false), .contentsOwn)
         XCTAssertEqual(IslandSurfaceRules.backing(kind: .panel, reduceTransparency: true), .windowBackground)
     }
+
+    /// § 3.1, Surfaces on the island (owner 2026-10-30).
+    func testOnlyTheIslandsTilesAndCardsWearTheIslandsSurfaces() {
+        XCTAssertTrue(IslandSurfaceRules.surfacesOnIsland(kind: .island))
+        XCTAssertFalse(IslandSurfaceRules.surfacesOnIsland(kind: .panel), "the panel keeps its cards")
+    }
 }
