@@ -6,7 +6,7 @@ import Foundation
 struct PetRandom {
     private let source: () -> Double
 
-    /// `source` returns draws in 0 ..< 1; anything else is held inside that range.
+    /// `source` returns draws in 0 ..< 1; a finite draw outside it is held inside, a non-finite one reads as 0.
     init(unit source: @escaping () -> Double) {
         self.source = source
     }
