@@ -1,10 +1,10 @@
 import XCTest
 @testable import Omelette
 
-/// Notch-island spec 2026-10-29 § 3.5 Mood rule row 7 ("Idle … a pat (♥ 1.2 s)"), D11 and
-/// Runtime ("pat state"): a click on the idle pet puts a heart up for 1.2 s; a pat stops a
-/// running bit and puts the next slot off, a waiting stretch's included; the heart shows only
-/// while the idle loop runs (Idle, Agent working), and over a still pet too.
+/// Notch-island spec 2026-10-29 § 3.5 Mood rule ("a pat (♥ 1.2 s)"), D11 and Runtime ("pat
+/// state"): a pat puts a heart up for 1.2 s, stops a running bit and puts the next slot off 7–10 s,
+/// a waiting stretch's included; the heart shows only while the idle loop runs (Idle, Agent
+/// working), and over a still pet too.
 final class PetRuntimePatTests: XCTestCase {
     private let t0 = PetRuntimeFixture.t0
 
@@ -32,20 +32,20 @@ final class PetRuntimePatTests: XCTestCase {
     }
 
     func testAPatStopsARunningBitAndPutsTheNextOff() {
-        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0, 0.5, 0.5]))
+        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0, 0, 0.5, 0.5]))
         _ = tick(&runtime, 0)
-        XCTAssertEqual(tick(&runtime, 20).bit, .walk)
-        runtime.pat(at: t0 + 20.25)
-        let frame = tick(&runtime, 20.3)
+        XCTAssertEqual(tick(&runtime, 2).bit, .walk)
+        runtime.pat(at: t0 + 2.25)
+        let frame = tick(&runtime, 2.3)
         XCTAssertNil(frame.bit)
         XCTAssertTrue(frame.showsHeart)
-        XCTAssertEqual(runtime.clock.nextBitAt, 50.25, accuracy: 1e-9)
-        XCTAssertNil(tick(&runtime, 50).bit)
-        XCTAssertNotNil(tick(&runtime, 50.25).bit)
+        XCTAssertEqual(runtime.clock.nextBitAt, 10.75, accuracy: 1e-9)
+        XCTAssertNil(tick(&runtime, 10.5).bit)
+        XCTAssertNotNil(tick(&runtime, 10.75).bit)
     }
 
     func testAPatPutsAWaitingStretchOffToTheNextSlot() {
-        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0.5]))
+        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0.5, 0.5]))
         let reset = t0.addingTimeInterval(-3_600)
         func claude(_ resetsAt: Date) -> ServiceSnapshot {
             Fixture.snapshot(id: "claude", displayName: "Claude", buckets: [
@@ -55,12 +55,12 @@ final class PetRuntimePatTests: XCTestCase {
         runtime.observe([claude(reset)], now: reset.addingTimeInterval(-60))
         runtime.observe([claude(reset.addingTimeInterval(5 * 3_600))], now: t0)
         _ = tick(&runtime, 0)
-        runtime.pat(at: t0 + 19.5)
-        let frame = tick(&runtime, 20)
-        XCTAssertNil(frame.bit, "the slot due at 20 s moved to 49.5 s")
+        runtime.pat(at: t0 + 2.5)
+        let frame = tick(&runtime, 3)
+        XCTAssertNil(frame.bit, "the slot due at 3 s moved to 11 s")
         XCTAssertTrue(frame.showsHeart)
-        XCTAssertNil(tick(&runtime, 49).bit)
-        XCTAssertEqual(tick(&runtime, 49.5).bit, .stretch)
+        XCTAssertNil(tick(&runtime, 10.5).bit)
+        XCTAssertEqual(tick(&runtime, 11).bit, .stretch)
     }
 
     func testTheHeartGoesWhenTheMoodStopsLooping() {

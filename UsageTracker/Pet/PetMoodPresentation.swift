@@ -12,8 +12,6 @@ enum PetAction: Equatable, Sendable {
     case providerPage(serviceID: String)
     /// The keep-awake card.
     case keepAwakeCard
-    /// The agents card.
-    case agentsCard
     /// Settings › Providers.
     case providersSettings
     /// A pat: a heart for 1.2 s (`PetRuntime.pat`).
@@ -76,7 +74,7 @@ extension PetMoodRules {
             action = .keepAwakeCard
         case .working:
             pose = .idle
-            action = .agentsCard
+            action = .pat
         case .nothingOn:
             pose = .sleep
             action = .providersSettings

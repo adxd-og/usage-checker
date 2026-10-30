@@ -1,14 +1,17 @@
 import Foundation
 
 /// When the idle loop may play a bit (notch-island spec 2026-10-29 § 3.5 Runtime): at most one
-/// every 20–40 s of visible open time — time the pet was on screen and animating, added up
-/// across opens — and never in an open's first 1.5 s. The habitat's gate starts and ends each
-/// visible period (`resume`, `pause`); a closed island adds nothing. Pure.
+/// every 7–10 s of visible open time — time the pet was on screen and animating, added up
+/// across opens — each open's first 2–4 s into it, and never in an open's first 1.5 s. The
+/// habitat's gate starts and ends each visible period (`resume`, `pause`); a closed island adds
+/// nothing. Pure.
 struct PetBitClock: Equatable, Sendable {
     /// No bit in a visible period's first 1.5 s.
     static let quietStart: TimeInterval = 1.5
     /// Visible time from one bit's start to the next one's.
-    static let spacing: ClosedRange<TimeInterval> = 20...40
+    static let spacing: ClosedRange<TimeInterval> = 7...10
+    /// How far into a visible period its first bit is due: the island is not held open for long.
+    static let firstOfOpen: ClosedRange<TimeInterval> = 2...4
 
     /// Visible time of the periods that ended.
     private(set) var banked: TimeInterval = 0
@@ -23,9 +26,13 @@ struct PetBitClock: Equatable, Sendable {
 
     var isRunning: Bool { periodStart != nil }
 
-    /// A visible period starts; a running one keeps its start.
-    mutating func resume(at now: Date) {
-        if periodStart == nil { periodStart = now }
+    /// A visible period starts, its first bit due 2–4 s into it unless one is due sooner. A
+    /// running period keeps its start and its deadline and draws nothing: `PetRuntime.tick` calls
+    /// this every frame.
+    mutating func resume(at now: Date, random: PetRandom) {
+        guard periodStart == nil else { return }
+        periodStart = now
+        nextBitAt = min(nextBitAt, visibleTime(at: now) + random.value(in: Self.firstOfOpen))
     }
 
     /// The running period ends and its time is banked; a clock set back adds nothing.
@@ -55,7 +62,7 @@ struct PetBitClock: Equatable, Sendable {
         mayStartBit(at: now) && visibleTime(at: now) >= nextBitAt
     }
 
-    /// A bit started, or a pat put the loop off: the next one is due 20–40 s of visible time
+    /// A bit started, or a pat put the loop off: the next one is due 7–10 s of visible time
     /// from now.
     mutating func reschedule(at now: Date, random: PetRandom) {
         nextBitAt = visibleTime(at: now) + random.value(in: Self.spacing)

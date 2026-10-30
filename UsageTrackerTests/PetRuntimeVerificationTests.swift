@@ -2,9 +2,10 @@ import XCTest
 @testable import Omelette
 
 /// Verification of notch-island spec 2026-10-29 § 3.5 Runtime and § 3.8 battery, with the
-/// owner's note of 2026-10-30 (bits also run in Agent working; the stretch plays `look`): long
-/// randomised runs of opens, closes, busy pointers, mood changes, pats and polls against each
-/// shipped pet's real animations, checking the invariants rather than one scenario each.
+/// owner's notes of 2026-10-30 (bits also run in Agent working; the stretch plays `look`; a bit
+/// every 7–10 s, an open's first 2–4 s into it): long randomised runs of opens, closes, busy
+/// pointers, mood changes, pats and polls against each shipped pet's real animations, checking
+/// the invariants rather than one scenario each.
 final class PetRuntimeVerificationTests: XCTestCase {
     private final class Lcg {
         private var state: UInt64
@@ -41,8 +42,9 @@ final class PetRuntimeVerificationTests: XCTestCase {
     }
 
     /// Runs `seconds` of app time; `calm`: one open, no busy pointer, one mood, no pats, no
-    /// polls (the schedule's upper bound holds only then). Returns the visible times at which
-    /// bits and stretches started.
+    /// polls (the spacing's upper bound holds only then). An open nothing blocked (no busy
+    /// pointer, no mood that holds still, no pat) has shown a bit by 4 s, in every run. Returns
+    /// the visible times at which bits and stretches started.
     @discardableResult
     private func simulate(
         _ manifest: PetManifest, seed: UInt64, seconds: Double, calm: Bool, file: StaticString = #filePath, line: UInt = #line
@@ -66,6 +68,8 @@ final class PetRuntimeVerificationTests: XCTestCase {
         var feeds = 0
         var pending = false
         var previousBit: PetBit?
+        var startedThisOpen = false
+        var blockedThisOpen = false
         var starts: [Double] = []
         var stretches = 0
         var walks = 0
@@ -95,6 +99,8 @@ final class PetRuntimeVerificationTests: XCTestCase {
                     runtime.resume(at: now)
                     openedAt = t
                     open = true
+                    startedThisOpen = false
+                    blockedThisOpen = false
                     roam = calm ? 65 : [0, 1, 2, 5, 16, 17, 33, 65][world.below(8)]
                     nextToggle = t + (calm ? 1e9 : 0.5 + world.next() * 60)
                     previousX = nil
@@ -124,8 +130,10 @@ final class PetRuntimeVerificationTests: XCTestCase {
 
             if !calm, mood.loops, mood.pose == .idle, world.next() < 0.003 {
                 runtime.pat(at: now)
+                blockedThisOpen = true
             }
             let activity = calm ? PetUserActivity.none : busy
+            if activity.isBusy || !mood.loops { blockedThisOpen = true }
             let frame = runtime.tick(
                 at: now, pose: mood.pose, loops: mood.loops, activity: activity,
                 animations: animations, roamBeads: roam
@@ -149,14 +157,12 @@ final class PetRuntimeVerificationTests: XCTestCase {
 
             let started = frame.bit != nil && frame.bit != previousBit
             if started, let bit = frame.bit {
-                if let last = starts.last {
-                    expect(visible - last >= 20 - 1e-9, "bit spacing \(visible - last): \(context)")
-                    if calm { expect(visible - last <= 40 + dt + 1e-9, "bit spacing \(visible - last): \(context)") }
-                } else {
-                    expect(visible >= 20 - 1e-9, "first bit at \(visible): \(context)")
-                    if calm { expect(visible <= 40 + dt + 1e-9, "first bit at \(visible): \(context)") }
+                if startedThisOpen, let last = starts.last {
+                    expect(visible - last >= 7 - 1e-9, "bit spacing \(visible - last): \(context)")
+                    if calm { expect(visible - last <= 10 + dt + 1e-9, "bit spacing \(visible - last): \(context)") }
                 }
                 expect(t - openedAt >= 1.5 - 1e-9, "not in an open's first 1.5 s: \(context)")
+                startedThisOpen = true
                 starts.append(visible)
                 if bit == .stretch {
                     stretches += 1
@@ -181,6 +187,9 @@ final class PetRuntimeVerificationTests: XCTestCase {
                 }
             }
             if frame.bit == nil { walk = nil }
+            if !startedThisOpen, !blockedThisOpen {
+                expect(t - openedAt <= 4 + dt + 1e-9, "an open's first bit by 4 s: \(context)")
+            }
             previousX = frame.xBeads
             previousBit = frame.bit
         }
@@ -208,13 +217,16 @@ final class PetRuntimeVerificationTests: XCTestCase {
         XCTAssertGreaterThan(stretches, 0, "the runs must exercise the stretch")
     }
 
-    func testInACalmOpenABitStartsEvery20To40SecondsOfVisibleTimeForEveryPet() throws {
+    func testInACalmOpenABitStartsEvery7To10SecondsOfVisibleTimeForEveryPet() throws {
         let library = PetLibrary.bundled()
         for id in library.animalIDs {
             let manifest = try XCTUnwrap(library.manifests[id])
             let result = simulate(manifest, seed: 7, seconds: 3_600, calm: true)
-            XCTAssertGreaterThan(result.bitStarts.count, 100, id)
-            XCTAssertLessThan(result.bitStarts.count, 180, id)
+            let first = try XCTUnwrap(result.bitStarts.first, id)
+            XCTAssertGreaterThanOrEqual(first, 2 - 1e-9, id)
+            XCTAssertLessThanOrEqual(first, 4 + dt + 1e-9, id)
+            XCTAssertGreaterThan(result.bitStarts.count, 350, "3,600 s at no more than 10 s each \(id)")
+            XCTAssertLessThan(result.bitStarts.count, 515, "3,600 s at no less than 7 s each \(id)")
         }
     }
 
@@ -250,7 +262,7 @@ final class PetRuntimeVerificationTests: XCTestCase {
     /// after 10 frames, not after the 16 a longer floor allows (the pet never walks on the spot
     /// against the edge).
     func testAWalkWithLessFloorThanSixteenBeadsEndsWhenItReachesTheEdge() {
-        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0, 0.5]))
+        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0, 0, 0.5]))
         func tick(_ seconds: TimeInterval) -> PetFrame {
             runtime.tick(
                 at: t0 + seconds, pose: .idle, loops: true, activity: .none,
@@ -258,22 +270,22 @@ final class PetRuntimeVerificationTests: XCTestCase {
             )
         }
         _ = tick(0)
-        XCTAssertEqual(tick(20).bit, .walk)
-        let near = tick(21.1)
+        XCTAssertEqual(tick(2).bit, .walk)
+        let near = tick(3.1)
         XCTAssertEqual(near.bit, .walk)
         XCTAssertEqual(near.xBeads, 8)
-        let done = tick(21.3)
+        let done = tick(3.3)
         XCTAssertNil(done.bit, "10 beads at 8 fps: 1.25 s")
         XCTAssertEqual(done.xBeads, 10)
     }
 
     func testAPatAndACollapsedIslandAddNothingToTheVisibleClock() {
-        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0.5]))
+        var runtime = PetRuntime(random: PetRandomFixture.sequence([0, 0.5, 0.5, 0.5]))
         runtime.resume(at: t0)
         runtime.pause(at: t0 + 10)
         XCTAssertEqual(runtime.clock.visibleTime(at: t0 + 1_000), 10, "closed time is not visible time")
         runtime.resume(at: t0 + 2_000)
         runtime.pat(at: t0 + 2_005)
-        XCTAssertEqual(runtime.clock.nextBitAt, 15 + 30, accuracy: 1e-9, "20–40 s of visible time from the pat")
+        XCTAssertEqual(runtime.clock.nextBitAt, 15 + 8.5, accuracy: 1e-9, "7–10 s of visible time from the pat")
     }
 }

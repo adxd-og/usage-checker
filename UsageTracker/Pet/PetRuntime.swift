@@ -122,9 +122,10 @@ struct PetRuntime {
 
     // MARK: - Visibility
 
-    /// The gate turned on: a visible period starts; its first 1.5 s see no bit.
+    /// The gate turned on: a visible period starts, its first bit due 2–4 s into it; its first
+    /// 1.5 s see no bit.
     mutating func resume(at now: Date) {
-        clock.resume(at: now)
+        clock.resume(at: now, random: random)
     }
 
     /// The gate turned off: the period's time is banked, a running bit ends where it is, and
@@ -145,9 +146,9 @@ struct PetRuntime {
 
     // MARK: - Pat
 
-    /// A click on the idle pet (§ 3.5 row 7, D11): its heart is up for 1.2 s, a running bit
-    /// stops, and the next slot (a waiting stretch's too) is due 20–40 s of visible time later,
-    /// so nothing starts under the heart.
+    /// A pat (§ 3.5 Mood rule, D11): its heart is up for 1.2 s, a running bit stops, and the next
+    /// slot (a waiting stretch's too) is due 7–10 s of visible time later, so nothing starts under
+    /// the heart.
     mutating func pat(at now: Date) {
         patUntil = now.addingTimeInterval(Self.patDuration)
         running = nil
@@ -184,7 +185,7 @@ struct PetRuntime {
         animations: PetAnimations,
         roamBeads: Int
     ) -> PetFrame {
-        clock.resume(at: now)
+        clock.resume(at: now, random: random)
         let roam = max(0, roamBeads)
         xBeads = min(xBeads, roam)
         if let until = patUntil, now >= until { patUntil = nil }

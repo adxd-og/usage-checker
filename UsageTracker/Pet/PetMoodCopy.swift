@@ -83,7 +83,7 @@ enum PetMoodCopy {
             let clock = KeepAwakeCopy.clock(deadline, now: now, calendar: calendar, locale: locale)
             return "\(petName) is asleep, the Mac stays awake until \(clock), double-tap to open keep awake"
         case .working(let count):
-            return "\(petName): \(count) working, double-tap to see the agents"
+            return "\(petName): \(count) working, double-tap to pat"
         case .nothingOn:
             return "\(petName) is asleep, nothing is on, double-tap to open \(SettingsTab.providers.rawValue) settings"
         case .idle:

@@ -23,7 +23,7 @@ struct PetRandom {
         return min(max(draw, 0), 1.0.nextDown)
     }
 
-    /// A value in `range`, uniform: 20 … 40 s between bits. The range is closed: the largest
+    /// A value in `range`, uniform: 7 … 10 s between bits. The range is closed: the largest
     /// draws round to its top.
     func value(in range: ClosedRange<Double>) -> Double {
         range.lowerBound + (range.upperBound - range.lowerBound) * unit()

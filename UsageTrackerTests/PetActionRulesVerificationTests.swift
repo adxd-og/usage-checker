@@ -12,7 +12,7 @@ final class PetActionRulesVerificationTests: XCTestCase {
         [
             .jump(sessionID: "claude:s1"), .needsYouList, .claudeRecovery(.signIn), .claudeRecovery(.install),
             .claudeRecovery(.keychainAccess), .claudeRecovery(.noAction), .providerPage(serviceID: "claude"),
-            .keepAwakeCard, .agentsCard, .providersSettings, .pat, .nothing,
+            .keepAwakeCard, .providersSettings, .pat, .nothing,
         ]
     }
 
@@ -47,14 +47,14 @@ final class PetActionRulesVerificationTests: XCTestCase {
         }
     }
 
-    func testTheAgentsCardIsAlwaysAskedLastAndOnlyByTheAgentsActions() {
+    func testTheAgentsCardIsAlwaysAskedLastAndOnlyByTheNeedsYouList() {
         for providers in [four, ["claude", "codex"], ["grok"]] {
             for page in pages(for: providers) {
                 for action in allActions {
                     let effects = PetActionRules.effects(of: action, page: page, providers: providers)
                     let asks = effects.contains(.reveal(.agents))
                     switch action {
-                    case .needsYouList, .agentsCard:
+                    case .needsYouList:
                         XCTAssertTrue(asks, "\(action) on \(page)")
                         XCTAssertEqual(effects.last, .reveal(.agents), "\(action) on \(page)")
                     default:
@@ -70,7 +70,6 @@ final class PetActionRulesVerificationTests: XCTestCase {
             let home = IslandNavigation.Page.provider(id)
             XCTAssertEqual(PetActionRules.effects(of: .providerPage(serviceID: id), page: home, providers: [id]), [])
             XCTAssertEqual(PetActionRules.effects(of: .needsYouList, page: home, providers: [id]), [.reveal(.agents)])
-            XCTAssertEqual(PetActionRules.effects(of: .agentsCard, page: home, providers: [id]), [.reveal(.agents)])
             XCTAssertEqual(PetActionRules.effects(of: .keepAwakeCard, page: home, providers: [id]), [.reveal(.keepAwake)])
         }
     }

@@ -71,12 +71,12 @@ final class PetKeeperTests: XCTestCase {
 
     func testTheUsersActivityIsReadAtEachFrame() {
         var activity = PetUserActivity(pointerOverContent: true)
-        let keeper = PetKeeper(random: PetRandomFixture.sequence([0, 0]))
+        let keeper = PetKeeper(random: PetRandomFixture.sequence([0, 0, 0]))
         keeper.activity = { activity }
         keeper.setAnimating(true, at: t0)
-        XCTAssertNil(frame(keeper, 20)?.bit, "a bit is due, but the pointer is over the numbers")
+        XCTAssertNil(frame(keeper, 2)?.bit, "a bit is due, but the pointer is over the numbers")
         activity = .none
-        XCTAssertEqual(frame(keeper, 20.5)?.bit, .walk)
+        XCTAssertEqual(frame(keeper, 2.5)?.bit, .walk)
     }
 
     func testAMoodThatHoldsStillGetsItsPoseAndNoBit() {
