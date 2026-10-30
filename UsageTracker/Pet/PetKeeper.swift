@@ -53,12 +53,14 @@ final class PetKeeper {
 
     /// The frame at `now` for the mood's pose and loop while the gate is on; nil while it is off.
     func frame(
-        at now: Date, presentation: PetMoodPresentation, animations: PetAnimations, roamBeads: Int
+        at now: Date, presentation: PetMoodPresentation, animations: PetAnimations, roamBeads: Int,
+        events: [PetEvent] = [], liftRoom: Int = PetContract.eventMaxLift
     ) -> PetFrame? {
         guard isAnimating else { return nil }
         return runtime.tick(
             at: now, pose: presentation.pose, loops: presentation.loops,
-            activity: activity(), animations: animations, roamBeads: roamBeads
+            activity: activity(), animations: animations, roamBeads: roamBeads,
+            events: events, liftRoom: liftRoom
         )
     }
 
@@ -66,6 +68,28 @@ final class PetKeeper {
     func pat(at now: Date) {
         runtime.pat(at: now)
     }
+
+    #if DEBUG
+    /// Debug's menu: plays this event from the next frame; false, and nothing asked, while the gate
+    /// is off (Reduce Motion among others).
+    @discardableResult
+    func play(eventID: String) -> Bool {
+        playAll(eventIDs: [eventID])
+    }
+
+    /// Debug's menu: plays these in order from the next frame; a gate-off drops the rest.
+    @discardableResult
+    func playAll(eventIDs: [String]) -> Bool {
+        guard isAnimating else { return false }
+        runtime.play(eventIDs)
+        return true
+    }
+
+    /// Debug's menu: the animal changed, and its events are not this one's.
+    func dropEvents() {
+        runtime.dropEvents()
+    }
+    #endif
 
     /// The heart is up at `now`, for a still pet too.
     func showsHeart(at now: Date) -> Bool {
