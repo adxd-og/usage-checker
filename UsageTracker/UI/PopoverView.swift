@@ -29,6 +29,9 @@ struct PopoverView: View {
     @State private var codexHooksInstalled = false
     /// The one-time offer to install Claude's hooks, decided from the same read.
     @State private var hooksPromptVisible = false
+    /// Whether Antigravity is installed, for its page's state help (`ProviderStateHelp`):
+    /// read with the hooks, once per open, off the main thread.
+    @State private var antigravityInstalled = false
     /// The flush that ends the current tab switch's hold on the caps; a newer switch
     /// cancels it. Never read by `body`, so setting it redraws nothing.
     @State private var transitionFlush: Task<Void, Never>?
@@ -121,7 +124,7 @@ struct PopoverView: View {
         // Claude's raw status travels back too: the prompt row and the "Enable
         // precise status" link are two answers to the same file read, and reading
         // it twice could disagree with itself.
-        let read = await Task.detached(priority: .utility) { () -> (claude: HookInstallStatus, claudeSatisfied: Bool, codexSatisfied: Bool, claudePresent: Bool) in
+        let read = await Task.detached(priority: .utility) { () -> (claude: HookInstallStatus, claudeSatisfied: Bool, codexSatisfied: Bool, claudePresent: Bool, antigravityInstalled: Bool) in
             // "Satisfied" = nothing the popover's link could improve: installed,
             // owned by another tool (conflict), or no config file at all because
             // that CLI isn't on this machine. Only "not installed" / "outdated"
@@ -138,11 +141,14 @@ struct PopoverView: View {
                 claude,
                 satisfied(claude, claudeSettings),
                 satisfied(AgentHooksInstaller.codexStatus(configURL: codexConfig, helperPath: helperPath), codexConfig),
-                AgentHooksPrompt.claudeIsPresent()
+                AgentHooksPrompt.claudeIsPresent(),
+                // Antigravity's state help offers the app when it is installed.
+                FileManager.default.fileExists(atPath: ProviderStateHelp.antigravityAppPath)
             )
         }.value
         claudeHooksInstalled = read.claudeSatisfied
         codexHooksInstalled = read.codexSatisfied
+        antigravityInstalled = read.antigravityInstalled
         hooksPromptVisible = AgentHooksPrompt.shouldShow(
             claudePresent: read.claudePresent,
             status: read.claude,
@@ -371,7 +377,8 @@ struct PopoverView: View {
                     onEnableHooks: enableClaudeHooks,
                     onDismissHooksPrompt: dismissHooksPrompt,
                     agentsMaxListHeight: heights.cap(for: service.id),
-                    onAgentsListGeometry: { heights.recordAgentsList($0, tab: service.id) }
+                    onAgentsListGeometry: { heights.recordAgentsList($0, tab: service.id) },
+                    antigravityInstalled: antigravityInstalled
                 )
             } else {
                 allTab
@@ -561,6 +568,8 @@ private struct ProviderDetail: View {
     /// (`PopoverHeightModel.cap(for:)`); the defaults are today's fixed cap and nowhere.
     var agentsMaxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
     var onAgentsListGeometry: (AgentsListGeometry?) -> Void = { _ in }
+    /// Whether Antigravity is installed, for its state help (`ProviderStateHelp`).
+    var antigravityInstalled: Bool = false
 
     @ObservedObject private var agents = AgentSessionStore.shared
 
@@ -599,7 +608,7 @@ private struct ProviderDetail: View {
                                 .lineLimit(3)
                         }
                         Spacer()
-                        ServiceStateLabel(service: service, label: stateLabel)
+                        ServiceStateLabel(service: service, label: stateLabel, antigravityInstalled: antigravityInstalled)
                     }
                     if let caption = RetainedCopy.caption(for: service) {
                         Text(caption)
@@ -794,6 +803,9 @@ private struct ProviderDetail: View {
 private struct ServiceStateLabel: View {
     let service: ServiceSnapshot
     let label: OMColoredText
+    /// Whether Antigravity is installed, read with the hook status once per open
+    /// (`PopoverView.refreshHookStatus`), never while the view draws.
+    let antigravityInstalled: Bool
     @State private var showsStateHelp = false
     /// Claude's Sign in: whether a `claude` is on this Mac, and what the last click did.
     @ObservedObject private var claudeSignIn = ClaudeSignInModel.shared
@@ -824,52 +836,17 @@ private struct ServiceStateLabel: View {
         .fixedSize()
     }
 
-    private struct StateHelp {
-        let message: String
-        var command: String?
-        var appPath: String?
-        var linkTitle: String?
-        var linkURL: String?
-        /// Claude's way out when it is signed out (spec 2026-10-25 § Package 2).
-        var claude: ClaudeSignInHelp?
+    /// The way out behind the state, as `ProviderStateHelp` decides it.
+    private var stateHelp: ProviderStateHelp? {
+        ProviderStateHelp.help(
+            for: service,
+            claudeBinaryFound: claudeSignIn.binaryFound,
+            claudeNote: claudeSignIn.note,
+            antigravityInstalled: antigravityInstalled
+        )
     }
 
-    /// Per-service recovery instructions behind the state badge.
-    private var stateHelp: StateHelp? {
-        switch (service.id, service.state) {
-        case ("claude", .notSignedIn):
-            // Why Claude is signed out decides the way out (spec 2026-10-25 § Package 2): Sign in
-            // through Claude Code's own sign-in, the install link, keychain access in Settings ›
-            // Advanced, or nothing a click could fix.
-            guard let help = ClaudeSignInCopy.help(
-                for: service, binaryFound: claudeSignIn.binaryFound, note: claudeSignIn.note
-            ) else { return nil }
-            return StateHelp(message: help.message, claude: help)
-        case ("codex", .notSignedIn):
-            return StateHelp(
-                message: "Codex reports limits only for ChatGPT sign-in (API-key auth doesn't expose them).",
-                command: "codex logout && codex login"
-            )
-        case ("antigravity", _) where service.state != .ok:
-            let installed = FileManager.default.fileExists(atPath: "/Applications/Antigravity.app")
-            return StateHelp(
-                message: "Antigravity shares quotas only while the app, `agy` CLI, or IDE is running.",
-                command: installed ? nil : "agy",
-                appPath: installed ? "/Applications/Antigravity.app" : nil
-            )
-        case ("grok", .notSignedIn):
-            return StateHelp(
-                message: "Sign into the Grok CLI, then refresh. Credits reset with your xAI billing period.",
-                command: "grok login",
-                linkTitle: "Open grok.com usage",
-                linkURL: "https://grok.com/?_s=usage"
-            )
-        default:
-            return nil
-        }
-    }
-
-    private func stateHelpContent(_ help: StateHelp) -> some View {
+    private func stateHelpContent(_ help: ProviderStateHelp) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(help.message)
                 .font(.callout)
@@ -881,7 +858,7 @@ private struct ServiceStateLabel: View {
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
                         .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                    Button("Copy") {
+                    Button(ProviderStateHelp.copyButton) {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(command, forType: .string)
                     }
@@ -889,7 +866,7 @@ private struct ServiceStateLabel: View {
                 }
             }
             if let appPath = help.appPath {
-                Button("Open Antigravity") {
+                Button(ProviderStateHelp.openAntigravityButton) {
                     NSWorkspace.shared.openApplication(
                         at: URL(fileURLWithPath: appPath),
                         configuration: NSWorkspace.OpenConfiguration()
@@ -898,7 +875,7 @@ private struct ServiceStateLabel: View {
                 }
                 .controlSize(.small)
             }
-            if let title = help.linkTitle, let url = help.linkURL.flatMap(URL.init(string:)) {
+            if let title = help.linkTitle, let url = help.linkURL {
                 Link(title, destination: url)
                     .font(.caption)
             }
