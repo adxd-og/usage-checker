@@ -74,7 +74,7 @@ struct PopoverView: View {
                     axis: .horizontal
                 )
             // Keep awake with the lid closed (spec 2026-10-26, § UI): the same block on every tab.
-            KeepAwakeSection()
+            KeepAwakeSection(interiorWidth: Self.width - 2 * Self.padding - 2 * KeepAwakeCardLayout.padding)
             footer
         }
         .padding(Self.padding)
