@@ -5,10 +5,13 @@ import XCTest
 /// panel)": one library and one cache for the app's life, loaded from the bundle; every
 /// bundled pet draws every frame and its ear head in every palette at Retina scale.
 final class PetAssetsTests: XCTestCase {
-    func testTheAppHoldsOneLibraryAndCacheLoadedFromItsBundle() {
-        XCTAssertTrue(PetAssets.shared === PetAssets.shared)
-        XCTAssertTrue(PetAssets.shared.sprites === PetAssets.shared.sprites)
-        XCTAssertEqual(PetAssets.shared.library.animalIDs, ["cat", "dog", "duck", "raccoon"])
+    @MainActor
+    func testTheAppHoldsOneLibraryAndCacheLoadedFromItsBundle() async throws {
+        await PetAssetStore.shared.load().value
+        let assets = try XCTUnwrap(PetAssetStore.shared.assets)
+        await PetAssetStore.shared.load().value
+        XCTAssertTrue(PetAssetStore.shared.assets === assets)
+        XCTAssertEqual(assets.library.animalIDs, ["cat", "dog", "duck", "raccoon"])
     }
 
     func testEveryBundledPetDrawsEveryFrameAndItsEarInEveryPalette() throws {
