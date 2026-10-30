@@ -90,6 +90,62 @@ enum IslandEventRules {
     /// Esc's key code.
     static let escapeKeyCode: UInt16 = 53
 
+    /// A key the island's navigation answers (§ 3.4, § 3.8).
+    enum NavigationKey: Equatable, Sendable {
+        case escape
+        /// ⌘ and a digit, 0–9.
+        case digit(Int)
+
+        /// What `IslandNavigation` is told.
+        var input: IslandNavigation.Input {
+            switch self {
+            case .escape: .escape
+            case .digit(let digit): .shortcut(digit)
+            }
+        }
+    }
+
+    /// The top row's digits and the keypad's by key code (`kVK_ANSI_*`), so ⌘1 is the key
+    /// marked 1 whatever the keyboard layout.
+    static let digitKeyCodes: [UInt16: Int] = [
+        29: 0, 18: 1, 19: 2, 20: 3, 21: 4, 23: 5, 22: 6, 26: 7, 28: 8, 25: 9,
+        82: 0, 83: 1, 84: 2, 85: 3, 86: 4, 87: 5, 88: 6, 89: 7, 91: 8, 92: 9,
+    ]
+
+    /// Esc, or ⌘ alone with a digit, while the island is the key window; nil for everything
+    /// else: a digit typed into a field, ⌘ with ⇧ ⌥ or ⌃ (another shortcut), the footer's
+    /// ⌘D / ⌘, / ⌘R / ⌘Q, and any key while another window is key (a help popover takes its
+    /// own Esc).
+    static func navigationKey(
+        keyCode: UInt16, command: Bool, shift: Bool, option: Bool, control: Bool, keyWindowIsIsland: Bool
+    ) -> NavigationKey? {
+        guard keyWindowIsIsland else { return nil }
+        if keyCode == escapeKeyCode { return .escape }
+        guard command, !shift, !option, !control, let digit = digitKeyCodes[keyCode] else { return nil }
+        return .digit(digit)
+    }
+
+    /// What the island's key monitor does with a key.
+    enum KeyRoute: Equatable, Sendable {
+        /// Applied by the navigation, and swallowed.
+        case navigate(IslandNavigation.Input)
+        /// Swallowed with nothing done.
+        case swallow
+        /// Not the island's: it goes on.
+        case pass
+    }
+
+    /// A navigation key (`navigationKey`, only ever non-nil while the island is the key window)
+    /// is the island's in every phase: applied while it is open, swallowed while it closes — a
+    /// ⌘ digit or ⌘Esc must not slip through `IslandTransition.swallowsKey`'s ⌘ exemption and
+    /// reach AppKit, which beeps (owner 2026-10-30; Codex review finding 2). Any other key
+    /// follows the closing rule: swallowed when `closingSwallows` (a plain key aimed at a closing
+    /// island), else it goes on (⌘Q, ⌘C / ⌘V in a field).
+    static func keyRoute(_ key: NavigationKey?, isOpen: Bool, closingSwallows: Bool) -> KeyRoute {
+        if let key { return isOpen ? .navigate(key.input) : .swallow }
+        return closingSwallows ? .swallow : .pass
+    }
+
     /// Esc closes the island while it is the key window, from any tab (ruling R3; P3b's
     /// navigation turns Esc in a provider page into Back). A key help popover takes its own.
     static func escapeCloses(keyCode: UInt16, keyWindowIsIsland: Bool) -> Bool {
