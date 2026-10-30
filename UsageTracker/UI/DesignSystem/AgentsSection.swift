@@ -24,9 +24,9 @@ struct AgentsListGeometry: Equatable, Sendable {
 /// rows run in state order — needs you, working, done, idle — with provider logos,
 /// because rows from every provider mix there; on a provider tab (flat) whatever needs
 /// you comes first, then the most recent. Each row says its own state, so there are no
-/// uppercase group headings (spec § Principles 3). The list is the only part of the
-/// popover that scrolls — the header, segments and footer must not move when an agent
-/// starts a long run.
+/// uppercase group headings (spec § Principles 3). The list is the part that scrolls, so
+/// the header, segments and footer stay put when an agent starts a long run — until even
+/// two rows cannot fit and the island's whole right column scrolls instead (§ 3.3).
 struct AgentsSection: View {
     let sessions: [AgentSession]
     let grouped: Bool
@@ -41,8 +41,9 @@ struct AgentsSection: View {
     /// swallows the wheel.
     var maxListHeight: CGFloat = AgentsSection.defaultMaxListHeight
     /// Called with the list's shown height and its two-row floor whenever either
-    /// changes, and with nil when the section has no sessions. The popover sizes the
-    /// list to the screen from it (`PopoverHeightRules`); nil everywhere else.
+    /// changes, and with nil when the section has no sessions. The island sizes the
+    /// list to the screen from it (`IslandLayoutModel`, `IslandHeightRules`); nil
+    /// everywhere else.
     var onListGeometry: ((AgentsListGeometry?) -> Void)? = nil
     let onEnable: () -> Void
 

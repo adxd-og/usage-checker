@@ -61,7 +61,8 @@ enum KeepAwakeCardLayout {
     }
 
     /// Whether every line the card can draw fits `interiorWidth`: the fields, the buttons,
-    /// the approval button.
+    /// the approval button. A test-time check with measured widths; the card itself does
+    /// not fall back if a line is wider at run time.
     static func linesFit(interiorWidth: CGFloat, widths: Widths) -> Bool {
         max(fieldsWidth(widths), buttonsWidth(widths), widths.approval) <= interiorWidth
     }
