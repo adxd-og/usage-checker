@@ -80,11 +80,16 @@ final class PetRuntimeStretchTests: XCTestCase {
         XCTAssertEqual(tick(&runtime, 21).bit, .stretch)
     }
 
-    func testAResetSeenLongAgoBringsNoStretchAndItsSlotGoesToAnOrdinaryBit() {
+    /// The owner's ruling of 2026-10-30: a reset seen while the island was closed is not let go
+    /// after ten minutes; it waits for the first slot of the next open.
+    func testAResetSeenWhileTheIslandWasClosedWaitsForTheNextOpensFirstSlot() {
         var runtime = runtimeThatSawAReset(at: t0)
-        _ = tick(&runtime, PetRuntime.stretchFreshness + 1)
-        XCTAssertNil(runtime.stretchSeenAt)
-        XCTAssertEqual(tick(&runtime, PetRuntime.stretchFreshness + 21).bit, .blink)
+        let threeHoursLater: TimeInterval = 3 * 3_600
+        _ = tick(&runtime, threeHoursLater + 1)
+        XCTAssertEqual(runtime.stretchSeenAt, t0, "hours later the reset still waits")
+        XCTAssertNil(tick(&runtime, threeHoursLater + 20.5).bit, "the open's first slot is due 20 s into it")
+        XCTAssertEqual(tick(&runtime, threeHoursLater + 21).bit, .stretch)
+        XCTAssertNil(runtime.stretchSeenAt, "once")
     }
 
     func testAStretchTakesABitsSlotAndPutsTheNextOff() {

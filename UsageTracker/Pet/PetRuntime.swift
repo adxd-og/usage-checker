@@ -78,8 +78,6 @@ struct PetRuntime {
     static let walkBeads = 16
     /// A nap in sleep cycles: 2.7 s at two frames and 1.5 fps.
     static let napCycles = 2
-    /// A reset the pet could not stretch for within 10 min is let go.
-    static let stretchFreshness: TimeInterval = 600
     /// How long a pat's heart stays up (§ 3.5: "a pat (♥ 1.2 s)").
     static let patDuration: TimeInterval = 1.2
 
@@ -92,7 +90,8 @@ struct PetRuntime {
     private(set) var xBeads = 0
     /// The last walk went left: the pet is drawn mirrored.
     private(set) var facesLeft = false
-    /// When a live poll showed a reset the pet has not stretched for yet.
+    /// When a live poll showed a reset the pet has not stretched for yet. It waits for the next
+    /// slot of an open, however long the island stayed closed (owner, 2026-10-30).
     private(set) var stretchSeenAt: Date?
     /// Until when a pat's heart is up.
     private(set) var patUntil: Date?
@@ -188,7 +187,6 @@ struct PetRuntime {
         clock.resume(at: now)
         let roam = max(0, roamBeads)
         xBeads = min(xBeads, roam)
-        if let seen = stretchSeenAt, now.timeIntervalSince(seen) > Self.stretchFreshness { stretchSeenAt = nil }
         if let until = patUntil, now >= until { patUntil = nil }
         let patted = loops && patUntil != nil
         let quiet = activity.isBusy
