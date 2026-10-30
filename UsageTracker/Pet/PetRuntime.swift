@@ -95,6 +95,10 @@ struct PetRuntime {
     static let patDuration: TimeInterval = 1.2
     /// A slot's chance of an event, when one may play (owner 2026-10-30: about half).
     static let eventShare = 0.5
+    /// A mood that stops looping brings a moved pet back in this long, whatever the distance.
+    static let landingDuration: TimeInterval = 0.4
+    /// The timeline's rate while it comes back.
+    static let landingFPS: Double = 12
 
     private let random: PetRandom
     /// The visible open time and the next bit's deadline.
@@ -138,6 +142,14 @@ struct PetRuntime {
         let event: PetEvent
         let since: Date
         let until: Date
+        /// Coming back after the mood stopped looping; nil while it plays.
+        var landing: Landing? = nil
+    }
+
+    private struct Landing {
+        let since: Date
+        let from: PetEventOffset
+        let frame: String
     }
 
     init(random: PetRandom) {
@@ -172,13 +184,12 @@ struct PetRuntime {
 
     // MARK: - Pat
 
-    /// A pat (§ 3.5 Mood rule, D11): its heart is up for 1.2 s, a running bit stops, and the next
-    /// slot (a waiting stretch's too) is due 7–10 s of visible time later, so nothing starts under
-    /// the heart.
+    /// A pat (§ 3.5 Mood rule, D11): its heart is up for 1.2 s, a running bit stops (an event plays
+    /// on, the heart over it), and the next slot (a waiting stretch's too) is due 7–10 s of visible
+    /// time later, so nothing starts under the heart.
     mutating func pat(at now: Date) {
         patUntil = now.addingTimeInterval(Self.patDuration)
         running = nil
-        playing = nil
         base = nil
         clock.reschedule(at: now, random: random)
     }
@@ -237,9 +248,7 @@ struct PetRuntime {
             }
         }
 
-        if let current = playing, quiet || !loops || now >= current.until {
-            endEvent()
-        }
+        settleEvent(at: now, loops: loops, quiet: quiet)
 
         // The next due slot: a waiting stretch takes it, else an event, a walk, a blink or a nap.
         if running == nil, playing == nil, !quiet, loops, clock.isDue(at: now) {
@@ -331,13 +340,53 @@ struct PetRuntime {
         base = nil
     }
 
-    /// The event's frame at `now`: its step at its rate, its place read off the step. A mirrored pet
-    /// goes the other way (`dx` is in the drawing's direction); the floor's clamp holds it.
+    /// What this moment does to the event on stage. It ends at its end. Coming back, it ends when
+    /// it is back. A mood that stops looping sends a moved pet back and ends one at its start.
+    /// With the user busy, only an event that stays in its frame stops: a climb finishes.
+    private mutating func settleEvent(at now: Date, loops: Bool, quiet: Bool) {
+        guard let current = playing else { return }
+        if let landing = current.landing {
+            if now >= landing.since.addingTimeInterval(Self.landingDuration) { endEvent() }
+            return
+        }
+        if now >= current.until {
+            endEvent()
+        } else if !loops {
+            let step = current.event.stepIndex(elapsed: now.timeIntervalSince(current.since))
+            let offset = current.event.offsets[step]
+            if offset == .zero {
+                endEvent()
+            } else {
+                playing?.landing = Landing(since: now, from: offset, frame: current.event.steps[step].frame)
+            }
+        } else if quiet, !current.event.moves {
+            endEvent()
+        }
+    }
+
+    /// The event's frame at `now`: its step at its rate, its place read off the step; coming back, a
+    /// straight line home on the frame it was on. A mirrored pet goes the other way (`dx` is in the
+    /// drawing's direction); the floor's clamp holds it.
     private func show(_ current: Playing, at now: Date, roam: Int, heart: Bool) -> PetFrame {
-        let step = current.event.stepIndex(elapsed: now.timeIntervalSince(current.since))
-        let offset = current.event.offsets[step]
+        let frame: String
+        let fps: Double
+        let offset: PetEventOffset
+        if let landing = current.landing {
+            let left = max(0, 1 - now.timeIntervalSince(landing.since) / Self.landingDuration)
+            frame = landing.frame
+            fps = Self.landingFPS
+            offset = PetEventOffset(
+                x: Int((Double(landing.from.x) * left).rounded()),
+                lift: Int((Double(landing.from.lift) * left).rounded())
+            )
+        } else {
+            let step = current.event.stepIndex(elapsed: now.timeIntervalSince(current.since))
+            frame = current.event.steps[step].frame
+            fps = current.event.fps
+            offset = current.event.offsets[step]
+        }
         return PetFrame(
-            frame: current.event.steps[step].frame, fps: current.event.fps,
+            frame: frame, fps: fps,
             xBeads: clamped(xBeads + (facesLeft ? -offset.x : offset.x), roam: roam), yBeads: offset.lift,
             facesLeft: facesLeft, bit: .event(current.event.id), showsHeart: heart
         )
