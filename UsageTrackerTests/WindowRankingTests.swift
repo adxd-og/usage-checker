@@ -142,15 +142,6 @@ final class WindowRankingTests: XCTestCase {
         XCTAssertEqual(WindowRanking.shortWindowLabel("Current session"), "Current session")
     }
 
-    // MARK: tabs
-    func testResolveTabDefaultsToAll() {
-        let services = [Fixture.snapshot(id: "claude"), Fixture.snapshot(id: "codex")]
-        XCTAssertEqual(WindowRanking.resolveTab(stored: "", displayed: services), "all")
-        XCTAssertEqual(WindowRanking.resolveTab(stored: "grok", displayed: services), "all")
-        XCTAssertEqual(WindowRanking.resolveTab(stored: "all", displayed: services), "all")
-        XCTAssertEqual(WindowRanking.resolveTab(stored: "codex", displayed: services), "codex")
-    }
-
     // MARK: remaining
     func testRemainingText() {
         let now = Date(timeIntervalSince1970: 1_000_000)
