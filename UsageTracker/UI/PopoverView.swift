@@ -76,7 +76,7 @@ struct PopoverView: View {
             }
             HStack(alignment: .top, spacing: ProviderGridRules.habitatGap) {
                 if placed.showsHabitat {
-                    habitatSlot
+                    habitat
                 }
                 rightViewport(columns)
             }
@@ -374,14 +374,16 @@ struct PopoverView: View {
 
     // MARK: - The habitat
 
-    /// The habitat's column (§ 3.3): the pet lives here from P5c on. Until then empty space
-    /// keeps its 150 pt, so the grid has its final width (plan ruling R4). No fill and no
-    /// edge: the pet stands on the island itself (owner 2026-10-30).
-    private var habitatSlot: some View {
-        Color.clear
-            .frame(width: ProviderGridRules.habitatWidth)
-            .frame(maxHeight: .infinity)
-            .accessibilityHidden(true)
+    /// The habitat's column (§ 3.3, § 3.5): the pet on the floor at its bottom, as tall as the
+    /// right column on screen. No fill and no edge: the pet stands on the island itself (owner
+    /// 2026-10-30).
+    private var habitat: some View {
+        PetHabitatView(
+            pet: pet,
+            height: layout.rightColumnViewport ?? 0,
+            page: navigation.page,
+            providers: providerIDs
+        )
     }
 
     // MARK: - The right column
