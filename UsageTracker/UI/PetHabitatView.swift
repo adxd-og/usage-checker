@@ -34,6 +34,8 @@ struct PetHabitatView: View {
     @State private var playingFPS: Double?
     /// The last pat: a still pet redraws once its heart is due to go.
     @State private var lastPat: Date?
+    /// What the last warm-up finished for: the habitat redraws then, with its frames and its events.
+    @State private var warmedFor: Warmth?
 
     /// A pat's heart over the pet's head (§ 3.5 rows 5 and 7, "♥ 1.2 s").
     nonisolated static let heartSize: CGFloat = 11
@@ -44,7 +46,7 @@ struct PetHabitatView: View {
 
     var body: some View {
         Group {
-            if let assets = store.assets, let manifest = assets.library.manifests[PetHabitatRules.animal] {
+            if let assets = store.assets, let manifest = assets.library.manifests[pet.animal] {
                 if pet.islandOpen {
                     // Night, the sky and keep awake's clock turn on the minute while the island
                     // is open, Reduce Motion or not.
@@ -77,6 +79,7 @@ struct PetHabitatView: View {
             await Task.detached(priority: .utility) {
                 sprites.prewarm(animal: warmth.animal, palette: warmth.palette, pixelsPerBead: warmth.pixels)
             }.value
+            warmedFor = warmth
         }
         // A still pet's heart goes when the pat's 1.2 s are up: one redraw then. A newer pat
         // cancels the wait and starts its own; a running timeline redraws on its own.
@@ -100,8 +103,8 @@ struct PetHabitatView: View {
 
     /// Nil until the assets are there.
     private var warmth: Warmth? {
-        guard store.assets != nil else { return nil }
-        return Warmth(animal: PetHabitatRules.animal, palette: PetHabitatRules.palette, pixels: pixelsPerBead)
+        guard let manifest = store.assets?.library.manifests[pet.animal] else { return nil }
+        return Warmth(animal: manifest.id, palette: pet.palette(of: manifest), pixels: pixelsPerBead)
     }
 
     /// What the mood is decided from: the app's state as it is published (`PetMoodInput`).
@@ -119,6 +122,13 @@ struct PetHabitatView: View {
     private struct Placement {
         let manifest: PetManifest
         let sprites: PetSpriteCache
+        let palette: String
+        /// None until the pet is warm (`PetHabitatRules.playableEvents`).
+        let events: [PetEvent]
+        /// The beads above the floor an event is fitted to.
+        let liftRoom: Int
+        /// Drawn while the wanted frame is not built.
+        let still: PetSprite
         let scale: PetScaleRules.Scale
         let roam: Int
         let footY: CGFloat
@@ -133,12 +143,21 @@ struct PetHabitatView: View {
         )
         let presentation = scene.presentation
         let scale = PetHabitatRules.scale(petBeads: manifest.size, backingScale: displayScale)
+        let palette = pet.palette(of: manifest)
+        let isWarm = warmedFor == warmth || assets.sprites.isWarm(
+            animal: manifest.id, palette: palette, pixelsPerBead: scale.pixelsPerBead
+        )
+        let footY = PetHabitatRules.floorY(height: height, petSide: scale.points(beads: manifest.size))
         let place = Placement(
             manifest: manifest,
             sprites: assets.sprites,
+            palette: palette,
+            events: PetHabitatRules.playableEvents(manifest.events, isWarm: isWarm),
+            liftRoom: PetHabitatRules.liftRoom(footY: footY, petBeads: manifest.size, scale: scale),
+            still: .frame(PetRuntime.still(pose: presentation.pose, stills: manifest.still)),
             scale: scale,
             roam: PetHabitatRules.roamBeads(petBeads: manifest.size, scale: scale),
-            footY: PetHabitatRules.floorY(height: height, petSide: scale.points(beads: manifest.size)),
+            footY: footY,
             action: presentation.action
         )
         let still = PetRuntime.still(pose: presentation.pose, stills: manifest.still)
@@ -150,11 +169,13 @@ struct PetHabitatView: View {
                 TimelineView(.periodic(from: PetHabitatRules.timelineAnchor, by: period)) { context in
                     let frame = keeper.frame(
                         at: context.date, presentation: presentation,
-                        animations: manifest.animations, roamBeads: place.roam
+                        animations: manifest.animations, roamBeads: place.roam,
+                        events: place.events, liftRoom: place.liftRoom
                     )
                     sprite(
-                        frame?.frame ?? still,
+                        frame?.sprite ?? .frame(still),
                         xBeads: frame?.xBeads ?? keeper.runtime.xBeads,
+                        yBeads: frame?.yBeads ?? 0,
                         facesLeft: frame?.facesLeft ?? keeper.runtime.facesLeft,
                         heart: frame?.showsHeart ?? keeper.showsHeart(at: Date()),
                         place: place
@@ -166,8 +187,9 @@ struct PetHabitatView: View {
                 }
             } else {
                 sprite(
-                    still,
+                    .frame(still),
                     xBeads: keeper.runtime.xBeads,
+                    yBeads: 0,
                     facesLeft: keeper.runtime.facesLeft,
                     heart: keeper.showsHeart(at: Date()),
                     place: place
@@ -195,20 +217,24 @@ struct PetHabitatView: View {
             .allowsHitTesting(false)
     }
 
-    /// One frame of the pet: the button a click goes through, on whole beads on the floor and on
-    /// the device-pixel grid, mirrored when it last walked left, the heart over its head.
+    /// One frame of the pet: the button a click goes through, on whole beads and on the device-pixel
+    /// grid, on the floor or lifted by an event, mirrored when it last walked left, the heart over
+    /// its head. What is built draws, the still if the wanted frame is not; nothing renders here.
     private func sprite(
-        _ frame: String, xBeads: Int, facesLeft: Bool, heart: Bool, place: Placement
+        _ sprite: PetSprite, xBeads: Int, yBeads: Int, facesLeft: Bool, heart: Bool, place: Placement
     ) -> some View {
         let side = place.scale.points(beads: place.manifest.size)
         let origin = PetHabitatRules.origin(
-            xBeads: xBeads, footY: place.footY, petBeads: place.manifest.size,
+            xBeads: xBeads, yBeads: yBeads, footY: place.footY, petBeads: place.manifest.size,
             roamBeads: place.roam, scale: place.scale
         )
-        let image = place.sprites.image(PetSpriteCache.Key(
-            animal: PetHabitatRules.animal, palette: PetHabitatRules.palette,
-            sprite: .frame(frame), pixelsPerBead: place.scale.pixelsPerBead
-        ))
+        let image = place.sprites.drawableImage(
+            PetSpriteCache.Key(
+                animal: place.manifest.id, palette: place.palette,
+                sprite: sprite, pixelsPerBead: place.scale.pixelsPerBead
+            ),
+            orStill: place.still
+        )
         return Button {
             click(place.action)
         } label: {
