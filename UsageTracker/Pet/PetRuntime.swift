@@ -68,10 +68,10 @@ struct PetFrame: Equatable, Sendable {
 /// stretch after a limit reset and the pat. One per app, so it outlives the panel: the visible
 /// open time, the next bit's deadline, where the pet stands, the last reset per window and the
 /// pat carry from one open to the next. Time comes in as `now`, chance from an injected
-/// `PetRandom`; nothing here starts a timer. The habitat calls `resume` and `pause` when
-/// `PetAnimationGate` turns on and off, and `tick` on each frame of its one `TimelineView`
-/// while it is on, at the returned frame's `fps`; the app hands it every poll through
-/// `observe`. Motion never leaves the habitat: the pet stays within `roamBeads` of floor and
+/// `PetRandom`; nothing here starts a timer. `PetKeeper` owns it: it calls `resume` and
+/// `pause` when the island's `PetAnimationGate` turns on and off, and `tick` when the habitat
+/// pulls a frame from its one `TimelineView` while the gate is on, at the returned frame's
+/// `fps`; every poll reaches it through `observe`. Motion never leaves the habitat: the pet stays within `roamBeads` of floor and
 /// moves in whole beads. Pure.
 struct PetRuntime {
     /// The farthest a walk goes: 16 beads, 2 s at the walk's 8 fps.
