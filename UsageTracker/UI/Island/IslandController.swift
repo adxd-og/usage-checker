@@ -35,6 +35,8 @@ final class IslandController: NSObject {
     private let frames: IslandFrameDriver
     /// The motion's clock, in the display link's time base.
     private let clock: () -> TimeInterval = { CACurrentMediaTime() }
+    /// The last frame's time, ahead of `clock()`: opens and closes act no earlier (`eventTime()`).
+    private var lastFrameTime: TimeInterval?
 
     /// Opening or open. A closing island counts as closed: an entry turns it around.
     var isOpen: Bool { transition.isOpen }
@@ -132,7 +134,7 @@ final class IslandController: NSObject {
     /// shrinks back into the notch; the panel fades out; Reduce Motion cross-fades. Nothing
     /// when it is closed or already closing.
     func close() {
-        let now = clock()
+        let now = eventTime()
         settle(at: now)
         guard isOpen, let placement else { return }
         // From the first frame of a close the whole window ignores the mouse until the next
@@ -174,7 +176,7 @@ final class IslandController: NSObject {
     /// (§ 3.2, Interrupt); open or closing elsewhere, closed at once and opened afresh there,
     /// since one window cannot move in two places.
     private func open(_ entry: IslandEntry, on screen: IslandScreen) {
-        let now = clock()
+        let now = eventTime()
         // Whether the island holds the keyboard, read before anything below orders it out.
         let islandWasKey = window.isKeyWindow
         // Deadlines due by now first, as a frame would have applied them: a close may have ended.
@@ -464,10 +466,16 @@ final class IslandController: NSObject {
         }
     }
 
+    /// The time an open or a close acts at: now, but never behind the last drawn frame.
+    private func eventTime() -> TimeInterval {
+        IslandFrameDriver.eventTime(now: clock(), lastFrame: lastFrameTime)
+    }
+
     /// One frame of the frame source: the transition at the frame's time, handed to the
     /// views; the mouse re-checked against the shape as it moves (P0 strategy B); the window
     /// ordered out on the close's last frame; the frames stopped once nothing moves.
     private func frame(_ now: TimeInterval) {
+        lastFrameTime = now
         settle(at: now)
         guard transition.phase != .closed else { return }
         updateMouseIgnoring()

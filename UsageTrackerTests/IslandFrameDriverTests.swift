@@ -95,4 +95,13 @@ final class IslandFrameDriverTests: XCTestCase {
         driver.displaysWoke()
         XCTAssertTrue(source.isRunning)
     }
+
+    // MARK: Event time
+
+    func testAnEventNeverRunsBehindTheLastDrawnFrame() {
+        XCTAssertEqual(IslandFrameDriver.eventTime(now: 10.000, lastFrame: 10.016), 10.016,
+                       "a frame ahead of the event's clock: the event acts from what is drawn")
+        XCTAssertEqual(IslandFrameDriver.eventTime(now: 10.5, lastFrame: 10.016), 10.5)
+        XCTAssertEqual(IslandFrameDriver.eventTime(now: 10.5, lastFrame: nil), 10.5, "no frame yet")
+    }
 }

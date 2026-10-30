@@ -29,6 +29,14 @@ final class IslandFrameDriver {
 
     var isRunning: Bool { source.isRunning }
 
+    /// The time an open or a close acts at: the event's clock, but never behind the last frame
+    /// evaluated. A frame's time is when it will be on screen, up to two frames ahead of
+    /// `CACurrentMediaTime()`, so an interrupt sets off from what is drawn, never from an
+    /// older value.
+    nonisolated static func eventTime(now: TimeInterval, lastFrame: TimeInterval?) -> TimeInterval {
+        max(now, lastFrame ?? now)
+    }
+
     /// Frames from now on; nothing when they already run.
     func start() {
         wanted = true
