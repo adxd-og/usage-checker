@@ -10,7 +10,7 @@ import SwiftUI
 /// after an end starts a new one; a total over the ceiling is applied as the ceiling, and
 /// the fields redraw in canonical form after Apply.
 struct KeepAwakeSection: View {
-    /// The card's width inside its padding (`ProviderGridRules.Columns.cardInterior`).
+    /// The card's width inside its padding (`ProviderGridRules.LowerRow.keepAwakeInterior`).
     let interiorWidth: CGFloat
     /// The card's own height before the grid stretches it (`KeepAwakeCardLayout.naturalHeight`),
     /// for `IslandHeightRules`; nil until both halves have measured themselves.

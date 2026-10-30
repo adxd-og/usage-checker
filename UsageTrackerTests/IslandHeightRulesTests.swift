@@ -106,6 +106,14 @@ final class IslandHeightRulesTests: XCTestCase {
         XCTAssertEqual(outcome(400, noAgents), .init(agentsListCap: 260, scrolls: true, rightColumn: 480))
     }
 
+    func testWithoutAnAgentsCardTheMeasuredColumnIsTheLayoutAndNothingIsCapped() {
+        // Grok's page (owner 2026-10-30): no agents half, keep awake spans the row with its
+        // controls on one line (104). Nothing yields, so the column stands as measured.
+        let noAgentsCard = IslandHeightRules.Samples(rightColumn: 300 + 104, agentsColumn: nil, costTile: nil, keepAwake: 104, list: nil)
+        XCTAssertEqual(outcome(838, noAgentsCard), .init(agentsListCap: 260, scrolls: false, rightColumn: 404))
+        XCTAssertEqual(outcome(380, noAgentsCard), .init(agentsListCap: 260, scrolls: true, rightColumn: 404))
+    }
+
     func testFiveProvidersFitThe14InchWithFiveRows() {
         // The cost tile is beside the fifth tile, so the lower row's other half is keep awake.
         XCTAssertEqual(

@@ -32,7 +32,8 @@ enum ProviderGridRules {
         let right: CGFloat
         /// One of the grid's two equal columns.
         let half: CGFloat
-        /// Inside a card's padding in one half: where keep awake lays out its controls.
+        /// Inside a card's padding in one half: where keep awake lays out its controls beside
+        /// the agents card (`LowerRow`).
         var cardInterior: CGFloat { half - 2 * ProviderGridRules.cardPadding }
     }
 
@@ -55,6 +56,25 @@ enum ProviderGridRules {
         let content = bodyWidth - 2 * padding
         let right = showsHabitat ? content - habitatWidth - habitatGap : content
         return Columns(content: content, right: right, half: (right - gap) / 2)
+    }
+
+    /// The grid's lower row (§ 3.3): the agents card in one half and the cost tile over keep
+    /// awake in the other; with no agents card, the cost tile over keep awake across the row.
+    struct LowerRow: Equatable, Sendable {
+        /// The agents card's half; nil when there is no agents card.
+        let agentsWidth: CGFloat?
+        /// The cost tile over keep awake.
+        let otherWidth: CGFloat
+        /// Inside keep awake's card padding: where `KeepAwakeCardLayout` lays out its controls.
+        var keepAwakeInterior: CGFloat { otherWidth - 2 * ProviderGridRules.cardPadding }
+    }
+
+    /// Where there is no agents card (a provider without agents, Grok, Antigravity), keep
+    /// awake spans the row instead of keeping its half (owner 2026-10-30).
+    static func lowerRow(columns: Columns, hasAgentsCard: Bool) -> LowerRow {
+        hasAgentsCard
+            ? LowerRow(agentsWidth: columns.half, otherWidth: columns.half)
+            : LowerRow(agentsWidth: nil, otherWidth: columns.right)
     }
 
     /// One provider: its page is home and there is no grid (§ 3.3, § 3.4).
