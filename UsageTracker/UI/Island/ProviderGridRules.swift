@@ -125,4 +125,11 @@ enum ProviderGridRules {
         let unfolded = showsUnused || unused.count == 1 ? unused : []
         return WeeklyRows(shown: (visible + unfolded).filter { $0.id != hero?.id }, unusedCount: unused.count)
     }
+
+    /// The API-equivalent line under a provider page's dollars: once, only when the week
+    /// has dollars, never for a pay-as-you-go account.
+    static func spendCaption(for service: ServiceSnapshot) -> String? {
+        guard (service.weekCost ?? 0) > 0 else { return nil }
+        return CostCopy.apiEquivalentCaption(isPayAsYouGo: CostCopy.isPayAsYouGo(service))
+    }
 }

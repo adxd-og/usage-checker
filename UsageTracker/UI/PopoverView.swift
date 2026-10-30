@@ -585,13 +585,6 @@ private struct ProviderDetail: View {
     }
     private var nothingToShow: Bool { PopoverView.nothingToShow(service) }
 
-    /// The "API-equivalent" line, once, and only under a dollar row that is actually
-    /// on screen. A pay-as-you-go account has no subscription to be confused with.
-    private var costCaption: String? {
-        guard (service.weekCost ?? 0) > 0 else { return nil }
-        return CostCopy.apiEquivalentCaption(isPayAsYouGo: CostCopy.isPayAsYouGo(service))
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.m) {
             if let stateLabel = PopoverView.stateLabel(for: service) {
@@ -744,7 +737,7 @@ private struct ProviderDetail: View {
             if hero != nil, let week = service.weekCost, week > 0 {
                 OMKeyValueRow(label: "Last 7 days", value: OMCostTile.money(week), valueStyle: .figure)
             }
-            if let caption = costCaption {
+            if let caption = ProviderGridRules.spendCaption(for: service) {
                 Text(caption)
                     .font(.system(size: 11))
                     .foregroundStyle(.om(.secondary))
