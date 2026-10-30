@@ -182,6 +182,7 @@ final class IslandController: NSObject {
         window.ignoresMouseEvents = true
         removeMonitors()
         window.orderOut(nil)
+        pet.setWindowVisible(false)
         window.contentView = placeholder
         shapeModel.progress = 0
         model.stage = transition.stage
@@ -237,6 +238,10 @@ final class IslandController: NSObject {
         guard let placement else { return }
         // Every open, a turned-around close included, starts a new generation of jumps.
         pet.islandOpened()
+        // On screen from here until `finishClose`. Not the window's occlusion state: measured on
+        // the island, it reports "not visible" a moment after every open, though nothing can
+        // cover a window at this level (owner 2026-10-30, the pet stood still).
+        pet.setWindowVisible(true)
         transition.open(style: style(for: placement.kind), at: now)
         apply(at: now)
         switch IslandTransition.keyAction(entryBecomesKey: entry.becomesKey, islandIsKey: islandWasKey) {
