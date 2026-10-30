@@ -30,3 +30,29 @@ enum PetEventFixture {
     static let long = event(id: "long", fps: 4, moves: Array(repeating: (0, 0), count: 32))
     static let both = [flat, climb]
 }
+
+/// An event as `pet.json` holds it, built in code so a test can break one rule at a time.
+extension PetFixture {
+    /// Paints o at (0, 0) and the prop x at (2, 0).
+    static let eventRows = rows(side: 35, beads: [(0, 0, "o"), (2, 0, "x")])
+
+    /// "hop": frames a and b, six steps at 4 fps (1.5 s), up 4 and across 2 and back, the prop x red.
+    static func event(id: String = "hop") -> [String: Any] {
+        [
+            "id": id,
+            "fps": 4,
+            "frames": ["a": eventRows, "b": frameRows],
+            "steps": steps([("a", 0, 0), ("b", 0, -2), ("a", 2, -2), ("b", 0, 2), ("a", -2, 2), ("b", 0, 0)]),
+            "palette": ["x": "#ff0000"],
+        ]
+    }
+
+    static func steps(_ moves: [(String, Any, Any)]) -> [[String: Any]] {
+        moves.map { ["f": $0.0, "dx": $0.1, "dy": $0.2] }
+    }
+
+    /// `count` steps on frame a that move nothing.
+    static func stillSteps(_ count: Int) -> [[String: Any]] {
+        steps(Array(repeating: ("a", 0, 0), count: count))
+    }
+}

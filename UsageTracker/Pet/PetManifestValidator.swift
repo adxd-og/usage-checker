@@ -66,14 +66,80 @@ enum PetManifestIssue: Equatable, Sendable, CustomStringConvertible {
     }
 }
 
+/// What breaks an event's contract (notch-island spec 2026-10-29 § 3.5, "Owner 2026-10-30
+/// (events)"). It costs that event, never the pet.
+enum PetEventIssue: Equatable, Sendable, CustomStringConvertible {
+    /// `events` is there and is not a list.
+    case notAList
+    case notAnObject
+    case noID
+    case duplicateID
+    /// fps is not a number from 4 to 12.
+    case fps
+    case paletteNotObject
+    /// A palette key other than x y z u v.
+    case propRole(String)
+    /// A prop role one of the animal's palettes already uses.
+    case propCollides(String)
+    case propColour(String)
+    case noFrames
+    case tooManyFrames(Int)
+    /// A frame that is not 35 rows of 35 beads.
+    case frameShape(String)
+    /// Roles the frames paint that this palette, with the event's props, has no colour for.
+    case paletteLacksRoles(palette: String, roles: String)
+    case noSteps
+    case stepUnknownFrame(step: Int, frame: String)
+    /// A dx or dy that is not a whole number within `PetContract.eventMaxDelta`.
+    case stepDelta(step: Int)
+    case notBalanced(dx: Int, dy: Int)
+    case liftTooHigh(Int)
+    case driftTooFar(Int)
+    case duration(TimeInterval)
+
+    var description: String {
+        switch self {
+        case .notAList: "events is not a list"
+        case .notAnObject: "not an object"
+        case .noID: "no id"
+        case .duplicateID: "id used twice"
+        case .fps: "fps outside 4-12"
+        case .paletteNotObject: "palette is not an object"
+        case .propRole(let role): "palette role \(role) is not one of x y z u v"
+        case .propCollides(let role): "palette role \(role) is already one of the animal's roles"
+        case .propColour(let role): "palette role \(role) colour is not #rrggbb"
+        case .noFrames: "frames empty"
+        case .tooManyFrames(let count): "\(count) frames, at most \(PetContract.eventMaxFrames)"
+        case .frameShape(let frame): "frame \(frame) is not \(PetContract.size) x \(PetContract.size)"
+        case .paletteLacksRoles(let palette, let roles): "palette \(palette) lacks roles used: \(roles)"
+        case .noSteps: "steps empty"
+        case .stepUnknownFrame(let step, let frame): "step \(step): frame \(frame) does not exist"
+        case .stepDelta(let step): "step \(step): dx or dy is not a whole number within \(PetContract.eventMaxDelta)"
+        case .notBalanced(let dx, let dy): "deltas sum to \(dx), \(dy), not 0, 0"
+        case .liftTooHigh(let beads): "lift \(beads) beads, at most \(PetContract.eventMaxLift)"
+        case .driftTooFar(let beads): "drift \(beads) beads, at most \(PetContract.eventMaxDrift)"
+        case .duration(let seconds): "lasts \(seconds) s, outside 1.5-8"
+        }
+    }
+}
+
 /// What the check reports without failing the manifest.
 enum PetManifestNote: Equatable, Sendable, CustomStringConvertible {
     /// Roles a palette declares that no frame and not the ear uses, sorted ("3w").
     case unusedRoles(String)
+    /// An event left out, by its id ("#2" by its place when it has none), and why.
+    case eventDropped(id: String, issues: [PetEventIssue])
+
+    var isDroppedEvent: Bool {
+        if case .eventDropped = self { return true }
+        return false
+    }
 
     var description: String {
         switch self {
         case .unusedRoles(let roles): "roles declared but unused: \(roles)"
+        case .eventDropped(let id, let issues):
+            "event \(id) dropped: \(issues.map(\.description).joined(separator: "; "))"
         }
     }
 }
@@ -101,7 +167,9 @@ enum PetManifestValidator {
         var issues: [PetManifestIssue] = []
 
         let missing = PetContract.keys.filter { json[$0] == nil }
-        let extra = json.keys.filter { !PetContract.keys.contains($0) }.sorted()
+        let extra = json.keys
+            .filter { !PetContract.keys.contains($0) && !PetContract.optionalKeys.contains($0) }
+            .sorted()
         if !missing.isEmpty { issues.append(.missingKeys(missing)) }
         if !extra.isEmpty { issues.append(.extraKeys(extra)) }
         guard missing.isEmpty else { return PetManifestCheck(issues: issues, notes: [], manifest: nil) }
@@ -186,11 +254,178 @@ enum PetManifestValidator {
         }
 
         guard issues.isEmpty else { return PetManifestCheck(issues: issues, notes: notes, manifest: nil) }
-        guard let pet = build(json) else {
+        let events = checkEvents(json["events"], paletteRoles: paletteRoles)
+        guard let pet = build(json, events: events.kept) else {
             return PetManifestCheck(issues: [.unreadable], notes: notes, manifest: nil)
         }
-        return PetManifestCheck(issues: [], notes: notes, manifest: pet)
+        return PetManifestCheck(issues: [], notes: notes + events.notes, manifest: pet)
     }
+
+    // MARK: - Events
+
+    /// The events that keep the contract, in order, and a note for each that does not: a bad event
+    /// costs only itself, as a bad pet costs only itself in the library. Missing `events` is none.
+    private static func checkEvents(
+        _ value: Any?, paletteRoles: [String: Set<Unicode.Scalar>]
+    ) -> (kept: [PetEvent], notes: [PetManifestNote]) {
+        guard let value else { return ([], []) }
+        guard let list = value as? [Any] else {
+            return ([], [.eventDropped(id: "events", issues: [.notAList])])
+        }
+        var kept: [PetEvent] = []
+        var notes: [PetManifestNote] = []
+        var seen = Set<String>()
+        let furRoles = paletteRoles.values.reduce(into: Set<Unicode.Scalar>()) { $0.formUnion($1) }
+        for (index, entry) in list.enumerated() {
+            guard let object = entry as? [String: Any] else {
+                notes.append(.eventDropped(id: "#\(index)", issues: [.notAnObject]))
+                continue
+            }
+            var issues: [PetEventIssue] = []
+            let id = object["id"] as? String ?? ""
+            let named = !id.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !named {
+                issues.append(.noID)
+            } else if seen.contains(id) {
+                issues.append(.duplicateID)
+            }
+            let fps = number(object["fps"]).flatMap { PetContract.eventFPS.contains($0) ? $0 : nil }
+            if fps == nil { issues.append(.fps) }
+            let props = eventPalette(object["palette"], furRoles: furRoles, issues: &issues)
+            let frames = eventFrames(
+                object["frames"], props: props.declared, paletteRoles: paletteRoles, issues: &issues
+            )
+            let frameKeys = Set((object["frames"] as? [String: Any] ?? [:]).keys)
+            let steps = eventSteps(object["steps"], frameKeys: frameKeys, issues: &issues)
+            if let fps, !steps.isEmpty {
+                let seconds = Double(steps.count) / fps
+                if !PetContract.eventDuration.contains(seconds) { issues.append(.duration(seconds)) }
+            }
+            if issues.isEmpty, let fps {
+                seen.insert(id)
+                kept.append(PetEvent(id: id, fps: fps, frames: frames, steps: steps, palette: props.colours))
+            } else {
+                notes.append(.eventDropped(id: named ? id : "#\(index)", issues: issues))
+            }
+        }
+        return (kept, notes)
+    }
+
+    /// The props' colours and the roles declared. No palette is no props. A role outside x y z u v,
+    /// or one a palette of the animal already uses, is refused: fur stays fur, so every colourway
+    /// keeps working.
+    private static func eventPalette(
+        _ value: Any?, furRoles: Set<Unicode.Scalar>, issues: inout [PetEventIssue]
+    ) -> (colours: [Unicode.Scalar: PetRGB], declared: Set<Unicode.Scalar>) {
+        guard let value else { return ([:], []) }
+        guard let palette = value as? [String: Any] else {
+            issues.append(.paletteNotObject)
+            return ([:], [])
+        }
+        var colours: [Unicode.Scalar: PetRGB] = [:]
+        var declared = Set<Unicode.Scalar>()
+        for role in palette.keys.sorted() {
+            guard let scalar = singleScalar(role), PetContract.eventPropRoles.contains(scalar) else {
+                issues.append(.propRole(role))
+                continue
+            }
+            declared.insert(scalar)
+            if furRoles.contains(scalar) {
+                issues.append(.propCollides(role))
+                continue
+            }
+            if let colour = (palette[role] as? String).flatMap(PetRGB.init(hex:)) {
+                colours[scalar] = colour
+            } else {
+                issues.append(.propColour(role))
+            }
+        }
+        return (colours, declared)
+    }
+
+    /// The frames of the right shape; reports the wrong ones, too many, and any role some palette
+    /// has no colour for with `props` merged.
+    private static func eventFrames(
+        _ value: Any?, props: Set<Unicode.Scalar>, paletteRoles: [String: Set<Unicode.Scalar>],
+        issues: inout [PetEventIssue]
+    ) -> [String: PetCharMap] {
+        let rows = value as? [String: Any] ?? [:]
+        if rows.isEmpty { issues.append(.noFrames) }
+        if rows.count > PetContract.eventMaxFrames { issues.append(.tooManyFrames(rows.count)) }
+        var frames: [String: PetCharMap] = [:]
+        for name in rows.keys.sorted() {
+            guard let lines = rows[name] as? [String],
+                  let map = PetCharMap(rows: lines, side: PetContract.size)
+            else {
+                issues.append(.frameShape(name))
+                continue
+            }
+            frames[name] = map
+        }
+        let used = frames.values.reduce(into: Set<Unicode.Scalar>()) { $0.formUnion($1.roles) }
+        for palette in paletteRoles.keys.sorted() {
+            let lacking = used.subtracting(paletteRoles[palette] ?? []).subtracting(props)
+            if !lacking.isEmpty {
+                issues.append(.paletteLacksRoles(palette: palette, roles: roleList(lacking)))
+            }
+        }
+        return frames
+    }
+
+    /// The steps; reports an unknown frame, a delta that is not whole, and, when every delta is
+    /// whole, deltas that do not sum to zero or go past the lift and drift limits (the peak above
+    /// the floor, the farthest from the start). An omitted delta is 0.
+    private static func eventSteps(
+        _ value: Any?, frameKeys: Set<String>, issues: inout [PetEventIssue]
+    ) -> [PetEventStep] {
+        guard let list = value as? [Any], !list.isEmpty else {
+            issues.append(.noSteps)
+            return []
+        }
+        var steps: [PetEventStep] = []
+        var whole = true
+        for (index, entry) in list.enumerated() {
+            let object = entry as? [String: Any] ?? [:]
+            let frame = object["f"] as? String
+            if frame.map({ !frameKeys.contains($0) }) ?? true {
+                issues.append(.stepUnknownFrame(step: index, frame: text(object["f"])))
+            }
+            let dx = delta(object["dx"])
+            let dy = delta(object["dy"])
+            if dx == nil || dy == nil {
+                issues.append(.stepDelta(step: index))
+                whole = false
+            }
+            steps.append(PetEventStep(frame: frame ?? "", dx: dx ?? 0, dy: dy ?? 0))
+        }
+        guard whole else { return steps }
+        var x = 0
+        var y = 0
+        var lift = 0
+        var drift = 0
+        for step in steps {
+            x += step.dx
+            y += step.dy
+            lift = max(lift, -y)
+            drift = max(drift, abs(x))
+        }
+        if x != 0 || y != 0 { issues.append(.notBalanced(dx: x, dy: y)) }
+        if lift > PetContract.eventMaxLift { issues.append(.liftTooHigh(lift)) }
+        if drift > PetContract.eventMaxDrift { issues.append(.driftTooFar(drift)) }
+        return steps
+    }
+
+    /// A step's delta: omitted is 0; nil for anything but a whole number within the bound, checked
+    /// before any sum and without `abs`, which traps on `Int.min`.
+    private static func delta(_ value: Any?) -> Int? {
+        guard let value else { return 0 }
+        guard let beads = integer(value),
+              (-PetContract.eventMaxDelta...PetContract.eventMaxDelta).contains(beads)
+        else { return nil }
+        return beads
+    }
+
+    // MARK: - The pet
 
     /// The roles a map paints; reports a wrong shape or a bead that is no declared role. A row's
     /// width is its Unicode scalars, as the art validator counts code points.
@@ -218,7 +453,7 @@ enum PetManifestValidator {
     }
 
     /// The pet from a manifest every check above passed.
-    private static func build(_ json: [String: Any]) -> PetManifest? {
+    private static func build(_ json: [String: Any], events: [PetEvent]) -> PetManifest? {
         guard let id = json["id"] as? String,
               let name = json["name"] as? String,
               let paletteObjects = json["palettes"] as? [String: [String: String]],
@@ -266,7 +501,8 @@ enum PetManifestValidator {
             frames: frames,
             animations: PetAnimations(idle: idle, blink: blink, walk: walk, look: look, sleep: sleep),
             still: PetStills(idle: stillIdle, look: stillLook, sleep: stillSleep),
-            ear: ear
+            ear: ear,
+            events: events
         )
     }
 

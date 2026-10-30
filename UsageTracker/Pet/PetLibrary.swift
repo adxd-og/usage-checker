@@ -35,6 +35,9 @@ struct PetLibrary: Equatable, Sendable {
             checks[folder] = check
             if let manifest = check.manifest {
                 manifests[folder] = manifest
+                for note in check.notes where note.isDroppedEvent {
+                    NSLog("[UT] pet %@: %@", folder, note.description)
+                }
             } else {
                 NSLog("[UT] pet %@ left out: %@", folder, check.issues.map(\.description).joined(separator: "; "))
             }
