@@ -114,32 +114,35 @@ final class PetSpriteCacheVerificationTests: XCTestCase {
         XCTAssertEqual(cache.count, 12)
     }
 
-    /// The doc comment's figure: 11 images, 450,216 bytes for a shipped pet at 3 px per bead.
-    func testAShippedPetInOnePaletteIsElevenImagesAndFourHundredFiftyThousandBytesAtThreePixels() throws {
+    /// The doc comment's figure: 11 images, 450,216 bytes for a shipped pet's own frames and ear at
+    /// 3 px per bead, and one more image per event frame, however many the art brings.
+    func testAShippedPetsOwnFramesAreElevenImagesAndFourHundredFiftyThousandBytesAtThreePixels() throws {
         for animal in PetLibrary.bundled().animalIDs {
             let assets = PetAssets(library: .bundled())
             let pet = try XCTUnwrap(assets.library.manifests[animal])
             let palette = try XCTUnwrap(pet.paletteNames.first)
+            let images = 11 + pet.events.reduce(0) { $0 + $1.frames.count }
             assets.sprites.prewarm(animal: animal, palette: palette, pixelsPerBead: 3)
-            XCTAssertEqual(assets.sprites.count, 11, animal)
+            XCTAssertEqual(assets.sprites.count, images, animal)
             var total = 0
             for sprite in pet.frames.keys.sorted().map(PetSprite.frame) + [.ear] {
                 let image = try XCTUnwrap(assets.sprites.image(PetSpriteCache.Key(animal: animal, palette: palette, sprite: sprite, pixelsPerBead: 3)))
                 total += image.bytesPerRow * image.height
             }
             XCTAssertEqual(total, 450_216, animal)
-            XCTAssertEqual(assets.sprites.count, 11, "asking for the warmed images builds none: \(animal)")
+            XCTAssertEqual(assets.sprites.count, images, "asking for the warmed images builds none: \(animal)")
         }
     }
 
-    func testEveryShippedPetPrewarmsToElevenImagesInEachOfItsPalettes() throws {
+    func testEveryShippedPetPrewarmsToItsFramesAndItsEventsInEachOfItsPalettes() throws {
         for animal in PetLibrary.bundled().animalIDs {
             let assets = PetAssets(library: .bundled())
             let pet = try XCTUnwrap(assets.library.manifests[animal])
             XCTAssertEqual(pet.frames.count, 10, animal)
+            let images = 11 + pet.events.reduce(0) { $0 + $1.frames.count }
             for (n, palette) in pet.paletteNames.enumerated() {
                 assets.sprites.prewarm(animal: animal, palette: palette, pixelsPerBead: 3)
-                XCTAssertEqual(assets.sprites.count, 11 * (n + 1), "\(animal) \(palette)")
+                XCTAssertEqual(assets.sprites.count, images * (n + 1), "\(animal) \(palette)")
             }
         }
     }

@@ -31,15 +31,18 @@ enum PetPose: String, CaseIterable, Sendable {
     case idle, look, sleep
 }
 
-/// One drawable picture of a pet: a named frame, or the 16 × 16 ear head.
+/// One drawable picture of a pet: a named frame, the 16 × 16 ear head, or a frame of an event
+/// (each event names its own frames, so two may both have an "a").
 enum PetSprite: Hashable, Sendable, CustomStringConvertible {
     case frame(String)
     case ear
+    case eventFrame(event: String, frame: String)
 
     var description: String {
         switch self {
         case .frame(let name): "frame \(name)"
         case .ear: "ear"
+        case .eventFrame(let event, let frame): "event \(event) frame \(frame)"
         }
     }
 }
@@ -170,6 +173,17 @@ struct PetManifest: Equatable, Sendable {
         switch sprite {
         case .frame(let name): frames[name]
         case .ear: ear
+        case .eventFrame(let event, let frame): self.event(id: event)?.frames[frame]
         }
+    }
+
+    /// The colours a sprite draws in: the named palette, with an event frame's props merged in
+    /// (the same in every colourway). Nil for a palette the pet does not have.
+    func colours(palette name: String, for sprite: PetSprite) -> [Unicode.Scalar: PetRGB]? {
+        guard let colours = palettes[name] else { return nil }
+        guard case .eventFrame(let event, _) = sprite, let props = self.event(id: event)?.palette else {
+            return colours
+        }
+        return colours.merging(props) { _, prop in prop }
     }
 }
