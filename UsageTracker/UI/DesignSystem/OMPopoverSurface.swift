@@ -31,13 +31,13 @@ enum OMPopoverSurface: Sendable {
         let borderWidth: CGFloat
     }
 
-    /// On the island, which is always dark, tiles and cards are white 5 % with a 0.5 pt
-    /// white 11 % hairline, so the island reads as one surface with marks on it (notch-island
+    /// On the island, which is always dark, tiles and cards are white 2 % with a 0.5 pt
+    /// white 8 % hairline, so the island reads as one surface with marks on it (notch-island
     /// spec 2026-10-29 § 3.1, Surfaces on the island; owner 2026-10-30). Everywhere else (the
     /// panel, the Dashboard) the group fill and its 1 pt edge.
     static func style(onIsland: Bool) -> Style {
         onIsland
-            ? Style(fill: .fixed(.white(0.05)), border: .fixed(.white(0.11)), borderWidth: 0.5)
+            ? Style(fill: .fixed(.white(0.02)), border: .fixed(.white(0.08)), borderWidth: 0.5)
             : Style(fill: .token(fill), border: .token(border), borderWidth: borderWidth)
     }
 }
