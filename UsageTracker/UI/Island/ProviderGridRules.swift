@@ -79,4 +79,19 @@ enum ProviderGridRules {
         }
         return Grid(tileRows: rows, costInLowerRow: showsCostTile && !odd)
     }
+
+    // MARK: - The bar-label column
+
+    /// The narrowest a tile's bar may get beside the shared label and its figure.
+    static let minimumBarTrack: CGFloat = 56
+
+    /// The bar-label column every tile in the grid shares (§ 3.3), so every bar starts at
+    /// the same x: the widest label in whole points, never so wide that a tile's bar
+    /// shrinks under `minimumBarTrack` beside its figure (a longer label truncates at its
+    /// tail). 0 when no tile draws a bar. The view measures the labels.
+    static func barLabelWidth(labelWidths: [CGFloat], tileInterior: CGFloat) -> CGFloat {
+        guard let widest = labelWidths.max() else { return 0 }
+        let room = tileInterior - OMProviderTile.barValueWidth - 2 * OMProviderTile.barGap - minimumBarTrack
+        return max(0, min(widest.rounded(.up), room.rounded(.down)))
+    }
 }

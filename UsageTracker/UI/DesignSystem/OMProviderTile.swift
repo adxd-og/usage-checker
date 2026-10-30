@@ -47,6 +47,10 @@ struct OMProviderTile: View {
     nonisolated static let barHeight: CGFloat = 4
     /// A retained tile's name line and numbers (`Main.dc.html`'s Antigravity).
     nonisolated static let retainedOpacity: Double = 0.55
+    /// The bar row (notch-island spec § 3.3): label, bar and figure, this far apart; the
+    /// figure takes `barValueWidth`.
+    nonisolated static let barGap: CGFloat = 8
+    nonisolated static let barValueWidth: CGFloat = 36
 
     var body: some View {
         Button(action: action) {
@@ -181,6 +185,16 @@ struct OMProviderTile: View {
     /// "Week" and "41%" over the thin bar.
     nonisolated static func secondaryLine(_ bucket: UsageBucket, mode: PercentDisplay.Mode) -> OMTileCaption {
         OMTileCaption(title: shortLabel(for: bucket), value: PercentDisplay.percentText(bucket.clampedPercent, mode: mode))
+    }
+
+    /// The label left of the tile's bar ("Week", "Credits", "Opus"), which the grid's
+    /// shared column is sized to; nil when the tile draws no bar: nothing under the hero,
+    /// or a provider that is neither live nor retained.
+    nonisolated static func barLabel(for service: ServiceSnapshot) -> String? {
+        guard service.state == .ok || service.isRetained,
+              let secondary = WindowRanking.secondaryBucket(for: service)
+        else { return nil }
+        return shortLabel(for: secondary)
     }
 
     /// A windowless account's headline title: "Last 7 days", dated when retained
