@@ -17,8 +17,17 @@ final class PetSpriteCache: @unchecked Sendable {
     }
 
     private let library: PetLibrary
+    /// One animal in one palette at one scale.
+    private struct Warm: Hashable {
+        let animal: String
+        let palette: String
+        let pixelsPerBead: Int
+    }
+
     private let lock = NSLock()
     private var images: [Key: CGImage] = [:]
+    /// What `prewarm` finished.
+    private var warmed = Set<Warm>()
 
     init(library: PetLibrary) {
         self.library = library
@@ -59,6 +68,32 @@ final class PetSpriteCache: @unchecked Sendable {
         for sprite in sprites {
             _ = image(Key(animal: animal, palette: palette, sprite: sprite, pixelsPerBead: pixelsPerBead))
         }
+        guard manifest.palettes[palette] != nil, pixelsPerBead > 0 else { return }
+        lock.lock()
+        defer { lock.unlock() }
+        warmed.insert(Warm(animal: animal, palette: palette, pixelsPerBead: pixelsPerBead))
+    }
+
+    /// `prewarm` finished for this animal, palette and scale: every frame is a lookup.
+    func isWarm(animal: String, palette: String, pixelsPerBead: Int) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return warmed.contains(Warm(animal: animal, palette: palette, pixelsPerBead: pixelsPerBead))
+    }
+
+    /// The image for `key` if it is built; never builds one.
+    func cachedImage(_ key: Key) -> CGImage? {
+        lock.lock()
+        defer { lock.unlock() }
+        return images[key]
+    }
+
+    /// What the habitat draws on the main thread: the wanted sprite if built, else the still if
+    /// built, else nothing until `prewarm` finishes. It never renders on a miss.
+    func drawableImage(_ key: Key, orStill still: PetSprite) -> CGImage? {
+        cachedImage(key) ?? cachedImage(
+            Key(animal: key.animal, palette: key.palette, sprite: still, pixelsPerBead: key.pixelsPerBead)
+        )
     }
 
     /// How many images are kept.

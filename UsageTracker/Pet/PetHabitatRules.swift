@@ -77,6 +77,12 @@ enum PetHabitatRules {
             && point.y >= 0 && point.y <= contentSize.height
     }
 
+    /// The events the runtime may start: none until the pet shown is warm, so no event frame is
+    /// missing when it plays (Codex's P5d plan review 4).
+    static func playableEvents(_ events: [PetEvent], isWarm: Bool) -> [PetEvent] {
+        isWarm ? events : []
+    }
+
     /// The mood's presentation and the sky at `now`, the habitat's time-dependent parts in one
     /// place: read at every minute while the island is open, so keep awake's night and the moon
     /// turn on the minute with nothing else changing (Codex review 5).
