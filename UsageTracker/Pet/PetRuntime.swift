@@ -1,8 +1,8 @@
 import Foundation
 
 /// A bit: a short act between the pose's own frames (notch-island spec 2026-10-29 § 3.5
-/// Runtime: the idle loop's "walk, sit, blink, nap", sitting being the idle pose itself, and
-/// "one stretch per limit reset").
+/// Runtime: the idle loop's "walk, sit, blink, nap", sitting being the idle pose itself, "one
+/// stretch per limit reset", and the hand-drawn events of the owner's note of 2026-10-30).
 enum PetBit: Equatable, Sendable {
     /// Walks toward the habitat's farther edge, a bead a frame, at most `PetRuntime.walkBeads`.
     case walk
@@ -13,14 +13,17 @@ enum PetBit: Equatable, Sendable {
     /// A limit reset seen in a live poll. The manifests draw no stretch: it plays the look
     /// frame for one cycle (1 s).
     case stretch
+    /// A hand-drawn event of the pet's manifest, by id.
+    case event(String)
 
-    /// The manifest animation it plays.
+    /// The manifest animation it plays. Never read for an event, which plays its own frames.
     var animation: PetAnimationName {
         switch self {
         case .walk: .walk
         case .blink: .blink
         case .nap: .sleep
         case .stretch: .look
+        case .event: .idle
         }
     }
 }
@@ -55,12 +58,20 @@ struct PetFrame: Equatable, Sendable {
     let fps: Double
     /// Where the pet stands: beads from the habitat's left edge.
     let xBeads: Int
+    /// How far above the floor: beads up, 0 unless an event lifts it.
+    let yBeads: Int
     /// Drawn mirrored: the last walk went left.
     let facesLeft: Bool
     /// The bit playing; nil while the pose's own animation does.
     let bit: PetBit?
     /// A pat's heart is up.
     let showsHeart: Bool
+
+    /// The picture to draw: `frame` names one of the manifest's frames, or of the event playing.
+    var sprite: PetSprite {
+        if case .event(let id) = bit { return .eventFrame(event: id, frame: frame) }
+        return .frame(frame)
+    }
 }
 
 /// The pet's life inside its mood (notch-island spec 2026-10-29 § 3.5 Runtime, § 3.9
@@ -71,8 +82,10 @@ struct PetFrame: Equatable, Sendable {
 /// `PetRandom`; nothing here starts a timer. `PetKeeper` owns it: it calls `resume` and
 /// `pause` when the island's `PetAnimationGate` turns on and off, and `tick` when the habitat
 /// pulls a frame from its one `TimelineView` while the gate is on, at the returned frame's
-/// `fps`; every poll reaches it through `observe`. Motion never leaves the habitat: the pet stays within `roamBeads` of floor and
-/// moves in whole beads. Pure.
+/// `fps`; every poll reaches it through `observe`. Motion never leaves the habitat: the pet stays
+/// within `roamBeads` of floor and moves in whole beads; an event's lift is kept in the column by
+/// `PetHabitatRules.origin`. An event never moves `xBeads`: its place is read per tick from its
+/// steps, so it ends, or is dropped, exactly where it began. Pure.
 struct PetRuntime {
     /// The farthest a walk goes: 16 beads, 2 s at the walk's 8 fps.
     static let walkBeads = 16
@@ -80,6 +93,8 @@ struct PetRuntime {
     static let napCycles = 2
     /// How long a pat's heart stays up (§ 3.5: "a pat (♥ 1.2 s)").
     static let patDuration: TimeInterval = 1.2
+    /// A slot's chance of an event, when one may play (owner 2026-10-30: about half).
+    static let eventShare = 0.5
 
     private let random: PetRandom
     /// The visible open time and the next bit's deadline.
@@ -95,10 +110,14 @@ struct PetRuntime {
     private(set) var stretchSeenAt: Date?
     /// Until when a pat's heart is up.
     private(set) var patUntil: Date?
+    /// The event played last, across opens: no slot plays it twice in a row.
+    private(set) var lastEventID: String?
     /// The pose's own animation and since when; nil after a pause, a bit or a pat, so it starts
     /// again from its first frame.
     private var base: Base?
     private var running: Running?
+    /// The event on stage; never together with `running`.
+    private var playing: Playing?
 
     private struct Base {
         let pose: PetPose
@@ -113,6 +132,12 @@ struct PetRuntime {
         let fromX: Int
         let step: Int
         let beads: Int
+    }
+
+    private struct Playing {
+        let event: PetEvent
+        let since: Date
+        let until: Date
     }
 
     init(random: PetRandom) {
@@ -133,6 +158,7 @@ struct PetRuntime {
     mutating func pause(at now: Date) {
         clock.pause(at: now)
         running = nil
+        playing = nil
         base = nil
     }
 
@@ -152,6 +178,7 @@ struct PetRuntime {
     mutating func pat(at now: Date) {
         patUntil = now.addingTimeInterval(Self.patDuration)
         running = nil
+        playing = nil
         base = nil
         clock.reschedule(at: now, random: random)
     }
@@ -175,15 +202,20 @@ struct PetRuntime {
 
     /// The frame at `now` for a mood showing `pose`; `loops`: the mood runs the idle loop (Idle,
     /// Agent working: `PetMoodRules.runsIdleLoop`), where bits, the stretch and the pat's heart
-    /// play. `activity` is the user's, `animations` the pet's, `roamBeads` the floor beside
-    /// the pet in beads (the habitat's width in beads less the pet's).
+    /// play. `activity` is the user's, `animations` and `events` the pet's, `roamBeads` the floor
+    /// beside the pet in beads (the habitat's width in beads less the pet's).
+    ///
+    /// The draws at a due slot, in order: a waiting stretch takes it with no coin. Otherwise, if an
+    /// event may play, the coin (`eventShare`); then `index(below:)` over the events that may play
+    /// (no draw for one) or over the bit's kinds; last, the next deadline. No events, no coin.
     mutating func tick(
         at now: Date,
         pose: PetPose,
         loops: Bool,
         activity: PetUserActivity,
         animations: PetAnimations,
-        roamBeads: Int
+        roamBeads: Int,
+        events: [PetEvent] = []
     ) -> PetFrame {
         clock.resume(at: now, random: random)
         let roam = max(0, roamBeads)
@@ -203,15 +235,28 @@ struct PetRuntime {
             }
         }
 
-        // The next due slot: a waiting stretch takes it, else a walk, a blink or a nap.
-        if running == nil, !quiet, loops, clock.isDue(at: now) {
+        if let current = playing, quiet || !loops || now >= current.until {
+            endEvent()
+        }
+
+        // The next due slot: a waiting stretch takes it, else an event, a walk, a blink or a nap.
+        if running == nil, playing == nil, !quiet, loops, clock.isDue(at: now) {
             if stretchSeenAt != nil {
                 stretchSeenAt = nil
                 start(.stretch, at: now, animations: animations, roam: roam)
+            } else if let event = drawEvent(from: events) {
+                startEvent(event, at: now)
+                clock.reschedule(at: now, random: random)
             } else {
                 let kinds: [PetBit] = roam > 0 ? [.walk, .blink, .nap] : [.blink, .nap]
                 start(kinds[random.index(below: kinds.count)], at: now, animations: animations, roam: roam)
+                // A pet with one event may play it again now: it would never play twice otherwise.
+                if events.count == 1 { lastEventID = nil }
             }
+        }
+
+        if let current = playing {
+            return show(current, at: now, roam: roam, heart: patted)
         }
 
         if let current = running {
@@ -246,7 +291,8 @@ struct PetRuntime {
             beads = min(Self.walkBeads, step < 0 ? xBeads : roam - xBeads)
             facesLeft = step < 0
             duration = Double(beads) / animation.fps
-        case .blink, .stretch:
+        case .blink, .stretch, .event:
+            // An event never comes through here: `startEvent` plays it.
             duration = cycle
         case .nap:
             duration = Double(Self.napCycles) * cycle
@@ -264,6 +310,37 @@ struct PetRuntime {
         base = nil
     }
 
+    /// The event a slot plays, or nil for a bit: the coin, then which of those that may play. The
+    /// last one played may not, whatever came between.
+    private func drawEvent(from events: [PetEvent]) -> PetEvent? {
+        let candidates = events.filter { $0.id != lastEventID }
+        guard !candidates.isEmpty, random.unit() < Self.eventShare else { return nil }
+        return candidates[random.index(below: candidates.count)]
+    }
+
+    private mutating func startEvent(_ event: PetEvent, at now: Date) {
+        playing = Playing(event: event, since: now, until: now.addingTimeInterval(event.duration))
+        lastEventID = event.id
+        base = nil
+    }
+
+    private mutating func endEvent() {
+        playing = nil
+        base = nil
+    }
+
+    /// The event's frame at `now`: its step at its rate, its place read off the step. A mirrored pet
+    /// goes the other way (`dx` is in the drawing's direction); the floor's clamp holds it.
+    private func show(_ current: Playing, at now: Date, roam: Int, heart: Bool) -> PetFrame {
+        let step = current.event.stepIndex(elapsed: now.timeIntervalSince(current.since))
+        let offset = current.event.offsets[step]
+        return PetFrame(
+            frame: current.event.steps[step].frame, fps: current.event.fps,
+            xBeads: clamped(xBeads + (facesLeft ? -offset.x : offset.x), roam: roam), yBeads: offset.lift,
+            facesLeft: facesLeft, bit: .event(current.event.id), showsHeart: heart
+        )
+    }
+
     private func show(
         _ animation: PetAnimation,
         elapsed: TimeInterval,
@@ -272,7 +349,7 @@ struct PetRuntime {
     ) -> PetFrame {
         let index = Int((elapsed * animation.fps).rounded(.down)) % animation.frames.count
         return PetFrame(
-            frame: animation.frames[index], fps: animation.fps, xBeads: xBeads,
+            frame: animation.frames[index], fps: animation.fps, xBeads: xBeads, yBeads: 0,
             facesLeft: facesLeft, bit: bit, showsHeart: heart
         )
     }

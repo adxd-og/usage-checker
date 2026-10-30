@@ -56,3 +56,20 @@ extension PetFixture {
         steps(Array(repeating: ("a", 0, 0), count: count))
     }
 }
+
+extension PetRuntime {
+    /// A tick `seconds` after `PetRuntimeFixture.t0`, with the shipped cat's animations.
+    mutating func at(
+        _ seconds: TimeInterval,
+        pose: PetPose = .idle,
+        loops: Bool = true,
+        activity: PetUserActivity = .none,
+        roam: Int = PetRuntimeFixture.roam,
+        events: [PetEvent] = PetEventFixture.both
+    ) -> PetFrame {
+        tick(
+            at: PetRuntimeFixture.t0 + seconds, pose: pose, loops: loops, activity: activity,
+            animations: PetRuntimeFixture.animations, roamBeads: roam, events: events
+        )
+    }
+}
