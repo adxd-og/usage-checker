@@ -49,6 +49,9 @@ final class IslandController: NSObject {
     /// Event monitors, installed from an open until the close's last frame: closed, the island
     /// adds no work (§ 3.8).
     private var monitors: [Any] = []
+    /// A two-finger swipe right over the island goes Back (§ 3.4); one gesture at a time, fresh
+    /// for every open.
+    private var swipe = IslandSwipe()
     private var contentSizeObserver: AnyCancellable?
     nonisolated(unsafe) private var showPopoverObserver: (any NSObjectProtocol)?
 
@@ -334,6 +337,37 @@ final class IslandController: NSObject {
         }
     }
 
+    /// Every scroll while the island is open feeds the swipe, with whether the pointer is inside
+    /// the island's drawn shape; a swipe right that began inside and stayed there goes Back
+    /// (`IslandSwipe`, plan ruling R12, Codex review finding 5). The scroll itself always goes on,
+    /// so the agents list and an expanded detail still scroll.
+    private func scrolled(_ event: NSEvent) -> NSEvent? {
+        guard isOpen else { return event }
+        let swiped = swipe.feed(
+            phase: IslandSwipe.phase(gesture: event.phase, momentum: event.momentumPhase),
+            fingerDeltaX: IslandSwipe.fingerDeltaX(
+                scrollingDeltaX: event.scrollingDeltaX, invertedFromDevice: event.isDirectionInvertedFromDevice
+            ),
+            deltaY: event.scrollingDeltaY,
+            inside: isInsideShape(event)
+        )
+        if swiped {
+            navigate(.back)
+        }
+        return event
+    }
+
+    /// The event lands on the island's shape as it is drawn now (`IslandGeometry.region`), not on
+    /// its window's transparent rest (the window is larger than the shape) nor another window.
+    private func isInsideShape(_ event: NSEvent) -> Bool {
+        guard event.window === window, let geometry = model.geometry else { return false }
+        let point = IslandGeometry.windowPoint(
+            screenPoint: window.convertPoint(toScreen: event.locationInWindow),
+            windowFrame: window.frame
+        )
+        return geometry.region(of: point, contentSize: model.contentSize, progress: shapeModel.progress) != .outside
+    }
+
     /// Another of Omelette's windows turned key: Dashboard or Settings opening from the
     /// footer, the floating window, onboarding (§ 3.1, Dismissal; ruling R7).
     @objc private func windowBecameKey(_ note: Notification) {
@@ -579,6 +613,7 @@ final class IslandController: NSObject {
 
     private func installMonitors() {
         removeMonitors()
+        swipe = IslandSwipe()
         let clicks: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         let moves: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged]
         // Clicks in Omelette's own windows: inside, the notch strip, the status item, a child
@@ -600,6 +635,12 @@ final class IslandController: NSObject {
         // stays swallowed, so it never reaches the field or the app behind.
         if let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown, handler: { [weak self] event in
             IslandEventRules.forward(event, to: self?.keyDown)
+        }) {
+            monitors.append(monitor)
+        }
+        // Two fingers across the island: a swipe right goes Back; the scroll goes on either way.
+        if let monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] event in
+            IslandEventRules.forward(event, to: self?.scrolled)
         }) {
             monitors.append(monitor)
         }
