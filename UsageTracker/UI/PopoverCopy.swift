@@ -60,8 +60,11 @@ enum PopoverCopy {
         return "Can't refresh — showing data from \(time)"
     }
 
-    /// The notice's tooltip: why the refresh failed, when the poll said.
+    /// The notice's tooltip: why the refresh failed, when the poll said something.
     static func staleNoticeHelp(lastError: String?) -> String {
-        lastError ?? staleNoticeFallback
+        guard let lastError, !lastError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return staleNoticeFallback
+        }
+        return lastError
     }
 }

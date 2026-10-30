@@ -29,6 +29,7 @@ final class PopoverCopyIslandTests: XCTestCase {
     func testTheNoticesTooltipIsTheLastErrorOrAPlainFallback() {
         XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: "HTTP 503"), "HTTP 503")
         XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: nil), "The last refresh attempt failed.")
+        XCTAssertEqual(PopoverCopy.staleNoticeHelp(lastError: " "), "The last refresh attempt failed.", "a blank error is no reason")
     }
 
     func testTheFirstSegmentIsAll() {
