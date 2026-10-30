@@ -203,7 +203,8 @@ struct PetRuntime {
     /// The frame at `now` for a mood showing `pose`; `loops`: the mood runs the idle loop (Idle,
     /// Agent working: `PetMoodRules.runsIdleLoop`), where bits, the stretch and the pat's heart
     /// play. `activity` is the user's, `animations` and `events` the pet's, `roamBeads` the floor
-    /// beside the pet in beads (the habitat's width in beads less the pet's).
+    /// beside the pet in beads (the habitat's width in beads less the pet's), `liftRoom` the beads
+    /// above the floor (`PetHabitatRules.liftRoom`): an event is fitted to it when it starts.
     ///
     /// The draws at a due slot, in order: a waiting stretch takes it with no coin. Otherwise, if an
     /// event may play, the coin (`eventShare`); then `index(below:)` over the events that may play
@@ -215,7 +216,8 @@ struct PetRuntime {
         activity: PetUserActivity,
         animations: PetAnimations,
         roamBeads: Int,
-        events: [PetEvent] = []
+        events: [PetEvent] = [],
+        liftRoom: Int = PetContract.eventMaxLift
     ) -> PetFrame {
         clock.resume(at: now, random: random)
         let roam = max(0, roamBeads)
@@ -245,7 +247,7 @@ struct PetRuntime {
                 stretchSeenAt = nil
                 start(.stretch, at: now, animations: animations, roam: roam)
             } else if let event = drawEvent(from: events) {
-                startEvent(event, at: now)
+                startEvent(event.fitted(room: liftRoom), at: now)
                 clock.reschedule(at: now, random: random)
             } else {
                 let kinds: [PetBit] = roam > 0 ? [.walk, .blink, .nap] : [.blink, .nap]

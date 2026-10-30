@@ -29,6 +29,21 @@ enum PetEventFixture {
     /// 32 steps at 4 fps: 8 s, longer than any slot.
     static let long = event(id: "long", fps: 4, moves: Array(repeating: (0, 0), count: 32))
     static let both = [flat, climb]
+    /// 70 steps at 12 fps, as the redrawn wall climbs are: two on the floor, 40 rising 2 beads each to
+    /// 80, a pause of six at the top, 20 coming down 4 beads each, two on the floor. Indexes: rising
+    /// 2–41, top 42–47, down 48–67.
+    static let climb80: PetEvent = {
+        var moves: [(dx: Int, dy: Int)] = []
+        func add(_ count: Int, _ dy: Int) {
+            for _ in 0..<count { moves.append((dx: 0, dy: dy)) }
+        }
+        add(2, 0)
+        add(40, -2)
+        add(6, 0)
+        add(20, 4)
+        add(2, 0)
+        return PetEventFixture.event(id: "climb80", fps: 12, moves: moves)
+    }()
 }
 
 /// An event as `pet.json` holds it, built in code so a test can break one rule at a time.
@@ -65,11 +80,12 @@ extension PetRuntime {
         loops: Bool = true,
         activity: PetUserActivity = .none,
         roam: Int = PetRuntimeFixture.roam,
-        events: [PetEvent] = PetEventFixture.both
+        events: [PetEvent] = PetEventFixture.both,
+        liftRoom: Int = PetContract.eventMaxLift
     ) -> PetFrame {
         tick(
             at: PetRuntimeFixture.t0 + seconds, pose: pose, loops: loops, activity: activity,
-            animations: PetRuntimeFixture.animations, roamBeads: roam, events: events
+            animations: PetRuntimeFixture.animations, roamBeads: roam, events: events, liftRoom: liftRoom
         )
     }
 }

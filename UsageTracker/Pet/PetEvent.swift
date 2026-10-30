@@ -72,6 +72,25 @@ struct PetEvent: Equatable, Sendable {
 
     var duration: TimeInterval { Double(steps.count) / fps }
 
+    /// This event in a column with `room` beads above the floor: rising stops at the top, a pause
+    /// plays there, and the descent starts from there at its steps' rate, ending on the floor. A step
+    /// that would only press against the top is not played, unless it also moves sideways or is the
+    /// last; so the sprite never sits pinned while its paws climb, and an event that fits is itself.
+    func fitted(room: Int) -> PetEvent {
+        let room = max(0, room)
+        guard offsets.contains(where: { $0.lift > room }) else { return self }
+        var kept: [PetEventStep] = []
+        var lift = 0
+        for (index, step) in steps.enumerated() {
+            let next = min(offsets[index].lift, room)
+            let pinned = next == lift && step.dy != 0 && step.dx == 0
+            if pinned, index < steps.count - 1 { continue }
+            kept.append(PetEventStep(frame: step.frame, dx: step.dx, dy: lift - next))
+            lift = next
+        }
+        return PetEvent(id: id, fps: fps, frames: frames, steps: kept, palette: palette)
+    }
+
     /// The step `elapsed` seconds in, at this event's rate, staying on the last.
     func stepIndex(elapsed: TimeInterval) -> Int {
         min(steps.count - 1, max(0, Int((elapsed * fps).rounded(.down))))
