@@ -73,6 +73,24 @@ enum ClaudeSignInCopy {
         }
     }
 
+    // MARK: - The pet's line (notch-island spec 2026-10-29 § 3.5, Mood rule row 2)
+
+    static let petSignedOutLine = "Claude is signed out"
+    static let petInstallLine = "Claude Code isn't installed"
+    static let petKeychainLine = "Claude needs keychain access"
+    static let petUnreadableLine = "Claude's sign-in can't be read"
+
+    /// The mood line under the pet while Claude is signed out, by the way out it offers: a few
+    /// words for the 150 pt habitat; the popover help says the rest.
+    static func petLine(_ recovery: ClaudeRecovery) -> String {
+        switch recovery {
+        case .signIn: return petSignedOutLine
+        case .install: return petInstallLine
+        case .keychainAccess: return petKeychainLine
+        case .noAction: return petUnreadableLine
+        }
+    }
+
     // MARK: - Rules
 
     /// What a signed-out Claude offers, by why it is signed out. nil for any other provider,
