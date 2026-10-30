@@ -65,7 +65,8 @@ final class PetManifestTests: XCTestCase {
             frames: ["idle_1": frame],
             animations: PetAnimations(idle: animation, blink: animation, walk: animation, look: animation, sleep: animation),
             still: PetStills(idle: "idle_1", look: "idle_1", sleep: "idle_1"),
-            ear: ear
+            ear: ear,
+            events: []
         )
         XCTAssertEqual(manifest.map(.frame("idle_1")), frame)
         XCTAssertEqual(manifest.map(.ear), ear)

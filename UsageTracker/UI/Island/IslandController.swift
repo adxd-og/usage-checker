@@ -105,6 +105,9 @@ final class IslandController: NSObject {
         pet.closeIsland = { [weak self] in
             self?.close()
         }
+        // The manifests, events included, are read once off the main thread; the habitat is bare
+        // until they are. No image is built until `prewarm`.
+        PetAssetStore.shared.load()
         resting.contentView = restingView
         restingView.onPress = { [weak self] option in
             self?.notchPressed(option: option)

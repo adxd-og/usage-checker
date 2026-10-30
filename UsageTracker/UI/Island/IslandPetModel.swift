@@ -52,6 +52,38 @@ final class IslandPetModel: ObservableObject {
 
     var animates: Bool { PetAnimationGate.animates(conditions) }
 
+    // MARK: - The pet shown
+
+    #if DEBUG
+    /// The animal Debug's menu chose; in memory only, until Settings › Pet (P6).
+    @Published private(set) var debugAnimal: String?
+
+    /// Debug's menu: another animal. The old one's events are not this one's, so they end here.
+    func showDebugAnimal(_ id: String) {
+        guard animal != id else { return }
+        debugAnimal = id
+        keeper.dropEvents()
+    }
+    #endif
+
+    /// The animal on the island.
+    var animal: String {
+        #if DEBUG
+        return debugAnimal ?? PetHabitatRules.animal
+        #else
+        return PetHabitatRules.animal
+        #endif
+    }
+
+    /// The palette `manifest`, the animal on the island, draws in.
+    func palette(of manifest: PetManifest) -> String {
+        #if DEBUG
+        return PetDebugMenuRules.palette(of: manifest)
+        #else
+        return PetHabitatRules.palette
+        #endif
+    }
+
     // MARK: - The gate
 
     /// The island's transition phase, on every frame of a motion and at its end.

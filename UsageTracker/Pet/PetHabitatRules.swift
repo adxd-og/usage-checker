@@ -54,13 +54,21 @@ enum PetHabitatRules {
         max(petSide, height - moodBand)
     }
 
+    /// The whole beads between the floor and the column's top for a sprite of `petBeads`: what an
+    /// event is fitted to when it starts (`PetEvent.fitted`).
+    static func liftRoom(footY: CGFloat, petBeads: Int, scale: PetScaleRules.Scale) -> Int {
+        max(0, Int(((footY - scale.points(beads: petBeads)) / scale.pointsPerBead + 1e-6).rounded(.down)))
+    }
+
     /// The sprite's top-left corner: `xBeads` whole beads from the column's left edge, kept on the
-    /// floor, its feet at `footY`, on the device-pixel grid.
+    /// floor, its feet `yBeads` whole beads above `footY` (an event's lift), its top no higher than
+    /// the column's, on the device-pixel grid.
     static func origin(
-        xBeads: Int, footY: CGFloat, petBeads: Int, roamBeads: Int, scale: PetScaleRules.Scale
+        xBeads: Int, yBeads: Int = 0, footY: CGFloat, petBeads: Int, roamBeads: Int, scale: PetScaleRules.Scale
     ) -> CGPoint {
         let x = scale.points(beads: min(max(xBeads, 0), max(roamBeads, 0)))
-        let y = footY - scale.points(beads: petBeads)
+        let lift = min(max(yBeads, 0), liftRoom(footY: footY, petBeads: petBeads, scale: scale))
+        let y = footY - scale.points(beads: petBeads + lift)
         return PetScaleRules.snapped(CGPoint(x: x, y: y), backingScale: scale.backingScale)
     }
 
@@ -75,6 +83,12 @@ enum PetHabitatRules {
     static func pointerOverContent(_ point: CGPoint, contentSize: CGSize) -> Bool {
         point.x >= contentColumnMinX && point.x <= contentSize.width
             && point.y >= 0 && point.y <= contentSize.height
+    }
+
+    /// The events the runtime may start: none until the pet shown is warm, so no event frame is
+    /// missing when it plays (Codex's P5d plan review 4).
+    static func playableEvents(_ events: [PetEvent], isWarm: Bool) -> [PetEvent] {
+        isWarm ? events : []
     }
 
     /// The mood's presentation and the sky at `now`, the habitat's time-dependent parts in one

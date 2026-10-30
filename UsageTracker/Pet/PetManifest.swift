@@ -2,13 +2,15 @@ import Foundation
 
 /// The contract every pet folder keeps (notch-island spec 2026-10-29 § 3.5, "Manifest
 /// contract"): `Pets/<animal>/pet.json` with exactly these keys, 35 × 35 frames, a 16 × 16 ear
-/// head (§ 3.6), five required animations at 0.5–12 fps and a still frame per pose.
-/// `PetManifestValidator` checks it.
+/// head (§ 3.6), five required animations at 0.5–12 fps and a still frame per pose, and may carry
+/// `events` (`PetEvent`, the owner's note of 2026-10-30). `PetManifestValidator` checks it.
 enum PetContract {
     /// The bundle's folder of pets, under Contents/Resources.
     static let folderName = "Pets"
     static let fileName = "pet.json"
     static let keys = ["id", "name", "size", "palettes", "frames", "animations", "still", "ear"]
+    /// Keys a manifest may have beside `keys`.
+    static let optionalKeys = ["events"]
     /// Beads per side of every frame.
     static let size = 35
     /// Beads per side of the ear head.
@@ -29,15 +31,18 @@ enum PetPose: String, CaseIterable, Sendable {
     case idle, look, sleep
 }
 
-/// One drawable picture of a pet: a named frame, or the 16 × 16 ear head.
+/// One drawable picture of a pet: a named frame, the 16 × 16 ear head, or a frame of an event
+/// (each event names its own frames, so two may both have an "a").
 enum PetSprite: Hashable, Sendable, CustomStringConvertible {
     case frame(String)
     case ear
+    case eventFrame(event: String, frame: String)
 
     var description: String {
         switch self {
         case .frame(let name): "frame \(name)"
         case .ear: "ear"
+        case .eventFrame(let event, let frame): "event \(event) frame \(frame)"
         }
     }
 }
@@ -153,15 +158,32 @@ struct PetManifest: Equatable, Sendable {
     let still: PetStills
     /// The 16 × 16 head for the left ear (§ 3.6), in the same palettes.
     let ear: PetCharMap
+    /// The events that kept the contract, in the manifest's order.
+    let events: [PetEvent]
 
     /// Palette names, alphabetical. Display order and the default palette are Settings' (P6).
     var paletteNames: [String] { palettes.keys.sorted() }
+
+    func event(id: String) -> PetEvent? {
+        events.first { $0.id == id }
+    }
 
     /// The map a sprite names; nil for a frame the manifest does not have.
     func map(_ sprite: PetSprite) -> PetCharMap? {
         switch sprite {
         case .frame(let name): frames[name]
         case .ear: ear
+        case .eventFrame(let event, let frame): self.event(id: event)?.frames[frame]
         }
+    }
+
+    /// The colours a sprite draws in: the named palette, with an event frame's props merged in
+    /// (the same in every colourway). Nil for a palette the pet does not have.
+    func colours(palette name: String, for sprite: PetSprite) -> [Unicode.Scalar: PetRGB]? {
+        guard let colours = palettes[name] else { return nil }
+        guard case .eventFrame(let event, _) = sprite, let props = self.event(id: event)?.palette else {
+            return colours
+        }
+        return colours.merging(props) { _, prop in prop }
     }
 }

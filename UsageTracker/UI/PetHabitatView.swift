@@ -26,6 +26,7 @@ struct PetHabitatView: View {
     @ObservedObject private var settings = SettingsStore.shared
     @ObservedObject private var keepAwake = KeepAwakeModel.shared
     @ObservedObject private var claudeSignIn = ClaudeSignInModel.shared
+    @ObservedObject private var store = PetAssetStore.shared
     @Environment(\.displayScale) private var displayScale
 
     /// The playing animation's rate as the last frame gave it, for the timeline's period; nil
@@ -33,6 +34,8 @@ struct PetHabitatView: View {
     @State private var playingFPS: Double?
     /// The last pat: a still pet redraws once its heart is due to go.
     @State private var lastPat: Date?
+    /// What the last warm-up finished for: the habitat redraws then, with its frames and its events.
+    @State private var warmedFor: Warmth?
 
     /// A pat's heart over the pet's head (§ 3.5 rows 5 and 7, "♥ 1.2 s").
     nonisolated static let heartSize: CGFloat = 11
@@ -43,18 +46,19 @@ struct PetHabitatView: View {
 
     var body: some View {
         Group {
-            if let manifest = PetAssets.shared.library.manifests[PetHabitatRules.animal] {
+            if let assets = store.assets, let manifest = assets.library.manifests[pet.animal] {
                 if pet.islandOpen {
                     // Night, the sky and keep awake's clock turn on the minute while the island
                     // is open, Reduce Motion or not.
                     TimelineView(.everyMinute) { context in
-                        habitat(manifest, now: context.date)
+                        habitat(manifest, assets, now: context.date)
                     }
                 } else {
-                    habitat(manifest, now: Date())
+                    habitat(manifest, assets, now: Date())
                 }
             } else {
-                // A pet that failed its contract check is left out (P5a): the column stays bare.
+                // The manifests are not read yet, or the pet failed its contract check (P5a): the
+                // column stays bare.
                 Color.clear
                     .accessibilityHidden(true)
             }
@@ -67,15 +71,15 @@ struct PetHabitatView: View {
         .onDisappear {
             pet.setHabitatShown(false)
         }
-        // Every frame of the pet at this display's scale, built off the main thread when the scale
-        // changes, so no frame is built while drawing (`PetSpriteCache.prewarm`).
-        .task(id: pixelsPerBead) {
-            let pixels = pixelsPerBead
+        // Every frame of the pet shown, its events' too, at this display's scale, built off the main
+        // thread once the assets are there and when one of these changes, so no frame is built while
+        // drawing (`PetSpriteCache.prewarm`): one animal, one palette, one scale.
+        .task(id: warmth) {
+            guard let warmth, let sprites = store.assets?.sprites else { return }
             await Task.detached(priority: .utility) {
-                PetAssets.shared.sprites.prewarm(
-                    animal: PetHabitatRules.animal, palette: PetHabitatRules.palette, pixelsPerBead: pixels
-                )
+                sprites.prewarm(animal: warmth.animal, palette: warmth.palette, pixelsPerBead: warmth.pixels)
             }.value
+            warmedFor = warmth
         }
         // A still pet's heart goes when the pat's 1.2 s are up: one redraw then. A newer pat
         // cancels the wait and starts its own; a running timeline redraws on its own.
@@ -88,6 +92,19 @@ struct PetHabitatView: View {
 
     private var pixelsPerBead: Int {
         PetHabitatRules.scale(petBeads: PetContract.size, backingScale: displayScale).pixelsPerBead
+    }
+
+    /// What the sprites are warmed for.
+    private struct Warmth: Hashable {
+        let animal: String
+        let palette: String
+        let pixels: Int
+    }
+
+    /// Nil until the assets are there.
+    private var warmth: Warmth? {
+        guard let manifest = store.assets?.library.manifests[pet.animal] else { return nil }
+        return Warmth(animal: manifest.id, palette: pet.palette(of: manifest), pixels: pixelsPerBead)
     }
 
     /// What the mood is decided from: the app's state as it is published (`PetMoodInput`).
@@ -104,6 +121,14 @@ struct PetHabitatView: View {
     /// What every frame of one draw shares.
     private struct Placement {
         let manifest: PetManifest
+        let sprites: PetSpriteCache
+        let palette: String
+        /// None until the pet is warm (`PetHabitatRules.playableEvents`).
+        let events: [PetEvent]
+        /// The beads above the floor an event is fitted to.
+        let liftRoom: Int
+        /// Drawn while the wanted frame is not built.
+        let still: PetSprite
         let scale: PetScaleRules.Scale
         let roam: Int
         let footY: CGFloat
@@ -111,18 +136,28 @@ struct PetHabitatView: View {
     }
 
     /// The sky, the pet on the floor in its mood's pose, and the mood line under it, at `now`.
-    private func habitat(_ manifest: PetManifest, now: Date) -> some View {
+    private func habitat(_ manifest: PetManifest, _ assets: PetAssets, now: Date) -> some View {
         let scene = PetHabitatRules.scene(
             moodInput, petName: manifest.name, mode: settings.percentMode,
             now: now, calendar: .current, locale: .current
         )
         let presentation = scene.presentation
         let scale = PetHabitatRules.scale(petBeads: manifest.size, backingScale: displayScale)
+        let palette = pet.palette(of: manifest)
+        let isWarm = warmedFor == warmth || assets.sprites.isWarm(
+            animal: manifest.id, palette: palette, pixelsPerBead: scale.pixelsPerBead
+        )
+        let footY = PetHabitatRules.floorY(height: height, petSide: scale.points(beads: manifest.size))
         let place = Placement(
             manifest: manifest,
+            sprites: assets.sprites,
+            palette: palette,
+            events: PetHabitatRules.playableEvents(manifest.events, isWarm: isWarm),
+            liftRoom: PetHabitatRules.liftRoom(footY: footY, petBeads: manifest.size, scale: scale),
+            still: .frame(PetRuntime.still(pose: presentation.pose, stills: manifest.still)),
             scale: scale,
             roam: PetHabitatRules.roamBeads(petBeads: manifest.size, scale: scale),
-            footY: PetHabitatRules.floorY(height: height, petSide: scale.points(beads: manifest.size)),
+            footY: footY,
             action: presentation.action
         )
         let still = PetRuntime.still(pose: presentation.pose, stills: manifest.still)
@@ -134,11 +169,13 @@ struct PetHabitatView: View {
                 TimelineView(.periodic(from: PetHabitatRules.timelineAnchor, by: period)) { context in
                     let frame = keeper.frame(
                         at: context.date, presentation: presentation,
-                        animations: manifest.animations, roamBeads: place.roam
+                        animations: manifest.animations, roamBeads: place.roam,
+                        events: place.events, liftRoom: place.liftRoom
                     )
                     sprite(
-                        frame?.frame ?? still,
+                        frame?.sprite ?? .frame(still),
                         xBeads: frame?.xBeads ?? keeper.runtime.xBeads,
+                        yBeads: frame?.yBeads ?? 0,
                         facesLeft: frame?.facesLeft ?? keeper.runtime.facesLeft,
                         heart: frame?.showsHeart ?? keeper.showsHeart(at: Date()),
                         place: place
@@ -150,8 +187,9 @@ struct PetHabitatView: View {
                 }
             } else {
                 sprite(
-                    still,
+                    .frame(still),
                     xBeads: keeper.runtime.xBeads,
+                    yBeads: 0,
                     facesLeft: keeper.runtime.facesLeft,
                     heart: keeper.showsHeart(at: Date()),
                     place: place
@@ -159,6 +197,14 @@ struct PetHabitatView: View {
             }
             moodLine(presentation.line)
         }
+        #if DEBUG
+        // The whole column takes the right-click: the pet moves and lifts under the pointer. It sits
+        // outside the animation timeline, so no tick rebuilds the menu. Release has none.
+        .contentShape(Rectangle())
+        .contextMenu {
+            debugMenu(manifest, library: assets.library)
+        }
+        #endif
         // One element for VoiceOver (§ 3.8): the mood's label, the click as its action.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(presentation.accessibilityLabel)
@@ -179,20 +225,24 @@ struct PetHabitatView: View {
             .allowsHitTesting(false)
     }
 
-    /// One frame of the pet: the button a click goes through, on whole beads on the floor and on
-    /// the device-pixel grid, mirrored when it last walked left, the heart over its head.
+    /// One frame of the pet: the button a click goes through, on whole beads and on the device-pixel
+    /// grid, on the floor or lifted by an event, mirrored when it last walked left, the heart over
+    /// its head. What is built draws, the still if the wanted frame is not; nothing renders here.
     private func sprite(
-        _ frame: String, xBeads: Int, facesLeft: Bool, heart: Bool, place: Placement
+        _ sprite: PetSprite, xBeads: Int, yBeads: Int, facesLeft: Bool, heart: Bool, place: Placement
     ) -> some View {
         let side = place.scale.points(beads: place.manifest.size)
         let origin = PetHabitatRules.origin(
-            xBeads: xBeads, footY: place.footY, petBeads: place.manifest.size,
+            xBeads: xBeads, yBeads: yBeads, footY: place.footY, petBeads: place.manifest.size,
             roamBeads: place.roam, scale: place.scale
         )
-        let image = PetAssets.shared.sprites.image(PetSpriteCache.Key(
-            animal: PetHabitatRules.animal, palette: PetHabitatRules.palette,
-            sprite: .frame(frame), pixelsPerBead: place.scale.pixelsPerBead
-        ))
+        let image = place.sprites.drawableImage(
+            PetSpriteCache.Key(
+                animal: place.manifest.id, palette: place.palette,
+                sprite: sprite, pixelsPerBead: place.scale.pixelsPerBead
+            ),
+            orStill: place.still
+        )
         return Button {
             click(place.action)
         } label: {
@@ -231,6 +281,21 @@ struct PetHabitatView: View {
             .frame(maxHeight: .infinity, alignment: .bottom)
             .allowsHitTesting(false)
     }
+
+    #if DEBUG
+    /// Debug's way to play any event and to show another animal, since Settings › Pet is P6.
+    private func debugMenu(_ manifest: PetManifest, library: PetLibrary) -> some View {
+        PetDebugMenuContent(
+            menu: PetDebugMenuRules.menu(
+                shown: manifest.id, library: library,
+                animates: pet.animates, reduceMotion: pet.reduceMotion
+            ),
+            play: { [keeper] id in keeper.play(eventID: id) },
+            playAll: { [keeper] in keeper.playAll(eventIDs: manifest.events.map(\.id)) },
+            show: { [pet] id in pet.showDebugAnimal(id) }
+        )
+    }
+    #endif
 
     /// A click on the pet, or VoiceOver's action on the habitat: a pat is the habitat's own, the
     /// rest the island's (`PetActionRules`).
