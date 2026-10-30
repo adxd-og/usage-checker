@@ -3,8 +3,8 @@ import XCTest
 @testable import Omelette
 
 /// Verification of "Surfaces on the island" (notch-island spec 2026-10-29 § 3.1, owner
-/// 2026-10-30), through what the style resolves to rather than how it is spelled: white 5 % fill
-/// and 0.5 pt white 11 % edge on the island, in either colour scheme; the group tokens elsewhere.
+/// 2026-10-30), through what the style resolves to rather than how it is spelled: white 2 % fill
+/// and 0.5 pt white 8 % edge on the island, in either colour scheme; the group tokens elsewhere.
 final class OMPopoverSurfaceIslandVerificationTests: XCTestCase {
     private func environment(_ scheme: ColorScheme) -> EnvironmentValues {
         var env = EnvironmentValues()
@@ -23,8 +23,8 @@ final class OMPopoverSurfaceIslandVerificationTests: XCTestCase {
         for scheme in [ColorScheme.light, .dark] {
             let fill = resolved(style.fill, scheme)
             let edge = resolved(style.border, scheme)
-            XCTAssertEqual(fill.opacity, 0.05, accuracy: 0.001, "\(scheme) fill")
-            XCTAssertEqual(edge.opacity, 0.11, accuracy: 0.001, "\(scheme) edge")
+            XCTAssertEqual(fill.opacity, 0.02, accuracy: 0.001, "\(scheme) fill")
+            XCTAssertEqual(edge.opacity, 0.08, accuracy: 0.001, "\(scheme) edge")
             for channel in [fill.red, fill.green, fill.blue, edge.red, edge.green, edge.blue] {
                 XCTAssertEqual(channel, 1, accuracy: 0.001, "\(scheme): white")
             }

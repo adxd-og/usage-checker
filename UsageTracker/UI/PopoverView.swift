@@ -339,13 +339,13 @@ struct PopoverView: View {
 
     // MARK: - The habitat
 
-    /// The habitat's column (§ 3.3): the pet lives here from P5c on. Until then an empty
-    /// surface keeps its 150 pt, so the grid has its final width (plan ruling R4).
+    /// The habitat's column (§ 3.3): the pet lives here from P5c on. Until then empty space
+    /// keeps its 150 pt, so the grid has its final width (plan ruling R4). No fill and no
+    /// edge: the pet stands on the island itself (owner 2026-10-30).
     private var habitatSlot: some View {
         Color.clear
             .frame(width: ProviderGridRules.habitatWidth)
             .frame(maxHeight: .infinity)
-            .popoverSurface(.group)
             .accessibilityHidden(true)
     }
 

@@ -21,7 +21,7 @@ final class OMPopoverSurfaceTests: XCTestCase {
     func testOnTheIslandSurfacesAreNearlyTransparentWithAHairlineEdge() {
         XCTAssertEqual(
             OMPopoverSurface.style(onIsland: true),
-            .init(fill: .fixed(.white(0.05)), border: .fixed(.white(0.11)), borderWidth: 0.5)
+            .init(fill: .fixed(.white(0.02)), border: .fixed(.white(0.08)), borderWidth: 0.5)
         )
     }
 
