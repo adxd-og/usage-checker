@@ -7,13 +7,16 @@ struct AgentGroup: Identifiable, Equatable {
     var id: String { state.rawValue }
 }
 
-/// What the popover's agents list tells its host (popover height budget spec
-/// 2026-10-27): the list's frame as shown (its content, up to the cap) and the
-/// height of its first two rows with the hairline between them, the least the
-/// host may cap it to (`AgentsSection.minimumListHeight`).
+/// What the agents list tells its host (popover height budget spec 2026-10-27;
+/// notch-island spec 2026-10-29 § 3.3): the list's frame as shown (its rows, up to the
+/// cap), the height of its first two rows with the hairline between them, the least the
+/// host may cap it to (`AgentsSection.minimumListHeight`), and the rows' own height,
+/// which is what it would show under a larger cap.
 struct AgentsListGeometry: Equatable, Sendable {
     let shownHeight: CGFloat
     let minimumHeight: CGFloat
+    /// nil until the rows have measured themselves.
+    var contentHeight: CGFloat? = nil
 }
 
 /// The popover's agent list (`Main.dc.html`): a sentence-case heading with the session
@@ -198,7 +201,8 @@ struct AgentsSection: View {
             minimumHeight: Self.minimumListHeight(
                 rowIDs: Self.rows(sessions, grouped: grouped).map(\.id),
                 rowHeights: rowHeights
-            )
+            ),
+            contentHeight: listHeight > 0 ? listHeight : nil
         )
     }
 }
