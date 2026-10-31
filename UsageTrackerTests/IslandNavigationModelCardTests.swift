@@ -30,4 +30,33 @@ final class IslandNavigationModelCardTests: XCTestCase {
         XCTAssertEqual(changes, 1)
         watch.cancel()
     }
+
+    // MARK: - A close ends the wait (whole-branch review of 4.0, ruling R16)
+
+    func testACloseDropsTheCardAskedForAndTellsTheContent() {
+        let model = IslandNavigationModel()
+        model.ask(toShow: .agents)
+        let before = model.closes
+
+        model.islandClosed()
+
+        XCTAssertNil(model.requestedCard, "the next open scrolls nowhere")
+        XCTAssertNotEqual(model.closes, before, "the content drops a reveal still waiting")
+    }
+
+    func testEveryCloseTellsTheContentEvenWithNothingAskedFor() {
+        let model = IslandNavigationModel()
+        model.islandClosed()
+        let once = model.closes
+        model.islandClosed()
+        XCTAssertNotEqual(model.closes, once)
+    }
+
+    /// The ear asks after its open: a close before it does not take the new request.
+    func testACardAskedForAfterACloseStands() {
+        let model = IslandNavigationModel()
+        model.islandClosed()
+        model.ask(toShow: .keepAwake)
+        XCTAssertEqual(model.takeRequestedCard(), .keepAwake)
+    }
 }

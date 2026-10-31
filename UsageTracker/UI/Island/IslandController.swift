@@ -271,6 +271,7 @@ final class IslandController: NSObject {
         guard isOpen, let placement else { return }
         // A jump started before this close can no longer close the island (Codex review 3).
         pet.islandClosed()
+        navigation.islandClosed()
         // From the first frame of a close the whole window ignores the mouse until the next
         // open (P0 run 1: a still pointer reached the shrinking island at p = 0.285).
         window.ignoresMouseEvents = true
@@ -333,6 +334,7 @@ final class IslandController: NSObject {
         endHint()
         let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
         if route == .moveAndOpen {
+            navigation.islandClosed()
             finishClose()
         }
         AppState.shared.refreshForPopover()
@@ -934,6 +936,7 @@ final class IslandController: NSObject {
             panelWidth: Self.panelWidth(on: placement.screenID, in: screens), menuBarHeight: Self.menuBarHeight
         ) else {
             // Its display is gone: nothing left to animate on.
+            navigation.islandClosed()
             finishClose()
             return
         }

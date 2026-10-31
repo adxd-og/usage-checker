@@ -109,6 +109,10 @@ struct PopoverView: View {
                     revealAskedOn = navigation.page
                     pendingReveal = card
                 }
+                // A close ends the wait: a later open is a new one and scrolls nothing (§ 3.4).
+                .onChange(of: navigation.closes) { _, _ in
+                    pendingReveal = nil
+                }
             }
         }
         .padding(.horizontal, Self.padding)
