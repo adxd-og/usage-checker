@@ -64,6 +64,14 @@ enum AgentPaths {
     /// The command the user types. Also the symlink's name and the product name of the
     /// `OmeletteCLI` target — three places that have to agree, one constant.
     static let cliName = "omelette"
+    /// What the tool was called before 4.0. Every setup from then says it, so the name keeps
+    /// working for good, and it is the binary's own name inside the bundle.
+    static let legacyCLIName = "omelette"
+
+    /// The same CLI in the same folder under its old name.
+    static func legacyCLIPath(for cliPath: String) -> String {
+        (cliPath as NSString).deletingLastPathComponent + "/" + legacyCLIName
+    }
     /// Set in the helper's environment to redirect it to another socket (tests use a temp path).
     static let socketEnvironmentKey = "OMELETTE_AGENT_SOCKET"
     /// Shortens the helper's decision wait (seconds) — tests only; honoured only

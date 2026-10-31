@@ -1,6 +1,6 @@
 import Foundation
 
-/// Omelette's entry in Claude Code's `statusLine` setting.
+/// Brioche's entry in Claude Code's `statusLine` setting.
 ///
 /// The same rules as `AgentHooksInstaller`: we only ever touch a command that is ours,
 /// a `settings.json` we cannot parse is a refusal rather than an overwrite, and the
@@ -9,10 +9,10 @@ import Foundation
 enum StatusLineInstaller {
     typealias Error = SettingsFile.Error
 
-    /// The symlink path, so an entry written by an older build still matches after the
-    /// app moves. On its own it would also match `omelette-hook`, whose path begins
-    /// with the same characters — see `isOurs`.
-    static let ourCommandMarker = "UsageTracker/bin/omelette"
+    /// The symlink under either name, so an entry written by an older build still matches
+    /// after the app moves. On its own the old one would also match `omelette-hook`, whose
+    /// path begins with the same characters — see `isOurs`.
+    static let ourCommandMarkers = ["UsageTracker/bin/brioche", "UsageTracker/bin/omelette"]
 
     static let subcommand = "statusline"
 
@@ -23,7 +23,7 @@ enum StatusLineInstaller {
     /// shorter spends a process to print the line it just printed.
     static let refreshInterval = 60
 
-    static let unreadableReason = "settings.json has a statusLine Omelette can't read — fix or move it and try again."
+    static let unreadableReason = "settings.json has a statusLine Brioche can't read — fix or move it and try again."
 
     /// A Claude Code `statusLine.command` is a shell command line, not an argv path,
     /// and the CLI lives under "Application Support" — unquoted, the shell would try to
@@ -36,7 +36,7 @@ enum StatusLineInstaller {
     /// alone is a prefix of the hook helper's path; the subcommand is what no hook
     /// command will ever carry.
     static func isOurs(_ command: String) -> Bool {
-        command.contains(ourCommandMarker) && command.hasSuffix(" " + subcommand)
+        ourCommandMarkers.contains { command.contains($0) } && command.hasSuffix(" " + subcommand)
     }
 
     /// Exactly the object the Enable and the Update button write. `commandPath` is the
@@ -79,7 +79,10 @@ enum StatusLineInstaller {
         // foreign refresh interval, and a command pointing at an older home. Both are
         // `.outdated`, which is the row that offers Update.
         if needsUpdate(existing: object) { return .outdated }
-        return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(desiredEntry(commandPath: cliPath))
+        // The old name is as good as the new one until something writes: it stays a live link.
+        let canonical = SettingsFile.canonicalJSON(object)
+        let accepted = [cliPath, AgentPaths.legacyCLIPath(for: cliPath)]
+        return accepted.contains { SettingsFile.canonicalJSON(desiredEntry(commandPath: $0)) == canonical }
             ? .installed : .outdated
     }
 
