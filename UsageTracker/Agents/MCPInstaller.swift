@@ -62,15 +62,17 @@ enum MCPInstaller {
         guard let servers = file["mcpServers"] else { return .notInstalled }
         guard let map = servers as? [String: Any] else { return .conflict(claudeUnparsableReason) }
         let legacy = ourLegacyClaudeEntry(in: map)
-        guard let entry = map[serverKey] else {
-            guard let legacy else { return .notInstalled }
+        // Our old entry alone, or beside a `brioche` that is not ours: it works, it is ours and
+        // Disable must reach it. Update reports the conflict and changes nothing (`installClaude`).
+        let legacyStatus = legacy.map { legacy -> HookInstallStatus in
             let wanted = claudeTemplate(cliPath: AgentPaths.legacyCLIPath(for: cliPath))
             return SettingsFile.canonicalJSON(legacy) == SettingsFile.canonicalJSON(wanted) ? .installed : .outdated
         }
+        guard let entry = map[serverKey] else { return legacyStatus ?? .notInstalled }
         guard let object = entry as? [String: Any], let command = object["command"] as? String else {
-            return .conflict(claudeUnreadableReason)
+            return legacyStatus ?? .conflict(claudeUnreadableReason)
         }
-        guard isOurCommand(command) else { return .conflict(command) }
+        guard isOurCommand(command) else { return legacyStatus ?? .conflict(command) }
         // Both of ours: Update folds them into one.
         if legacy != nil { return .outdated }
         return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(claudeTemplate(cliPath: cliPath))
@@ -382,13 +384,16 @@ enum MCPInstaller {
         guard let text = try? SettingsFile.readText(configURL) else { return .conflict(codexUnreadableReason) }
         let lines = SettingsFile.lines(of: text)
         let legacy = codexLegacyRanges(in: lines)
-        guard let range = codexTableRange(in: lines) else {
-            guard !legacy.isEmpty else { return .notInstalled }
-            let meaningful = codexMeaningful(codexLines(of: legacy, in: lines), key: legacyCodexKey, header: legacyCodexHeader)
-            return meaningful == legacyCodexTable(cliPath: cliPath) ? .installed : .outdated
+        // Our old table alone, or beside a `brioche` that is not ours: it works, it is ours and
+        // Disable must reach it. Update reports the conflict and changes nothing (`installCodex`).
+        let legacyStatus: HookInstallStatus? = legacy.isEmpty ? nil
+            : codexMeaningful(codexLines(of: legacy, in: lines), key: legacyCodexKey, header: legacyCodexHeader)
+                == legacyCodexTable(cliPath: cliPath) ? .installed : .outdated
+        guard let range = codexTableRange(in: lines) else { return legacyStatus ?? .notInstalled }
+        guard let command = codexValue("command", in: Array(lines[range])) else {
+            return legacyStatus ?? .conflict(codexUnreadableTableReason)
         }
-        guard let command = codexValue("command", in: Array(lines[range])) else { return .conflict(codexUnreadableTableReason) }
-        guard isOurCommand(command) else { return .conflict(command) }
+        guard isOurCommand(command) else { return legacyStatus ?? .conflict(command) }
         // Both of ours: Update folds them into one.
         if !legacy.isEmpty { return .outdated }
         let entry = codexLines(of: codexEntryRanges(in: lines), in: lines)

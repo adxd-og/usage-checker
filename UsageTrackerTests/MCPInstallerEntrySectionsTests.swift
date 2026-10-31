@@ -5,7 +5,8 @@ import XCTest
 /// (whole-branch review of 4.0, Codex P1, ruling of 2026-10-31): TOML lets
 /// `[mcp_servers.omelette.env]` sit after another server's table or before its parent, and a
 /// sub-table left behind makes Codex refuse the file or run a server we no longer own. A foreign
-/// entry's sub-tables are nobody's business.
+/// entry's sub-tables are nobody's business. Also the second ruling of that review: our old entry
+/// beside a foreign `brioche` is an installed entry, not a conflict.
 final class MCPInstallerEntrySectionsTests: XCTestCase {
     private var root: URL!
     private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/brioche"
@@ -228,5 +229,97 @@ final class MCPInstallerEntrySectionsTests: XCTestCase {
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
 
         XCTAssertEqual(try codexText(), "[a]\r\nx = 1\r\n\r\n[b]\r\ny = 2\r\n")
+    }
+
+    // MARK: - Our old entry beside a foreign `brioche`
+
+    func testAnOldClaudeEntryBesideAForeignBriocheReadsLikeAnOldEntryAlone() throws {
+        try writeClaude(["omelette": entry(oldCLI), "brioche": entry(foreign)])
+        XCTAssertEqual(claudeStatus, .installed)
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(claudeStatus))
+
+        try writeClaude(["omelette": entry(otherHome), "brioche": entry(foreign)])
+        XCTAssertEqual(claudeStatus, .outdated)
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(claudeStatus))
+    }
+
+    func testAnOldClaudeEntryBesideAnUnreadableBriocheReadsLikeAnOldEntryAlone() throws {
+        try writeClaude(["omelette": entry(oldCLI), "brioche": ["args": ["mcp"]]])
+        XCTAssertEqual(claudeStatus, .installed)
+    }
+
+    func testUpdatingAnOldClaudeEntryBesideAForeignBriocheReportsTheConflictAndChangesNothing() throws {
+        try writeClaude(["omelette": entry(otherHome), "brioche": entry(foreign)])
+        let before = try Data(contentsOf: claudeURL)
+
+        XCTAssertThrowsError(try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli)) { error in
+            XCTAssertEqual(error as? MCPInstaller.Error, .conflict(self.foreign))
+        }
+
+        XCTAssertEqual(try Data(contentsOf: claudeURL), before)
+    }
+
+    func testDisablingAnOldClaudeEntryBesideAForeignBriocheRemovesOnlyOurs() throws {
+        try writeClaude(["omelette": entry(oldCLI), "brioche": entry(foreign)])
+
+        try MCPInstaller.removeClaude(configURL: claudeURL, cliPath: cli)
+
+        let servers = try claudeServers()
+        XCTAssertNil(servers["omelette"])
+        XCTAssertEqual((servers["brioche"] as? [String: Any])?["command"] as? String, foreign)
+        XCTAssertEqual(claudeStatus, .conflict(foreign), "only theirs is left: the row says so")
+    }
+
+    func testAForeignBriocheAloneIsStillAConflict() throws {
+        try writeClaude(["brioche": entry(foreign)])
+        XCTAssertEqual(claudeStatus, .conflict(foreign))
+        XCTAssertFalse(CommandLineSettingsText.showsDisableButton(claudeStatus))
+
+        try writeCodex(table("[mcp_servers.brioche]", command: foreign))
+        XCTAssertEqual(codexStatus, .conflict(foreign))
+        XCTAssertFalse(CommandLineSettingsText.showsDisableButton(codexStatus))
+    }
+
+    func testAnOldCodexTableBesideAForeignBriocheReadsLikeAnOldTableAlone() throws {
+        let theirs = table("[mcp_servers.brioche]", command: foreign)
+        try writeCodex(table("[mcp_servers.omelette]", command: oldCLI) + theirs)
+        XCTAssertEqual(codexStatus, .installed)
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(codexStatus))
+
+        try writeCodex(theirs + table("[mcp_servers.omelette]", command: otherHome))
+        XCTAssertEqual(codexStatus, .outdated)
+        XCTAssertTrue(CommandLineSettingsText.showsDisableButton(codexStatus))
+
+        try writeCodex(table("[mcp_servers.omelette]", command: oldCLI) + xcode + env + theirs)
+        XCTAssertEqual(codexStatus, .outdated, "exactly as alone: a sub-table is more than we wrote")
+    }
+
+    func testAnOldCodexTableBesideACommandlessBriocheReadsLikeAnOldTableAlone() throws {
+        try writeCodex(table("[mcp_servers.omelette]", command: oldCLI) + "[mcp_servers.brioche]\nargs = [\"mcp\"]\n\n")
+        XCTAssertEqual(codexStatus, .installed)
+    }
+
+    func testUpdatingAnOldCodexTableBesideAForeignBriocheReportsTheConflictAndChangesNothing() throws {
+        let text = table("[mcp_servers.omelette]", command: otherHome) + env + table("[mcp_servers.brioche]", command: foreign)
+        try writeCodex(text)
+
+        XCTAssertThrowsError(try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)) { error in
+            XCTAssertEqual(error as? MCPInstaller.Error, .conflict(self.foreign))
+        }
+
+        XCTAssertEqual(try codexText(), text)
+    }
+
+    func testDisablingAnOldCodexTableBesideAForeignBriocheRemovesOnlyOursWithItsSubTables() throws {
+        let theirs = table("[mcp_servers.brioche]", command: foreign) + "[mcp_servers.brioche.env]\nTHEIRS = \"1\"\n\n"
+        try writeCodex(env + theirs + table("[mcp_servers.omelette]", command: oldCLI))
+
+        try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
+
+        let after = try codexText()
+        XCTAssertFalse(after.contains("mcp_servers.omelette"), after)
+        XCTAssertTrue(after.contains(foreign), after)
+        XCTAssertTrue(after.contains("[mcp_servers.brioche.env]\nTHEIRS = \"1\""), after)
+        XCTAssertEqual(codexStatus, .conflict(foreign), after)
     }
 }

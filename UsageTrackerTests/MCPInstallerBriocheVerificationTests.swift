@@ -170,11 +170,11 @@ final class MCPInstallerBriocheVerificationTests: XCTestCase {
         XCTAssertEqual(command(try claudeServers(), "brioche"), cli)
     }
 
-    func testABriocheEntryWithoutACommandIsUnreadableAndNothingIsWritten() throws {
+    func testABriocheEntryWithoutACommandRefusesAWriteAndNothingIsWritten() throws {
         try writeClaude(["brioche": ["type": "stdio"], "omelette": entry(oldCLI)])
         let before = try Data(contentsOf: claudeURL)
 
-        guard case .conflict = claudeStatus() else { return XCTFail("expected a conflict, got \(claudeStatus())") }
+        XCTAssertEqual(claudeStatus(), .installed, "the old entry works; Disable has to reach it")
         XCTAssertThrowsError(try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli))
         XCTAssertEqual(try Data(contentsOf: claudeURL), before)
     }
@@ -262,11 +262,11 @@ final class MCPInstallerBriocheVerificationTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: codexURL), first)
     }
 
-    func testAForeignBriocheTableIsAConflictAndRefusesAWriteAroundOurOldOne() throws {
+    func testAForeignBriocheTableRefusesAWriteAroundOurOldOne() throws {
         let text = table("[mcp_servers.omelette]", command: oldCLI) + table("[mcp_servers.brioche]", command: "/opt/homebrew/bin/brioche")
         try writeCodex(text)
 
-        XCTAssertEqual(codexStatus(), .conflict("/opt/homebrew/bin/brioche"))
+        XCTAssertEqual(codexStatus(), .installed, "the old table works; Disable has to reach it")
         XCTAssertThrowsError(try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli))
 
         XCTAssertEqual(try codexText(), text)
