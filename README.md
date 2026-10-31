@@ -336,8 +336,8 @@ in the menu bar says it is on.
 - **One-time approval**: the first Apply installs a helper,
   `omelette-keepawake`, that runs as root under launchd and sets macOS's sleep
   flag (`pmset disablesleep`). macOS announces it as **Background Items
-  Added**; switch Brioche on in System Settings → General → Login Items &
-  Extensions, then press Apply again. macOS may ask for your password there
+  Added**; switch Brioche on (Omelette, if your copy updated from before 4.0)
+  in System Settings → General → Login Items & Extensions, then press Apply again. macOS may ask for your password there
 - **Reset**: Settings → Advanced → **Reset keep awake** asks first, then ends
   the mode, clears the flag, removes the helper from Login Items and puts the
   floor switch and the last duration back. It asks for an administrator
