@@ -60,7 +60,7 @@ enum IslandEventRules {
     /// it. The status item toggles wherever the island is; the notch closes the island open
     /// on its display and moves one open elsewhere (ruling R6); a notification leaves the
     /// island open on its display and moves it to the pointer's display (ruling R5); an ear
-    /// leaves an open island open.
+    /// leaves an island open on its display open, and moves one open elsewhere (P6 plan R5).
     static func entry(_ entry: IslandEntry, isOpen: Bool, openScreenID: UInt32?, entryScreenID: UInt32?) -> EntryVerdict {
         guard isOpen else { return .open }
         switch entry {
@@ -71,7 +71,7 @@ enum IslandEventRules {
         case .notification:
             return openScreenID == entryScreenID ? .stay : .open
         case .ear:
-            return .stay
+            return openScreenID == entryScreenID ? .stay : .open
         }
     }
 

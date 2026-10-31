@@ -68,6 +68,11 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(entry(.ear), .stay)
     }
 
+    /// Plan ruling R5, the ledger's open item: the real ears act as the notch does.
+    func testAnEarMovesAnIslandOpenOnAnotherDisplay() {
+        XCTAssertEqual(entry(.ear, at: 2, to: 1), .open)
+    }
+
     func testAnotherWindowBecomingKeyClosesTheIsland() {
         XCTAssertTrue(IslandEventRules.closesOnKeyWindow(isIsland: false, isChildOfIsland: false))
     }
