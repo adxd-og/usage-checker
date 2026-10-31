@@ -35,6 +35,22 @@ final class IslandController: NSObject {
     /// The notch-sized panel at rest over the notch (D13), and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
+    /// The hover hint (D13): its value, its frames while the spring moves, and the one wait a
+    /// pointer's arrival arms.
+    private var hint = NotchHint()
+    private let hintFrames: IslandFrameDriver
+    private var hintDelay: Task<Void, Never>?
+    private var lastHintFrameTime: TimeInterval?
+    /// The resting window holds the hint's room.
+    private var restingRoom = false
+    /// The chosen pet's head as built off the main thread (`prewarmEar`): the ear tips', the left
+    /// ear's and the morph's image.
+    private struct RestingHead {
+        let image: CGImage
+        let scale: PetScaleRules.Scale
+    }
+    private var restingHead: RestingHead?
+    private var restingArtObservers = Set<AnyCancellable>()
 
     /// The open and close in time (§ 3.2); `frames` ticks it while something moves.
     private var transition = IslandTransition()
@@ -75,7 +91,9 @@ final class IslandController: NSObject {
         self.pet = pet
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
-        self.restingView = RestingNotchView(frame: .zero)
+        let restingView = RestingNotchView(frame: .zero)
+        self.restingView = restingView
+        self.hintFrames = IslandFrameDriver(source: DisplayLinkFrameSource(view: restingView))
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
@@ -112,6 +130,27 @@ final class IslandController: NSObject {
         resting.contentView = restingView
         restingView.onPress = { [weak self] option in
             self?.notchPressed(option: option)
+        }
+        restingView.onHover = { [weak self] inside in
+            self?.notchHovered(inside)
+        }
+        hintFrames.onFrame = { [weak self] now in
+            self?.hintFrame(now)
+        }
+        // The head for the tips, built before any hover: when the manifests are read, the pet changes
+        // or it is switched. `@Published` sends before the value lands, hence the hop.
+        PetAssetStore.shared.$assets
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.warmRestingArt() }
+            .store(in: &restingArtObservers)
+        SettingsStore.shared.$petEnabled
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.warmRestingArt() }
+            .store(in: &restingArtObservers)
+        pet.onPetChange = { [weak self] in
+            self?.warmRestingArt()
         }
         placeResting(IslandScreen.current())
         window.contentView = placeholder
@@ -205,6 +244,8 @@ final class IslandController: NSObject {
         let islandWasKey = window.isKeyWindow
         // Deadlines due by now first, as a frame would have applied them: a close may have ended.
         settle(at: now)
+        // Clicked or not, the hint ends where the island begins.
+        endHint()
         let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
         if route == .moveAndOpen {
             finishClose()
@@ -421,8 +462,11 @@ final class IslandController: NSObject {
             resting.orderOut(nil)
             return
         }
-        resting.setFrame(IslandDisplayResolver.restingFrame(notch: notch), display: false)
-        restingView.notchPath = IslandGeometry.restingPath(notch: notch, appliedFrame: resting.frame)
+        restingRoom = !hint.isAtRest
+        resting.setFrame(
+            RestingLayout.frame(notch: notch, left: false, right: false, hintRoom: restingRoom), display: true
+        )
+        restingView.layout = RestingLayout(notch: notch, left: false, right: false, appliedFrame: resting.frame)
         if transition.phase != .closed {
             resting.order(.below, relativeTo: window.windowNumber)
         } else {
@@ -441,6 +485,110 @@ final class IslandController: NSObject {
         let debugBuild = false
         #endif
         handle(IslandEventRules.notchPressEntry(option: option, debugBuild: debugBuild))
+    }
+
+    // MARK: - The notch hint (§ 3.1, D13)
+
+    /// The tracking area's report. One wait per arrival, cancelled by a leave: no timer otherwise.
+    private func notchHovered(_ inside: Bool) {
+        if inside {
+            guard hint.pointerEntered() else { return }
+            hintDelay?.cancel()
+            hintDelay = Task { @MainActor [weak self] in
+                guard (try? await Task.sleep(for: .seconds(IslandMotion.hintDelay))) != nil else { return }
+                self?.hintDelayElapsed()
+            }
+        } else {
+            hintDelay?.cancel()
+            hintDelay = nil
+            let now = hintEventTime()
+            hint.pointerLeft(at: now)
+            showHint(at: now)
+        }
+    }
+
+    private func hintDelayElapsed() {
+        hintDelay = nil
+        let now = hintEventTime()
+        hint.delayElapsed(
+            at: now, islandClosed: transition.phase == .closed,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        showHint(at: now)
+    }
+
+    /// One frame of the spring.
+    private func hintFrame(_ now: TimeInterval) {
+        lastHintFrameTime = now
+        hint.advance(to: now)
+        showHint(at: now)
+    }
+
+    /// The hint as it is now, on screen: frames only while the spring moves, and the window's room
+    /// only while something shows.
+    private func showHint(at now: TimeInterval) {
+        restingView.look = hint.look(at: now)
+        restingView.tracksHint = hint.isUp
+        if hint.needsFrames {
+            hintFrames.start()
+        } else {
+            hintFrames.stop()
+        }
+        if restingRoom == hint.isAtRest {
+            placeResting(IslandScreen.current())
+        }
+    }
+
+    /// The island is opening, or the displays changed.
+    private func endHint() {
+        hintDelay?.cancel()
+        hintDelay = nil
+        hint.end()
+        showHint(at: hintEventTime())
+    }
+
+    private func hintEventTime() -> TimeInterval {
+        IslandFrameDriver.eventTime(now: clock(), lastFrame: lastHintFrameTime)
+    }
+
+    /// Builds the chosen pet's head off the main thread and hands it to what draws it. Pet off: the
+    /// shape only (D13), and the ear's neutral dot needs no image.
+    private func warmRestingArt() {
+        guard SettingsStore.shared.petEnabled,
+              let assets = PetAssetStore.shared.assets,
+              let shown = pet.shown(in: assets.library),
+              let manifest = assets.library.manifests[shown.animal],
+              let notch = IslandScreen.current().lazy.compactMap(\.notchRect).first
+        else {
+            showRestingArt(nil, tips: nil)
+            return
+        }
+        let scale = IslandEarRules.headScale(earHeight: notch.height, backingScale: resting.backingScaleFactor)
+        let key = PetSpriteCache.Key(
+            animal: shown.animal, palette: shown.palette, sprite: .ear, pixelsPerBead: scale.pixelsPerBead
+        )
+        let sprites = assets.sprites
+        let tips = PetEarTips.tips(of: manifest.ear, band: IslandMotion.hintDown, scale: scale)
+        Task { [weak self] in
+            await Task.detached(priority: .utility) {
+                sprites.prewarmEar(animal: key.animal, palette: key.palette, pixelsPerBead: key.pixelsPerBead)
+            }.value
+            // A newer pet's own warm-up answers for that pet, and Pet off has already cleared the art.
+            guard let self,
+                  PetEarTips.stillWanted(
+                      builtFor: shown, shownNow: self.pet.shown(in: assets.library),
+                      petOn: SettingsStore.shared.petEnabled
+                  )
+            else { return }
+            self.showRestingArt(
+                sprites.cachedImage(key).map { RestingHead(image: $0, scale: scale) }, tips: tips
+            )
+        }
+    }
+
+    private func showRestingArt(_ head: RestingHead?, tips: PetEarTips?) {
+        restingHead = head
+        restingView.setTips(head?.image, tips: tips)
     }
 
     // MARK: - Display changes
@@ -500,6 +648,7 @@ final class IslandController: NSObject {
     /// The displays went to sleep: no frames until they wake (§ 3.8).
     @objc private func displaysSlept(_ note: Notification) {
         frames.displaysSlept()
+        hintFrames.displaysSlept()
         pet.setDisplayAwake(false)
     }
 
@@ -507,6 +656,7 @@ final class IslandController: NSObject {
     /// settles every deadline that passed meanwhile.
     @objc private func displaysWoke(_ note: Notification) {
         frames.displaysWoke()
+        hintFrames.displaysWoke()
         pet.setDisplayAwake(true)
     }
 
@@ -548,6 +698,8 @@ final class IslandController: NSObject {
     /// The resting notch follows the notch; an open island is re-resolved on its own display
     /// and closes when that display is gone (§ 3.1, Display and anchor; ruling R13).
     private func replace() {
+        endHint()
+        warmRestingArt()
         let screens = IslandScreen.current()
         placeResting(screens)
         guard transition.phase != .closed, let entry, let placement else { return }

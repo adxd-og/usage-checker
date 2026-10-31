@@ -119,4 +119,9 @@ final class IslandEventRulesTests: XCTestCase {
     func testVoiceOverReadsTheNotchAsOmelette() {
         XCTAssertEqual(IslandEventRules.notchAccessibilityLabel, "Omelette")
     }
+
+    /// The P1 review's item 4, carried here: a label alone says nothing of what the button does.
+    func testVoiceOverHearsWhatTheNotchDoes() {
+        XCTAssertEqual(IslandEventRules.notchAccessibilityHelp, "Opens Omelette. Press again to close it.")
+    }
 }
