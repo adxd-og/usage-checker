@@ -139,6 +139,11 @@ struct IslandGeometry: Equatable, Sendable {
         CGRect(x: rect.minX - frame.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
     }
 
+    /// A rect in the coordinates of a window at `frame`, in global ones: `local`'s inverse.
+    static func global(_ rect: CGRect, in frame: CGRect) -> CGRect {
+        CGRect(x: rect.minX + frame.minX, y: frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+    }
+
     /// The resting panel's black notch in its own view (top-left origin): the notch, square
     /// at the top, rounded at the bottom; the window's half-point slack stays transparent.
     static func restingPath(notch: CGRect, appliedFrame: CGRect) -> Path {
