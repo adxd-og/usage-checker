@@ -242,6 +242,26 @@ final class IslandController: NSObject {
         }
     }
 
+    /// At launch: the first one after an update that took the status item away opens the island
+    /// once (`StatusItemVisibilityRules.firstLaunchAfterUpdate`). As an ear opens it, so the app
+    /// in front keeps the keyboard, a beat in as the tour does, once the stored numbers have landed.
+    func openIfTheUpdateTookTheItem() {
+        let settings = SettingsStore.shared
+        let verdict = StatusItemVisibilityRules.firstLaunchAfterUpdate(
+            alreadyMarked: settings.hasOpenedIslandAfterUpdate,
+            hasSeenOnboarding: settings.hasSeenOnboarding,
+            setting: settings.showInMenuBar,
+            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+        )
+        guard verdict != .nothing else { return }
+        settings.hasOpenedIslandAfterUpdate = true
+        guard verdict == .openIsland else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(0.6))
+            self?.handle(.ear)
+        }
+    }
+
     /// Closes the island with its motion (§ 3.2): the content fades out, then the shape
     /// shrinks back into the notch; the panel fades out; Reduce Motion cross-fades. Nothing
     /// when it is closed or already closing.
@@ -251,6 +271,7 @@ final class IslandController: NSObject {
         guard isOpen, let placement else { return }
         // A jump started before this close can no longer close the island (Codex review 3).
         pet.islandClosed()
+        navigation.islandClosed()
         // From the first frame of a close the whole window ignores the mouse until the next
         // open (P0 run 1: a still pointer reached the shrinking island at p = 0.285).
         window.ignoresMouseEvents = true
@@ -262,6 +283,8 @@ final class IslandController: NSObject {
     /// The close's last frame, a move to another display, or a display that vanished: the
     /// window leaves the screen and the content leaves the window (P1 ruling R11), at once.
     private func finishClose() {
+        // Whether the island holds the keyboard, read before it leaves the screen.
+        let islandWasKey = window.isKeyWindow
         frames.stop()
         earMorph.stop()
         leftEarView.hidesHead = false
@@ -276,6 +299,25 @@ final class IslandController: NSObject {
         pet.show(phase: transition.phase)
         entry = nil
         placement = nil
+        handBackKeyboard(islandWasKey: islandWasKey)
+    }
+
+    /// The close's keyboard (`IslandTransition.handsBackAfterClose`), a turn later: `open` calls
+    /// `finishClose` on its way to a reopen, and that open decides for itself.
+    private func handBackKeyboard(islandWasKey: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let handsBack = IslandTransition.handsBackAfterClose(
+                islandWasKey: islandWasKey,
+                reopened: self.transition.phase != .closed,
+                appIsActive: NSApp.isActive,
+                otherWindowCanTakeKey: NSApp.windows.contains { other in
+                    other !== self.window && other !== self.statusItemWindow()
+                        && other.isVisible && other.canBecomeKey && !self.isChildOfIsland(other)
+                }
+            )
+            if handsBack { NSApp.deactivate() }
+        }
     }
 
     /// Opens on `screen` the way `IslandTransition.route` says: from closed, placed and grown
@@ -292,6 +334,7 @@ final class IslandController: NSObject {
         endHint()
         let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
         if route == .moveAndOpen {
+            navigation.islandClosed()
             finishClose()
         }
         AppState.shared.refreshForPopover()
@@ -369,7 +412,8 @@ final class IslandController: NSObject {
 
     /// Applies a navigation input (§ 3.4) at the motion's clock, with Reduce Motion as it is
     /// now, over the providers on screen (`providers`, or the app's own list): a move starts the
-    /// frames that draw it, Esc at All closes. Returns the reducer's action.
+    /// frames that draw it, or just lands while closed, and Esc at All closes. Returns the reducer's
+    /// action.
     @discardableResult
     private func navigate(_ input: IslandNavigation.Input, providers: [String]? = nil) -> IslandNavigation.Action {
         let now = eventTime()
@@ -381,7 +425,7 @@ final class IslandController: NSObject {
         )
         switch action {
         case .go:
-            frames.start()
+            if IslandTransition.pageMoveWantsFrames(phase: transition.phase) { frames.start() }
         case .close:
             close()
         case .stay, .pass:
@@ -648,7 +692,7 @@ final class IslandController: NSObject {
             mood: PetMoodInput(
                 sessions: AgentSessionStore.shared.sessions,
                 services: AppState.shared.snapshot.services,
-                enabledIDs: AppState.shared.polledIDs,
+                enabledIDs: AppState.shared.switchedOnIDs,
                 claudeBinaryFound: ClaudeSignInModel.shared.binaryFound,
                 keepAwake: KeepAwakeModel.shared.state
             ),
@@ -676,6 +720,10 @@ final class IslandController: NSObject {
             settings.$petEnabled.map { _ in () }.eraseToAnyPublisher(),
             settings.$earsEnabled.map { _ in () }.eraseToAnyPublisher(),
             settings.$showInMenuBar.map { _ in () }.eraseToAnyPublisher(),
+            // A provider's switch is `@AppStorage`, which publishes nothing (`SettingsPage`): a
+            // defaults write is its signal, so off means off with a poll still running.
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+                .map { _ in () }.eraseToAnyPublisher(),
         ]
     }
 
@@ -888,6 +936,7 @@ final class IslandController: NSObject {
             panelWidth: Self.panelWidth(on: placement.screenID, in: screens), menuBarHeight: Self.menuBarHeight
         ) else {
             // Its display is gone: nothing left to animate on.
+            navigation.islandClosed()
             finishClose()
             return
         }

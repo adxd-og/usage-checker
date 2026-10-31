@@ -115,7 +115,7 @@ struct PetHabitatView: View {
         PetMoodInput(
             sessions: agents.sessions,
             services: state.snapshot.services,
-            enabledIDs: state.polledIDs,
+            enabledIDs: state.switchedOnIDs,
             claudeBinaryFound: claudeSignIn.binaryFound,
             keepAwake: keepAwake.state
         )

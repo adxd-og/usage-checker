@@ -41,7 +41,7 @@ final class PetActionRulesTests: XCTestCase {
     func testAnAlertOpensItsProvidersPage() {
         XCTAssertEqual(effects(.providerPage(serviceID: "claude")), [.navigate(.tile("claude"))], "from All its tile grows into the page")
         XCTAssertEqual(effects(.providerPage(serviceID: "claude"), on: codex), [.navigate(.logo("claude"))], "from a sibling's page")
-        XCTAssertEqual(effects(.providerPage(serviceID: "claude"), on: .provider("claude")), [], "already there")
+        XCTAssertEqual(effects(.providerPage(serviceID: "claude"), on: .provider("claude")), [.pat], "already there: a pat, not a dead click")
         XCTAssertEqual(effects(.providerPage(serviceID: "cursor")), [], "not on screen")
     }
 

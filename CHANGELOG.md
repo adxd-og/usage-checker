@@ -7,6 +7,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0] — Unreleased
 
+### Island
+- The popover is now an island that grows out of the notch. On a Mac or display
+  without a notch it is a panel under the menu bar icon.
+- Opening and closing are animated. Reduce Motion turns them into a short
+  cross-fade.
+- A click on the notch opens the island; a click on the notch strip of the open
+  island, a click anywhere outside it, or Esc at All closes it.
+- Hover over the notch and it nudges down a little. Hover never opens.
+- The first launch after an update on a notched Mac opens the island once, since
+  the menu bar icon is gone.
+- Closing it returns the keyboard to the app behind.
+
+### Menu bar icon
+- New switch: Settings › General › Menu bar icon › **Show in menu bar**. On a
+  Mac with a notched display it is **off by default**, so the menu bar icon
+  is hidden after the update: click the notch to open Brioche, or turn the
+  switch on.
+- With no notched display attached (lid closed, an external display only) the
+  icon is always shown and the switch is locked on.
+- While the icon is hidden, keep awake's ☾ moves to the notch's right ear.
+
+### Layout and navigation
+- Providers sit in a two-column grid; the agents list, cost and keep awake
+  below them.
+- Click a provider's tile to open its page. **‹ All**, the provider logos,
+  Esc, or a two-finger swipe right go back.
+- **Shortcut change:** ⌘0 is All and ⌘1–⌘9 are the providers in display order
+  (⌘1 was All). A digit with no provider behind it does nothing.
+- With one provider on, its page is the home page: no ‹ All, no logos.
+- Waiting agents stay reachable with every provider off, and from a sole
+  provider's page.
+
+### Pet
+- A pixel pet lives beside your limits: cat, duck, dog or raccoon, each in
+  three colourways.
+- It shows what is going on: an agent waiting, Claude signed out, a limit at
+  90 % or more, keep awake at night, agents working, all providers off.
+- A click on the pet does what its line says: jump to the waiting agent, sign
+  in, open the provider at 90 %, show keep awake, open Settings › Providers
+  with all providers off. Otherwise it pats the pet.
+- It idles, blinks, naps, plays hand-drawn events and stretches when a limit
+  window resets. It animates only while the island is open and Reduce Motion
+  is off.
+- New tab Settings › Pet: show the pet, ears on or off, animal and colourway.
+  The pet can be turned off. The tour gains a step to pick one.
+- The pet's column is dropped on a display narrower than 1420 pt.
+- A window for one model does not set it off, unless that is all a provider has.
+  A provider switched off stops at once.
+
+### Ears
+- With the island closed, the notch grows an ear when something needs you: the
+  pet's head (a neutral dot with the pet off) for a waiting agent, a signed-out
+  Claude or a limit at 90 %, and the number on the right ear.
+- A click on an ear does what it shows: one waiting agent is brought forward,
+  otherwise the island opens on that provider, or on keep awake for ☾.
+- Settings › Pet › **Ears beside the notch** turns them off. Only on a display
+  with a notch.
+
 ### Name
 - Omelette is now Brioche. Same app, same data: settings, history, the Claude
   sign-in, widgets and keep awake carry over.

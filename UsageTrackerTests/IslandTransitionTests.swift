@@ -385,6 +385,36 @@ final class IslandTransitionTests: XCTestCase {
         )
     }
 
+    // MARK: The keyboard after a close (whole-branch review of 4.0, ruling R3)
+
+    private func handsBack(
+        wasKey: Bool = true, reopened: Bool = false, active: Bool = true, other: Bool = false
+    ) -> Bool {
+        IslandTransition.handsBackAfterClose(
+            islandWasKey: wasKey, reopened: reopened, appIsActive: active, otherWindowCanTakeKey: other
+        )
+    }
+
+    func testAKeyIslandClosedWithNothingElseUpHandsTheKeyboardBack() {
+        XCTAssertTrue(handsBack())
+    }
+
+    func testAnIslandThatNeverTookTheKeyboardHasNothingToHandBack() {
+        XCTAssertFalse(handsBack(wasKey: false), "an ear's open, or Settings that took key and closed it")
+    }
+
+    func testAReopenInTheSameTurnKeepsItsOwnKeyPolicy() {
+        XCTAssertFalse(handsBack(reopened: true))
+    }
+
+    func testAnotherWindowOfTheAppKeepsTheAppActive() {
+        XCTAssertFalse(handsBack(other: true), "Dashboard, Settings or the floating window on screen")
+    }
+
+    func testAnAppAlreadyInactiveHasNothingToGiveUp() {
+        XCTAssertFalse(handsBack(active: false), "a click in another app closed it, or a jump left")
+    }
+
     // MARK: Keys
 
     func testOnlyAClosingIslandSwallowsKeysAndOnlyItsOwn() {

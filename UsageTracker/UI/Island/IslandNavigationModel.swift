@@ -47,6 +47,16 @@ final class IslandNavigationModel: ObservableObject {
         return card
     }
 
+    /// Counts the closes: the content's own waits end on it (`PopoverView.pendingReveal`).
+    @Published private(set) var closes = 0
+
+    /// The island started closing or left its display: nothing asked for in this open is kept for
+    /// the next one (§ 3.4).
+    func islandClosed() {
+        requestedCard = nil
+        closes += 1
+    }
+
     private var drill = IslandDrill()
 
     /// A tile, a logo, "‹ All" or the providers changing, from the content: to the controller,

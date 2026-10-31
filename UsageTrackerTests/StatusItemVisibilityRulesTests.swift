@@ -41,4 +41,44 @@ final class StatusItemVisibilityRulesTests: XCTestCase {
         XCTAssertFalse(StatusItemVisibilityRules.notchedDisplayAttached([ScreenFixture.externalRight, ScreenFixture.externalLeft]))
         XCTAssertFalse(StatusItemVisibilityRules.notchedDisplayAttached([]))
     }
+
+    // MARK: - The first launch after an update (whole-branch review of 4.0, ruling R1)
+
+    private func afterUpdate(
+        marked: Bool = false, onboarding: Bool = true, setting: Bool? = nil, notch: Bool = true
+    ) -> StatusItemVisibilityRules.FirstLaunchAfterUpdate {
+        StatusItemVisibilityRules.firstLaunchAfterUpdate(
+            alreadyMarked: marked, hasSeenOnboarding: onboarding, setting: setting, notchedDisplayAttached: notch
+        )
+    }
+
+    func testAnUpdateOnANotchedMacWithNoStoredSettingOpensTheIsland() {
+        XCTAssertEqual(afterUpdate(), .openIsland)
+    }
+
+    func testOnlyTheFirstLaunchOpensIt() {
+        XCTAssertEqual(afterUpdate(marked: true), .nothing)
+    }
+
+    /// Marked, not merely skipped: the launch after the tour must not open it either.
+    func testANewInstallHasTheTourAndNeverGetsTheOpen() {
+        XCTAssertEqual(afterUpdate(onboarding: false), .markOnly)
+        XCTAssertEqual(afterUpdate(onboarding: false, notch: false), .markOnly)
+    }
+
+    func testAStoredSettingOfEitherKindNeverGetsTheOpen() {
+        XCTAssertEqual(afterUpdate(setting: true), .markOnly)
+        XCTAssertEqual(afterUpdate(setting: false), .markOnly)
+        XCTAssertEqual(afterUpdate(setting: false, notch: false), .markOnly)
+    }
+
+    /// The item is still there. Unmarked: the first launch on the Mac's own display still needs it.
+    func testWithNoNotchedDisplayNothingHappensAndALaterLaunchDecides() {
+        XCTAssertEqual(afterUpdate(notch: false), .nothing)
+        XCTAssertEqual(afterUpdate(notch: true), .openIsland)
+    }
+
+    func testTheOpenLeavesTheKeyboardWithTheAppInFront() {
+        XCTAssertFalse(IslandEntry.ear.becomesKey, "the launch opens as an ear does, not as a click")
+    }
 }

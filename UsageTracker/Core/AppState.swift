@@ -156,6 +156,43 @@ final class AppState: ObservableObject {
         )
     }
 
+    /// The providers on as the switches stand this moment, for what must stop the instant one goes
+    /// off, the pet's alert and the ears ("off means off"): `polledIDs` moves only when the next poll
+    /// starts, after any slow fetch still running. No keychain: this is read on every draw, so the
+    /// admin organisation stays as the poll found it, and it has no switch to flip. nil until the
+    /// first poll, like `polledIDs`.
+    var switchedOnIDs: Set<String>? {
+        let settings = SettingsStore.shared
+        return Self.switchedOnIDs(
+            polledIDs: polledIDs,
+            claudeEnabled: settings.claudeProviderEnabled,
+            codexEnabled: settings.codexProviderEnabled,
+            antigravityEnabled: settings.antigravityProviderEnabled,
+            grokEnabled: settings.grokProviderEnabled
+        )
+    }
+
+    /// `switchedOnIDs` as a rule.
+    nonisolated static func switchedOnIDs(
+        polledIDs: Set<String>?,
+        claudeEnabled: Bool,
+        codexEnabled: Bool,
+        antigravityEnabled: Bool,
+        grokEnabled: Bool
+    ) -> Set<String>? {
+        guard let polledIDs else { return nil }
+        return polledServiceIDs(
+            claudeEnabled: claudeEnabled,
+            codexEnabled: codexEnabled,
+            antigravityEnabled: antigravityEnabled,
+            grokEnabled: grokEnabled,
+            hasAdminKey: polledIDs.contains(adminServiceID)
+        )
+    }
+
+    /// The admin organisation's service id, on while there is a key.
+    nonisolated private static let adminServiceID = "anthropic-admin"
+
     /// `enabledServiceIDs` as a rule: each provider whose switch is on, Claude included
     /// since it has one (spec 2026-10-25 § Package 1), and the admin organisation while
     /// there is a key to call it with. Empty is the "nothing on" state. A stored reading
@@ -173,7 +210,7 @@ final class AppState: ObservableObject {
         if codexEnabled { ids.insert("codex") }
         if antigravityEnabled { ids.insert("antigravity") }
         if grokEnabled { ids.insert("grok") }
-        if hasAdminKey { ids.insert("anthropic-admin") }
+        if hasAdminKey { ids.insert(adminServiceID) }
         return ids
     }
 

@@ -112,10 +112,10 @@ final class MCPInstallerLegacyNameTests: XCTestCase {
         XCTAssertEqual(claudeStatus, .installed)
     }
 
-    func testAForeignBriocheIsAConflictAndOurOldEntryStays() throws {
+    func testAForeignBriocheRefusesAWriteAndOurOldEntryStays() throws {
         try writeClaude(["brioche": entry("/opt/homebrew/bin/brioche"), "omelette": entry(oldCLI)])
 
-        XCTAssertEqual(claudeStatus, .conflict("/opt/homebrew/bin/brioche"))
+        XCTAssertEqual(claudeStatus, .installed, "the old entry works; Disable has to reach it")
         XCTAssertThrowsError(try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli))
         XCTAssertNotNil(try claudeServers()["omelette"], "a refused write changes nothing")
     }

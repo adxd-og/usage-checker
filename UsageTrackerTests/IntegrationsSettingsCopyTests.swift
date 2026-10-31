@@ -130,6 +130,7 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
         XCTAssertTrue(IntegrationsSettingsCopy.codexHooksHelp.contains("~/.codex/hooks.json"))
         XCTAssertTrue(IntegrationsSettingsCopy.codexNotifyHelp.contains("top-level key"))
         XCTAssertTrue(IntegrationsSettingsCopy.permissionsHelp.contains("after two minutes"))
+        XCTAssertTrue(IntegrationsSettingsCopy.permissionsHelp.contains("in the island only while"))
     }
 
     func testTheRowsReadAsTheMockup() {

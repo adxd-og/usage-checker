@@ -26,7 +26,7 @@ struct PetMoodInput: Equatable, Sendable {
     var sessions: [AgentSession]
     /// `AppState.snapshot.services`, in display order.
     var services: [ServiceSnapshot]
-    /// `AppState.polledIDs`: the providers switched on; nil before the first poll.
+    /// `AppState.switchedOnIDs`: the providers switched on this moment; nil before the first poll.
     var enabledIDs: Set<String>?
     /// `ClaudeSignInModel.binaryFound`: Sign in, or the install link.
     var claudeBinaryFound: Bool

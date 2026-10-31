@@ -115,7 +115,7 @@ struct OnboardingView: View {
             }
             Text("Welcome to Brioche")
                 .font(OMFont.screenTitle)
-            Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
+            Text("Brioche watches your AI usage limits in real time, from the notch or the menu bar — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)
@@ -399,9 +399,8 @@ struct OnboardingView: View {
             Text("You're all set!")
                 .font(OMFont.screenTitle)
             card {
-                tip("Click", "menu bar icon to open the popover")
-                tip("Hover", "menu bar icon for a quick summary tooltip")
-                tip("From popover", "open Dashboard, Settings, or Refresh")
+                tip("Click", "the notch to open the island (no notch: the menu bar icon)")
+                tip("From the island", "open Dashboard or Settings; ⌘R refreshes")
                 tip("Updates", "install themselves — signed and notarized")
             }
             Spacer()

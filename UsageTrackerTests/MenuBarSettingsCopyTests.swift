@@ -59,12 +59,12 @@ final class MenuBarSettingsCopyTests: XCTestCase {
         XCTAssertEqual(MenuBarSettingsCopy.countDownTitle, "Count down remaining instead of used")
         XCTAssertEqual(
             MenuBarSettingsCopy.countDownCaption,
-            "Everywhere: menu bar, popover, dashboard, widgets, CLI. Colours and alerts still follow what you used."
+            "Everywhere: menu bar, island, dashboard, widgets, CLI. Colours and alerts still follow what you used."
         )
         XCTAssertEqual(MenuBarSettingsCopy.providersHeader, "Providers in the menu bar")
         XCTAssertEqual(
             MenuBarSettingsCopy.providersFooter,
-            "Hidden providers stay in the popover, widgets and notifications. The last one can't be hidden."
+            "Hidden providers stay in the island, widgets and notifications. The last one can't be hidden."
         )
         XCTAssertEqual(MenuBarSettingsCopy.providersEmpty, "Providers appear here once they report usage.")
         XCTAssertEqual(MenuBarSettingsCopy.agentsHeader, "Agents")

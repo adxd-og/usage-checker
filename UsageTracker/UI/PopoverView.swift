@@ -109,6 +109,10 @@ struct PopoverView: View {
                     revealAskedOn = navigation.page
                     pendingReveal = card
                 }
+                // A close ends the wait: a later open is a new one and scrolls nothing (§ 3.4).
+                .onChange(of: navigation.closes) { _, _ in
+                    pendingReveal = nil
+                }
             }
         }
         .padding(.horizontal, Self.padding)
@@ -749,12 +753,12 @@ struct PopoverView: View {
         )
     }
 
-    /// The card `ProviderGridRules.agentsCard` decides on; none while loading or with every
-    /// provider off.
+    /// The card `ProviderGridRules.agentsCard` decides on, under the empty body too.
     private var lowerRowAgents: LowerRowAgents? {
-        guard Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil else { return nil }
         switch ProviderGridRules.agentsCard(
-            serviceID: lowerRowService?.id, providerCount: displayedServices.count, hasSessions: !agents.sessions.isEmpty
+            serviceID: lowerRowService?.id, providerCount: displayedServices.count,
+            sessionSources: Set(agents.sessions.map(\.source)),
+            bodyIsEmpty: Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) != nil
         ) {
         case .allSessions:
             // The link shows while either source is still guessing, never under the prompt

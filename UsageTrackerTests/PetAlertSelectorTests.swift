@@ -62,11 +62,11 @@ final class PetAlertSelectorTests: XCTestCase {
 
     func testAWindowOfUnknownLengthLosesATieAndEqualWindowsKeepTheProvidersOrder() {
         let unknown = Fixture.bucket(id: "claude_other", label: "Other", percent: 94, kind: .other)
-        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 94, kind: .modelSpecific)
-        let fable = Fixture.bucket(id: "seven_day_fable", label: "Fable only", percent: 94, kind: .modelSpecific)
+        let first = week(94, id: "seven_day_first")
+        let second = week(94, id: "seven_day_second")
         XCTAssertNil(unknown.windowDuration)
-        let alert = PetAlertSelector.alert(in: [service("claude", [unknown, opus, fable])], enabledIDs: all)
-        XCTAssertEqual(alert?.bucket.id, "seven_day_opus")
+        let alert = PetAlertSelector.alert(in: [service("claude", [unknown, first, second])], enabledIDs: all)
+        XCTAssertEqual(alert?.bucket.id, "seven_day_first")
     }
 
     func testARetainedOrFailedProviderNeverFires() {
@@ -93,11 +93,126 @@ final class PetAlertSelectorTests: XCTestCase {
         )
     }
 
-    func testModelScopedWindowsAlarmToo() {
-        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+    // MARK: - Off means off (ruling R10)
+
+    private func switchedOn(claude: Bool = true, antigravity: Bool = true, polled: Set<String>? = ["claude", "antigravity"]) -> Set<String>? {
+        AppState.switchedOnIDs(
+            polledIDs: polled, claudeEnabled: claude, codexEnabled: false,
+            antigravityEnabled: antigravity, grokEnabled: false
+        )
+    }
+
+    /// The poll that asked for Antigravity is still running: its numbers and `polledIDs` still say
+    /// it is on, and the switch says it is not.
+    func testAProviderSwitchedOffStopsAlarmingWithThePollStillRunning() {
+        let services = [service("antigravity", [week(99)])]
+        XCTAssertEqual(PetAlertSelector.alert(in: services, enabledIDs: switchedOn())?.serviceID, "antigravity")
+        XCTAssertNil(PetAlertSelector.alert(in: services, enabledIDs: switchedOn(antigravity: false)))
+    }
+
+    func testTheMoodAndTheEarsStopWithTheAlert() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let services = [service("antigravity", [week(99)])]
+        let mood = PetMoodInput(
+            sessions: [], services: services, enabledIDs: switchedOn(antigravity: false),
+            claudeBinaryFound: true, keepAwake: .idle
+        )
+        XCTAssertEqual(PetMoodRules.mood(mood, now: now, calendar: calendar), .idle)
+        let ears = IslandEarRules.ears(
+            IslandEarInput(
+                mood: mood, mode: .used, petOn: true, showsEars: true, statusItemShown: false, earHeight: 32
+            ),
+            now: now, calendar: calendar, locale: Locale(identifier: "en_US_POSIX")
+        )
+        XCTAssertEqual(ears, .none)
+    }
+
+    func testEveryProviderSwitchedOffIsNothingOnAtOnce() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let mood = PetMoodInput(
+            sessions: [], services: [service("claude", [week(99)])],
+            enabledIDs: switchedOn(claude: false, antigravity: false),
+            claudeBinaryFound: true, keepAwake: .idle
+        )
+        XCTAssertEqual(PetMoodRules.mood(mood, now: now, calendar: calendar), .nothingOn)
+    }
+
+    func testASwitchedOnSetFollowsTheSwitchesAndKeepsTheAdminKeyThePollFound() {
         XCTAssertEqual(
-            PetAlertSelector.alert(in: [service("claude", [week(30), opus])], enabledIDs: all)?.bucket.id,
-            "seven_day_opus"
+            AppState.switchedOnIDs(
+                polledIDs: ["claude", "anthropic-admin"], claudeEnabled: false, codexEnabled: true,
+                antigravityEnabled: false, grokEnabled: true
+            ),
+            ["codex", "grok", "anthropic-admin"]
+        )
+        XCTAssertEqual(
+            AppState.switchedOnIDs(
+                polledIDs: ["claude"], claudeEnabled: true, codexEnabled: false,
+                antigravityEnabled: false, grokEnabled: false
+            ),
+            ["claude"]
+        )
+    }
+
+    func testBeforeTheFirstPollThereIsNoSetToLimitBy() {
+        XCTAssertNil(switchedOn(polled: nil))
+    }
+
+    // MARK: - Model-scoped windows (ruling R2, as `UsageNotifier` and `headlinePercent`)
+
+    func testAModelScopedWindowDoesNotAlarmBesideACoreWindow() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        XCTAssertNil(PetAlertSelector.alert(in: [service("claude", [week(30), opus])], enabledIDs: all))
+    }
+
+    /// Live on this Mac when ruled: Argon full for days, the Gemini windows nearly empty, and a
+    /// real Claude session at 95 % hidden behind it.
+    func testAFullModelWindowNeitherAlarmsNorMasksARealWindowElsewhere() {
+        let argon = Fixture.bucket(
+            id: "antigravity_model-gemini-4-argon", label: "Gemini 4 Argon", percent: 100, kind: .modelSpecific
+        )
+        let antigravity = service("antigravity", [week(3, id: "antigravity_weekly", label: "Gemini weekly"), argon])
+        XCTAssertNil(PetAlertSelector.alert(in: [antigravity], enabledIDs: all))
+        XCTAssertEqual(
+            PetAlertSelector.alert(in: [antigravity, service("claude", [session(95)])], enabledIDs: all)?.serviceID,
+            "claude"
+        )
+    }
+
+    func testACoreWindowStillAlarmsBesideAModelWindowThatIsFuller() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 99, kind: .modelSpecific)
+        XCTAssertEqual(
+            PetAlertSelector.alert(in: [service("claude", [week(92), opus])], enabledIDs: all)?.bucket.id,
+            "seven_day"
+        )
+    }
+
+    /// Scoping is all this provider has, so those windows are its limits.
+    func testAProviderWithOnlyModelWindowsStillAlarms() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        XCTAssertEqual(PetAlertSelector.alert(in: [service("claude", [opus])], enabledIDs: all)?.bucket.id, "seven_day_opus")
+    }
+
+    /// A bonus pool is not a core window: beside one, the model windows are still all there is.
+    func testAPoolBesideModelWindowsDoesNotTakeTheirPlace() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        let pool = Fixture.bucket(
+            id: "cloud_credits", label: "Cloud session credits", percent: 95, kind: .other,
+            credit: CreditPool(usedDollars: 95, limitDollars: 100)
+        )
+        XCTAssertEqual(PetAlertSelector.alert(in: [service("claude", [pool, opus])], enabledIDs: all)?.bucket.id, "seven_day_opus")
+    }
+
+    /// The self-set weekly budget a pay-as-you-go user chose is a limit they want to hear about.
+    func testTheSelfSetBudgetWindowStaysEligible() {
+        let budget = Fixture.bucket(
+            id: AppState.payAsYouGoBudgetBucketID, label: "Weekly budget", percent: 93, kind: .weekly
+        )
+        XCTAssertEqual(
+            PetAlertSelector.alert(in: [service("claude", [budget])], enabledIDs: all)?.bucket.id,
+            AppState.payAsYouGoBudgetBucketID
         )
     }
 

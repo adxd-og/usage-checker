@@ -414,7 +414,11 @@ final class P6VerificationNavigationTests: XCTestCase {
         for id in ids {
             for count in 0...5 {
                 for sessions in [false, true] {
-                    let card = ProviderGridRules.agentsCard(serviceID: id, providerCount: count, hasSessions: sessions)
+                    // Sessions of the page's own source only; `ProviderGridRulesAgentsCardTests` has the others.
+                    let own = id.flatMap(AgentSource.init(rawValue:)) ?? .claude
+                    let card = ProviderGridRules.agentsCard(
+                        serviceID: id, providerCount: count, sessionSources: sessions ? [own] : []
+                    )
                     let context = "\(String(describing: id)) of \(count), sessions \(sessions)"
                     switch id {
                     case nil: XCTAssertEqual(card, .allSessions, context)

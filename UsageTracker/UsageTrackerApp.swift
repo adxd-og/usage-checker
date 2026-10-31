@@ -86,6 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UsageNotifier.shared.promptForHooksIfNeeded()
         UsageNotifier.shared.requestAuthorizationIfNeeded()
         scheduleOnboardingIfNeeded()
+        island.openIfTheUpdateTookTheItem()
         replayObserver = NotificationCenter.default.addObserver(
             forName: .replayOnboarding, object: nil, queue: .main
         ) { [weak self] _ in
