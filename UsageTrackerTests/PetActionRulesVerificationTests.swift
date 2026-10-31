@@ -68,7 +68,7 @@ final class PetActionRulesVerificationTests: XCTestCase {
     func testTheOnlyProvidersHomeHasNoBackAndNoSelfNavigation() {
         for id in ["claude", "grok", "antigravity"] {
             let home = IslandNavigation.Page.provider(id)
-            XCTAssertEqual(PetActionRules.effects(of: .providerPage(serviceID: id), page: home, providers: [id]), [])
+            XCTAssertEqual(PetActionRules.effects(of: .providerPage(serviceID: id), page: home, providers: [id]), [.pat])
             XCTAssertEqual(PetActionRules.effects(of: .needsYouList, page: home, providers: [id]), [.reveal(.agents)])
             XCTAssertEqual(PetActionRules.effects(of: .keepAwakeCard, page: home, providers: [id]), [.reveal(.keepAwake)])
         }
@@ -86,7 +86,7 @@ final class PetActionRulesVerificationTests: XCTestCase {
                 let effects = PetActionRules.effects(of: .providerPage(serviceID: id), page: page, providers: four)
                 switch page {
                 case .all: XCTAssertEqual(effects, [.navigate(.tile(id))])
-                case .provider(id): XCTAssertEqual(effects, [])
+                case .provider(id): XCTAssertEqual(effects, [.pat])
                 case .provider: XCTAssertEqual(effects, [.navigate(.logo(id))])
                 }
             }

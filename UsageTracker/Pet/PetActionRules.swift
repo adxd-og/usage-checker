@@ -48,7 +48,9 @@ enum PetActionRules {
             case .noAction: return []
             }
         case .providerPage(let id):
-            guard providers.contains(id), page != .provider(id) else { return [] }
+            guard providers.contains(id) else { return [] }
+            // Its page already shows: nowhere to go, and a click still answers.
+            guard page != .provider(id) else { return [.pat] }
             // From All the tile grows into its page; from a sibling's page, its logo.
             return [.navigate(page == .all ? .tile(id) : .logo(id))]
         case .keepAwakeCard:
