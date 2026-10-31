@@ -90,6 +90,18 @@ enum PetHabitatRules {
         isWarm ? events : []
     }
 
+    /// The events the runtime may start for this pet in this palette at this scale: the cache's word
+    /// alone. `prewarm` marks only a palette the pet has, so one it lacks never plays over a still
+    /// (the P5d tester's F5).
+    static func playableEvents(
+        of manifest: PetManifest, palette: String, pixelsPerBead: Int, sprites: PetSpriteCache
+    ) -> [PetEvent] {
+        playableEvents(
+            manifest.events,
+            isWarm: sprites.isWarm(animal: manifest.id, palette: palette, pixelsPerBead: pixelsPerBead)
+        )
+    }
+
     /// The mood's presentation and the sky at `now`, the habitat's time-dependent parts in one
     /// place: read at every minute while the island is open, so keep awake's night and the moon
     /// turn on the minute with nothing else changing (Codex review 5).

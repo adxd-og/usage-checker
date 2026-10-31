@@ -34,8 +34,9 @@ struct PetHabitatView: View {
     @State private var playingFPS: Double?
     /// The last pat: a still pet redraws once its heart is due to go.
     @State private var lastPat: Date?
-    /// What the last warm-up finished for: the habitat redraws then, with its frames and its events.
-    @State private var warmedFor: Warmth?
+    /// Counts the warm-ups that finished: its landing redraws the habitat, with its frames and its
+    /// events. Whether the pet is warm is the cache's word (`PetHabitatRules.playableEvents`).
+    @State private var warmups = 0
 
     /// A pat's heart over the pet's head (§ 3.5 rows 5 and 7, "♥ 1.2 s").
     nonisolated static let heartSize: CGFloat = 11
@@ -45,6 +46,7 @@ struct PetHabitatView: View {
     private var keeper: PetKeeper { pet.keeper }
 
     var body: some View {
+        let _ = warmups
         Group {
             if let assets = store.assets, let shown = pet.shown(in: assets.library),
                let manifest = assets.library.manifests[shown.animal] {
@@ -80,7 +82,7 @@ struct PetHabitatView: View {
             await Task.detached(priority: .utility) {
                 sprites.prewarm(animal: warmth.animal, palette: warmth.palette, pixelsPerBead: warmth.pixels)
             }.value
-            warmedFor = warmth
+            warmups += 1
         }
         // A still pet's heart goes when the pat's 1.2 s are up: one redraw then. A newer pat
         // cancels the wait and starts its own; a running timeline redraws on its own.
@@ -144,15 +146,14 @@ struct PetHabitatView: View {
         )
         let presentation = scene.presentation
         let scale = PetHabitatRules.scale(petBeads: manifest.size, backingScale: displayScale)
-        let isWarm = warmedFor == warmth || assets.sprites.isWarm(
-            animal: manifest.id, palette: palette, pixelsPerBead: scale.pixelsPerBead
-        )
         let footY = PetHabitatRules.floorY(height: height, petSide: scale.points(beads: manifest.size))
         let place = Placement(
             manifest: manifest,
             sprites: assets.sprites,
             palette: palette,
-            events: PetHabitatRules.playableEvents(manifest.events, isWarm: isWarm),
+            events: PetHabitatRules.playableEvents(
+                of: manifest, palette: palette, pixelsPerBead: scale.pixelsPerBead, sprites: assets.sprites
+            ),
             liftRoom: PetHabitatRules.liftRoom(footY: footY, petBeads: manifest.size, scale: scale),
             still: .frame(PetRuntime.still(pose: presentation.pose, stills: manifest.still)),
             scale: scale,
