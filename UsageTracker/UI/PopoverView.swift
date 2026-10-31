@@ -103,6 +103,12 @@ struct PopoverView: View {
                     else { return }
                     pendingReveal = nil
                 }
+                // A card an ear's open asked for (§ 3.6): the same wait as a pet click's.
+                .onChange(of: navigation.requestedCard, initial: true) { _, _ in
+                    guard let card = navigation.takeRequestedCard() else { return }
+                    revealAskedOn = navigation.page
+                    pendingReveal = card
+                }
             }
         }
         .padding(.horizontal, Self.padding)
@@ -743,12 +749,14 @@ struct PopoverView: View {
         )
     }
 
-    /// All: every session, grouped by state. A provider's page: that provider's sessions,
-    /// needs-you first; none for a provider without agents (plan ruling R2), nor while
-    /// loading or with every provider off.
+    /// The card `ProviderGridRules.agentsCard` decides on; none while loading or with every
+    /// provider off.
     private var lowerRowAgents: LowerRowAgents? {
         guard Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil else { return nil }
-        guard let service = lowerRowService else {
+        switch ProviderGridRules.agentsCard(
+            serviceID: lowerRowService?.id, providerCount: displayedServices.count, hasSessions: !agents.sessions.isEmpty
+        ) {
+        case .allSessions:
             // The link shows while either source is still guessing, never under the prompt
             // row that offers the same thing.
             return LowerRowAgents(
@@ -756,14 +764,16 @@ struct PopoverView: View {
                 grouped: true,
                 hooksInstalled: (claudeHooksInstalled && codexHooksInstalled) || hooksPromptVisible
             )
+        case .provider(let source):
+            let showsPrompt = hooksPromptVisible && source == .claude
+            return LowerRowAgents(
+                sessions: agents.sessions(for: source),
+                grouped: false,
+                hooksInstalled: (source == .codex ? codexHooksInstalled : claudeHooksInstalled) || showsPrompt
+            )
+        case nil:
+            return nil
         }
-        guard let source = AgentSource(rawValue: service.id) else { return nil }
-        let showsPrompt = hooksPromptVisible && source == .claude
-        return LowerRowAgents(
-            sessions: agents.sessions(for: source),
-            grouped: false,
-            hooksInstalled: (source == .codex ? codexHooksInstalled : claudeHooksInstalled) || showsPrompt
-        )
     }
 
     /// The cost tile over keep awake: on All, when an even provider count leaves no orphan

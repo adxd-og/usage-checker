@@ -68,6 +68,11 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(entry(.ear), .stay)
     }
 
+    /// Plan ruling R5, the ledger's open item: the real ears act as the notch does.
+    func testAnEarMovesAnIslandOpenOnAnotherDisplay() {
+        XCTAssertEqual(entry(.ear, at: 2, to: 1), .open)
+    }
+
     func testAnotherWindowBecomingKeyClosesTheIsland() {
         XCTAssertTrue(IslandEventRules.closesOnKeyWindow(isIsland: false, isChildOfIsland: false))
     }
@@ -101,17 +106,12 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(IslandEventRules.forward(7, to: nil), 7, "no controller: the event goes on")
     }
 
-    func testAPressOnTheNotchIsTheNotchEntry() {
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: false, debugBuild: false), .notch)
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: false, debugBuild: true), .notch)
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: true, debugBuild: false), .notch, "a release build has no ear stand-in")
-    }
-
-    func testADebugOptionClickOnTheNotchStandsInForAnEar() {
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: true, debugBuild: true), .ear)
-    }
-
     func testVoiceOverReadsTheNotchAsOmelette() {
         XCTAssertEqual(IslandEventRules.notchAccessibilityLabel, "Omelette")
+    }
+
+    /// The P1 review's item 4, carried here: a label alone says nothing of what the button does.
+    func testVoiceOverHearsWhatTheNotchDoes() {
+        XCTAssertEqual(IslandEventRules.notchAccessibilityHelp, "Opens Omelette. Press again to close it.")
     }
 }

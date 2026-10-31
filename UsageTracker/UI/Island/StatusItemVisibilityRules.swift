@@ -3,7 +3,7 @@ import Foundation
 /// Whether the status item is in the menu bar (notch-island spec 2026-10-29 § 3.7, § 3.9,
 /// D4): Show in menu bar, off by default on a Mac with a notched display, and shown
 /// regardless while no notched display is attached (clamshell, an external display only),
-/// since the island has no other way in there. The ☾ ear while it is hidden is P6's. Pure.
+/// since the island has no other way in there. While it is hidden, ☾ moves to the right ear (§ 3.6). Pure.
 enum StatusItemVisibilityRules {
     /// `setting` is nil until the user flips the switch.
     static func isShown(setting: Bool?, notchedDisplayAttached: Bool) -> Bool {
@@ -25,5 +25,10 @@ enum StatusItemVisibilityRules {
 
     static func notchedDisplayAttached(_ screens: [IslandScreen]) -> Bool {
         screens.contains { $0.hasNotch }
+    }
+
+    /// ☾ moves to the right ear while keep awake is on and the item that would carry it is hidden.
+    static func showsMoonEar(keepAwakeOn: Bool, itemShown: Bool) -> Bool {
+        keepAwakeOn && !itemShown
     }
 }

@@ -26,7 +26,7 @@ final class IslandEventRulesVerificationTests: XCTestCase {
         let expected: [String: (same: IslandEventRules.EntryVerdict, other: IslandEventRules.EntryVerdict)] = [
             "statusItem": (.close, .close),
             "notch": (.close, .open),
-            "ear": (.stay, .stay),
+            "ear": (.stay, .open),
             "notification": (.stay, .open),
         ]
         for (name, e) in entries {

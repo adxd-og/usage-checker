@@ -16,8 +16,7 @@ final class IslandPetModelDebugTests: XCTestCase {
     func testTheIslandShowsTheDefaultPet() throws {
         let model = makeModel()
         XCTAssertEqual(model.animal, PetHabitatRules.animal)
-        let cat = try XCTUnwrap(PetLibrary.bundled().manifests["cat"])
-        XCTAssertEqual(model.palette(of: cat), PetHabitatRules.palette)
+        XCTAssertEqual(model.shown(in: PetLibrary.bundled()), PetChoice.standard)
     }
 
     #if DEBUG
@@ -31,8 +30,7 @@ final class IslandPetModelDebugTests: XCTestCase {
         model.showDebugAnimal("duck")
         XCTAssertEqual(changes, 1, "the same animal publishes nothing")
         watch.cancel()
-        let duck = try XCTUnwrap(PetLibrary.bundled().manifests["duck"])
-        XCTAssertEqual(model.palette(of: duck), "mallard")
+        XCTAssertEqual(model.shown(in: PetLibrary.bundled())?.palette, "mallard")
         XCTAssertEqual(makeModel().animal, PetHabitatRules.animal, "nothing is kept")
     }
 

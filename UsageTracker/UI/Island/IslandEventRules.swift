@@ -60,7 +60,7 @@ enum IslandEventRules {
     /// it. The status item toggles wherever the island is; the notch closes the island open
     /// on its display and moves one open elsewhere (ruling R6); a notification leaves the
     /// island open on its display and moves it to the pointer's display (ruling R5); an ear
-    /// leaves an open island open.
+    /// leaves an island open on its display open, and moves one open elsewhere (P6 plan R5).
     static func entry(_ entry: IslandEntry, isOpen: Bool, openScreenID: UInt32?, entryScreenID: UInt32?) -> EntryVerdict {
         guard isOpen else { return .open }
         switch entry {
@@ -71,7 +71,7 @@ enum IslandEventRules {
         case .notification:
             return openScreenID == entryScreenID ? .stay : .open
         case .ear:
-            return .stay
+            return openScreenID == entryScreenID ? .stay : .open
         }
     }
 
@@ -156,13 +156,9 @@ enum IslandEventRules {
         return handler(event)
     }
 
-    /// The entry a press on the bare notch makes, by mouse or VoiceOver: the notch. In a Debug
-    /// build an ⌥-click stands in for an ear until P6 (ruling R4).
-    static func notchPressEntry(option: Bool, debugBuild: Bool) -> IslandEntry {
-        option && debugBuild ? .ear : .notch
-    }
-
     /// What VoiceOver reads for the notch, a button (§ 3.8: the notch click is always an entry
     /// point, and on a notched Mac the status item is hidden by default).
     static let notchAccessibilityLabel = "Omelette"
+    /// What the button does, as VoiceOver's hint.
+    static let notchAccessibilityHelp = "Opens Omelette. Press again to close it."
 }

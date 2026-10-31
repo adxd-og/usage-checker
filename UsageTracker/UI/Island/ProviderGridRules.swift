@@ -69,12 +69,29 @@ enum ProviderGridRules {
         var keepAwakeInterior: CGFloat { otherWidth - 2 * ProviderGridRules.cardPadding }
     }
 
-    /// Where there is no agents card (a provider without agents, Grok, Antigravity), keep
-    /// awake spans the row instead of keeping its half (owner 2026-10-30).
+    /// Where there is no agents card (`agentsCard`), keep awake spans the row instead of keeping
+    /// its half (owner 2026-10-30).
     static func lowerRow(columns: Columns, hasAgentsCard: Bool) -> LowerRow {
         hasAgentsCard
             ? LowerRow(agentsWidth: columns.half, otherWidth: columns.half)
             : LowerRow(agentsWidth: nil, otherWidth: columns.right)
+    }
+
+    /// What the lower row's agents card lists.
+    enum AgentsCard: Equatable, Sendable {
+        /// Every session, grouped by state, as on All.
+        case allSessions
+        /// That provider's sessions, needs-you first.
+        case provider(AgentSource)
+    }
+
+    /// `serviceID` is the provider whose page the row shows, nil on All. A provider without agents
+    /// (Grok, Antigravity) has no card of its own; but where its page is home there is no All to go
+    /// to, so it shows every session when there are any (P6 plan R21). Nil: no card.
+    nonisolated static func agentsCard(serviceID: String?, providerCount: Int, hasSessions: Bool) -> AgentsCard? {
+        guard let serviceID else { return .allSessions }
+        if let source = AgentSource(rawValue: serviceID) { return .provider(source) }
+        return providerPageIsHome(count: providerCount) && hasSessions ? .allSessions : nil
     }
 
     /// One provider: its page is home and there is no grid (§ 3.3, § 3.4).

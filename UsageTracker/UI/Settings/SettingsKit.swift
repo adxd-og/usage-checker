@@ -29,6 +29,7 @@ enum SettingsWindowLayout {
         switch tab {
         case .general: return 600
         case .menuBar: return 680
+        case .pet: return 640
         case .providers: return 560
         case .notifications: return 960
         case .integrations: return 840

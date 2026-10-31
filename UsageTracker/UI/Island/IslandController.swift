@@ -35,6 +35,36 @@ final class IslandController: NSObject {
     /// The notch-sized panel at rest over the notch (D13), and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
+    /// The hover hint (D13): its value, its frames while the spring moves, and the one wait a
+    /// pointer's arrival arms.
+    private var hint = NotchHint()
+    private let hintFrames: IslandFrameDriver
+    private var hintDelay: Task<Void, Never>?
+    private var lastHintFrameTime: TimeInterval?
+    /// The resting window holds the hint's room.
+    private var restingRoom = false
+    /// The chosen pet's head as built off the main thread (`prewarmEar`): the ear tips', the left
+    /// ear's and the morph's image.
+    private struct RestingHead {
+        let image: CGImage
+        let scale: PetScaleRules.Scale
+    }
+    private var restingHead: RestingHead?
+    private var restingArtObservers = Set<AnyCancellable>()
+    /// The ears (§ 3.6): what they show, and their views over the notch's.
+    private let earModel = IslandEarModel(read: { IslandController.readEars() })
+    private let restingRoot = RestingRootView(frame: .zero)
+    private let leftEarView = RestingEarView(frame: .zero)
+    private let rightEarView = RestingEarView(frame: .zero)
+    /// The open a click on an ear is making: its subject, its card, and whether the head morphs.
+    private struct EarOpen {
+        let subject: String?
+        let reveal: PetCard?
+        let morphs: Bool
+    }
+    private var earOpen: EarOpen?
+    /// The ear's head on its way to the pet, as drawn (§ 3.6).
+    private let earMorph: IslandEarMorphModel
 
     /// The open and close in time (§ 3.2); `frames` ticks it while something moves.
     private var transition = IslandTransition()
@@ -65,9 +95,9 @@ final class IslandController: NSObject {
     override init() {
         let model = IslandModel()
         let shapeModel = IslandShapeModel()
-        let layout = IslandLayoutModel()
+        let layout = IslandLayoutModel(petOn: { SettingsStore.shared.petEnabled })
         let navigation = IslandNavigationModel()
-        let pet = IslandPetModel(keeper: PetKeeper(random: .system()))
+        let pet = IslandPetModel(keeper: PetKeeper(random: .system()), choice: SettingsStore.shared.petChoice)
         self.model = model
         self.shapeModel = shapeModel
         self.layout = layout
@@ -75,10 +105,15 @@ final class IslandController: NSObject {
         self.pet = pet
         self.window = IslandWindow.make()
         self.resting = RestingNotchPanel.make()
-        self.restingView = RestingNotchView(frame: .zero)
+        let restingView = RestingNotchView(frame: .zero)
+        self.restingView = restingView
+        self.hintFrames = IslandFrameDriver(source: DisplayLinkFrameSource(view: restingView))
+        let earMorph = IslandEarMorphModel()
+        self.earMorph = earMorph
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
+            morph: earMorph,
             content: PopoverView(state: AppState.shared, layout: layout, navigation: navigation, pet: pet)
         ))
         self.host = host
@@ -105,12 +140,53 @@ final class IslandController: NSObject {
         pet.closeIsland = { [weak self] in
             self?.close()
         }
+        pet.follow(SettingsStore.shared.$petChoice)
         // The manifests, events included, are read once off the main thread; the habitat is bare
         // until they are. No image is built until `prewarm`.
         PetAssetStore.shared.load()
-        resting.contentView = restingView
-        restingView.onPress = { [weak self] option in
-            self?.notchPressed(option: option)
+        restingRoot.autoresizesSubviews = true
+        restingView.frame = restingRoot.bounds
+        restingView.autoresizingMask = [.width, .height]
+        restingRoot.addSubview(restingView)
+        restingRoot.addSubview(leftEarView)
+        restingRoot.addSubview(rightEarView)
+        leftEarView.isHidden = true
+        rightEarView.isHidden = true
+        resting.contentView = restingRoot
+        leftEarView.onPress = { [weak self] in
+            self?.leftEarPressed()
+        }
+        rightEarView.onPress = { [weak self] in
+            self?.rightEarPressed()
+        }
+        earModel.onChange = { [weak self] ears in
+            self?.showEars(ears)
+        }
+        earModel.watch(Publishers.MergeMany(Self.earSignals()))
+        earModel.refresh()
+        restingView.onPress = { [weak self] in
+            self?.handle(.notch)
+        }
+        restingView.onHover = { [weak self] inside in
+            self?.notchHovered(inside)
+        }
+        hintFrames.onFrame = { [weak self] now in
+            self?.hintFrame(now)
+        }
+        // The head for the tips, built before any hover: when the manifests are read, the pet changes
+        // or it is switched. `@Published` sends before the value lands, hence the hop.
+        PetAssetStore.shared.$assets
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.warmRestingArt() }
+            .store(in: &restingArtObservers)
+        SettingsStore.shared.$petEnabled
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.warmRestingArt() }
+            .store(in: &restingArtObservers)
+        pet.onPetChange = { [weak self] in
+            self?.warmRestingArt()
         }
         placeResting(IslandScreen.current())
         window.contentView = placeholder
@@ -150,13 +226,19 @@ final class IslandController: NSObject {
     func handle(_ entry: IslandEntry) {
         let screens = IslandScreen.current()
         let target = IslandDisplayResolver.display(for: entry, screens: screens, mainScreenID: CGMainDisplayID())
-        switch IslandEventRules.entry(entry, isOpen: isOpen, openScreenID: placement?.screenID, entryScreenID: target?.id) {
+        switch pet.entryVerdict(entry, isOpen: isOpen, openScreenID: placement?.screenID, entryScreenID: target?.id) {
         case .open:
             if let target { open(entry, on: target) }
         case .close:
             close()
         case .stay:
             if entry.becomesKey { makeKey() }
+            // An ear on the island's own display: it stays, and still goes to the ear's subject, or
+            // home for a card (plan R17).
+            if let earOpen,
+               let input = IslandNavigation.openInput(route: .reverse, subject: earOpen.subject, reveal: earOpen.reveal) {
+                navigate(input)
+            }
         }
     }
 
@@ -181,6 +263,8 @@ final class IslandController: NSObject {
     /// window leaves the screen and the content leaves the window (P1 ruling R11), at once.
     private func finishClose() {
         frames.stop()
+        earMorph.stop()
+        leftEarView.hidesHead = false
         transition.reset()
         window.ignoresMouseEvents = true
         removeMonitors()
@@ -204,6 +288,8 @@ final class IslandController: NSObject {
         let islandWasKey = window.isKeyWindow
         // Deadlines due by now first, as a frame would have applied them: a close may have ended.
         settle(at: now)
+        // Clicked or not, the hint ends where the island begins.
+        endHint()
         let route = IslandTransition.route(phase: transition.phase, sameDisplay: placement?.screenID == screen.id)
         if route == .moveAndOpen {
             finishClose()
@@ -220,9 +306,9 @@ final class IslandController: NSObject {
         // open (§ 3.4; owner 2026-10-30). An open that turns around a close still running on this
         // display is an interrupted close, not an open: the content never left and keeps its page
         // (plan ruling R4). Before the content lays out, so its first layout is already home.
-        if IslandNavigation.opensAtHome(route: route) {
+        if let input = IslandNavigation.openInput(route: route, subject: earOpen?.subject, reveal: earOpen?.reveal) {
             navigation.apply(
-                .open(subject: nil), providers: AppState.shared.snapshot.services.map(\.id),
+                input, providers: AppState.shared.snapshot.services.map(\.id),
                 reduceMotion: false, at: now
             )
         }
@@ -239,6 +325,9 @@ final class IslandController: NSObject {
             host.layoutSubtreeIfNeeded()
         }
         guard let placement else { return }
+        if route != .reverse {
+            startEarMorph(on: screen, placement: placement, at: now)
+        }
         // Every open, a turned-around close included, starts a new generation of jumps.
         pet.islandOpened()
         // On screen from here until `finishClose`. Not the window's occlusion state: measured on
@@ -420,8 +509,16 @@ final class IslandController: NSObject {
             resting.orderOut(nil)
             return
         }
-        resting.setFrame(IslandDisplayResolver.restingFrame(notch: notch), display: false)
-        restingView.notchPath = IslandGeometry.restingPath(notch: notch, appliedFrame: resting.frame)
+        restingRoom = !hint.isAtRest
+        let ears = earModel.ears
+        let left = ears.left != nil
+        let right = ears.right != nil
+        resting.setFrame(
+            RestingLayout.frame(notch: notch, left: left, right: right, hintRoom: restingRoom), display: false
+        )
+        let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
+        restingView.layout = layout
+        placeEars()
         if transition.phase != .closed {
             resting.order(.below, relativeTo: window.windowNumber)
         } else {
@@ -429,17 +526,242 @@ final class IslandController: NSObject {
         }
     }
 
-    /// A press on the bare notch, by mouse or VoiceOver (D1, D13). On the open island the
-    /// same spot is its notch strip, which closes it through `localClick`; this runs while
-    /// the island is closed or open on another display. Until P6's ears, a Debug ⌥-click
-    /// opens as an ear will, without key, so F4–F5 can be checked (ruling R4).
-    private func notchPressed(option: Bool) {
-        #if DEBUG
-        let debugBuild = true
-        #else
-        let debugBuild = false
-        #endif
-        handle(IslandEventRules.notchPressEntry(option: option, debugBuild: debugBuild))
+    // MARK: - The notch hint (§ 3.1, D13)
+
+    /// The tracking area's report. One wait per arrival, cancelled by a leave: no timer otherwise.
+    private func notchHovered(_ inside: Bool) {
+        if inside {
+            guard hint.pointerEntered() else { return }
+            hintDelay?.cancel()
+            hintDelay = Task { @MainActor [weak self] in
+                guard (try? await Task.sleep(for: .seconds(IslandMotion.hintDelay))) != nil else { return }
+                self?.hintDelayElapsed()
+            }
+        } else {
+            hintDelay?.cancel()
+            hintDelay = nil
+            let now = hintEventTime()
+            hint.pointerLeft(at: now)
+            showHint(at: now)
+        }
+    }
+
+    private func hintDelayElapsed() {
+        hintDelay = nil
+        let now = hintEventTime()
+        hint.delayElapsed(
+            at: now, islandClosed: transition.phase == .closed,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        showHint(at: now)
+    }
+
+    /// One frame of the spring.
+    private func hintFrame(_ now: TimeInterval) {
+        lastHintFrameTime = now
+        hint.advance(to: now)
+        showHint(at: now)
+    }
+
+    /// The ears' content where the black is at this moment of the breath.
+    private func placeEars() {
+        guard let layout = restingView.layout else { return }
+        leftEarView.frame = layout.earFrame(layout.leftEar, look: restingView.look)
+        rightEarView.frame = layout.earFrame(layout.rightEar, look: restingView.look)
+    }
+
+    /// The hint as it is now, on screen: frames only while the spring moves, and the window's room
+    /// only while something shows.
+    private func showHint(at now: TimeInterval) {
+        restingView.look = hint.look(at: now)
+        placeEars()
+        restingView.tracksHint = hint.isUp
+        if hint.needsFrames {
+            hintFrames.start()
+        } else {
+            hintFrames.stop()
+        }
+        if restingRoom == hint.isAtRest {
+            placeResting(IslandScreen.current())
+        }
+    }
+
+    /// The island is opening, or the displays changed.
+    private func endHint() {
+        hintDelay?.cancel()
+        hintDelay = nil
+        hint.end()
+        showHint(at: hintEventTime())
+    }
+
+    private func hintEventTime() -> TimeInterval {
+        IslandFrameDriver.eventTime(now: clock(), lastFrame: lastHintFrameTime)
+    }
+
+    /// Builds the chosen pet's head off the main thread and hands it to what draws it. Pet off: the
+    /// shape only (D13), and the ear's neutral dot needs no image.
+    private func warmRestingArt() {
+        guard SettingsStore.shared.petEnabled,
+              let assets = PetAssetStore.shared.assets,
+              let shown = pet.shown(in: assets.library),
+              let manifest = assets.library.manifests[shown.animal],
+              let notch = IslandScreen.current().lazy.compactMap(\.notchRect).first
+        else {
+            showRestingArt(nil, tips: nil)
+            return
+        }
+        let scale = IslandEarRules.headScale(earHeight: notch.height, backingScale: resting.backingScaleFactor)
+        let key = PetSpriteCache.Key(
+            animal: shown.animal, palette: shown.palette, sprite: .ear, pixelsPerBead: scale.pixelsPerBead
+        )
+        let sprites = assets.sprites
+        let tips = PetEarTips.tips(of: manifest.ear, band: IslandMotion.hintDown, scale: scale)
+        Task { [weak self] in
+            await Task.detached(priority: .utility) {
+                sprites.prewarmEar(animal: key.animal, palette: key.palette, pixelsPerBead: key.pixelsPerBead)
+            }.value
+            // A newer pet's own warm-up answers for that pet, and Pet off has already cleared the art.
+            guard let self,
+                  PetEarTips.stillWanted(
+                      builtFor: shown, shownNow: self.pet.shown(in: assets.library),
+                      petOn: SettingsStore.shared.petEnabled
+                  )
+            else { return }
+            self.showRestingArt(
+                sprites.cachedImage(key).map { RestingHead(image: $0, scale: scale) }, tips: tips
+            )
+        }
+    }
+
+    private func showRestingArt(_ head: RestingHead?, tips: PetEarTips?) {
+        restingHead = head
+        restingView.setTips(head?.image, tips: tips)
+        leftEarView.setHead(head?.image, scale: head?.scale)
+    }
+
+    // MARK: - The ears (§ 3.6)
+
+    /// The ears from the app's state as it is now.
+    private static func readEars() -> IslandEars {
+        let settings = SettingsStore.shared
+        return IslandEarRules.ears(
+            mood: PetMoodInput(
+                sessions: AgentSessionStore.shared.sessions,
+                services: AppState.shared.snapshot.services,
+                enabledIDs: AppState.shared.polledIDs,
+                claudeBinaryFound: ClaudeSignInModel.shared.binaryFound,
+                keepAwake: KeepAwakeModel.shared.state
+            ),
+            mode: settings.percentMode,
+            petOn: settings.petEnabled,
+            earsOn: settings.earsEnabled,
+            showInMenuBar: settings.showInMenuBar,
+            screens: IslandScreen.current(),
+            now: Date(), calendar: .current, locale: .current
+        )
+    }
+
+    /// Every state the ears are read from (plan R12); the displays come through `replace`. No timer:
+    /// keep awake's end arrives through its model's own deadline poll.
+    private static func earSignals() -> [AnyPublisher<Void, Never>] {
+        let settings = SettingsStore.shared
+        return [
+            AgentSessionStore.shared.$sessions.map { _ in () }.eraseToAnyPublisher(),
+            AppState.shared.$snapshot.map { _ in () }.eraseToAnyPublisher(),
+            AppState.shared.$polledIDs.map { _ in () }.eraseToAnyPublisher(),
+            ClaudeSignInModel.shared.$binary.map { _ in () }.eraseToAnyPublisher(),
+            ClaudeSignInModel.shared.$hasLookedForBinary.map { _ in () }.eraseToAnyPublisher(),
+            KeepAwakeModel.shared.$state.map { _ in () }.eraseToAnyPublisher(),
+            settings.$showsRemaining.map { _ in () }.eraseToAnyPublisher(),
+            settings.$petEnabled.map { _ in () }.eraseToAnyPublisher(),
+            settings.$earsEnabled.map { _ in () }.eraseToAnyPublisher(),
+            settings.$showInMenuBar.map { _ in () }.eraseToAnyPublisher(),
+        ]
+    }
+
+    private func showEars(_ ears: IslandEars) {
+        switch ears.left?.mark {
+        case .head: leftEarView.content = .head
+        case .neutralDot: leftEarView.content = .dot
+        case nil: leftEarView.content = nil
+        }
+        leftEarView.label = ears.left?.label
+        switch ears.right?.mark {
+        case .number(let lines): rightEarView.content = .number(lines: lines)
+        case .moon: rightEarView.content = .moon
+        case nil: rightEarView.content = nil
+        }
+        rightEarView.label = ears.right?.label
+        placeResting(IslandScreen.current())
+    }
+
+    /// The ear as it is at the click, never as it was drawn (plan R15).
+    private func leftEarPressed() {
+        guard let ear = earModel.ears.left else { return }
+        earPressed(ear.action, morphs: ear.mark == .head)
+    }
+
+    private func rightEarPressed() {
+        guard let ear = earModel.ears.right else { return }
+        earPressed(ear.action, morphs: false)
+    }
+
+    private func earPressed(_ action: IslandEarAction, morphs: Bool) {
+        switch action {
+        case .jump(let id):
+            // A failed jump would be silent with no row on screen (plan R6).
+            guard let session = AgentSessionStore.shared.sessions.first(where: { $0.id == id }) else {
+                openFromEar(subject: nil, reveal: .agents, morphs: false)
+                return
+            }
+            SessionActivator.jump(to: session, landed: pet.earJumpStarted(orElse: { [weak self] in
+                self?.openFromEar(subject: nil, reveal: .agents, morphs: false)
+            }))
+        case .open(let subject, let reveal):
+            openFromEar(subject: subject, reveal: reveal, morphs: morphs)
+        }
+    }
+
+    /// The island at the ear's subject, not key until the user clicks inside (§ 3.1, Focus). The
+    /// card is asked for once the content has joined the window.
+    private func openFromEar(subject: String?, reveal: PetCard?, morphs: Bool) {
+        earOpen = EarOpen(subject: subject, reveal: reveal, morphs: morphs)
+        handle(.ear)
+        earOpen = nil
+        // With its display gone nothing opened, and a request left waiting would surface at the next open.
+        if isOpen { navigation.ask(toShow: reveal) }
+    }
+
+    /// The head sets off from the left ear toward the pet's place, where the presentation has a
+    /// habitat and the column has been measured (§ 3.6; plan R7, R8). The ear's own head hides
+    /// until the island has grown over it.
+    private func startEarMorph(on screen: IslandScreen, placement: IslandDisplayResolver.Placement, at now: TimeInterval) {
+        let settings = SettingsStore.shared
+        let eligible = IslandPresentationRules.presentation(
+            notchPresent: placement.kind == .island, screenWidth: screen.frame.width,
+            petOn: settings.petEnabled, earsOn: settings.earsEnabled
+        ).morphEligible
+        guard earOpen?.morphs == true,
+              IslandEarMorph.eligible(
+                  mark: earModel.ears.left?.mark, morphEligible: eligible,
+                  reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              ),
+              let head = restingHead, let geometry = model.geometry,
+              let target = IslandEarMorph.target(
+                  contentOrigin: geometry.contentOrigin(contentSize: model.contentSize),
+                  columnHeight: layout.rightColumnViewport,
+                  xBeads: pet.keeper.runtime.xBeads,
+                  scale: PetHabitatRules.scale(petBeads: PetContract.size, backingScale: window.backingScaleFactor)
+              )
+        else { return }
+        // The ear's head as drawn, from the resting window into the island's.
+        let drawn = IslandEarRules.headRect(in: leftEarView.frame, scale: head.scale)
+        let from = IslandGeometry.local(IslandGeometry.global(drawn, in: resting.frame), in: window.frame)
+        earMorph.start(
+            IslandEarMorph(start: now, from: from, to: target),
+            image: head.image, backingScale: head.scale.backingScale
+        )
+        leftEarView.hidesHead = true
     }
 
     // MARK: - Display changes
@@ -499,6 +821,7 @@ final class IslandController: NSObject {
     /// The displays went to sleep: no frames until they wake (§ 3.8).
     @objc private func displaysSlept(_ note: Notification) {
         frames.displaysSlept()
+        hintFrames.displaysSlept()
         pet.setDisplayAwake(false)
     }
 
@@ -506,6 +829,7 @@ final class IslandController: NSObject {
     /// settles every deadline that passed meanwhile.
     @objc private func displaysWoke(_ note: Notification) {
         frames.displaysWoke()
+        hintFrames.displaysWoke()
         pet.setDisplayAwake(true)
     }
 
@@ -547,8 +871,14 @@ final class IslandController: NSObject {
     /// The resting notch follows the notch; an open island is re-resolved on its own display
     /// and closes when that display is gone (§ 3.1, Display and anchor; ruling R13).
     private func replace() {
+        endHint()
+        warmRestingArt()
         let screens = IslandScreen.current()
-        placeResting(screens)
+        // A lid open or a notched display arriving changes no other state, so nothing else would
+        // read the ears (plan R18).
+        earModel.displaysChanged {
+            placeResting(screens)
+        }
         guard transition.phase != .closed, let entry, let placement else { return }
         // The status item as it is now: it moves with the displays, and the resolver
         // prefers it over the frame a status-item entry was clicked on.
@@ -634,6 +964,9 @@ final class IslandController: NSObject {
         settle(at: now)
         guard transition.phase != .closed else { return }
         navigation.advance(to: now)
+        if !earMorph.advance(to: now) {
+            leftEarView.hidesHead = false
+        }
         updateMouseIgnoring()
         if !transition.needsFrames, !navigation.isMoving {
             frames.stop()

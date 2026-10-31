@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// The Settings window (liquid-glass spec § Design → Settings): 780 pt wide, as tall as
-/// the selected tab's mockup, the dashboard's floating glass sidebar with six tabs, and
+/// the selected tab's mockup, the dashboard's floating glass sidebar with its tabs, and
 /// the tab's page beside it. Every row is a 2.x setting, regrouped; the pages live in
 /// `UsageTracker/UI/Settings/`.
 struct SettingsView: View {
@@ -55,6 +55,7 @@ struct SettingsView: View {
         switch selectedTab {
         case .general: GeneralSettingsView()
         case .menuBar: MenuBarSettingsView()
+        case .pet: PetSettingsView()
         case .providers: ProvidersSettingsView()
         case .notifications: NotificationsSettingsView()
         case .integrations: IntegrationsSettingsView()

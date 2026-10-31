@@ -30,6 +30,8 @@ final class IslandShapeModel: ObservableObject {
 struct IslandRootView<Content: View>: View {
     @ObservedObject var model: IslandModel
     let shape: IslandShapeModel
+    /// The ear's head on its way to the pet (§ 3.6); only its layer observes it.
+    let morph: IslandEarMorphModel
     let content: Content
     /// Reduce Transparency: the panel's body goes opaque (`IslandSurfaceRules`).
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
@@ -85,12 +87,34 @@ struct IslandRootView<Content: View>: View {
                     Rectangle()
                 }
             }
+            // Above the mask: the head starts beside the notch, outside the shape as it grows.
+            .overlay(alignment: .topLeading) {
+                IslandEarMorphLayer(model: morph)
+            }
             // Reduce Motion: the whole window cross-fades instead (§ 3.2).
             .animation(stage.islandFade?.animation) { view in
                 view.opacity(stage.islandShown ? 1 : 0)
             }
             // The window overlaps the notch: no safe area, the geometry places everything.
             .ignoresSafeArea()
+        }
+    }
+}
+
+/// The ear's head as it grows into the habitat pet (§ 3.6): window coordinates, no hit area.
+private struct IslandEarMorphLayer: View {
+    @ObservedObject var model: IslandEarMorphModel
+
+    var body: some View {
+        if let frame = model.frame, let image = model.image {
+            Image(decorative: image, scale: model.backingScale)
+                .resizable()
+                .interpolation(.none)
+                .frame(width: frame.rect.width, height: frame.rect.height)
+                .opacity(frame.opacity)
+                .offset(x: frame.rect.minX, y: frame.rect.minY)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 }

@@ -84,12 +84,12 @@ final class PetKeeper {
         runtime.play(eventIDs)
         return true
     }
+    #endif
 
-    /// Debug's menu: the animal changed, and its events are not this one's.
+    /// The pet changed (Settings › Pet, or Debug's menu), and its events are not this one's.
     func dropEvents() {
         runtime.dropEvents()
     }
-    #endif
 
     /// The heart is up at `now`, for a still pet too.
     func showsHeart(at now: Date) -> Bool {

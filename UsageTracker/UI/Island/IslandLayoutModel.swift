@@ -56,9 +56,13 @@ extension IslandLayout {
 /// ruling R2). The arithmetic is `IslandHeightRules`'.
 @MainActor
 final class IslandLayoutModel: ObservableObject {
-    /// The habitat's column is reserved wherever the screen allows it (D12, plan ruling
-    /// R4). Settings › Pet (P6) replaces this constant.
-    nonisolated static let petOn = true
+    /// Settings › Pet's switch, read at every placing (§ 3.7, D12): the controller hands it in. Pet
+    /// off, the column goes and the island keeps its width.
+    private let petOn: @MainActor () -> Bool
+
+    init(petOn: @escaping @MainActor () -> Bool = { true }) {
+        self.petOn = petOn
+    }
 
     @Published private(set) var layout = IslandLayout.unplaced
     @Published private(set) var agentsListCap: CGFloat = AgentsSection.defaultMaxListHeight
@@ -76,7 +80,7 @@ final class IslandLayoutModel: ObservableObject {
 
     /// The display the island is about to open on, or was re-placed on.
     func place(on screen: IslandScreen, visibleHeight: CGFloat) {
-        let next = IslandLayout(on: screen, petOn: Self.petOn)
+        let next = IslandLayout(on: screen, petOn: petOn())
         if next != layout { layout = next }
         rightBudget = IslandHeightRules.rightColumnBudget(on: screen, screenVisibleHeight: visibleHeight)
         publish()

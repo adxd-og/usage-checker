@@ -77,6 +77,15 @@ enum IslandNavigation {
         route != .reverse
     }
 
+    /// What an open tells the navigation: nil for an interrupted close, or an ear on the island's own
+    /// display (the controller passes `.reverse`), with nothing to go to: it keeps its page. An ear's
+    /// subject always applies, and a card asked for needs home, since a provider's page may not have
+    /// it (§ 3.6; P6 plan R17).
+    static func openInput(route: IslandTransition.OpenRoute, subject: String?, reveal: PetCard?) -> Input? {
+        if subject == nil, reveal == nil, !opensAtHome(route: route) { return nil }
+        return .open(subject: subject)
+    }
+
     /// A provider page with siblings: "‹ All" and the logos show, and Esc, Back and ⌘0 go to All.
     static func isDrilledIn(_ page: Page, providers: [String]) -> Bool {
         guard case .provider(let id) = page else { return false }

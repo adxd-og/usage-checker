@@ -14,8 +14,7 @@ struct PetHabitatScene: Equatable, Sendable {
 /// time. The column draws no surface (owner 2026-10-30) and the pet always stands on its floor,
 /// whatever the mood (owner 2026-10-30, P5c plan). Pure.
 enum PetHabitatRules {
-    /// The pet on the island until Settings › Pet lets the user choose (§ 3.5 Roster: the cat,
-    /// ginger).
+    /// The default pet (§ 3.5 Roster: the cat, ginger): `PetChoice.standard`.
     static let animal = "cat"
     static let palette = "ginger"
 
@@ -89,6 +88,18 @@ enum PetHabitatRules {
     /// missing when it plays (Codex's P5d plan review 4).
     static func playableEvents(_ events: [PetEvent], isWarm: Bool) -> [PetEvent] {
         isWarm ? events : []
+    }
+
+    /// The events the runtime may start for this pet in this palette at this scale: the cache's word
+    /// alone. `prewarm` marks only a palette the pet has, so one it lacks never plays over a still
+    /// (the P5d tester's F5).
+    static func playableEvents(
+        of manifest: PetManifest, palette: String, pixelsPerBead: Int, sprites: PetSpriteCache
+    ) -> [PetEvent] {
+        playableEvents(
+            manifest.events,
+            isWarm: sprites.isWarm(animal: manifest.id, palette: palette, pixelsPerBead: pixelsPerBead)
+        )
     }
 
     /// The mood's presentation and the sky at `now`, the habitat's time-dependent parts in one

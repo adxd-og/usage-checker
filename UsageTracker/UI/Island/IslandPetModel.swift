@@ -33,10 +33,12 @@ final class IslandPetModel: ObservableObject {
     private var opens = 0
     private var jumps = 0
     private var latestJump: JumpTicket?
+    private var choiceObserver: AnyCancellable?
 
-    init(keeper: PetKeeper, clock: @escaping @MainActor () -> Date = { Date() }) {
+    init(keeper: PetKeeper, clock: @escaping @MainActor () -> Date = { Date() }, choice: PetChoice = .standard) {
         self.keeper = keeper
         self.clock = clock
+        self.choice = choice
     }
 
     /// The gate's conditions: the surface is the island open with its habitat drawn.
@@ -54,8 +56,40 @@ final class IslandPetModel: ObservableObject {
 
     // MARK: - The pet shown
 
+    /// The user's choice as stored (Settings › Pet, § 3.7), stale or not: `shown(in:)` makes it real.
+    @Published private(set) var choice: PetChoice
+
+    /// The pet shown changed: the head and the ear tips follow. Nothing without a controller.
+    var onPetChange: @MainActor () -> Void = {}
+
+    /// Settings › Pet chose. The old pet's events are not this one's, so they end here. In Debug the
+    /// menu's animal gives way: the latest word wins (plan ruling R2).
+    func setChoice(_ next: PetChoice) {
+        #if DEBUG
+        let overridden = debugAnimal != nil
+        if overridden { debugAnimal = nil }
+        #else
+        let overridden = false
+        #endif
+        guard overridden || choice != next else { return }
+        choice = next
+        keeper.dropEvents()
+        onPetChange()
+    }
+
+    /// Every value of `choices` is a word from Settings (`SettingsStore.$petChoice`, which sends the new
+    /// value, on the main actor). No duplicates are removed: re-choosing the stored pair clears Debug's
+    /// animal, and with no override `setChoice` ignores it. The first send is the current pair.
+    func follow<P: Publisher>(_ choices: P) where P.Output == PetChoice, P.Failure == Never {
+        choiceObserver = choices.sink { [weak self] choice in
+            MainActor.assumeIsolated {
+                self?.setChoice(choice)
+            }
+        }
+    }
+
     #if DEBUG
-    /// The animal Debug's menu chose; in memory only, until Settings › Pet (P6).
+    /// The animal Debug's menu chose; in memory only.
     @Published private(set) var debugAnimal: String?
 
     /// Debug's menu: another animal. The old one's events are not this one's, so they end here.
@@ -63,25 +97,27 @@ final class IslandPetModel: ObservableObject {
         guard animal != id else { return }
         debugAnimal = id
         keeper.dropEvents()
+        onPetChange()
     }
     #endif
 
-    /// The animal on the island.
+    /// The animal asked for, before the library has its say.
     var animal: String {
         #if DEBUG
-        return debugAnimal ?? PetHabitatRules.animal
+        return debugAnimal ?? choice.animal
         #else
-        return PetHabitatRules.animal
+        return choice.animal
         #endif
     }
 
-    /// The palette `manifest`, the animal on the island, draws in.
-    func palette(of manifest: PetManifest) -> String {
+    /// The animal and palette to draw out of `library`, always a pair it has; nil with no pets.
+    func shown(in library: PetLibrary) -> PetChoice? {
         #if DEBUG
-        return PetDebugMenuRules.palette(of: manifest)
-        #else
-        return PetHabitatRules.palette
+        if let debugAnimal, let manifest = library.manifests[debugAnimal] {
+            return PetChoice(animal: debugAnimal, palette: PetDebugMenuRules.palette(of: manifest))
+        }
         #endif
+        return PetChoiceRules.resolved(choice, in: library)
     }
 
     // MARK: - The gate
@@ -155,9 +191,42 @@ final class IslandPetModel: ObservableObject {
         }
     }
 
+    /// A jump from an ear starts (§ 3.6). Call the returned action with its answer: landed, it closes
+    /// the island as any jump does; failed, it runs `failed`. Either only while no newer jump started
+    /// and the island has not opened or closed since (P6 plan R6).
+    func earJumpStarted(orElse failed: @escaping @MainActor @Sendable () -> Void) -> @MainActor @Sendable (Bool) -> Void {
+        jumps += 1
+        let ticket = JumpTicket(open: opens, jump: jumps)
+        latestJump = ticket
+        return { [weak self] landed in
+            guard let self else { return }
+            if landed {
+                self.landed(ticket)
+            } else if self.holds(ticket) {
+                self.latestJump = nil
+                failed()
+            }
+        }
+    }
+
     private func landed(_ ticket: JumpTicket) {
-        guard latestJump == ticket, ticket.open == opens else { return }
+        guard holds(ticket) else { return }
         latestJump = nil
         closeIsland()
+    }
+
+    private func holds(_ ticket: JumpTicket) -> Bool {
+        latestJump == ticket && ticket.open == opens
+    }
+
+    /// What an entry does to the island (`IslandEventRules.entry`), through here because an ear's open
+    /// on an island that stays is a newer word for any jump still out: its answer is void, as after
+    /// `islandOpened`, which a stay never calls (P6 plan R20). The controller switches on this answer.
+    func entryVerdict(
+        _ entry: IslandEntry, isOpen: Bool, openScreenID: UInt32?, entryScreenID: UInt32?
+    ) -> IslandEventRules.EntryVerdict {
+        let verdict = IslandEventRules.entry(entry, isOpen: isOpen, openScreenID: openScreenID, entryScreenID: entryScreenID)
+        if entry == .ear, verdict == .stay { latestJump = nil }
+        return verdict
     }
 }
