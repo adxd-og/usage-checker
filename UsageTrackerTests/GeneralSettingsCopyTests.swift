@@ -7,16 +7,16 @@ import XCTest
 /// § Decisions: bracketed placeholders are the live values.
 final class GeneralSettingsCopyTests: XCTestCase {
     func testTheVersionRowKeepsTheBuildABugReportNeeds() {
-        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: "2.7.1", build: "38"), "Omelette 2.7.1 (38)")
+        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: "2.7.1", build: "38"), "Brioche 2.7.1 (38)")
     }
 
     func testWithoutABuildTheVersionRowIsTheLabel() {
-        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: "2.7.1", build: nil), "Omelette 2.7.1")
-        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: " 2.7.1 ", build: "  "), "Omelette 2.7.1")
+        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: "2.7.1", build: nil), "Brioche 2.7.1")
+        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: " 2.7.1 ", build: "  "), "Brioche 2.7.1")
     }
 
     func testWithoutAVersionTheRowIsTheAppsName() {
-        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: nil, build: "38"), "Omelette")
+        XCTAssertEqual(GeneralSettingsCopy.versionTitle(version: nil, build: "38"), "Brioche")
     }
 
     func testTheGitHubRowNamesTheRepository() {
@@ -40,7 +40,7 @@ final class GeneralSettingsCopyTests: XCTestCase {
     func testTheKeepAwakeSectionReadsAsTheSpec() {
         XCTAssertEqual(GeneralSettingsCopy.keepAwakeHeader, "Keep awake")
         XCTAssertEqual(GeneralSettingsCopy.keepAwakeFloorTitle, "End below 25 % on battery")
-        XCTAssertEqual(GeneralSettingsCopy.keepAwakeFooter, "Keep awake with the lid closed ends on time even when Omelette is not running, and never resumes after a restart.")
+        XCTAssertEqual(GeneralSettingsCopy.keepAwakeFooter, "Keep awake with the lid closed ends on time even when Brioche is not running, and never resumes after a restart.")
     }
 
     /// Notch-island spec 2026-10-29 § 3.7: the switch that brings the status item back.

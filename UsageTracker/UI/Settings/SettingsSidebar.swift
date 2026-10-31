@@ -3,7 +3,7 @@ import AppKit
 
 /// The Settings sidebar's metrics (`Settings-General(-Light).dc.html`, `<nav>`): the
 /// dashboard's chrome-glass pane and shadows, narrower, 3 pt between items, the app named
-/// "Omelette Settings". Its items wear `OMSidebarPillButtonStyle` at the mockup's smaller
+/// "Brioche Settings". Its items wear `OMSidebarPillButtonStyle` at the mockup's smaller
 /// size.
 ///
 /// Built from the dashboard's primitives rather than by generalising `DashboardSidebar`,
@@ -23,7 +23,7 @@ enum SettingsSidebarRules {
     /// Room for the traffic lights, which `WindowButtonsPlacement` moves into this row:
     /// the mockup's 12 pt lights and the 18 pt under them.
     static let windowControlsRowHeight: CGFloat = 30
-    static let brandTitle = "Omelette Settings"
+    static let brandTitle = "Brioche Settings"
     static let brandIconSize: CGFloat = 22
     static let brandSpacing: CGFloat = 9
     static let brandFontSize: CGFloat = 13
@@ -116,7 +116,7 @@ struct SettingsSidebar: View {
         return .handled
     }
 
-    /// The app's own icon and "Omelette Settings".
+    /// The app's own icon and "Brioche Settings".
     private var brand: some View {
         HStack(spacing: SettingsSidebarRules.brandSpacing) {
             Image(nsImage: NSApp.applicationIconImage)

@@ -4,7 +4,7 @@ import XCTest
 /// Liquid-glass spec § Design → Settings: "the same glass sidebar as the dashboard".
 /// Metrics from `Settings-General(-Light).dc.html`'s `<nav>`: 196 pt wide, radius 18,
 /// padded 16 / 10 / 14, 3 pt between rows, 12 pt lights over 18 pt, a 22 pt app icon
-/// beside "Omelette Settings" at 13 pt, padded 0 8 12.
+/// beside "Brioche Settings" at 13 pt, padded 0 8 12.
 final class SettingsSidebarTests: XCTestCase {
     func testTheSidebarIsTheMockupsWidthAndCorner() {
         XCTAssertEqual(SettingsSidebarRules.width, 196)
@@ -39,7 +39,7 @@ final class SettingsSidebarTests: XCTestCase {
     }
 
     func testTheAppNameRowIsTheMockups() {
-        XCTAssertEqual(SettingsSidebarRules.brandTitle, "Omelette Settings")
+        XCTAssertEqual(SettingsSidebarRules.brandTitle, "Brioche Settings")
         XCTAssertEqual(SettingsSidebarRules.brandIconSize, 22)
         XCTAssertEqual(SettingsSidebarRules.brandSpacing, 9)
         XCTAssertEqual(SettingsSidebarRules.brandFontSize, 13)

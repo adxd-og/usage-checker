@@ -28,7 +28,7 @@ final class AgentsSettingsTextTests: XCTestCase {
         XCTAssertFalse(waiting.isTrusted)
         XCTAssertEqual(
             waiting.text,
-            "Run /hooks in Codex once and trust the Omelette hooks (2 awaiting) — until then Codex ignores them"
+            "Run /hooks in Codex once and trust the Brioche hooks (2 awaiting) — until then Codex ignores them"
         )
         XCTAssertFalse(waiting.text.contains("PermissionRequest"), waiting.text)
     }

@@ -6,7 +6,7 @@ import XCTest
 /// Settings draw their label and their link from; the 3.0 popover footer has neither.
 final class AppVersionTests: XCTestCase {
     func testTheLabelIsTheAppNameAndTheMarketingVersion() {
-        XCTAssertEqual(AppVersion.label(version: "2.4.1", build: "39"), "Omelette 2.4.1")
+        XCTAssertEqual(AppVersion.label(version: "2.4.1", build: "39"), "Brioche 2.4.1")
     }
 
     /// Settings shows "2.4.1 (39)" because that row is for a bug report. A footer
@@ -18,13 +18,13 @@ final class AppVersionTests: XCTestCase {
     }
 
     func testAMissingVersionLeavesJustTheName() {
-        XCTAssertEqual(AppVersion.label(version: nil, build: "39"), "Omelette")
-        XCTAssertEqual(AppVersion.label(version: "", build: "39"), "Omelette")
-        XCTAssertEqual(AppVersion.label(version: "   ", build: nil), "Omelette")
+        XCTAssertEqual(AppVersion.label(version: nil, build: "39"), "Brioche")
+        XCTAssertEqual(AppVersion.label(version: "", build: "39"), "Brioche")
+        XCTAssertEqual(AppVersion.label(version: "   ", build: nil), "Brioche")
     }
 
     func testAMissingBuildChangesNothing() {
-        XCTAssertEqual(AppVersion.label(version: "2.4.1", build: nil), "Omelette 2.4.1")
+        XCTAssertEqual(AppVersion.label(version: "2.4.1", build: nil), "Brioche 2.4.1")
     }
 
     func testTheLinkPointsAtThePublicRepository() {
@@ -34,7 +34,7 @@ final class AppVersionTests: XCTestCase {
     /// `current` reads the running bundle, so the assertion is about its shape, not
     /// about a version number that changes with every release.
     func testTheCurrentLabelReadsTheRunningBundle() {
-        XCTAssertTrue(AppVersion.current.hasPrefix("Omelette"), AppVersion.current)
+        XCTAssertTrue(AppVersion.current.hasPrefix("Brioche"), AppVersion.current)
         XCTAssertFalse(AppVersion.current.contains("("), AppVersion.current)
     }
 

@@ -36,7 +36,7 @@ enum AgentsSettingsText {
             return ("Trusted in Codex", true)
         case .awaitingTrust(let events):
             return (
-                "Run /hooks in Codex once and trust the Omelette hooks (\(events.count) awaiting)"
+                "Run /hooks in Codex once and trust the Brioche hooks (\(events.count) awaiting)"
                     + " — until then Codex ignores them",
                 false
             )

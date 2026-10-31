@@ -39,7 +39,7 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
         XCTAssertEqual(
             IntegrationsSettingsCopy.codexTrustNote(hooks: .installed, trust: awaiting),
             SettingsCaption(
-                text: "Run /hooks in Codex once and trust the Omelette hooks (2 awaiting) — until then Codex ignores them",
+                text: "Run /hooks in Codex once and trust the Brioche hooks (2 awaiting) — until then Codex ignores them",
                 token: .warning
             )
         )
@@ -90,7 +90,7 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
         let error = SettingsFile.Error.unparsable(URL(fileURLWithPath: "/tmp/p7/settings.json"))
         XCTAssertEqual(
             IntegrationsSettingsCopy.failure(error),
-            "settings.json isn't valid — Omelette won't overwrite a file it can't read. Fix or move it and try again."
+            "settings.json isn't valid — Brioche won't overwrite a file it can't read. Fix or move it and try again."
         )
     }
 
@@ -144,7 +144,7 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
         XCTAssertEqual(IntegrationsSettingsCopy.claudeMCPCaption, "Read-only: get_usage, get_agents, get_sessions.")
         XCTAssertEqual(IntegrationsSettingsCopy.codexHooksCaption, "Trust once with /hooks inside Codex.")
         XCTAssertEqual(IntegrationsSettingsCopy.permissionsHeader, "Permissions")
-        XCTAssertEqual(IntegrationsSettingsCopy.permissionsTitle, "Answer permission requests from Omelette")
+        XCTAssertEqual(IntegrationsSettingsCopy.permissionsTitle, "Answer permission requests from Brioche")
         XCTAssertEqual(
             IntegrationsSettingsCopy.permissionsCaption,
             "Allow / Deny show only while that terminal isn't in front. Unanswered requests go back after 2 minutes."
@@ -158,7 +158,7 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
             IntegrationsSettingsCopy.commandLineFooter,
             "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
         )
-        XCTAssertEqual(IntegrationsSettingsCopy.copyStatusLineCommand, "Copy Omelette's command")
-        XCTAssertEqual(IntegrationsSettingsCopy.copyCodexNotifyLine, "Copy Omelette's line")
+        XCTAssertEqual(IntegrationsSettingsCopy.copyStatusLineCommand, "Copy Brioche's command")
+        XCTAssertEqual(IntegrationsSettingsCopy.copyCodexNotifyLine, "Copy Brioche's line")
     }
 }

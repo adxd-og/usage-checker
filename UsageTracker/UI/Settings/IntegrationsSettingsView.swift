@@ -17,7 +17,7 @@ enum IntegrationsSettingsCopy {
     static let claudeMCPCaption = "Read-only: get_usage, get_agents, get_sessions."
     static let codexHooksCaption = "Trust once with /hooks inside Codex."
 
-    static let claudeHooksHelp = "Eight hooks in ~/.claude/settings.json call Omelette's helper with the session id, the tool name and the folder — never your prompts or file contents. All but the permission hook are async, so Claude Code never waits for us. Omelette rewrites the file with sorted keys and two-space indentation and keeps the original as settings.json.omelette-backup."
+    static let claudeHooksHelp = "Eight hooks in ~/.claude/settings.json call Brioche's helper with the session id, the tool name and the folder — never your prompts or file contents. All but the permission hook are async, so Claude Code never waits for us. Brioche rewrites the file with sorted keys and two-space indentation and keeps the original as settings.json.omelette-backup."
     static let codexHooksHelp = "Seven hooks in ~/.codex/hooks.json — the same helper, the same fields and the same Allow / Deny as Claude Code's. Codex runs a hook only after you trust it once: type /hooks inside Codex."
     static let codexNotifyHelp = "notify reports a finished turn, which the hooks do not cover. The line goes above the first [table] in ~/.codex/config.toml so it stays a top-level key."
     static var statusLineHelp: String { CommandLineSettingsText.statusLineCaption }
@@ -25,7 +25,7 @@ enum IntegrationsSettingsCopy {
     static var codexMCPHelp: String { CommandLineSettingsText.mcpCodexCaption }
 
     static let permissionsHeader = "Permissions"
-    static let permissionsTitle = "Answer permission requests from Omelette"
+    static let permissionsTitle = "Answer permission requests from Brioche"
     static let permissionsCaption = "Allow / Deny show only while that terminal isn't in front. Unanswered requests go back after 2 minutes."
     static let permissionsHelp = "Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code or Codex asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes."
 
@@ -52,8 +52,8 @@ enum IntegrationsSettingsCopy {
     }
     static var commandHelp: String { CommandLineSettingsText.pathCaption }
 
-    static let copyStatusLineCommand = "Copy Omelette's command"
-    static let copyCodexNotifyLine = "Copy Omelette's line"
+    static let copyStatusLineCommand = "Copy Brioche's command"
+    static let copyCodexNotifyLine = "Copy Brioche's line"
     /// The installer row's context-menu item that copies the exact text Enable would
     /// write: 2.x's "What will be written" disclosure, one right-click away.
     static var copyPreviewTitle: String {
@@ -83,7 +83,7 @@ enum IntegrationsSettingsCopy {
             .map { SettingsCaption(text: $0, token: .warning) }
     }
 
-    /// Someone else's status line, quoted so the user can decide; Omelette never overwrites it.
+    /// Someone else's status line, quoted so the user can decide; Brioche never overwrites it.
     static func statusLineConflictNote(_ status: HookInstallStatus) -> SettingsCaption? {
         guard case .conflict(let command) = status else { return nil }
         return SettingsCaption(text: CommandLineSettingsText.conflictCaption(command), token: .secondary)
@@ -95,7 +95,7 @@ enum IntegrationsSettingsCopy {
         return SettingsCaption(text: "config.toml already has a notify of its own:\n\(line)", token: .secondary)
     }
 
-    /// Only a conflict offers to copy Omelette's own line.
+    /// Only a conflict offers to copy Brioche's own line.
     static func isConflict(_ status: HookInstallStatus) -> Bool {
         if case .conflict = status { return true }
         return false
@@ -106,7 +106,7 @@ enum IntegrationsSettingsCopy {
         guard let error = error as? SettingsFile.Error else { return error.localizedDescription }
         switch error {
         case .unparsable(let url):
-            return "\(url.lastPathComponent) isn't valid — Omelette won't overwrite a file it can't read. Fix or move it and try again."
+            return "\(url.lastPathComponent) isn't valid — Brioche won't overwrite a file it can't read. Fix or move it and try again."
         case .conflict(let line):
             return "Another tool already owns that setting: \(line)"
         }

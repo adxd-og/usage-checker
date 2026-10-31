@@ -12,7 +12,7 @@ final class AgentsSettingsTextVerification2Tests: XCTestCase {
         XCTAssertFalse(line.isTrusted)
         XCTAssertEqual(
             line.text,
-            "Run /hooks in Codex once and trust the Omelette hooks (1 awaiting) — until then Codex ignores them"
+            "Run /hooks in Codex once and trust the Brioche hooks (1 awaiting) — until then Codex ignores them"
         )
     }
 
@@ -26,7 +26,7 @@ final class AgentsSettingsTextVerification2Tests: XCTestCase {
         XCTAssertFalse(line.isTrusted)
         XCTAssertEqual(
             line.text,
-            "Run /hooks in Codex once and trust the Omelette hooks (7 awaiting) — until then Codex ignores them"
+            "Run /hooks in Codex once and trust the Brioche hooks (7 awaiting) — until then Codex ignores them"
         )
         for event in AgentHooksInstaller.codexHookEvents {
             XCTAssertFalse(line.text.contains(event), "wire event names must not leak into the sentence: \(event)")

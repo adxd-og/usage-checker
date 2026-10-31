@@ -383,7 +383,7 @@ final class UsageNotifier: NSObject {
                 // Read once more at the end: the switch may have gone off while the log
                 // was read, and off means no summary (Codex plan review F3).
                 guard SettingsStore.shared.claudeProviderEnabled else { return }
-                self.fire(title: "Omelette — daily summary", body: body)
+                self.fire(title: "Brioche — daily summary", body: body)
             }
         }
     }
@@ -485,7 +485,7 @@ final class UsageNotifier: NSObject {
                 intentIdentifiers: [],
                 options: []
             ),
-            // Neither action is `.foreground`. Omelette is an accessory app, so
+            // Neither action is `.foreground`. Brioche is an accessory app, so
             // activating it steals focus from the terminal the user is in — for a
             // button that exists to answer *without* going anywhere, that is the
             // wrong outcome, and the delegate receives the response perfectly well
@@ -557,7 +557,7 @@ final class UsageNotifier: NSObject {
         SettingsStore.shared.agentsHooksPromptNotified = true
         fire(
             title: "See what your agents are doing",
-            body: "Omelette can show which Claude Code session is working or waiting for you. "
+            body: "Brioche can show which Claude Code session is working or waiting for you. "
                 + "Enable adds hooks to ~/.claude/settings.json; reversible in Settings → Agents.",
             identifier: Self.agentHooksPromptIdentifier,
             category: Self.agentHooksPromptCategory
@@ -805,7 +805,7 @@ extension UsageNotifier: UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
-    /// Omelette activates itself when you act on a notification (the **Open** action
+    /// Brioche activates itself when you act on a notification (the **Open** action
     /// is `.foreground`), so without this the next banner would be swallowed as
     /// "the app is already frontmost" — which for an accessory app the user is not
     /// even looking at would simply lose the alert.
