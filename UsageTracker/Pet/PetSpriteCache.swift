@@ -74,6 +74,13 @@ final class PetSpriteCache: @unchecked Sendable {
         warmed.insert(Warm(animal: animal, palette: palette, pixelsPerBead: pixelsPerBead))
     }
 
+    /// Builds the pet's ear head alone: the ears and the notch's hint draw it from launch on, long
+    /// before the island's first open warms the pet (§ 3.1, § 3.6). Off the main thread. Marks
+    /// nothing warm: events wait for `prewarm`. An unknown pet or palette builds nothing.
+    func prewarmEar(animal: String, palette: String, pixelsPerBead: Int) {
+        _ = image(Key(animal: animal, palette: palette, sprite: .ear, pixelsPerBead: pixelsPerBead))
+    }
+
     /// `prewarm` finished for this animal, palette and scale: every frame is a lookup.
     func isWarm(animal: String, palette: String, pixelsPerBead: Int) -> Bool {
         lock.lock()
