@@ -191,9 +191,42 @@ final class IslandPetModel: ObservableObject {
         }
     }
 
+    /// A jump from an ear starts (§ 3.6). Call the returned action with its answer: landed, it closes
+    /// the island as any jump does; failed, it runs `failed`. Either only while no newer jump started
+    /// and the island has not opened or closed since (P6 plan R6).
+    func earJumpStarted(orElse failed: @escaping @MainActor @Sendable () -> Void) -> @MainActor @Sendable (Bool) -> Void {
+        jumps += 1
+        let ticket = JumpTicket(open: opens, jump: jumps)
+        latestJump = ticket
+        return { [weak self] landed in
+            guard let self else { return }
+            if landed {
+                self.landed(ticket)
+            } else if self.holds(ticket) {
+                self.latestJump = nil
+                failed()
+            }
+        }
+    }
+
     private func landed(_ ticket: JumpTicket) {
-        guard latestJump == ticket, ticket.open == opens else { return }
+        guard holds(ticket) else { return }
         latestJump = nil
         closeIsland()
+    }
+
+    private func holds(_ ticket: JumpTicket) -> Bool {
+        latestJump == ticket && ticket.open == opens
+    }
+
+    /// What an entry does to the island (`IslandEventRules.entry`), through here because an ear's open
+    /// on an island that stays is a newer word for any jump still out: its answer is void, as after
+    /// `islandOpened`, which a stay never calls (P6 plan R20). The controller switches on this answer.
+    func entryVerdict(
+        _ entry: IslandEntry, isOpen: Bool, openScreenID: UInt32?, entryScreenID: UInt32?
+    ) -> IslandEventRules.EntryVerdict {
+        let verdict = IslandEventRules.entry(entry, isOpen: isOpen, openScreenID: openScreenID, entryScreenID: entryScreenID)
+        if entry == .ear, verdict == .stay { latestJump = nil }
+        return verdict
     }
 }
