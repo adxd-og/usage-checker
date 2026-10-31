@@ -124,26 +124,26 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          xcrun notarytool submit build/Omelette.dmg \
+          xcrun notarytool submit build/Brioche.dmg \
             --apple-id "$APPLE_ID" \
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --wait
-          xcrun stapler staple build/Omelette.dmg
-          xcrun stapler validate build/Omelette.dmg
+          xcrun stapler staple build/Brioche.dmg
+          xcrun stapler validate build/Brioche.dmg
 
       - name: Upload to GitHub Release
         if: steps.asc.outputs.ok == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          files: build/Omelette.dmg
+          files: build/Brioche.dmg
           generate_release_notes: true
           body: |
             See [CHANGELOG.md](CHANGELOG.md) for changes.
 
             ## Install
-            1. Download `Omelette.dmg`
-            2. Open it and drag `Omelette.app` to `~/Applications/` or `/Applications/`
+            1. Download `Brioche.dmg`
+            2. Open it and drag `Brioche.app` to `~/Applications/` or `/Applications/`
             3. Launch — macOS asks for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**. Background refreshes never raise that dialog again; Settings → Account can re-request it if it's ever needed
 
             Requires macOS 26+ and [Claude Code](https://docs.anthropic.com/claude-code) signed in.
