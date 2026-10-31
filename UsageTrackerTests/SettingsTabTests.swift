@@ -5,21 +5,21 @@ import XCTest
 /// § Packages P7: "Keep `SettingsRoute` deep links working (map old tab ids: agents →
 /// integrations, account → providers)".
 final class SettingsTabTests: XCTestCase {
-    func testTheSidebarListsTheSixTabsInTheMockupsOrder() {
+    func testTheSidebarListsItsTabsInOrder() {
         XCTAssertEqual(
             SettingsTab.allCases,
-            [.general, .menuBar, .providers, .notifications, .integrations, .advanced]
+            [.general, .menuBar, .pet, .providers, .notifications, .integrations, .advanced]
         )
         XCTAssertEqual(
             SettingsTab.allCases.map(\.rawValue),
-            ["General", "Menu bar", "Providers", "Notifications", "Integrations", "Advanced"]
+            ["General", "Menu bar", "Pet", "Providers", "Notifications", "Integrations", "Advanced"]
         )
     }
 
     func testEveryTabHasTheMockupsGlyph() {
         XCTAssertEqual(
             SettingsTab.allCases.map(\.icon),
-            ["gearshape", "menubar.rectangle", "rectangle.grid.1x2", "bell", "powerplug", "slider.horizontal.3"]
+            ["gearshape", "menubar.rectangle", "pawprint", "rectangle.grid.1x2", "bell", "powerplug", "slider.horizontal.3"]
         )
     }
 
@@ -58,7 +58,7 @@ final class SettingsTabTests: XCTestCase {
 
     func testArrowKeysStepThroughTheTabsAndStopAtTheEnds() {
         XCTAssertEqual(SettingsTab.step(from: .general, by: 1), .menuBar)
-        XCTAssertEqual(SettingsTab.step(from: .providers, by: -1), .menuBar)
+        XCTAssertEqual(SettingsTab.step(from: .providers, by: -1), .pet)
         XCTAssertEqual(SettingsTab.step(from: .general, by: -1), .general)
         XCTAssertEqual(SettingsTab.step(from: .advanced, by: 1), .advanced)
     }

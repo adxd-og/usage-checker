@@ -21,7 +21,7 @@ final class SettingsKitTests: XCTestCase {
     func testEachTabIsAsTallAsItsMockup() {
         XCTAssertEqual(
             SettingsTab.allCases.map { SettingsWindowLayout.height(for: $0, availableHeight: 2000) },
-            [600, 680, 560, 960, 840, 810]
+            [600, 680, 640, 560, 960, 840, 810]
         )
     }
 

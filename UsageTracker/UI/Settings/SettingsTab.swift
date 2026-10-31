@@ -1,11 +1,12 @@
 import Foundation
 
-/// The Settings window's six tabs, in sidebar order (liquid-glass spec § Design →
+/// The Settings window's tabs, in sidebar order (liquid-glass spec § Design →
 /// Settings). The raw value is the title the sidebar and the page show, and the id a
 /// caller parks in `SettingsRoute.pendingTab`.
 enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case general = "General"
     case menuBar = "Menu bar"
+    case pet = "Pet"
     case providers = "Providers"
     case notifications = "Notifications"
     case integrations = "Integrations"
@@ -24,6 +25,7 @@ enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .general: return "gearshape"
         case .menuBar: return "menubar.rectangle"
+        case .pet: return "pawprint"
         case .providers: return "rectangle.grid.1x2"
         case .notifications: return "bell"
         case .integrations: return "powerplug"

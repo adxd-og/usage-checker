@@ -49,7 +49,7 @@ final class SettingsTabAndLayoutVerificationTests: XCTestCase {
     }
 
     func testStepWalksTheFullOrderOneAtATime() {
-        let order: [SettingsTab] = [.general, .menuBar, .providers, .notifications, .integrations, .advanced]
+        let order: [SettingsTab] = [.general, .menuBar, .pet, .providers, .notifications, .integrations, .advanced]
         for i in 0..<(order.count - 1) {
             XCTAssertEqual(SettingsTab.step(from: order[i], by: 1), order[i + 1], "\(order[i]) -> next")
             XCTAssertEqual(SettingsTab.step(from: order[i + 1], by: -1), order[i], "\(order[i + 1]) -> previous")
@@ -68,7 +68,7 @@ final class SettingsTabAndLayoutVerificationTests: XCTestCase {
     /// known, the window uses the mockup's height unclamped.
     func testEveryTabsMockupHeightWithNoKnownScreen() {
         let expected: [SettingsTab: CGFloat] = [
-            .general: 600, .menuBar: 680, .providers: 560,
+            .general: 600, .menuBar: 680, .pet: 640, .providers: 560,
             .notifications: 960, .integrations: 840, .advanced: 810,
         ]
         for (tab, height) in expected {
