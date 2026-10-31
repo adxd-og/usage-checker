@@ -35,6 +35,12 @@ enum IntegrationsSettingsCopy {
     static let copiedButton = "Copied"
     static let revealButton = "Reveal in Finder"
     static let commandLineFooter = "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
+    /// With both command names taken there is no link to hand an installer. Hook rows use the
+    /// hook helper's own link, so they stay as they were.
+    static func installIsBlocked(usesCLILink: Bool, bothCLINamesForeign: Bool) -> Bool {
+        usesCLILink && bothCLINamesForeign
+    }
+
     /// Why `bin/brioche` is not ours (plan 2026-10-31-brioche-rename, R4). Another tool ships
     /// that command, and a file we did not make is left alone.
     static func commandNote(briocheIsForeign: Bool, omeletteIsForeign: Bool = false) -> SettingsCaption? {
@@ -338,7 +344,13 @@ struct IntegrationsSettingsView: View {
             if let installTitle = CommandLineSettingsText.installButtonTitle(status) {
                 Button(installTitle) { run(install, on: id) }
                     .buttonStyle(.settings)
-                    .disabled(!CommandLineSettingsText.installButtonIsEnabled(status) || AgentPaths.bothCLINamesForeign())
+                    .disabled(
+                        !CommandLineSettingsText.installButtonIsEnabled(status)
+                            || IntegrationsSettingsCopy.installIsBlocked(
+                                usesCLILink: [.statusLine, .claudeMCP, .codexMCP].contains(id),
+                                bothCLINamesForeign: AgentPaths.bothCLINamesForeign()
+                            )
+                    )
             }
             if CommandLineSettingsText.showsDisableButton(status) {
                 Button(CommandLineSettingsText.disableButtonTitle) { run(remove, on: id) }

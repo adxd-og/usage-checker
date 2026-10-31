@@ -76,6 +76,13 @@ final class CLIBothNamesTests: XCTestCase {
         )
     }
 
+    /// Hook rows run the hook helper's link, which neither taken name touches.
+    func testBothNamesTakenStopOnlyTheRowsThatRunTheCommand() {
+        XCTAssertTrue(IntegrationsSettingsCopy.installIsBlocked(usesCLILink: true, bothCLINamesForeign: true))
+        XCTAssertFalse(IntegrationsSettingsCopy.installIsBlocked(usesCLILink: false, bothCLINamesForeign: true))
+        XCTAssertFalse(IntegrationsSettingsCopy.installIsBlocked(usesCLILink: true, bothCLINamesForeign: false))
+    }
+
     func testSettingsSaysSoOnlyWhenTheNameIsTaken() {
         XCTAssertNil(IntegrationsSettingsCopy.commandNote(briocheIsForeign: false))
         XCTAssertEqual(
