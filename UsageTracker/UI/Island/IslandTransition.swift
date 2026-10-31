@@ -121,6 +121,18 @@ struct IslandTransition: Equatable, Sendable {
         return islandIsKey ? .handBack : .orderFront
     }
 
+    /// After a close, whether Brioche gives up being active (§ 3.1, Focus). The island turned key by
+    /// making the app active, and ordering it out leaves the app active with no key window, typing
+    /// going nowhere; the app that was active before takes the keyboard back. Not when the island
+    /// did not hold the keyboard, when an open came back in the same turn (a close settled by a
+    /// reopen, a move to another display: that open's own `keyAction` decides), or when another of
+    /// Brioche's windows is there to take it (Dashboard, Settings, the floating window).
+    static func handsBackAfterClose(
+        islandWasKey: Bool, reopened: Bool, appIsActive: Bool, otherWindowCanTakeKey: Bool
+    ) -> Bool {
+        islandWasKey && !reopened && appIsActive && !otherWindowCanTakeKey
+    }
+
     /// Opens with `style` at `now`, after applying what was due by then; nothing when already
     /// opening or open. From closing it turns around: the shape springs back from its value and
     /// velocity at `now`, and the content comes back at once when the shape had not started to

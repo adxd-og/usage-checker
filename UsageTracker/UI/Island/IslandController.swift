@@ -282,6 +282,8 @@ final class IslandController: NSObject {
     /// The close's last frame, a move to another display, or a display that vanished: the
     /// window leaves the screen and the content leaves the window (P1 ruling R11), at once.
     private func finishClose() {
+        // Whether the island holds the keyboard, read before it leaves the screen.
+        let islandWasKey = window.isKeyWindow
         frames.stop()
         earMorph.stop()
         leftEarView.hidesHead = false
@@ -296,6 +298,25 @@ final class IslandController: NSObject {
         pet.show(phase: transition.phase)
         entry = nil
         placement = nil
+        handBackKeyboard(islandWasKey: islandWasKey)
+    }
+
+    /// The close's keyboard (`IslandTransition.handsBackAfterClose`), a turn later: `open` calls
+    /// `finishClose` on its way to a reopen, and that open decides for itself.
+    private func handBackKeyboard(islandWasKey: Bool) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let handsBack = IslandTransition.handsBackAfterClose(
+                islandWasKey: islandWasKey,
+                reopened: self.transition.phase != .closed,
+                appIsActive: NSApp.isActive,
+                otherWindowCanTakeKey: NSApp.windows.contains { other in
+                    other !== self.window && other !== self.statusItemWindow()
+                        && other.isVisible && other.canBecomeKey && !self.isChildOfIsland(other)
+                }
+            )
+            if handsBack { NSApp.deactivate() }
+        }
     }
 
     /// Opens on `screen` the way `IslandTransition.route` says: from closed, placed and grown
