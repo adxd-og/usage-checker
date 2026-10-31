@@ -27,7 +27,7 @@ enum IntegrationsSettingsCopy {
     static let permissionsHeader = "Permissions"
     static let permissionsTitle = "Answer permission requests from Brioche"
     static let permissionsCaption = "Allow / Deny show only while that terminal isn't in front. Unanswered requests go back after 2 minutes."
-    static let permissionsHelp = "Allow / Deny appear on the notification and in the popover only while the terminal running that session isn't in front; otherwise Claude Code or Codex asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes."
+    static let permissionsHelp = "Allow / Deny appear on the notification and in the island only while the terminal running that session isn't in front; otherwise Claude Code or Codex asks in the terminal as usual. A request you don't answer goes back to the terminal after two minutes."
 
     static let commandLineHeader = "Command line"
     static let commandTitle = AgentPaths.cliName
