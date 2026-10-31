@@ -33,6 +33,7 @@ final class IslandPetModel: ObservableObject {
     private var opens = 0
     private var jumps = 0
     private var latestJump: JumpTicket?
+    private var choiceObserver: AnyCancellable?
 
     init(keeper: PetKeeper, clock: @escaping @MainActor () -> Date = { Date() }, choice: PetChoice = .standard) {
         self.keeper = keeper
@@ -74,6 +75,17 @@ final class IslandPetModel: ObservableObject {
         choice = next
         keeper.dropEvents()
         onPetChange()
+    }
+
+    /// Every value of `choices` is a word from Settings (`SettingsStore.$petChoice`, which sends the new
+    /// value, on the main actor). No duplicates are removed: re-choosing the stored pair clears Debug's
+    /// animal, and with no override `setChoice` ignores it. The first send is the current pair.
+    func follow<P: Publisher>(_ choices: P) where P.Output == PetChoice, P.Failure == Never {
+        choiceObserver = choices.sink { [weak self] choice in
+            MainActor.assumeIsolated {
+                self?.setChoice(choice)
+            }
+        }
     }
 
     #if DEBUG

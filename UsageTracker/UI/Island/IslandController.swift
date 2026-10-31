@@ -65,9 +65,9 @@ final class IslandController: NSObject {
     override init() {
         let model = IslandModel()
         let shapeModel = IslandShapeModel()
-        let layout = IslandLayoutModel()
+        let layout = IslandLayoutModel(petOn: { SettingsStore.shared.petEnabled })
         let navigation = IslandNavigationModel()
-        let pet = IslandPetModel(keeper: PetKeeper(random: .system()))
+        let pet = IslandPetModel(keeper: PetKeeper(random: .system()), choice: SettingsStore.shared.petChoice)
         self.model = model
         self.shapeModel = shapeModel
         self.layout = layout
@@ -105,6 +105,7 @@ final class IslandController: NSObject {
         pet.closeIsland = { [weak self] in
             self?.close()
         }
+        pet.follow(SettingsStore.shared.$petChoice)
         // The manifests, events included, are read once off the main thread; the habitat is bare
         // until they are. No image is built until `prewarm`.
         PetAssetStore.shared.load()
