@@ -174,14 +174,51 @@ enum MCPInstaller {
         return start..<end
     }
 
-    /// Our table under the old name, or nil when there is none or it runs somebody else's
-    /// command, which is then none of our business.
-    static func codexLegacyRange(in lines: [String]) -> Range<Int>? {
-        guard let range = codexTableRange(in: lines, key: legacyCodexKey),
-              let command = codexValue("command", in: Array(lines[range])),
+    /// All of an entry's lines, in file order: its table (`codexTableRange`, one element of the
+    /// result) and every sub-table of its key that stands apart from it. TOML puts no order on
+    /// them, so `[mcp_servers.brioche.env]` may follow another server's table or come before its
+    /// parent. Empty with no table: sub-tables alone are nobody's entry.
+    static func codexEntryRanges(in lines: [String], key: [String] = codexKey) -> [Range<Int>] {
+        guard let table = codexTableRange(in: lines, key: key) else { return [] }
+        var ranges = [table]
+        var index = 0
+        while index < lines.count {
+            guard !table.contains(index),
+                  let found = codexHeaderKey(lines[index]),
+                  found.count > key.count, found.starts(with: key)
+            else {
+                index += 1
+                continue
+            }
+            var end = index + 1
+            while end < lines.count, codexHeaderKey(lines[end]) == nil { end += 1 }
+            ranges.append(index..<end)
+            index = end
+        }
+        return ranges.sorted { $0.lowerBound < $1.lowerBound }
+    }
+
+    /// Our entry under the old name, or nothing when there is none or it runs somebody else's
+    /// command, which is then none of our business, sub-tables included.
+    static func codexLegacyRanges(in lines: [String]) -> [Range<Int>] {
+        guard let table = codexTableRange(in: lines, key: legacyCodexKey),
+              let command = codexValue("command", in: Array(lines[table])),
               isOurCommand(command)
-        else { return nil }
-        return range
+        else { return [] }
+        return codexEntryRanges(in: lines, key: legacyCodexKey)
+    }
+
+    /// The lines of these ranges, as one list.
+    private static func codexLines(of ranges: [Range<Int>], in lines: [String]) -> [String] {
+        ranges.flatMap { lines[$0] }
+    }
+
+    /// Replaces each range, the last in the file first, so an earlier one still means the same
+    /// lines.
+    private static func codexApply(_ edits: [(range: Range<Int>, lines: [String])], to lines: inout [String]) {
+        for edit in edits.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
+            lines.replaceSubrange(edit.range, with: edit.lines)
+        }
     }
 
     /// The key a table header names, split on its dots, or nil when the line is not a
@@ -344,22 +381,23 @@ enum MCPInstaller {
     static func codexStatus(configURL: URL, cliPath: String) -> HookInstallStatus {
         guard let text = try? SettingsFile.readText(configURL) else { return .conflict(codexUnreadableReason) }
         let lines = SettingsFile.lines(of: text)
-        let legacy = codexLegacyRange(in: lines)
+        let legacy = codexLegacyRanges(in: lines)
         guard let range = codexTableRange(in: lines) else {
-            guard let legacy else { return .notInstalled }
-            let meaningful = codexMeaningful(Array(lines[legacy]), key: legacyCodexKey, header: legacyCodexHeader)
+            guard !legacy.isEmpty else { return .notInstalled }
+            let meaningful = codexMeaningful(codexLines(of: legacy, in: lines), key: legacyCodexKey, header: legacyCodexHeader)
             return meaningful == legacyCodexTable(cliPath: cliPath) ? .installed : .outdated
         }
-        let body = Array(lines[range])
-        guard let command = codexValue("command", in: body) else { return .conflict(codexUnreadableTableReason) }
+        guard let command = codexValue("command", in: Array(lines[range])) else { return .conflict(codexUnreadableTableReason) }
         guard isOurCommand(command) else { return .conflict(command) }
         // Both of ours: Update folds them into one.
-        if legacy != nil { return .outdated }
-        return codexMeaningful(body) == codexTable(cliPath: cliPath) ? .installed : .outdated
+        if !legacy.isEmpty { return .outdated }
+        let entry = codexLines(of: codexEntryRanges(in: lines), in: lines)
+        return codexMeaningful(entry) == codexTable(cliPath: cliPath) ? .installed : .outdated
     }
 
     /// Replaces our table where it is, our table under the old name where that is, or appends
-    /// one at the end of the file; with both of ours, one remains. Appended rather than
+    /// one at the end of the file; with both of ours, one remains, and no sub-table of either
+    /// stays behind wherever it stood. Appended rather than
     /// inserted before the first table, unlike `notify`: a table header ends the top level, so
     /// anything after it is already inside some table and ours has to start its own.
     static func installCodex(configURL: URL, cliPath: String) throws {
@@ -369,22 +407,23 @@ enum MCPInstaller {
         // Whatever the file already uses. Rewriting a CRLF config as LF would show up
         // as a whole-file diff in someone's dotfiles repo.
         let written = codexLines(table + [""], lineEnding: codexLineEnding(in: text))
-        let legacy = codexLegacyRange(in: lines)
+        let legacy = codexLegacyRanges(in: lines)
 
         if let range = codexTableRange(in: lines) {
-            let body = Array(lines[range])
-            guard let command = codexValue("command", in: body) else { throw Error.conflict(codexUnreadableTableReason) }
-            guard isOurCommand(command) else { throw Error.conflict(command) }
-            let current = codexMeaningful(body) == table
-            if current && legacy == nil { return }
-            // The later range first, so the earlier one still means the same lines.
-            var edits: [(range: Range<Int>, lines: [String])] = current ? [] : [(range, written)]
-            if let legacy { edits.append((legacy, [])) }
-            for edit in edits.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
-                lines.replaceSubrange(edit.range, with: edit.lines)
+            guard let command = codexValue("command", in: Array(lines[range])) else {
+                throw Error.conflict(codexUnreadableTableReason)
             }
-        } else if let legacy {
-            lines.replaceSubrange(legacy, with: written)
+            guard isOurCommand(command) else { throw Error.conflict(command) }
+            let entry = codexEntryRanges(in: lines)
+            let current = codexMeaningful(codexLines(of: entry, in: lines)) == table
+            if current && legacy.isEmpty { return }
+            var edits = legacy.map { (range: $0, lines: [String]()) }
+            if !current {
+                edits += entry.map { (range: $0, lines: $0 == range ? written : []) }
+            }
+            codexApply(edits, to: &lines)
+        } else if let parent = codexTableRange(in: lines, key: legacyCodexKey), !legacy.isEmpty {
+            codexApply(legacy.map { (range: $0, lines: $0 == parent ? written : []) }, to: &lines)
         } else {
             while let last = lines.last, codexInterpreted(last).isEmpty { lines.removeLast() }
             if !lines.isEmpty { lines.append(contentsOf: codexLines([""], lineEnding: codexLineEnding(in: text))) }
@@ -393,24 +432,22 @@ enum MCPInstaller {
         try SettingsFile.writeText(lines, to: configURL)
     }
 
-    /// Removes our tables only, under either name. A foreign one is left exactly where it is.
+    /// Removes our tables only, under either name, each with every sub-table wherever it stands.
+    /// A foreign one is left exactly where it is, with its own.
     /// `cliPath` is part of the shared signature and deliberately unused: ownership is
     /// `isOurCommand`, so a table from an older build goes too.
     static func removeCodex(configURL: URL, cliPath: String) throws {
         guard FileManager.default.fileExists(atPath: configURL.path) else { return }
         guard let text = try? SettingsFile.readText(configURL) else { throw Error.conflict(codexUnreadableReason) }
         var lines = SettingsFile.lines(of: text)
-        var ranges: [Range<Int>] = []
+        var ranges = codexLegacyRanges(in: lines)
         if let range = codexTableRange(in: lines),
            let command = codexValue("command", in: Array(lines[range])),
            isOurCommand(command) {
-            ranges.append(range)
+            ranges += codexEntryRanges(in: lines)
         }
-        if let legacy = codexLegacyRange(in: lines) { ranges.append(legacy) }
         guard !ranges.isEmpty else { return }
-        for range in ranges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
-            lines.removeSubrange(range)
-        }
+        codexApply(ranges.map { (range: $0, lines: []) }, to: &lines)
         try SettingsFile.writeText(lines, to: configURL)
     }
 }

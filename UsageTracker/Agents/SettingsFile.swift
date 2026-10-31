@@ -84,7 +84,9 @@ enum SettingsFile {
 
     static func writeText(_ lines: [String], to url: URL) throws {
         var text = lines.joined(separator: "\n")
-        if !text.hasSuffix("\n") { text += "\n" }
+        // The last byte, not `hasSuffix`: "\r\n" is one Character, so a CRLF file already ending
+        // in a line ending would get a stray bare "\n".
+        if text.utf8.last != UInt8(ascii: "\n") { text += "\n" }
         try FileManager.default.createDirectory(
             at: url.deletingLastPathComponent(), withIntermediateDirectories: true
         )
