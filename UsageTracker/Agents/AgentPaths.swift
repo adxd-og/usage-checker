@@ -13,7 +13,7 @@ enum AgentPaths {
     /// ~/Library/Application Support/UsageTracker/agent.sock
     static var socketURL: URL { appSupportURL.appendingPathComponent("agent.sock") }
 
-    /// ~/Library/Application Support/UsageTracker/status.json — what the `omelette`
+    /// ~/Library/Application Support/UsageTracker/status.json — what the `brioche`
     /// command-line tool reads. `StatusFile` owns the path because the CLI has to
     /// compute it from `$HOME` with no app around to ask; this is the same string,
     /// not a second spelling of it.
@@ -27,17 +27,23 @@ enum AgentPaths {
     /// ~/Library/Application Support/UsageTracker/bin/omelette-hook (symlink → bundle helper).
     static var helperSymlinkURL: URL { binURL.appendingPathComponent(helperName) }
 
-    /// ~/Library/Application Support/UsageTracker/bin/omelette (symlink → bundle CLI).
+    /// ~/Library/Application Support/UsageTracker/bin/brioche (symlink → bundle CLI).
     static var cliSymlinkURL: URL { binURL.appendingPathComponent(cliName) }
+
+    /// ~/Library/Application Support/UsageTracker/bin/omelette: the same binary under the name
+    /// every setup before 4.0 wrote.
+    static var legacyCLISymlinkURL: URL { binURL.appendingPathComponent(legacyCLIName) }
 
     /// Omelette.app/Contents/Helpers/omelette-hook
     static var bundledHelperURL: URL {
         Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/\(helperName)")
     }
 
-    /// Omelette.app/Contents/Helpers/omelette
+    /// <the bundle>/Contents/Helpers/omelette. The binary keeps its old name on purpose: an
+    /// update installed on quit swaps the bundle while nothing is running to refresh the
+    /// links, and `bin/omelette` must not dangle until the next launch.
     static var bundledCLIURL: URL {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/\(cliName)")
+        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/\(legacyCLIName)")
     }
 
     /// ~/Library/Application Support/UsageTracker/agent-sessions.jsonl
@@ -61,9 +67,8 @@ enum AgentPaths {
     /// target still running) sends v1 and gets the phase-2 behaviour: no hold.
     static let supportedWireVersions: ClosedRange<Int> = 1...2
     static let helperName = "omelette-hook"
-    /// The command the user types. Also the symlink's name and the product name of the
-    /// `OmeletteCLI` target — three places that have to agree, one constant.
-    static let cliName = "omelette"
+    /// The command the user types, and its symlink's name.
+    static let cliName = "brioche"
     /// What the tool was called before 4.0. Every setup from then says it, so the name keeps
     /// working for good, and it is the binary's own name inside the bundle.
     static let legacyCLIName = "omelette"
@@ -136,5 +141,34 @@ enum AgentPaths {
     static func refreshCLISymlink(link: URL = cliSymlinkURL, target: URL = bundledCLIURL) throws -> Bool {
         guard !cliLinkIsForeign(link, target: target) else { return false }
         return try refreshSymlink(link: link, target: target)
+    }
+
+    /// Both names of the tool. One that fails does not stop the other: `omelette` may be what
+    /// someone's status line runs, and `brioche` may be taken.
+    static func refreshCLISymlinks(binDirectory: URL = binURL, target: URL = bundledCLIURL) throws {
+        var firstFailure: Error?
+        for name in [cliName, legacyCLIName] {
+            do {
+                try refreshCLISymlink(link: binDirectory.appendingPathComponent(name), target: target)
+            } catch {
+                if firstFailure == nil { firstFailure = error }
+            }
+        }
+        if let firstFailure { throw firstFailure }
+    }
+
+    /// The link a new setup writes: `bin/brioche`, or `bin/omelette` when `bin/brioche` belongs
+    /// to something else, so a status line never runs somebody else's program.
+    static func usableCLILink(binDirectory: URL = binURL, target: URL = bundledCLIURL) -> URL {
+        let link = binDirectory.appendingPathComponent(cliName)
+        return cliLinkIsForeign(link, target: target) ? binDirectory.appendingPathComponent(legacyCLIName) : link
+    }
+
+    /// Neither name is ours to use, so Enable and Update stay off: `usableCLILink` has nothing
+    /// honest to hand an installer (Codex's review of this plan).
+    static func bothCLINamesForeign(binDirectory: URL = binURL, target: URL = bundledCLIURL) -> Bool {
+        [cliName, legacyCLIName].allSatisfy {
+            cliLinkIsForeign(binDirectory.appendingPathComponent($0), target: target)
+        }
     }
 }

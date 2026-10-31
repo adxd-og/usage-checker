@@ -8,7 +8,7 @@ enum CommandLineSettingsText {
     /// in "Application Support".
     static let pathExportLine = #"export PATH="$HOME/Library/Application Support/UsageTracker/bin:$PATH""#
 
-    static let pathCaption = "Add that line to ~/.zshrc and open a new terminal; `omelette status` then works from anywhere. Without it, call the tool by the full path above. Omelette keeps the link pointing at itself, so moving or updating the app changes nothing."
+    static let pathCaption = "Add that line to ~/.zshrc and open a new terminal; `brioche status` then works from anywhere, and `omelette` still answers for anything set up before the rename. Without it, call the tool by the full path above. Brioche keeps the links pointing at itself, so moving or updating the app changes nothing."
 
     static let statusLineCaption = #"Puts Omelette's numbers in Claude Code's status bar, after the model and how full its context is: the session window, when it resets, today's cost, and a flag when an agent is waiting for you. Restart Claude Code, or start a new session, to see it. Or add it yourself: a `statusLine` entry in ~/.claude/settings.json whose command is the path above followed by `statusline`, with "refreshInterval": 60 so the countdown keeps ticking while the session is idle."#
 

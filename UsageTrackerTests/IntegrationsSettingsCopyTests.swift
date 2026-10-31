@@ -150,13 +150,13 @@ final class IntegrationsSettingsCopyTests: XCTestCase {
             "Allow / Deny show only while that terminal isn't in front. Unanswered requests go back after 2 minutes."
         )
         XCTAssertEqual(IntegrationsSettingsCopy.commandLineHeader, "Command line")
-        XCTAssertEqual(IntegrationsSettingsCopy.commandTitle, "omelette")
+        XCTAssertEqual(IntegrationsSettingsCopy.commandTitle, "brioche")
         XCTAssertEqual(IntegrationsSettingsCopy.copyPathButton, "Copy PATH line")
         XCTAssertEqual(IntegrationsSettingsCopy.copiedButton, "Copied")
         XCTAssertEqual(IntegrationsSettingsCopy.revealButton, "Reveal in Finder")
         XCTAssertEqual(
             IntegrationsSettingsCopy.commandLineFooter,
-            "Add the PATH line to ~/.zshrc, then omelette status works from any terminal."
+            "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
         )
         XCTAssertEqual(IntegrationsSettingsCopy.copyStatusLineCommand, "Copy Omelette's command")
         XCTAssertEqual(IntegrationsSettingsCopy.copyCodexNotifyLine, "Copy Omelette's line")

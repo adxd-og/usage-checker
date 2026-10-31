@@ -161,7 +161,7 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
         XCTAssertEqual(IntegrationsSettingsCopy.revealButton, "Reveal in Finder")
         XCTAssertEqual(
             IntegrationsSettingsCopy.commandLineFooter,
-            "Add the PATH line to ~/.zshrc, then omelette status works from any terminal."
+            "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
         )
     }
 

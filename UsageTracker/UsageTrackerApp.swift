@@ -66,12 +66,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Hook → app channel: helper symlink + Unix socket. Started after bootstrap
         // so a hook that fires during launch never beats the poll's first snapshot.
         AgentChannel.shared.start()
-        // `omelette` on the user's PATH points at this link; refreshing it here is what
+        // `brioche` and `omelette` on the user's PATH point at these links; refreshing them here is what
         // survives moving the app to /Applications or updating it in place. Its own
         // statement rather than a line inside AgentChannel: the CLI has nothing to do
         // with the hook socket, and a failure here must not take the socket with it.
         do {
-            try AgentPaths.refreshCLISymlink()
+            try AgentPaths.refreshCLISymlinks()
         } catch {
             NSLog("[UT] CLI symlink refresh failed: %@", String(describing: error))
         }

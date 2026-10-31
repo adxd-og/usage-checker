@@ -34,7 +34,22 @@ enum IntegrationsSettingsCopy {
     static let copyPathButton = "Copy PATH line"
     static let copiedButton = "Copied"
     static let revealButton = "Reveal in Finder"
-    static let commandLineFooter = "Add the PATH line to ~/.zshrc, then omelette status works from any terminal."
+    static let commandLineFooter = "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
+    /// Why `bin/brioche` is not ours (plan 2026-10-31-brioche-rename, R4). Another tool ships
+    /// that command, and a file we did not make is left alone.
+    static func commandNote(briocheIsForeign: Bool, omeletteIsForeign: Bool = false) -> SettingsCaption? {
+        guard briocheIsForeign else { return nil }
+        if omeletteIsForeign {
+            return SettingsCaption(
+                text: "bin/\(AgentPaths.cliName) and bin/\(AgentPaths.legacyCLIName) belong to other tools, so Brioche left them alone. Move one of them to turn these on.",
+                token: .warning
+            )
+        }
+        return SettingsCaption(
+            text: "bin/\(AgentPaths.cliName) belongs to another tool, so Brioche left it alone. Use `\(AgentPaths.legacyCLIName)` here: it is the same tool.",
+            token: .warning
+        )
+    }
     static var commandHelp: String { CommandLineSettingsText.pathCaption }
 
     static let copyStatusLineCommand = "Copy Omelette's command"
@@ -130,7 +145,7 @@ struct IntegrationsSettingsView: View {
     @State private var copied = false
 
     private var helperPath: String { AgentPaths.helperSymlinkURL.path }
-    private var cliPath: String { AgentPaths.cliSymlinkURL.path }
+    private var cliPath: String { AgentPaths.usableCLILink().path }
 
     var body: some View {
         SettingsPage(tab: .integrations) {
@@ -271,6 +286,10 @@ struct IntegrationsSettingsView: View {
                 caption: SettingsCopy.tildePath(
                     AgentPaths.binURL.path, home: FileManager.default.homeDirectoryForCurrentUser.path
                 ),
+                note: IntegrationsSettingsCopy.commandNote(
+                    briocheIsForeign: AgentPaths.cliLinkIsForeign(AgentPaths.cliSymlinkURL),
+                    omeletteIsForeign: AgentPaths.cliLinkIsForeign(AgentPaths.legacyCLISymlinkURL)
+                ),
                 help: IntegrationsSettingsCopy.commandHelp
             ) {
                 Button(copied ? IntegrationsSettingsCopy.copiedButton : IntegrationsSettingsCopy.copyPathButton) {
@@ -279,7 +298,7 @@ struct IntegrationsSettingsView: View {
                 .buttonStyle(.settings)
                 .help(CommandLineSettingsText.pathExportLine)
                 Button(IntegrationsSettingsCopy.revealButton) {
-                    NSWorkspace.shared.activateFileViewerSelecting([AgentPaths.cliSymlinkURL])
+                    NSWorkspace.shared.activateFileViewerSelecting([AgentPaths.usableCLILink()])
                 }
                 .buttonStyle(.settings)
                 .disabled(!FileManager.default.fileExists(atPath: cliPath))
@@ -319,7 +338,7 @@ struct IntegrationsSettingsView: View {
             if let installTitle = CommandLineSettingsText.installButtonTitle(status) {
                 Button(installTitle) { run(install, on: id) }
                     .buttonStyle(.settings)
-                    .disabled(!CommandLineSettingsText.installButtonIsEnabled(status))
+                    .disabled(!CommandLineSettingsText.installButtonIsEnabled(status) || AgentPaths.bothCLINamesForeign())
             }
             if CommandLineSettingsText.showsDisableButton(status) {
                 Button(CommandLineSettingsText.disableButtonTitle) { run(remove, on: id) }

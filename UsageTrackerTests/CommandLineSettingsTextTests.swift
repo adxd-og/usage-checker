@@ -94,7 +94,7 @@ final class CommandLineSettingsTextTests: XCTestCase {
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("status"))
         XCTAssertTrue(CommandLineSettingsText.statusLineCaption.contains("~/.claude/settings.json"),
                       "the caption says how to add the status line by hand, like the MCP caption does")
-        XCTAssertTrue(CommandLineSettingsText.pathCaption.contains("omelette status"))
+        XCTAssertTrue(CommandLineSettingsText.pathCaption.contains("brioche status"))
         for caption in [CommandLineSettingsText.statusLineCaption, CommandLineSettingsText.pathCaption] {
             XCTAssertFalse(caption.contains("!"), "the app's Settings copy has no exclamation marks")
         }
