@@ -749,12 +749,11 @@ struct PopoverView: View {
         )
     }
 
-    /// The card `ProviderGridRules.agentsCard` decides on; none while loading or with every
-    /// provider off.
+    /// The card `ProviderGridRules.agentsCard` decides on, under the empty body too.
     private var lowerRowAgents: LowerRowAgents? {
-        guard Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) == nil else { return nil }
         switch ProviderGridRules.agentsCard(
-            serviceID: lowerRowService?.id, providerCount: displayedServices.count, hasSessions: !agents.sessions.isEmpty
+            serviceID: lowerRowService?.id, providerCount: displayedServices.count, hasSessions: !agents.sessions.isEmpty,
+            bodyIsEmpty: Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) != nil
         ) {
         case .allSessions:
             // The link shows while either source is still guessing, never under the prompt

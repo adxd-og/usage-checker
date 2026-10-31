@@ -87,8 +87,13 @@ enum ProviderGridRules {
 
     /// `serviceID` is the provider whose page the row shows, nil on All. A provider without agents
     /// (Grok, Antigravity) has no card of its own; but where its page is home there is no All to go
-    /// to, so it shows every session when there are any (P6 plan R21). Nil: no card.
-    nonisolated static func agentsCard(serviceID: String?, providerCount: Int, hasSessions: Bool) -> AgentsCard? {
+    /// to, so it shows every session when there are any (P6 plan R21). With no tiles to draw
+    /// (`bodyIsEmpty`: every provider off, or the first poll) sessions still run, and the pet and the
+    /// ear count them, so they have a card to reach under the empty body (ruling R5). Nil: no card.
+    nonisolated static func agentsCard(
+        serviceID: String?, providerCount: Int, hasSessions: Bool, bodyIsEmpty: Bool = false
+    ) -> AgentsCard? {
+        if bodyIsEmpty { return hasSessions ? .allSessions : nil }
         guard let serviceID else { return .allSessions }
         if let source = AgentSource(rawValue: serviceID) { return .provider(source) }
         return providerPageIsHome(count: providerCount) && hasSessions ? .allSessions : nil
