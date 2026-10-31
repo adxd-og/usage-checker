@@ -44,7 +44,8 @@ Production releases are notarized DMGs distributed via GitHub Releases, with Spa
 
 ### Local release
 
-Bump `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` in `project.yml`, add the
+Bump `MARKETING_VERSION` + `CURRENT_PROJECT_VERSION` in `project.yml` and
+`CLIText.version` in `CLICore/CLIText.swift`, add the
 CHANGELOG section (the appcast release notes are generated from it), then:
 
 ```bash
@@ -58,7 +59,7 @@ git add docs/appcast.xml && git commit -m "Appcast: vX.Y.Z" && git push
 
 The appcast lives in `docs/appcast.xml`, served by GitHub Pages (`main`,
 `/docs`) at the `SUFeedURL`. Installed apps see the update within a day, or
-immediately via "Check for updates now".
+immediately via **Check now** in Settings → General.
 
 ### GitHub Actions
 
@@ -100,16 +101,21 @@ serves the feed at the `SUFeedURL`.
 
 ## Architecture overview
 
-Plain SwiftUI + AppKit, ~3500 lines:
+Plain SwiftUI + AppKit, with a command-line tool, two helpers and a widget:
 
-- `Core/` — models, `AppState` (ObservableObject), provider coordinator, `HistoryStore` (JSON-on-disk), `Analytics` (burn-rate), `Announcements` (time-bound banners), `ProjectName` decoder
-- `Providers/` — Claude OAuth provider, optional Anthropic Admin
-- `Services/` — Keychain reader, HTTP client (429 backoff + microsecond ISO date parsing), OAuth refresh, JSONL aggregator (with smart turn grouping), notifications, Sparkle updater wrapper, widget bridge
+- `Core/` — models, `AppState` (ObservableObject), provider coordinator, `HistoryStore` (JSON-on-disk), `Analytics` (burn-rate), `ProjectName` decoder
+- `Providers/` — Claude OAuth, optional Anthropic Admin, and Codex, Antigravity and Grok through CodexBarCore
+- `Services/` — keychain reader, HTTP client (429 backoff + microsecond ISO date parsing), Claude sign-in renewal through Claude Code, log aggregators for Claude, Codex and Grok, notifications, Sparkle updater wrapper, widget bridge
 - `UI/` — `StatusBarController` (NSStatusItem + tooltip ticker), `PopoverView`, `SettingsView`, `OnboardingView`, `FloatingWindow`, Liquid Glass helpers
-- `UI/Dashboard/` — Overview, Activity grid (off-main computation + cache), Session history (SwiftUI Charts), Insights (with WoW)
+- `UI/Island/` — the notch island: window, motion, navigation, ears
+- `Pet/`, `Pets/` — the pets' rules, runtime and manifests
+- `KeepAwake/`, `KeepAwakeCore/`, `KeepAwakeHelper/` — keep awake with the lid closed and its root daemon
+- `Agents/`, `HookHelper/` — agent sessions, the hook helper and the hook, status line and MCP installers
+- `CLICore/`, `CLI/` — the `brioche` command and MCP server
+- `UI/Dashboard/` — Overview, Agents, History (chart, calendar, chats), Insights, Limits
 - `UsageTrackerWidget/` — separate target: TimelineProvider + SwiftUI views for Small/Medium/Large, shared via App Group
 
-State flow: `DispatchSourceTimer` → `AppState.refreshNow()` → `ProviderCoordinator.snapshot()` → `@Published snapshot` → SwiftUI rerenders + `HistoryStore.append` + `WidgetBridge.publish` + `WidgetCenter.reloadAllTimelines`.
+State flow: the poll loop → `AppState.refreshNow()` → `ProviderCoordinator.snapshot()` → `@Published snapshot` → SwiftUI rerenders + `HistoryStore.append` + `WidgetBridge.publish` + `WidgetCenter.reloadAllTimelines`.
 
 ## Style
 
@@ -120,4 +126,9 @@ State flow: `DispatchSourceTimer` → `AppState.refreshNow()` → `ProviderCoord
 
 ## Tests
 
-There are no tests yet. PRs to add them are welcome.
+XCTest, in `UsageTrackerTests/`. The two signing overrides are required, or the hardened runtime blocks XCTest injection and the runner hangs:
+
+```bash
+xcodegen generate
+xcodebuild test -project UsageTracker.xcodeproj -scheme UsageTracker -destination 'platform=macOS' -derivedDataPath build/DerivedData ENABLE_HARDENED_RUNTIME=NO OTHER_CODE_SIGN_FLAGS=""
+```
