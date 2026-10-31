@@ -63,6 +63,8 @@ final class IslandController: NSObject {
         let morphs: Bool
     }
     private var earOpen: EarOpen?
+    /// The ear's head on its way to the pet, as drawn (§ 3.6).
+    private let earMorph: IslandEarMorphModel
 
     /// The open and close in time (§ 3.2); `frames` ticks it while something moves.
     private var transition = IslandTransition()
@@ -106,9 +108,12 @@ final class IslandController: NSObject {
         let restingView = RestingNotchView(frame: .zero)
         self.restingView = restingView
         self.hintFrames = IslandFrameDriver(source: DisplayLinkFrameSource(view: restingView))
+        let earMorph = IslandEarMorphModel()
+        self.earMorph = earMorph
         let host = NSHostingView(rootView: IslandRootView(
             model: model,
             shape: shapeModel,
+            morph: earMorph,
             content: PopoverView(state: AppState.shared, layout: layout, navigation: navigation, pet: pet)
         ))
         self.host = host
@@ -258,6 +263,8 @@ final class IslandController: NSObject {
     /// window leaves the screen and the content leaves the window (P1 ruling R11), at once.
     private func finishClose() {
         frames.stop()
+        earMorph.stop()
+        leftEarView.hidesHead = false
         transition.reset()
         window.ignoresMouseEvents = true
         removeMonitors()
@@ -318,6 +325,9 @@ final class IslandController: NSObject {
             host.layoutSubtreeIfNeeded()
         }
         guard let placement else { return }
+        if route != .reverse {
+            startEarMorph(on: screen, placement: placement, at: now)
+        }
         // Every open, a turned-around close included, starts a new generation of jumps.
         pet.islandOpened()
         // On screen from here until `finishClose`. Not the window's occlusion state: measured on
@@ -727,6 +737,38 @@ final class IslandController: NSObject {
         navigation.ask(toShow: reveal)
     }
 
+    /// The head sets off from the left ear toward the pet's place, where the presentation has a
+    /// habitat and the column has been measured (§ 3.6; plan R7, R8). The ear's own head hides
+    /// until the island has grown over it.
+    private func startEarMorph(on screen: IslandScreen, placement: IslandDisplayResolver.Placement, at now: TimeInterval) {
+        let settings = SettingsStore.shared
+        let eligible = IslandPresentationRules.presentation(
+            notchPresent: placement.kind == .island, screenWidth: screen.frame.width,
+            petOn: settings.petEnabled, earsOn: settings.earsEnabled
+        ).morphEligible
+        guard earOpen?.morphs == true,
+              IslandEarMorph.eligible(
+                  mark: earModel.ears.left?.mark, morphEligible: eligible,
+                  reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+              ),
+              let head = restingHead, let geometry = model.geometry,
+              let target = IslandEarMorph.target(
+                  contentOrigin: geometry.contentOrigin(contentSize: model.contentSize),
+                  columnHeight: layout.rightColumnViewport,
+                  xBeads: pet.keeper.runtime.xBeads,
+                  scale: PetHabitatRules.scale(petBeads: PetContract.size, backingScale: window.backingScaleFactor)
+              )
+        else { return }
+        // The ear's head as drawn, from the resting window into the island's.
+        let drawn = IslandEarRules.headRect(in: leftEarView.frame, scale: head.scale)
+        let from = IslandGeometry.local(IslandGeometry.global(drawn, in: resting.frame), in: window.frame)
+        earMorph.start(
+            IslandEarMorph(start: now, from: from, to: target),
+            image: head.image, backingScale: head.scale.backingScale
+        )
+        leftEarView.hidesHead = true
+    }
+
     // MARK: - Display changes
 
     private func observeDisplays() {
@@ -927,6 +969,9 @@ final class IslandController: NSObject {
         settle(at: now)
         guard transition.phase != .closed else { return }
         navigation.advance(to: now)
+        if !earMorph.advance(to: now) {
+            leftEarView.hidesHead = false
+        }
         updateMouseIgnoring()
         if !transition.needsFrames, !navigation.isMoving {
             frames.stop()
