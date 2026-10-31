@@ -399,9 +399,8 @@ struct OnboardingView: View {
             Text("You're all set!")
                 .font(OMFont.screenTitle)
             card {
-                tip("Click", "menu bar icon to open the popover")
-                tip("Hover", "menu bar icon for a quick summary tooltip")
-                tip("From popover", "open Dashboard, Settings, or Refresh")
+                tip("Click", "the notch to open the island (no notch: the menu bar icon)")
+                tip("From the island", "open Dashboard, Settings, or Refresh")
                 tip("Updates", "install themselves — signed and notarized")
             }
             Spacer()
