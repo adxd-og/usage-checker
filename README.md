@@ -2,7 +2,16 @@
 
 ![Brioche: AI usage at a glance](docs/banner.png)
 
-Brioche is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
+<table>
+  <tr>
+    <td width="56%"><img src="docs/screenshots/island.gif" alt="The island grows out of the notch on a click and goes back in on the next."></td>
+    <td width="44%"><img src="docs/screenshots/pet.gif" alt="The pixel cat climbing the wall of its column."></td>
+  </tr>
+</table>
+
+[Watch the 30-second film](docs/brioche-promo.mp4) (MP4, no sound, sample data).
+
+Brioche is a macOS app in your notch or menu bar for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
 This README is a map. Each section says what it covers and points to the next one.
 
 > Brioche was called Omelette until 4.0. An installed copy updates itself and keeps
@@ -102,7 +111,7 @@ never catches you mid-task.
 
 | Provider | What you see |
 |---|---|
-| **Claude** | 5-hour session and weekly limits per model, decoded dynamically so a new model appears without an update; extra usage credits; Enterprise spend limits; Cloud session credits: shown as dollars, never drives the menu bar |
+| **Claude** | 5-hour session and weekly limits per model, decoded dynamically so a new model appears without an update; extra usage credits; Enterprise spend limits; Cloud session credits: shown as dollars, drives the menu bar only when it is all the account has |
 | **Codex (OpenAI)** | session and weekly limits from the local Codex CLI; local dollar cost accounting from its session logs, now including compaction calls and sessions moved to `~/.codex/archived_sessions` |
 | **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts; per-model limits such as Gemini 4 Argon get their own row; while the app is closed or not answering, read through the `agy` CLI |
 | **Grok (xAI)** | billing-period credit usage from the local Grok CLI, falling back to grok.com web billing when the CLI is unavailable |
@@ -112,9 +121,9 @@ never catches you mid-task.
 - In Claude Code's logs, a sub-agent's spend is attributed to the project
   that launched it
 - **Last known numbers.** A provider that's closed or signed out keeps its
-  last good reading, dimmed, with "as of 14:05" on the chip, on every
-  surface (All, island, dashboard, menu bar, widgets). A **Forget last
-  known numbers** button per provider in Settings clears it on demand
+  last good reading, dimmed and dated ("Last known 14:05" on its tile), on every
+  surface (island, dashboard, menu bar, widgets). A **Forget last
+  known** link on that provider in Settings → Providers clears it on demand
 - **Pay-as-you-go mode.** Accounts without rate windows get a "$ spent"
   pill and an optional weekly budget with percentage bars and alerts
 
@@ -139,11 +148,11 @@ or display without a notch it is a panel under the menu bar icon.
   page is home
 - **Ears**: with the island closed, the notch grows an ear when something needs
   you: a waiting agent, a signed-out Claude, a limit at 90 %, and ☾ for keep
-  awake while the menu bar icon is hidden. A click on an ear opens that
-  provider, or brings the one waiting agent forward. Settings → Pet turns them
-  off
+  awake while the menu bar icon is hidden. A click on an ear does what it
+  shows: the one waiting agent comes forward; otherwise the island opens on the
+  agents list, that provider or keep awake. Settings → Pet turns them off
 
-- **All-tab tiles lead with the 5-hour session window**, the number people
+- **Tiles on All lead with the 5-hour session window**, the number people
   open the island to check, with the weekly window on the line below
 - **The cost tile shows today's spend first**, with the 7-day total and the
   per-provider split underneath
@@ -191,7 +200,8 @@ sessions you already have running.
   already in front, the CLI just asks there
 - **Hooks for both CLIs**: eight Claude Code hooks in
   `~/.claude/settings.json`, seven Codex hooks in `~/.codex/hooks.json`,
-  installed with one click (Settings → Integrations shows the exact JSON first).
+  installed with one click (to see the exact text first, right-click the row in
+  Settings → Integrations and choose **Copy what will be written**).
   Codex refuses a hook until you trust it once with `/hooks` inside Codex;
   Settings → Integrations says when that's still outstanding
 - **Jump to the tab**: clicking a row brings its terminal back. Terminal and
@@ -225,7 +235,7 @@ use `omelette` for this one.
 |---|---|
 | `brioche status` | every provider's windows with exact reset times, today's and this week's cost, what your agents are doing |
 | `brioche status --json` | the same snapshot as JSON, including each provider's recent chats |
-| `brioche statusline [--provider ID]` | one line for a status bar (default: claude) |
+| `brioche statusline [--provider ID] [--no-color]` | one line for a status bar (default: claude) |
 | `brioche mcp` | a read-only MCP server on stdio |
 | `brioche --version` / `--help` | version and usage |
 
@@ -355,7 +365,9 @@ Next: [Keep awake with the lid closed](#keep-awake-with-the-lid-closed).
 
 Keeps a MacBook working with its lid closed for a set time, so agents carry on
 in a bag or under a cat. Set it from the block above the island's footer; a ☾
-in the menu bar says it is on (in the notch's right ear while the icon is hidden).
+in the menu bar says it is on. While the icon is hidden it moves to the notch's
+right ear, unless the ears are off or that ear is showing a limit at 90 %; the
+island's block always says.
 
 - **Timed only**: days, hours and minutes (the fields stop at 7, 24 and 60), 1 minute to 7 d 23 h 59 min, then **Apply**;
   more than that is brought down to it on Apply, and the block says so.
@@ -396,7 +408,7 @@ A sidebar window with seven tabs.
   providers show in the menu bar, agents in the menu bar
 - **Pet**: the pet on or off, the ears, the animal and its colourway
 - **Providers**: one row per provider with its source, status and switch
-  (Claude's too: off means not polled at all), and Forget last known numbers
+  (Claude's too: off means not polled at all), and Forget last known
   inline. With every provider off, the menu bar, island and widgets say so.
   A signed-out Claude's row offers the way out that fits: **Sign in** when
   Claude Code is installed, the install link when it is not, and Settings ›
@@ -450,8 +462,12 @@ to keep a year of them:
   and never asks for a token
 - Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost
   reports if you add an Admin API key), `models.dev` (public pricing data),
-  `cloudcode-pa.googleapis.com` (Antigravity's quota while it isn't running, only if enabled),
-  `grok.com` (Grok web-billing fallback, only if enabled), `github.com` and
+  `cloudcode-pa.googleapis.com` and `oauth2.googleapis.com` (Antigravity's quota
+  while it is closed and agy has no reading, with the sign-in Antigravity saved,
+  whenever the Antigravity provider is on), `grok.com` and
+  `cli-chat-proxy.grok.com` (Grok's plan tier on each poll and its billing when
+  the CLI can't answer, with the sign-in the Grok CLI saved, whenever the Grok
+  provider is on), `github.com` and
   `adxd-og.github.io` (Sparkle update feed and DMG download), and local RPC
   to the Codex CLI or Antigravity's language server. The `agy` CLI, when
   Brioche runs it, talks to Google itself under its own sign-in
@@ -521,18 +537,20 @@ Next: [Install](#install).
 1. Download the latest `Brioche.dmg` from [Releases](../../releases)
 2. Open the DMG and drag `Brioche.app` to `~/Applications/` (or `/Applications/`).
    Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first.
-   Settings, history and widgets carry over automatically
+   Settings, history and widgets carry over automatically.
+
    Upgrading from Omelette? You don't need the DMG: it updates itself, stays
    `Omelette.app` on disk and keeps everything. If you install the DMG anyway,
    delete `Omelette.app` first (press **Reset keep awake** in Settings → Advanced
    before that, if you use keep awake), so one copy runs.
-3. Launch it. macOS asks for permission to read the `Claude Code-credentials`
-   Keychain item: click **Always Allow**. From then on Brioche reads it
+3. Launch it. In the welcome tour, press **Grant access**: macOS asks to read the
+   `Claude Code-credentials` Keychain item. Click **Always Allow**. From then on Brioche reads it
    without that dialog and keeps what it read in memory only. It can
    reappear after something resets the item's access list (a reinstall, or a
    differently signed build); Settings → Advanced → **Request keychain access
    now** brings it back on demand
-4. The icon appears in your menu bar; click it to see usage
+4. Click the notch to open Brioche. On a Mac or display without a notch, click
+   the menu bar icon instead
 5. That's the last manual install. Updates arrive automatically via Sparkle
    (signed & notarized), or on demand via Settings → General → **Check now**
 
@@ -553,9 +571,11 @@ Next: [Disclaimer](#disclaimer).
 
 ## Disclaimer
 
-`/api/oauth/usage` is an **undocumented** endpoint that the official Claude Code CLI uses internally. Anthropic may change or remove it at any time. If that happens, this widget will gracefully show "Error" until it's updated.
+`/api/oauth/usage` is an **undocumented** endpoint that the official Claude Code CLI uses internally. Anthropic may change or remove it at any time. If that happens, Brioche keeps showing Claude's last known numbers, dimmed, and says Error until it's updated.
 
 Brioche is **not** affiliated with or endorsed by Anthropic.
+
+Next: [License](#license).
 
 ## License
 

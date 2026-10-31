@@ -144,6 +144,7 @@ jobs:
             ## Install
             1. Download `Brioche.dmg`
             2. Open it and drag `Brioche.app` to `~/Applications/` or `/Applications/`
-            3. Launch — macOS asks for permission to read the `Claude Code-credentials` Keychain item; click **Always Allow**. Background refreshes never raise that dialog again; Settings → Account can re-request it if it's ever needed
+            3. Launch it. In the welcome tour, press **Grant access** and click **Always Allow** when macOS asks to read the `Claude Code-credentials` Keychain item. Background refreshes never raise that dialog; Settings → Advanced → **Request keychain access now** asks again if it's ever needed
+            4. Click the notch to open Brioche (no notch: the menu bar icon)
 
-            Requires macOS 26+ and [Claude Code](https://docs.anthropic.com/claude-code) signed in.
+            Requires macOS 26+ and [Claude Code](https://docs.anthropic.com/claude-code) or the Claude app.

@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Closing it returns the keyboard to the app behind.
 - The Dashboard, Settings and the tour are in Cmd+Tab, with a Dock icon, while
   one of them is open.
+- With no window on screen, a click on a Brioche notification or a double click on
+  the app in Finder opens the island, not the Dashboard.
 
 ### Menu bar icon
 - New switch: Settings › General › Menu bar icon › **Show in menu bar**. On a
@@ -49,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A click on the pet does what its line says: jump to the waiting agent, sign
   in, open the provider at 90 %, show keep awake, open Settings › Providers
   with all providers off. Otherwise it pats the pet.
-- It idles, blinks, naps, plays hand-drawn events and stretches when a limit
+- It idles, blinks, naps, plays hand-drawn events and looks up when a limit
   window resets. It animates only while the island is open and Reduce Motion
   is off.
 - New tab Settings › Pet: show the pet, ears on or off, animal and colourway.
