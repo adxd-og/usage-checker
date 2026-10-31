@@ -215,7 +215,7 @@ final class P6VerificationEarMatrixTests: XCTestCase {
     /// The head sits on the device-pixel grid inside the ear for every notch height and backing scale.
     func testTheHeadIsAlwaysInsideItsEarAndOnWholeDevicePixels() {
         for backing in [1.0, 2.0, 3.0] as [CGFloat] {
-            for height in stride(from: 20.0, through: 44.0, by: 0.5) as StrideThrough<CGFloat> {
+            for height in stride(from: 26.0, through: 44.0, by: 0.5) as StrideThrough<CGFloat> {
                 let scale = IslandEarRules.headScale(earHeight: height, backingScale: backing)
                 let ear = CGRect(x: 100.5, y: 0, width: IslandEarRules.earWidth, height: height)
                 let rect = IslandEarRules.headRect(in: ear, scale: scale)

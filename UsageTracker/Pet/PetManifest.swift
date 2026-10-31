@@ -1,7 +1,7 @@
 import Foundation
 
 /// The contract every pet folder keeps (notch-island spec 2026-10-29 § 3.5, "Manifest
-/// contract"): `Pets/<animal>/pet.json` with exactly these keys, 35 × 35 frames, a 16 × 16 ear
+/// contract"): `Pets/<animal>/pet.json` with exactly these keys, 35 × 35 frames, a 26 × 26 ear
 /// head (§ 3.6), five required animations at 0.5–12 fps and a still frame per pose, and may carry
 /// `events` (`PetEvent`, the owner's note of 2026-10-30). `PetManifestValidator` checks it.
 enum PetContract {
@@ -14,7 +14,7 @@ enum PetContract {
     /// Beads per side of every frame.
     static let size = 35
     /// Beads per side of the ear head.
-    static let earSize = 16
+    static let earSize = 26
     static let fps: ClosedRange<Double> = 0.5...12
     /// The bead that draws nothing; never a role.
     static let transparent: Unicode.Scalar = "."
@@ -31,7 +31,7 @@ enum PetPose: String, CaseIterable, Sendable {
     case idle, look, sleep
 }
 
-/// One drawable picture of a pet: a named frame, the 16 × 16 ear head, or a frame of an event
+/// One drawable picture of a pet: a named frame, the 26 × 26 ear head, or a frame of an event
 /// (each event names its own frames, so two may both have an "a").
 enum PetSprite: Hashable, Sendable, CustomStringConvertible {
     case frame(String)
@@ -156,7 +156,7 @@ struct PetManifest: Equatable, Sendable {
     let frames: [String: PetCharMap]
     let animations: PetAnimations
     let still: PetStills
-    /// The 16 × 16 head for the left ear (§ 3.6), in the same palettes.
+    /// The 26 × 26 head for the left ear (§ 3.6), cut from the pet's own idle frame, in the same palettes.
     let ear: PetCharMap
     /// The events that kept the contract, in the manifest's order.
     let events: [PetEvent]

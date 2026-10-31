@@ -206,10 +206,10 @@ final class IslandEarRulesTests: XCTestCase {
 
     func testTheHeadIsDrawnOnWholePixelsInsideTheEar() {
         let retina = IslandEarRules.headScale(earHeight: 32, backingScale: 2)
-        XCTAssertEqual(retina.pixelsPerBead, 3, "the pet's own bead")
-        XCTAssertEqual(retina.points(beads: PetContract.earSize), 24)
-        XCTAssertEqual(IslandEarRules.headScale(earHeight: 22, backingScale: 2).points(beads: PetContract.earSize), 16)
+        XCTAssertEqual(retina.pixelsPerBead, 2, "whole pixels, and the head still fits")
+        XCTAssertEqual(retina.points(beads: PetContract.earSize), 26)
+        XCTAssertEqual(IslandEarRules.headScale(earHeight: 22, backingScale: 2).points(beads: PetContract.earSize), 13)
         let rect = IslandEarRules.headRect(in: CGRect(x: 10.5, y: 0, width: 34, height: 32), scale: retina)
-        XCTAssertEqual(rect, CGRect(x: 15.5, y: 4, width: 24, height: 24))
+        XCTAssertEqual(rect, CGRect(x: 14.5, y: 3, width: 26, height: 26))
     }
 }

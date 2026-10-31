@@ -60,9 +60,9 @@ final class PetSpriteCacheTests: XCTestCase {
     func testTheEarHeadIsCachedLikeAFrame() throws {
         let cache = try makeCache()
         let ear = try XCTUnwrap(cache.image(spriteKey(sprite: .ear)))
-        XCTAssertEqual(ear.width, 48)
+        XCTAssertEqual(ear.width, 78)
         XCTAssertEqual(PetFixture.pixel(ear, x: 0, y: 0), [0x10, 0x10, 0x10, 255])
-        XCTAssertEqual(PetFixture.pixel(ear, x: 47, y: 47), [0x80, 0x80, 0x80, 255])
+        XCTAssertEqual(PetFixture.pixel(ear, x: 77, y: 77), [0x80, 0x80, 0x80, 255])
     }
 
     func testAPetPaletteOrFrameTheLibraryLacksGivesNoImageAndKeepsNothing() throws {

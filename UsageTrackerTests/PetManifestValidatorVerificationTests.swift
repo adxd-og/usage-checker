@@ -64,7 +64,7 @@ final class PetManifestValidatorVerificationTests: XCTestCase {
         ("ear_35", ["ear"], PetFixture.frameRows, 1, false),
         ("ear_str", ["ear"], "x", 1, false),
         ("ear_null", ["ear"], NSNull(), 1, false),
-        ("ear_row_bad", ["ear"], ["z..............."] + Array(PetFixture.earRows.dropFirst()), 3, false),
+        ("ear_row_bad", ["ear"], ["z" + String(repeating: ".", count: 25)] + Array(PetFixture.earRows.dropFirst()), 3, false),
         ("anim_missing_idle", ["animations", "idle"], nil, 1, false),
         ("anim_missing_all", ["animations"], [String: Any](), 5, false),
         ("anim_list", ["animations"], [Any](), 5, false),
@@ -135,7 +135,7 @@ final class PetManifestValidatorVerificationTests: XCTestCase {
     }
 
     func testARoleOnlyTheEarPaintsMustBeInEveryPalette() throws {
-        var object = PetFixture.setting(["ear"], to: PetFixture.rows(side: 16, beads: [(0, 0, "o"), (15, 15, "1"), (5, 5, "w")]), in: PetFixture.manifest())
+        var object = PetFixture.setting(["ear"], to: PetFixture.rows(side: 26, beads: [(0, 0, "o"), (25, 25, "1"), (5, 5, "w")]), in: PetFixture.manifest())
         object = PetFixture.setting(["palettes", "grey", "w"], to: "#ffffff", in: object)
         XCTAssertEqual(try check(object).issues, [.paletteLacksRoles(palette: "white", roles: "w")])
         object = PetFixture.setting(["palettes", "white", "w"], to: "#fefefe", in: object)
@@ -145,7 +145,7 @@ final class PetManifestValidatorVerificationTests: XCTestCase {
     }
 
     func testAnEarBeadOfNoDeclaredRoleIsNamedWithItsPlace() throws {
-        let ear = PetFixture.rows(side: 16, beads: [(0, 0, "o"), (15, 15, "1"), (5, 6, "z")])
+        let ear = PetFixture.rows(side: 26, beads: [(0, 0, "o"), (25, 25, "1"), (5, 6, "z")])
         let issues = try check(PetFixture.setting(["ear"], to: ear, in: PetFixture.manifest())).issues
         XCTAssertEqual(issues, [
             .undeclaredRole(.ear, x: 5, y: 6, role: "z"),

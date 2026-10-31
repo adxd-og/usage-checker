@@ -53,7 +53,7 @@ final class PetSpriteCacheVerificationTests: XCTestCase {
         let frame = try XCTUnwrap(cache.image(key("mouse", "grey", .frame("ear"), 1)))
         let head = try XCTUnwrap(cache.image(key("mouse", "grey", .ear, 1)))
         XCTAssertEqual(frame.width, 35)
-        XCTAssertEqual(head.width, 16)
+        XCTAssertEqual(head.width, 26)
         XCTAssertEqual(cache.count, 2)
     }
 
@@ -61,7 +61,7 @@ final class PetSpriteCacheVerificationTests: XCTestCase {
         let cache = try twoAnimals()
         for px in 1...4 {
             XCTAssertEqual(cache.image(key("mouse", "grey", .frame("idle_1"), px))?.width, 35 * px)
-            XCTAssertEqual(cache.image(key("mouse", "grey", .ear, px))?.width, 16 * px)
+            XCTAssertEqual(cache.image(key("mouse", "grey", .ear, px))?.width, 26 * px)
         }
         XCTAssertEqual(cache.count, 8)
     }
@@ -114,7 +114,7 @@ final class PetSpriteCacheVerificationTests: XCTestCase {
         XCTAssertEqual(cache.count, 12)
     }
 
-    /// The doc comment's figure: 11 images, 450,216 bytes for a shipped pet's own frames and ear at
+    /// The doc comment's figure: 11 images, 465,336 bytes for a shipped pet's own frames and ear at
     /// 3 px per bead, and one more image per event frame, however many the art brings.
     func testAShippedPetsOwnFramesAreElevenImagesAndFourHundredFiftyThousandBytesAtThreePixels() throws {
         for animal in PetLibrary.bundled().animalIDs {
@@ -129,7 +129,7 @@ final class PetSpriteCacheVerificationTests: XCTestCase {
                 let image = try XCTUnwrap(assets.sprites.image(PetSpriteCache.Key(animal: animal, palette: palette, sprite: sprite, pixelsPerBead: 3)))
                 total += image.bytesPerRow * image.height
             }
-            XCTAssertEqual(total, 450_216, animal)
+            XCTAssertEqual(total, 465_336, animal)
             XCTAssertEqual(assets.sprites.count, images, "asking for the warmed images builds none: \(animal)")
         }
     }

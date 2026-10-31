@@ -1,6 +1,6 @@
 import CoreGraphics
 
-/// Which part of a pet's 16 × 16 head peeks out in the notch's breath (notch-island spec 2026-10-29
+/// Which part of a pet's 26 × 26 head peeks out in the notch's breath (notch-island spec 2026-10-29
 /// § 3.1, D13): from its first painted row, as many whole beads as `band` points hold. Pure.
 struct PetEarTips: Equatable, Sendable {
     /// In the head's image: device pixels, origin at the top left.
