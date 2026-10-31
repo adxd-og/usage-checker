@@ -410,7 +410,8 @@ final class IslandController: NSObject {
 
     /// Applies a navigation input (§ 3.4) at the motion's clock, with Reduce Motion as it is
     /// now, over the providers on screen (`providers`, or the app's own list): a move starts the
-    /// frames that draw it, Esc at All closes. Returns the reducer's action.
+    /// frames that draw it, or just lands while closed, and Esc at All closes. Returns the reducer's
+    /// action.
     @discardableResult
     private func navigate(_ input: IslandNavigation.Input, providers: [String]? = nil) -> IslandNavigation.Action {
         let now = eventTime()
@@ -422,7 +423,7 @@ final class IslandController: NSObject {
         )
         switch action {
         case .go:
-            frames.start()
+            if IslandTransition.pageMoveWantsFrames(phase: transition.phase) { frames.start() }
         case .close:
             close()
         case .stay, .pass:

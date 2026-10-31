@@ -133,6 +133,13 @@ struct IslandTransition: Equatable, Sendable {
         islandWasKey && !reopened && appIsActive && !otherWindowCanTakeKey
     }
 
+    /// A page move wants the frames that draw it, unless the island is closed: a provider leaving
+    /// moves the page with nothing on screen, and frames asked for there would stay wanted until
+    /// the next close (§ 3.8). The next open lands at rest whatever the page is.
+    static func pageMoveWantsFrames(phase: Phase) -> Bool {
+        phase != .closed
+    }
+
     /// Opens with `style` at `now`, after applying what was due by then; nothing when already
     /// opening or open. From closing it turns around: the shape springs back from its value and
     /// velocity at `now`, and the content comes back at once when the shape had not started to

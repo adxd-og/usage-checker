@@ -65,6 +65,33 @@ final class IslandFrameDriverTests: XCTestCase {
         XCTAssertFalse(source.isRunning)
     }
 
+    // MARK: A page move while closed (whole-branch review of 4.0, ruling R7)
+
+    /// A provider that was the last open's page is switched off while the island is closed: the
+    /// page lands, at rest, and no frame is asked for.
+    func testAPageMoveWhileClosedLandsWithoutFrames() {
+        let (driver, source) = make()
+        let navigation = IslandNavigationModel()
+        navigation.apply(.open(subject: "codex"), providers: ["claude", "codex"], reduceMotion: false, at: 1)
+        XCTAssertEqual(navigation.page, .provider("codex"))
+
+        let action = navigation.apply(.providersChanged, providers: ["claude", "grok"], reduceMotion: false, at: 2)
+        if case .go = action, IslandTransition.pageMoveWantsFrames(phase: .closed) { driver.start() }
+
+        XCTAssertEqual(navigation.page, .all)
+        XCTAssertFalse(navigation.isMoving)
+        XCTAssertEqual(navigation.frame, .resting(at: .all))
+        XCTAssertEqual(source.starts, 0)
+        XCTAssertFalse(driver.isRunning)
+    }
+
+    func testAPageMoveWantsFramesInEveryPhaseButClosed() {
+        XCTAssertFalse(IslandTransition.pageMoveWantsFrames(phase: .closed))
+        for phase: IslandTransition.Phase in [.opening, .open, .closing] {
+            XCTAssertTrue(IslandTransition.pageMoveWantsFrames(phase: phase), "\(phase)")
+        }
+    }
+
     // MARK: Sleep
 
     func testSleepingDisplaysStopTheTicksAndWakingResumesThemWhileMotionIsPending() {
