@@ -68,6 +68,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Name
 - Omelette is now Brioche. Same app, same data: settings, history, the Claude
   sign-in, widgets and keep awake carry over.
+- A new icon to match: a brioche with cat ears, drawn in the pets' pixels.
 - An installed copy updates in place and stays `Omelette.app` on disk. A new
   download is `Brioche.app`; if you install it by hand, delete `Omelette.app`
   first.
