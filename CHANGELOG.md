@@ -1,9 +1,24 @@
 # Changelog
 
-All notable changes to Omelette (formerly Usage Checker) will be documented in this file.
+All notable changes to Brioche (formerly Omelette, before that Usage Checker) will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [4.0.0] — Unreleased
+
+### Name
+- Omelette is now Brioche. Same app, same data: settings, history, the Claude
+  sign-in, widgets and keep awake carry over.
+- An installed copy updates in place and stays `Omelette.app` on disk. A new
+  download is `Brioche.app`; if you install it by hand, delete `Omelette.app`
+  first.
+- The command and the MCP server are `brioche` for new setups. `omelette` keeps
+  working: hooks, status line and MCP entries already installed stay as they
+  are, and Disable, then Enable in Settings › Integrations moves one to the new
+  name.
+- A file at `bin/brioche` that another tool put there is left alone, and new
+  setups then use `omelette`.
 
 ## [3.3.0] — 2026-10-29
 
