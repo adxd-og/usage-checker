@@ -85,18 +85,22 @@ enum ProviderGridRules {
         case provider(AgentSource)
     }
 
-    /// `serviceID` is the provider whose page the row shows, nil on All. A provider without agents
-    /// (Grok, Antigravity) has no card of its own; but where its page is home there is no All to go
-    /// to, so it shows every session when there are any (P6 plan R21). With no tiles to draw
-    /// (`bodyIsEmpty`: every provider off, or the first poll) sessions still run, and the pet and the
-    /// ear count them, so they have a card to reach under the empty body (ruling R5). Nil: no card.
+    /// `serviceID` is the provider whose page the row shows, nil on All; `sessionSources` where the
+    /// sessions on this Mac come from. A provider with agents lists its own, and one without (Grok,
+    /// Antigravity) has no card of its own. But where its page is home there is no All to go to, and
+    /// the pet and the ear count every session, so a session its card would not list makes it show
+    /// them all (P6 plan R21, ruling R6). With no tiles to draw (`bodyIsEmpty`: every provider off, or
+    /// the first poll) sessions still run, and they have a card to reach under the empty body too
+    /// (ruling R5). Nil: no card.
     nonisolated static func agentsCard(
-        serviceID: String?, providerCount: Int, hasSessions: Bool, bodyIsEmpty: Bool = false
+        serviceID: String?, providerCount: Int, sessionSources: Set<AgentSource>, bodyIsEmpty: Bool = false
     ) -> AgentsCard? {
-        if bodyIsEmpty { return hasSessions ? .allSessions : nil }
+        if bodyIsEmpty { return sessionSources.isEmpty ? nil : .allSessions }
         guard let serviceID else { return .allSessions }
-        if let source = AgentSource(rawValue: serviceID) { return .provider(source) }
-        return providerPageIsHome(count: providerCount) && hasSessions ? .allSessions : nil
+        let source = AgentSource(rawValue: serviceID)
+        let elsewhere = sessionSources.contains { $0 != source }
+        if providerPageIsHome(count: providerCount), elsewhere { return .allSessions }
+        return source.map { .provider($0) }
     }
 
     /// One provider: its page is home and there is no grid (§ 3.3, § 3.4).

@@ -6,8 +6,14 @@ import XCTest
 /// click needs a card to reach, so that home page shows every session; a drilled-in page among several
 /// stays without one (P3b R2).
 final class ProviderGridRulesAgentsCardTests: XCTestCase {
+    /// With `sessions`, the page's own source's only: `card(_:of:sources:)` has the others.
     private func card(_ id: String?, of count: Int, sessions: Bool = true) -> ProviderGridRules.AgentsCard? {
-        ProviderGridRules.agentsCard(serviceID: id, providerCount: count, hasSessions: sessions)
+        let own = id.flatMap(AgentSource.init(rawValue:)) ?? .claude
+        return card(id, of: count, sources: sessions ? [own] : [])
+    }
+
+    private func card(_ id: String?, of count: Int, sources: Set<AgentSource>) -> ProviderGridRules.AgentsCard? {
+        ProviderGridRules.agentsCard(serviceID: id, providerCount: count, sessionSources: sources)
     }
 
     func testAllListsEverySessionWithOrWithoutAny() {
@@ -43,10 +49,30 @@ final class ProviderGridRulesAgentsCardTests: XCTestCase {
         )
     }
 
+    // MARK: - A sole provider's home page (whole-branch review of 4.0, ruling R6)
+
+    func testASoleProvidersHomePageShowsEverySessionWhenAnotherSourceHasSome() {
+        XCTAssertEqual(card("claude", of: 1, sources: [.codex]), .allSessions)
+        XCTAssertEqual(card("codex", of: 1, sources: [.claude]), .allSessions)
+        XCTAssertEqual(card("claude", of: 1, sources: [.claude, .codex]), .allSessions)
+    }
+
+    func testASoleProvidersHomePageListsItsOwnWhenTheyAreAllThereIs() {
+        XCTAssertEqual(card("claude", of: 1, sources: [.claude]), .provider(.claude))
+        XCTAssertEqual(card("codex", of: 1, sources: []), .provider(.codex))
+    }
+
+    func testAPageAmongSeveralListsItsOwnWhateverElseRuns() {
+        XCTAssertEqual(card("claude", of: 2, sources: [.codex]), .provider(.claude))
+        XCTAssertEqual(card("codex", of: 4, sources: [.claude, .codex]), .provider(.codex))
+    }
+
     // MARK: - Under the empty body (whole-branch review of 4.0, ruling R5)
 
     private func emptyCard(_ id: String?, of count: Int, sessions: Bool) -> ProviderGridRules.AgentsCard? {
-        ProviderGridRules.agentsCard(serviceID: id, providerCount: count, hasSessions: sessions, bodyIsEmpty: true)
+        ProviderGridRules.agentsCard(
+            serviceID: id, providerCount: count, sessionSources: sessions ? [.claude] : [], bodyIsEmpty: true
+        )
     }
 
     func testWithNoTilesEverySessionHasACardWhenThereAreAny() {
@@ -81,7 +107,7 @@ final class ProviderGridRulesAgentsCardTests: XCTestCase {
         let body = PopoverView.emptyBody(pollsNothing: true, services: [])
         XCTAssertEqual(body, .nothingOn)
         let shown = ProviderGridRules.agentsCard(
-            serviceID: nil, providerCount: 0, hasSessions: true, bodyIsEmpty: body != nil
+            serviceID: nil, providerCount: 0, sessionSources: Set(sessions.map(\.source)), bodyIsEmpty: body != nil
         )
         XCTAssertEqual(shown, .allSessions)
         XCTAssertTrue(PetActionRules.revealReady(.agents, agentsCardShown: shown != nil, moving: false))

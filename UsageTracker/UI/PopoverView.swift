@@ -752,7 +752,8 @@ struct PopoverView: View {
     /// The card `ProviderGridRules.agentsCard` decides on, under the empty body too.
     private var lowerRowAgents: LowerRowAgents? {
         switch ProviderGridRules.agentsCard(
-            serviceID: lowerRowService?.id, providerCount: displayedServices.count, hasSessions: !agents.sessions.isEmpty,
+            serviceID: lowerRowService?.id, providerCount: displayedServices.count,
+            sessionSources: Set(agents.sessions.map(\.source)),
             bodyIsEmpty: Self.emptyBody(pollsNothing: state.pollsNothing, services: displayedServices) != nil
         ) {
         case .allSessions:
