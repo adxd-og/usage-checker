@@ -242,6 +242,26 @@ final class IslandController: NSObject {
         }
     }
 
+    /// At launch: the first one after an update that took the status item away opens the island
+    /// once (`StatusItemVisibilityRules.firstLaunchAfterUpdate`). As an ear opens it, so the app
+    /// in front keeps the keyboard, a beat in as the tour does, once the stored numbers have landed.
+    func openIfTheUpdateTookTheItem() {
+        let settings = SettingsStore.shared
+        let verdict = StatusItemVisibilityRules.firstLaunchAfterUpdate(
+            alreadyMarked: settings.hasOpenedIslandAfterUpdate,
+            hasSeenOnboarding: settings.hasSeenOnboarding,
+            setting: settings.showInMenuBar,
+            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+        )
+        guard verdict != .nothing else { return }
+        settings.hasOpenedIslandAfterUpdate = true
+        guard verdict == .openIsland else { return }
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(0.6))
+            self?.handle(.ear)
+        }
+    }
+
     /// Closes the island with its motion (§ 3.2): the content fades out, then the shape
     /// shrinks back into the notch; the panel fades out; Reduce Motion cross-fades. Nothing
     /// when it is closed or already closing.

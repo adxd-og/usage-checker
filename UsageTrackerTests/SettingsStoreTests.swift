@@ -50,6 +50,7 @@ final class SettingsStoreTests: XCTestCase {
         s.menuBarNumberMode = .never
         s.showsRemaining = !SettingsStore.Defaults.showsRemaining
         s.hasSeenOnboarding = !SettingsStore.Defaults.hasSeenOnboarding
+        s.hasOpenedIslandAfterUpdate = !SettingsStore.Defaults.hasOpenedIslandAfterUpdate
         s.agentsNotifyNeedsYou = !SettingsStore.Defaults.agentsNotifyNeedsYou
         s.agentsNeedsYouBypassQuietHours = !SettingsStore.Defaults.agentsNeedsYouBypassQuietHours
         s.agentsNotifyDone = !SettingsStore.Defaults.agentsNotifyDone
@@ -104,6 +105,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.menuBarNumberMode, SettingsStore.Defaults.menuBarNumberMode, message)
         XCTAssertEqual(s.showsRemaining, SettingsStore.Defaults.showsRemaining, message)
         XCTAssertEqual(s.hasSeenOnboarding, SettingsStore.Defaults.hasSeenOnboarding, message)
+        XCTAssertEqual(s.hasOpenedIslandAfterUpdate, SettingsStore.Defaults.hasOpenedIslandAfterUpdate, message)
         XCTAssertEqual(s.agentsNotifyNeedsYou, SettingsStore.Defaults.agentsNotifyNeedsYou, message)
         XCTAssertEqual(s.agentsNeedsYouBypassQuietHours, SettingsStore.Defaults.agentsNeedsYouBypassQuietHours, message)
         XCTAssertEqual(s.agentsNotifyDone, SettingsStore.Defaults.agentsNotifyDone, message)

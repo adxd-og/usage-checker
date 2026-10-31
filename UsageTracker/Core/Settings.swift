@@ -62,6 +62,7 @@ final class SettingsStore: ObservableObject {
         static let menuBarNumberMode = MenuBarNumberMode.auto
         static let showsRemaining = false
         static let hasSeenOnboarding = false
+        static let hasOpenedIslandAfterUpdate = false
         static let agentsNotifyNeedsYou = true
         static let agentsNeedsYouBypassQuietHours = true
         static let agentsNotifyDone = false
@@ -155,6 +156,10 @@ final class SettingsStore: ObservableObject {
     var percentMode: PercentDisplay.Mode { showsRemaining ? .remaining : .used }
 
     @AppStorage("hasSeenOnboarding") var hasSeenOnboarding: Bool = Defaults.hasSeenOnboarding
+
+    /// The one time a launch opened the island in place of a status item that went away with
+    /// 4.0, or found it had no need to (`StatusItemVisibilityRules.firstLaunchAfterUpdate`).
+    @AppStorage("hasOpenedIslandAfterUpdate") var hasOpenedIslandAfterUpdate: Bool = Defaults.hasOpenedIslandAfterUpdate
 
     /// A session stopped and is waiting for a permission decision.
     @AppStorage("agentsNotifyNeedsYou") var agentsNotifyNeedsYou: Bool = Defaults.agentsNotifyNeedsYou
@@ -272,6 +277,7 @@ final class SettingsStore: ObservableObject {
         menuBarNumberMode = Defaults.menuBarNumberMode
         showsRemaining = Defaults.showsRemaining
         hasSeenOnboarding = Defaults.hasSeenOnboarding
+        hasOpenedIslandAfterUpdate = Defaults.hasOpenedIslandAfterUpdate
         agentsNotifyNeedsYou = Defaults.agentsNotifyNeedsYou
         agentsNeedsYouBypassQuietHours = Defaults.agentsNeedsYouBypassQuietHours
         agentsNotifyDone = Defaults.agentsNotifyDone
