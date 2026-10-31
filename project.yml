@@ -129,7 +129,7 @@ targets:
     info:
       path: UsageTracker/Info.plist
       properties:
-        CFBundleDisplayName: Omelette
+        CFBundleDisplayName: Brioche
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSUIElement: true
@@ -144,10 +144,16 @@ targets:
         SUEnableAutomaticChecks: true
         # Required before macOS will even show the automation prompt: without it a
         # send is refused with errAEEventNotPermitted (-1743) and no prompt appears.
-        NSAppleEventsUsageDescription: "Omelette brings the terminal tab of an agent session back to the front when you click it."
+        NSAppleEventsUsageDescription: "Brioche brings the terminal tab of an agent session back to the front when you click it."
     settings:
       base:
-        PRODUCT_NAME: Omelette
+        PRODUCT_NAME: Brioche
+        # PRODUCT_NAME would otherwise rename both of these. The module is what
+        # `@testable import Omelette` names. The executable stays so nothing that recorded
+        # the path Contents/MacOS/Omelette moves under an update (a keychain trust list
+        # names paths); see docs/superpowers/plans/2026-10-31-brioche-rename.md.
+        PRODUCT_MODULE_NAME: Omelette
+        EXECUTABLE_NAME: Omelette
         MARKETING_VERSION: "3.3.0"
         CURRENT_PROJECT_VERSION: "55"
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
@@ -183,8 +189,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.tests
         SWIFT_EMIT_LOC_STRINGS: NO
         # xcodegen derives TEST_HOST from the target NAME; the app's product is
-        # Omelette.app, so the generated path points at nothing.
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Omelette.app/Contents/MacOS/Omelette"
+        # Brioche.app with its executable still called Omelette, so the generated path
+        # points at nothing.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Brioche.app/Contents/MacOS/Omelette"
         # No Info.plist of its own — unlike the app target this bundle has
         # nothing to declare, and code signing refuses without one.
         GENERATE_INFOPLIST_FILE: YES
