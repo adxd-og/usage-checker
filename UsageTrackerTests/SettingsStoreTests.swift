@@ -60,6 +60,9 @@ final class SettingsStoreTests: XCTestCase {
         s.keepAwakeFloorEnabled = !SettingsStore.Defaults.keepAwakeFloorEnabled
         s.keepAwakeDurationMinutes = 1_470
         s.showInMenuBar = true
+        s.petEnabled = !SettingsStore.Defaults.petEnabled
+        s.earsEnabled = !SettingsStore.Defaults.earsEnabled
+        s.petChoice = PetChoice(animal: "raccoon", palette: "brown")
 
         // Preferences that live outside this object but are still preferences. Written
         // by key rather than through the state objects, so the scramble doesn't kick off
@@ -112,6 +115,9 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.keepAwakeDurationMinutes, SettingsStore.Defaults.keepAwakeDurationMinutes, message)
         XCTAssertNil(s.showInMenuBar, message)
         XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey), message)
+        XCTAssertEqual(s.petEnabled, SettingsStore.Defaults.petEnabled, message)
+        XCTAssertEqual(s.earsEnabled, SettingsStore.Defaults.earsEnabled, message)
+        XCTAssertEqual(s.petChoice, SettingsStore.Defaults.petChoice, message)
 
         XCTAssertEqual(DashboardState.shared.selectedService, DashboardState.defaultService, message)
         XCTAssertNil(UserDefaults.standard.string(forKey: "selectedProviderTab"), message)

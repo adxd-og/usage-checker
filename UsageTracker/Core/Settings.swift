@@ -76,6 +76,10 @@ final class SettingsStore: ObservableObject {
         /// Show in menu bar: nothing stored, so the default follows the displays
         /// (notch-island spec 2026-10-29 § 3.7, `StatusItemVisibilityRules`).
         static let showInMenuBar: Bool? = nil
+        /// Settings › Pet (notch-island spec 2026-10-29 § 3.7): on, on, the cat in ginger.
+        static let petEnabled = true
+        static let earsEnabled = true
+        static let petChoice = PetChoice.standard
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -195,6 +199,46 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Defaults keys for Settings › Pet. Spelled out because the tests read them by name.
+    static let petEnabledKey = "petEnabled"
+    static let earsEnabledKey = "earsEnabled"
+    static let petAnimalKey = "petAnimal"
+    static let petPaletteKey = "petPalette"
+
+    /// The pet on the island (§ 3.7, D12). A plain `@Published` over an explicit key for the reason
+    /// `showsRemaining` gives: the island's layout and the ears follow at once.
+    @Published var petEnabled: Bool = Defaults.petEnabled {
+        didSet {
+            guard oldValue != petEnabled else { return }
+            UserDefaults.standard.set(petEnabled, forKey: Self.petEnabledKey)
+        }
+    }
+
+    /// The ears beside the notch (§ 3.6, § 3.7).
+    @Published var earsEnabled: Bool = Defaults.earsEnabled {
+        didSet {
+            guard oldValue != earsEnabled else { return }
+            UserDefaults.standard.set(earsEnabled, forKey: Self.earsEnabledKey)
+        }
+    }
+
+    /// The animal and palette as chosen, one value so a picker click is one change. It may be stale:
+    /// everything that draws goes through `PetChoiceRules.resolved`.
+    @Published var petChoice: PetChoice = Defaults.petChoice {
+        didSet {
+            guard oldValue != petChoice else { return }
+            UserDefaults.standard.set(petChoice.animal, forKey: Self.petAnimalKey)
+            UserDefaults.standard.set(petChoice.palette, forKey: Self.petPaletteKey)
+        }
+    }
+
+    /// What the defaults hold as a choice: nothing is the standard pet; an animal with no palette
+    /// is that animal, its palette resolved when it is drawn.
+    nonisolated static func storedPetChoice(animal: String?, palette: String?) -> PetChoice {
+        guard let animal else { return PetChoice.standard }
+        return PetChoice(animal: animal, palette: palette ?? "")
+    }
+
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
     /// old button reset ten of them and quietly left providers, budget, menu bar
@@ -239,6 +283,13 @@ final class SettingsStore: ObservableObject {
         // The `didSet` above skips an unchanged nil, and the key can hold a value this object
         // never saw (a restored domain, another copy of the app): remove it either way.
         UserDefaults.standard.removeObject(forKey: Self.showInMenuBarKey)
+        petEnabled = Defaults.petEnabled
+        earsEnabled = Defaults.earsEnabled
+        petChoice = Defaults.petChoice
+        // As with Show in menu bar: a key can hold what this object never saw.
+        for key in [Self.petEnabledKey, Self.earsEnabledKey, Self.petAnimalKey, Self.petPaletteKey] {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
         resetKeepAwake()
 
         // Choices that live in the views and state objects rather than in a property
@@ -288,6 +339,12 @@ final class SettingsStore: ObservableObject {
         // is wanted here: reading the stored value must not write it back.
         showsRemaining = UserDefaults.standard.bool(forKey: Self.showsRemainingKey)
         showInMenuBar = UserDefaults.standard.object(forKey: Self.showInMenuBarKey) as? Bool
+        petEnabled = UserDefaults.standard.object(forKey: Self.petEnabledKey) as? Bool ?? Defaults.petEnabled
+        earsEnabled = UserDefaults.standard.object(forKey: Self.earsEnabledKey) as? Bool ?? Defaults.earsEnabled
+        petChoice = Self.storedPetChoice(
+            animal: UserDefaults.standard.string(forKey: Self.petAnimalKey),
+            palette: UserDefaults.standard.string(forKey: Self.petPaletteKey)
+        )
     }
 
     var interval: TimeInterval {
