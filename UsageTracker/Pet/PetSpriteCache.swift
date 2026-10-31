@@ -54,7 +54,7 @@ final class PetSpriteCache: @unchecked Sendable {
     }
 
     /// Builds every frame, the ear head and every event frame of one pet in one palette at one
-    /// scale: 11 images and 450,216 bytes at 3 px per bead, plus about 44 KB per event frame. Call
+    /// scale: 11 images and 465,336 bytes at 3 px per bead, plus about 44 KB per event frame. Call
     /// it off the main thread for the pet on screen, in its palette, at the current display's pixels
     /// per bead, when one of them changes, so no frame is built while drawing. Never for the whole
     /// roster, other palettes or other scales: one pet shows at a time, and the rest is built on

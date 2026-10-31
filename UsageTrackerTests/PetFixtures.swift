@@ -4,14 +4,14 @@ import Foundation
 /// A small pet that keeps the manifest contract (notch-island spec 2026-10-29 § 3.5): the JSON a
 /// `Pets/<animal>/pet.json` holds, built in code so a test can break one rule at a time.
 /// "mouse": palettes grey and white with roles o, 1, e; five frames that all paint o at (0, 0),
-/// 1 at (1, 0) and e at (34, 34); the five animations; a still per pose; a 16 × 16 ear that
+/// 1 at (1, 0) and e at (34, 34); the five animations; a still per pose; a 26 × 26 ear that
 /// paints o at (0, 0) and 1 at (15, 15). The shipped pets are tested where they ship
 /// (PetBundleTests, PetAssetsTests).
 enum PetFixture {
     static let id = "mouse"
 
     static let frameRows = rows(side: 35, beads: [(0, 0, "o"), (1, 0, "1"), (34, 34, "e")])
-    static let earRows = rows(side: 16, beads: [(0, 0, "o"), (15, 15, "1")])
+    static let earRows = rows(side: 26, beads: [(0, 0, "o"), (25, 25, "1")])
 
     static func manifest() -> [String: Any] {
         [

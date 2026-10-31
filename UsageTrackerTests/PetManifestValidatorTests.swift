@@ -5,7 +5,7 @@ import XCTest
 /// by check as P4's art validator (tools/validate.py) made them: exactly the contract's keys,
 /// id = folder, a name, size 35, one-character roles other than ".", #rrggbb colours, square
 /// maps of declared roles, every palette colouring every used role, the five animations with
-/// existing frames at 0.5–12 fps, a still per pose, a 16 × 16 ear. Roles no map uses are a
+/// existing frames at 0.5–12 fps, a still per pose, a 26 × 26 ear. Roles no map uses are a
 /// note, not an issue.
 final class PetManifestValidatorTests: XCTestCase {
     private func check(_ object: [String: Any], folder: String = PetFixture.id) throws -> PetManifestCheck {
@@ -32,8 +32,8 @@ final class PetManifestValidatorTests: XCTestCase {
         XCTAssertEqual(pet.animations[.walk], PetAnimation(frames: ["walk_1", "idle_1"], fps: 8))
         XCTAssertEqual(pet.animations[.sleep].fps, 1.5)
         XCTAssertEqual(pet.still[.look], "look")
-        XCTAssertEqual(pet.ear.side, 16)
-        XCTAssertEqual(pet.ear.bead(x: 15, y: 15), "1")
+        XCTAssertEqual(pet.ear.side, 26)
+        XCTAssertEqual(pet.ear.bead(x: 25, y: 25), "1")
     }
 
     func testJSONThatDoesNotParseIsUnreadable() {
@@ -140,7 +140,7 @@ final class PetManifestValidatorTests: XCTestCase {
         object = PetFixture.setting(["ear"], to: ear, in: object)
         XCTAssertEqual(try check(object).issues, [
             .rowCount(.frame("idle_1"), expected: 35),
-            .rowLength(.ear, row: 5, expected: 16),
+            .rowLength(.ear, row: 5, expected: 26),
         ])
     }
 
@@ -193,6 +193,6 @@ final class PetManifestValidatorTests: XCTestCase {
     }
 
     func testTheEarIs16By16() throws {
-        XCTAssertEqual(try check(with(["ear"], PetFixture.frameRows)).issues, [.rowCount(.ear, expected: 16)])
+        XCTAssertEqual(try check(with(["ear"], PetFixture.frameRows)).issues, [.rowCount(.ear, expected: 26)])
     }
 }

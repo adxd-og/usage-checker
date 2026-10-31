@@ -20,30 +20,30 @@ final class PetEarTipsTests: XCTestCase {
     }
 
     private func head(firstRow: Int) throws -> PetCharMap {
-        try XCTUnwrap(PetCharMap(rows: PetFixture.rows(side: 16, beads: [(3, firstRow, "o")]), side: 16))
+        try XCTUnwrap(PetCharMap(rows: PetFixture.rows(side: 26, beads: [(3, firstRow, "o")]), side: 26))
     }
 
     func testTheTipsStartAtTheHeadsFirstPaintedRow() throws {
         let tips = try XCTUnwrap(PetEarTips.tips(of: try head(firstRow: 2), band: 5, scale: retina))
-        XCTAssertEqual(tips.crop, CGRect(x: 0, y: 6, width: 48, height: 9), "three beads at 3 px")
-        XCTAssertEqual(tips.size, CGSize(width: 24, height: 4.5))
+        XCTAssertEqual(tips.crop, CGRect(x: 0, y: 6, width: 78, height: 9), "three beads at 3 px")
+        XCTAssertEqual(tips.size, CGSize(width: 39, height: 4.5))
     }
 
     func testTheTipsStopAtTheHeadsLastRow() throws {
-        let tips = try XCTUnwrap(PetEarTips.tips(of: try head(firstRow: 15), band: 5, scale: retina))
-        XCTAssertEqual(tips.crop, CGRect(x: 0, y: 45, width: 48, height: 3))
+        let tips = try XCTUnwrap(PetEarTips.tips(of: try head(firstRow: 25), band: 5, scale: retina))
+        XCTAssertEqual(tips.crop, CGRect(x: 0, y: 75, width: 78, height: 3))
     }
 
     func testABandTooThinForOneBeadOrAnEmptyHeadShowsNothing() throws {
         XCTAssertNil(PetEarTips.tips(of: try head(firstRow: 2), band: 1, scale: retina))
-        let empty = try XCTUnwrap(PetCharMap(rows: PetFixture.rows(side: 16, beads: []), side: 16))
+        let empty = try XCTUnwrap(PetCharMap(rows: PetFixture.rows(side: 26, beads: []), side: 26))
         XCTAssertNil(PetEarTips.tips(of: empty, band: 5, scale: retina))
     }
 
     func testEveryShippedHeadHasTipsInsideItsImage() throws {
         for (id, manifest) in PetLibrary.bundled().manifests {
             let tips = try XCTUnwrap(PetEarTips.tips(of: manifest.ear, band: IslandMotion.hintDown, scale: retina), id)
-            XCTAssertLessThanOrEqual(tips.crop.maxY, 48, id)
+            XCTAssertLessThanOrEqual(tips.crop.maxY, 78, id)
             XCTAssertLessThanOrEqual(tips.size.height, IslandMotion.hintDown, id)
         }
     }
