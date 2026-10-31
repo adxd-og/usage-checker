@@ -4,7 +4,7 @@ import XCTest
 /// What a widget entry draws when there is a file, an empty file or no file. Spec
 /// docs/superpowers/specs/2026-09-24-2.7.0-hardening.md § Design, Retention — "Widget:
 /// `.placeholder` only for `placeholder(in:)` and previews; a failed read is an explicit
-/// 'Open Omelette' state decided by a widget-side rule". The extension is its own
+/// 'Open Brioche' state decided by a widget-side rule". The extension is its own
 /// module; these rules live in SharedWidgetData.swift, which the app compiles too.
 final class WidgetEntryRulesTests: XCTestCase {
     private let at = Date(timeIntervalSince1970: 1_788_000_000)
@@ -22,7 +22,7 @@ final class WidgetEntryRulesTests: XCTestCase {
 
     func testNoFileIsNotReplacedBySampleNumbersOnTheDesktop() {
         // Before: `SharedWidgetStore.read() ?? .placeholder` drew Claude "Max 5x" at 42%
-        // on a Mac that had never run Omelette.
+        // on a Mac that had never run Brioche.
         XCTAssertNil(WidgetEntryRules.snapshot(read: nil, isPreview: false))
     }
 
@@ -39,9 +39,9 @@ final class WidgetEntryRulesTests: XCTestCase {
         XCTAssertEqual(WidgetEntryRules.snapshot(read: real, isPreview: true), real)
     }
 
-    func testNoFileSaysOpenOmelette() {
-        XCTAssertEqual(WidgetEntryRules.providerContent(nil, providerID: "claude", providerName: "Claude"), .message("Open Omelette"))
-        XCTAssertEqual(WidgetEntryRules.allProvidersContent(nil), .message("Open Omelette"))
+    func testNoFileSaysOpenBrioche() {
+        XCTAssertEqual(WidgetEntryRules.providerContent(nil, providerID: "claude", providerName: "Claude"), .message("Open Brioche"))
+        XCTAssertEqual(WidgetEntryRules.allProvidersContent(nil), .message("Open Brioche"))
     }
 
     func testAProviderMissingFromTheFileSaysNoData() {

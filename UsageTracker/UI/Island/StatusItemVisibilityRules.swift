@@ -16,10 +16,10 @@ enum StatusItemVisibilityRules {
         notchedDisplayAttached
     }
 
-    /// Under the switch: how to open Omelette without the item, or why the item stays.
+    /// Under the switch: how to open Brioche without the item, or why the item stays.
     static func caption(notchedDisplayAttached: Bool) -> String {
         notchedDisplayAttached
-            ? "Click the notch to open Omelette."
+            ? "Click the notch to open Brioche."
             : "Always on while no display with a notch is attached."
     }
 

@@ -116,7 +116,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         let run = try runCLI(["--version"])
 
         XCTAssertEqual(run.status, 0)
-        XCTAssertEqual(run.stdout, "omelette \(CLIText.version)\n")
+        XCTAssertEqual(run.stdout, "brioche \(CLIText.version)\n")
         XCTAssertTrue(run.stderr.isEmpty)
         XCTAssertLessThan(run.elapsed, 1, "process spawn included; the work itself is a string")
     }
@@ -125,9 +125,15 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         let run = try runCLI(["--help"])
 
         XCTAssertEqual(run.status, 0)
-        XCTAssertTrue(run.stdout.contains("omelette status"))
-        XCTAssertTrue(run.stdout.contains("omelette statusline"))
-        XCTAssertTrue(run.stdout.contains("omelette mcp"))
+        XCTAssertTrue(run.stdout.contains("brioche status"))
+        XCTAssertTrue(run.stdout.contains("brioche statusline"))
+        XCTAssertTrue(run.stdout.contains("brioche mcp"))
+    }
+
+    func testHelpSaysTheOldNameStillWorks() throws {
+        let run = try runCLI(["--help"])
+
+        XCTAssertTrue(run.stdout.contains("`omelette` is the same tool under its old name"), run.stdout)
     }
 
     func testABadCommandExits64WithTheReasonOnStderr() throws {
@@ -136,7 +142,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertEqual(run.status, CLIText.usageExitCode)
         XCTAssertTrue(run.stdout.isEmpty, "a usage error is not output")
         XCTAssertTrue(run.stderr.contains("Unknown command: stats"), run.stderr)
-        XCTAssertTrue(run.stderr.contains("omelette status"), "the usage text follows the reason")
+        XCTAssertTrue(run.stderr.contains("brioche status"), "the usage text follows the reason")
     }
 
     // MARK: - status
@@ -300,7 +306,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
 
         let lines = run.stdout.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
         XCTAssertEqual(lines.count, 3, "three requests carry an id; the notification is answered with nothing")
-        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"omelette""#), String(lines[0]))
+        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"brioche""#), String(lines[0]))
         XCTAssertTrue(lines[1].contains(#""name":"get_usage""#), String(lines[1]))
         XCTAssertTrue(lines[2].contains("Claude (Max 5x): session 42%"), String(lines[2]))
 
@@ -336,7 +342,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(after.stdout.contains("heavy work should wait"), after.stdout)
     }
 
-    func testTheServerSaysOmeletteIsClosedRatherThanFailing() throws {
+    func testTheServerSaysBriocheIsClosedRatherThanFailing() throws {
         try publish(nil)
 
         let run = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_agents"}}"# + "\n")

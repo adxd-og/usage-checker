@@ -82,7 +82,7 @@ final class UpdateAppcastScriptTests: XCTestCase {
         try "#!/bin/sh\necho 'sparkle:edSignature=\"FIXTURE==\" length=\"3\"'\n"
             .write(to: signUpdate, atomically: true, encoding: .utf8)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: signUpdate.path)
-        try Data("dmg".utf8).write(to: directory.appendingPathComponent("build/Omelette.dmg"))
+        try Data("dmg".utf8).write(to: directory.appendingPathComponent("build/Brioche.dmg"))
     }
 
     override func tearDownWithError() throws {
@@ -116,6 +116,17 @@ final class UpdateAppcastScriptTests: XCTestCase {
         let item = try XCTUnwrap(Self.item("3.0.0", in: try String(contentsOf: feedURL, encoding: .utf8)))
         XCTAssertTrue(item.contains("      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>\n"), item)
         XCTAssertTrue(item.contains("<sparkle:version>50</sparkle:version>"), item)
+    }
+
+    func testTheNewItemIsBriocheAndOlderItemsKeepTheirOmeletteDMG() throws {
+        let run = try runScript()
+
+        XCTAssertEqual(run.status, 0, run.output)
+        let feed = try String(contentsOf: feedURL, encoding: .utf8)
+        let item = try XCTUnwrap(Self.item("3.0.0", in: feed))
+        XCTAssertTrue(item.contains("<title>Brioche v3.0.0</title>"), item)
+        XCTAssertTrue(item.contains("releases/download/v3.0.0/Brioche.dmg"), item)
+        XCTAssertTrue(feed.contains("releases/download/v2.7.1/Omelette.dmg"), "a published asset keeps its name")
     }
 
     func testThe14Point0ItemForOlderMacsIsUnchanged() throws {
@@ -180,9 +191,10 @@ final class UpdateAppcastScriptTests: XCTestCase {
         return Run(status: process.terminationStatus, output: String(decoding: data, as: UTF8.self))
     }
 
-    /// The `<item>` block titled "Omelette v<version>", indentation and final newline included.
+    /// The `<item>` block titled "<name> v<version>", indentation and final newline included.
     private static func item(_ version: String, in feed: String) -> String? {
-        guard let title = feed.range(of: "<title>Omelette v\(version)</title>"),
+        guard let title = feed.range(of: "<title>Brioche v\(version)</title>")
+                ?? feed.range(of: "<title>Omelette v\(version)</title>"),
               let start = feed.range(of: "    <item>\n", options: .backwards, range: feed.startIndex..<title.lowerBound),
               let end = feed.range(of: "    </item>\n", range: title.upperBound..<feed.endIndex)
         else { return nil }

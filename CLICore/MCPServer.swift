@@ -1,6 +1,6 @@
 import Foundation
 
-/// `omelette mcp` — a Model Context Protocol server on stdio, as a pure function.
+/// `brioche mcp` — a Model Context Protocol server on stdio, as a pure function.
 ///
 /// One line of newline-delimited JSON-RPC 2.0 in, one line out (or nothing, for a
 /// notification). No state at all: the snapshot is handed in per call, so the runtime
@@ -14,7 +14,7 @@ import Foundation
 /// `initialize`, so that is what this answers, and a client that speaks only the newer
 /// shape gets a version it can decide about rather than a silent failure.
 enum MCPServer {
-    static let serverName = "omelette"
+    static let serverName = "brioche"
 
     /// What we answer with when the client asks for something we do not know.
     static let defaultProtocolVersion = "2025-06-18"
@@ -23,7 +23,7 @@ enum MCPServer {
     /// back unchanged, anything else comes back as one of ours.
     static let supportedProtocolVersions = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
 
-    static let instructions = "Omelette answers from the snapshot the menu-bar app last wrote (updatedAt in every answer), not from a live fetch. After the app quits, the tools keep answering from its last snapshot and say so once it is more than ten minutes old; every tool returns an error result when there is no snapshot to read. get_usage: rate-limit windows and cost per provider, worth a call before long or expensive work. get_agents: whether another session is waiting for the user. get_sessions: recent chats with token and cost totals."
+    static let instructions = "Brioche answers from the snapshot the menu-bar app last wrote (updatedAt in every answer), not from a live fetch. After the app quits, the tools keep answering from its last snapshot and say so once it is more than ten minutes old; every tool returns an error result when there is no snapshot to read. get_usage: rate-limit windows and cost per provider, worth a call before long or expensive work. get_agents: whether another session is waiting for the user. get_sessions: recent chats with token and cost totals."
 
     /// Neither tool takes an argument. `additionalProperties: false` is what stops a
     /// model from inventing one and then explaining the resulting error to the user.
@@ -65,19 +65,19 @@ enum MCPServer {
             [
                 "name": "get_usage",
                 "title": "AI usage right now",
-                "description": "Every provider Omelette tracks (Claude, Codex, Antigravity, Grok, and Anthropic Enterprise when an Admin API key is set): each rate-limit window's percent used and when it resets, today's and this week's cost, and whether those dollars are an API-list-price equivalent of local CLI usage rather than the subscription bill. Read from the app's last snapshot; updatedAt says how old it is, and a provider that is closed or signed out keeps its last-known numbers, marked retained, with its state. Returns an error result when there is no snapshot to read. Use it before starting long or expensive work; it does not start a refresh.",
+                "description": "Every provider Brioche tracks (Claude, Codex, Antigravity, Grok, and Anthropic Enterprise when an Admin API key is set): each rate-limit window's percent used and when it resets, today's and this week's cost, and whether those dollars are an API-list-price equivalent of local CLI usage rather than the subscription bill. Read from the app's last snapshot; updatedAt says how old it is, and a provider that is closed or signed out keeps its last-known numbers, marked retained, with its state. Returns an error result when there is no snapshot to read. Use it before starting long or expensive work; it does not start a refresh.",
                 "inputSchema": emptyInputSchema,
             ],
             [
                 "name": "get_agents",
                 "title": "Agent sessions right now",
-                "description": "The live Claude Code and Codex sessions Omelette can see: how many need a decision from the user, how many are working, and per session its project, state (needs you, working, done, idle) and current activity. Sessions come through the Omelette hooks; a session without them is read from its CLI's log while it has been active in the last 30 minutes, approximately, and never shows as needing the user. Read from the app's last snapshot (updatedAt); returns an error result when there is no snapshot to read. Use it to learn whether another session is blocked on the user before starting work that needs them.",
+                "description": "The live Claude Code and Codex sessions Brioche can see: how many need a decision from the user, how many are working, and per session its project, state (needs you, working, done, idle) and current activity. Sessions come through the Brioche hooks; a session without them is read from its CLI's log while it has been active in the last 30 minutes, approximately, and never shows as needing the user. Read from the app's last snapshot (updatedAt); returns an error result when there is no snapshot to read. Use it to learn whether another session is blocked on the user before starting work that needs them.",
                 "inputSchema": emptyInputSchema,
             ],
             [
                 "name": "get_sessions",
                 "title": "Recent chats",
-                "description": "The recent Claude Code and Codex chats Omelette can see, newest first: what each one is called, the project it ran in, when it was last active, its turns, tokens and cost (where apiEquivalent is true, an API-list-price equivalent rather than the subscription bill), and how many sub-agents it launched. A chat that ran in the current session or weekly limit window also carries sessionShare or weekShare: how many percentage points of that window it used, to one decimal, estimated from the half hours in which the window's percent rose while it ran. On a pay-as-you-go account with a weekly budget, or an account with a monthly spend limit, a chat carries budgetShare instead: its cost as a percent of that budget or limit, to one decimal. A share that does not apply is left out. provider narrows to one CLI; limit caps the list at 15. Read from the app's last snapshot; returns an error result when there is no snapshot to read. It does not return transcripts or per-turn detail.",
+                "description": "The recent Claude Code and Codex chats Brioche can see, newest first: what each one is called, the project it ran in, when it was last active, its turns, tokens and cost (where apiEquivalent is true, an API-list-price equivalent rather than the subscription bill), and how many sub-agents it launched. A chat that ran in the current session or weekly limit window also carries sessionShare or weekShare: how many percentage points of that window it used, to one decimal, estimated from the half hours in which the window's percent rose while it ran. On a pay-as-you-go account with a weekly budget, or an account with a monthly spend limit, a chat carries budgetShare instead: its cost as a percent of that budget or limit, to one decimal. A share that does not apply is left out. provider narrows to one CLI; limit caps the list at 15. Read from the app's last snapshot; returns an error result when there is no snapshot to read. It does not return transcripts or per-turn detail.",
                 "inputSchema": sessionsInputSchema,
             ],
         ]
@@ -193,7 +193,7 @@ enum MCPServer {
         }
     }
 
-    /// A result, not a protocol error: "Omelette is closed" is an answer, and a
+    /// A result, not a protocol error: "Brioche is closed" is an answer, and a
     /// -32603 would have the client decide the server is broken and stop asking.
     static var notRunningResult: [String: Any] {
         [

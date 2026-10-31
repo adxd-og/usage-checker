@@ -24,7 +24,7 @@ struct ToolSummary: Equatable, Sendable {
 
 /// A tool call that *is* the thing the user has to answer: the agent asked a
 /// question, or a plan is waiting for approval. Neither produces a
-/// `PermissionRequest` and neither can be answered from Omelette — the answer has
+/// `PermissionRequest` and neither can be answered from Brioche — the answer has
 /// to be typed in the terminal, so these carry no Allow / Deny.
 enum AgentAttention: Equatable, Sendable, Codable {
     case question(count: Int, multiSelect: Bool)
@@ -43,7 +43,7 @@ enum AgentToolSummary {
     /// The last line of a detail the helper had to cut. Said here, once, so every
     /// surface that shows a detail shows it — a 4 KB command that stops mid-word
     /// otherwise reads as the whole command.
-    static let truncationNotice = "[truncated by Omelette — see the terminal for the full text]"
+    static let truncationNotice = "[truncated by Brioche — see the terminal for the full text]"
 
     /// nil when the tool is unknown, the input lacks the key the rule reads, or
     /// everything it carries is blank.

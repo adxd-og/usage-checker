@@ -41,7 +41,7 @@ enum AdvancedSettingsCopy {
 
     static let diagnosticsHeader = "Diagnostics"
     static let messagesTitle = "Agent messages"
-    static let messagesHelp = "Received counts messages the helper delivered; dropped counts messages the socket could not decode. Zero received with hooks installed usually means Omelette was restarted after the last session started — the next prompt re-registers it."
+    static let messagesHelp = "Received counts messages the helper delivered; dropped counts messages the socket could not decode. Zero received with hooks installed usually means Brioche was restarted after the last session started — the next prompt re-registers it."
     static let lastEventTitle = "Last event"
     static let permissionRequestsTitle = "Permission requests"
     static let helperTitle = "Helper"

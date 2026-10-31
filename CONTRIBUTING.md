@@ -51,7 +51,7 @@ CHANGELOG section (the appcast release notes are generated from it), then:
 ./scripts/build_dmg.sh
 ./scripts/notarize_dmg.sh
 git tag vX.Y.Z && git push origin main vX.Y.Z
-gh release create vX.Y.Z build/Omelette.dmg --title "Omelette vX.Y.Z 🍳" --notes "..."
+gh release create vX.Y.Z build/Brioche.dmg --title "Brioche vX.Y.Z" --notes "..."
 ./scripts/update_appcast.sh X.Y.Z <build>   # signs the DMG, prepends the appcast item
 git add docs/appcast.xml && git commit -m "Appcast: vX.Y.Z" && git push
 ```
@@ -92,7 +92,7 @@ To export the .p12:
 
 ### Sparkle appcast
 
-`./scripts/update_appcast.sh <version> <build>` signs `build/Omelette.dmg`
+`./scripts/update_appcast.sh <version> <build>` signs `build/Brioche.dmg`
 with the keychain key and prepends an `<item>` to `docs/appcast.xml`, with
 release notes converted to HTML from that version's CHANGELOG section (so
 write the CHANGELOG entry before running it). Commit + push; GitHub Pages

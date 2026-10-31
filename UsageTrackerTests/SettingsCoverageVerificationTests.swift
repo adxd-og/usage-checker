@@ -91,7 +91,7 @@ final class SettingsCoverageVerificationTests: XCTestCase {
         let sources = try settingsSources()
         for (file, text) in sources {
             XCTAssertFalse(text.contains("Force refresh now"), "\(file) still has the Force refresh button")
-            XCTAssertFalse(text.contains("Quit Omelette"), "\(file) still has the Quit button")
+            XCTAssertFalse(text.contains("Quit Brioche"), "\(file) still has the Quit button")
         }
     }
 

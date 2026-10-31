@@ -124,7 +124,7 @@ final class MCPSummaryTests: XCTestCase {
         ))
 
         XCTAssertTrue(
-            text.hasSuffix("Numbers are from 10:20 and Omelette may not be running, so treat them as the last thing it saw."),
+            text.hasSuffix("Numbers are from 10:20 and Brioche may not be running, so treat them as the last thing it saw."),
             text
         )
     }

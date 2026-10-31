@@ -57,7 +57,7 @@ enum PopoverFooterRules {
         case .floatingWindow: floatingWindowOpen ? "Close floating window" : "Show floating mini window"
         case .settings: "Settings (⌘,)"
         case .refresh: "Refresh now (⌘R)"
-        case .quit: "Quit Omelette (⌘Q)"
+        case .quit: "Quit Brioche (⌘Q)"
         }
     }
 }

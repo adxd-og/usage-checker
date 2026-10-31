@@ -4,7 +4,7 @@ import Foundation
 /// (notch-island spec 2026-10-29 § 3.1: Clicks, Focus, Dismissal, Entry points). Pure: the
 /// controller sorts AppKit's events into these cases and applies the answer.
 enum IslandEventRules {
-    /// Where a mouse-down in one of Omelette's own windows landed (the local monitor).
+    /// Where a mouse-down in one of Brioche's own windows landed (the local monitor).
     enum ClickTarget: Equatable, Sendable {
         /// The island's window, by `IslandGeometry.Region`.
         case island(IslandGeometry.Region)
@@ -75,7 +75,7 @@ enum IslandEventRules {
         }
     }
 
-    /// Another Omelette window turning key closes the island: Dashboard or Settings opening
+    /// Another Brioche window turning key closes the island: Dashboard or Settings opening
     /// from its footer, the floating window, onboarding (ruling R7). Its own children do not.
     static func closesOnKeyWindow(isIsland: Bool, isChildOfIsland: Bool) -> Bool {
         !isIsland && !isChildOfIsland
@@ -158,7 +158,7 @@ enum IslandEventRules {
 
     /// What VoiceOver reads for the notch, a button (§ 3.8: the notch click is always an entry
     /// point, and on a notched Mac the status item is hidden by default).
-    static let notchAccessibilityLabel = "Omelette"
+    static let notchAccessibilityLabel = "Brioche"
     /// What the button does, as VoiceOver's hint.
-    static let notchAccessibilityHelp = "Opens Omelette. Press again to close it."
+    static let notchAccessibilityHelp = "Opens Brioche. Press again to close it."
 }

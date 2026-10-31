@@ -93,11 +93,11 @@ final class ClaudeSignInCopyTests: XCTestCase {
     func testTheWordsAreThese() {
         XCTAssertEqual(ClaudeSignInCopy.notFoundMessage, "Not signed in to Claude Code on this Mac.")
         XCTAssertEqual(ClaudeSignInCopy.expiredMessage, "Claude Code's sign-in has expired.")
-        XCTAssertEqual(ClaudeSignInCopy.deniedMessage, "Omelette needs your permission to read Claude Code's sign-in.")
+        XCTAssertEqual(ClaudeSignInCopy.deniedMessage, "Brioche needs your permission to read Claude Code's sign-in.")
         XCTAssertEqual(ClaudeSignInCopy.signInButton, "Sign in")
         XCTAssertEqual(ClaudeSignInCopy.installLinkTitle, "Install Claude Code")
         XCTAssertEqual(ClaudeSignInCopy.advancedButton, "Open Settings › Advanced")
-        XCTAssertEqual(ClaudeSignInCopy.pendingLine, "Finish signing in in Terminal. Omelette checks again when you come back.")
+        XCTAssertEqual(ClaudeSignInCopy.pendingLine, "Finish signing in in Terminal. Brioche checks again when you come back.")
         XCTAssertEqual(
             ClaudeSignInCopy.launchFailure(ClaudeSignInCopy.terminalMissing),
             "Sign in did not start: Terminal is not on this Mac."

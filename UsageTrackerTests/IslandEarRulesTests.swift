@@ -135,7 +135,7 @@ final class IslandEarRulesTests: XCTestCase {
 
     func testEveryEarHasItsOwnWordsForVoiceOver() {
         XCTAssertEqual(ears(input(sessions: [waiting("a")])).left?.label, "Usage tracker is waiting, go to it")
-        XCTAssertEqual(ears(input(sessions: [waiting("a"), waiting("b")])).left?.label, "2 agents are waiting, open Omelette")
+        XCTAssertEqual(ears(input(sessions: [waiting("a"), waiting("b")])).left?.label, "2 agents are waiting, open Brioche")
         XCTAssertEqual(
             ears(input(services: [ServiceSnapshot.notSignedIn(reason: .notFound, message: "Signed out.", at: now)])).left?.label,
             "\(ClaudeSignInCopy.petLine(.signIn)), open Claude"
@@ -150,7 +150,7 @@ final class IslandEarRulesTests: XCTestCase {
         let deadline = now + 3_600
         XCTAssertEqual(
             ears(input(keepAwake: .armed(deadline: deadline, floorEnabled: true))).right?.label,
-            "Keep awake until \(KeepAwakeCopy.clock(deadline, now: now, calendar: utc, locale: locale)), open Omelette"
+            "Keep awake until \(KeepAwakeCopy.clock(deadline, now: now, calendar: utc, locale: locale)), open Brioche"
         )
     }
 

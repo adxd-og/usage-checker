@@ -98,7 +98,7 @@ struct ProviderTimelineProvider: AppIntentTimelineProvider {
 
 struct AllProvidersEntry: TimelineEntry {
     let date: Date
-    /// nil when there is no file to read; the view says "Open Omelette".
+    /// nil when there is no file to read; the view says "Open Brioche".
     let snapshot: WidgetSnapshot?
 }
 

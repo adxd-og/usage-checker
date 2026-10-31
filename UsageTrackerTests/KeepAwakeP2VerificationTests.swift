@@ -146,7 +146,7 @@ final class KeepAwakeP2CopyVerificationTests: XCTestCase {
         let empty = UsageSnapshot(services: [], fetchedAt: Date(timeIntervalSince1970: 0), isStale: false, lastError: nil)
         XCTAssertEqual(
             StatusBarController.tooltipText(snapshot: empty, mode: .used, keepAwake: stale, now: now, calendar: calendar, locale: locale),
-            "Omelette — loading…"
+            "Brioche — loading…"
         )
     }
 

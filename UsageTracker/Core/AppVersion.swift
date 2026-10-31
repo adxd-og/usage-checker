@@ -13,18 +13,18 @@ enum AppVersion {
     static let githubLabel = "GitHub"
     static let githubHelp = "Open the GitHub page"
 
-    /// "Omelette 2.4.1". The build number is deliberately absent: Settings' own row
+    /// "Brioche 2.4.1". The build number is deliberately absent: Settings' own row
     /// keeps "2.4.1 (39)" for bug reports, while a footer label is for recognition
     /// and has to stay short. `build` is taken all the same, so the caller can hand
     /// over the bundle's pair and let this rule decide what reaches the screen.
     /// A bundle with no version at all is just the app's name.
     nonisolated static func label(version: String?, build: String?) -> String {
         let version = version?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !version.isEmpty else { return "Omelette" }
-        return "Omelette \(version)"
+        guard !version.isEmpty else { return "Brioche" }
+        return "Brioche \(version)"
     }
 
-    /// The running bundle's label. In the app that is Omelette.app; under XCTest the
+    /// The running bundle's label. In the app that is Brioche.app; under XCTest the
     /// test host is the same bundle, which is what makes it readable in a test.
     static var current: String {
         let info = Bundle.main.infoDictionary

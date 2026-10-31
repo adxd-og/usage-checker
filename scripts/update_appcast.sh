@@ -15,7 +15,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION="${1:?usage: update_appcast.sh <version> <build> [dmg-path]}"
 BUILD="${2:?usage: update_appcast.sh <version> <build> [dmg-path]}"
-DMG="${3:-$ROOT/build/Omelette.dmg}"
+DMG="${3:-$ROOT/build/Brioche.dmg}"
 APPCAST="$ROOT/docs/appcast.xml"
 REPO_URL="https://github.com/adxd-og/usage-checker"
 
@@ -82,7 +82,7 @@ notes = md_to_html(m.group(1).strip()) if m else ""
 notes += f'\n<p><a href="{repo}/releases/tag/v{v}">Full release on GitHub</a></p>'
 
 item = f"""    <item>
-      <title>Omelette v{v}</title>
+      <title>Brioche v{v}</title>
       <pubDate>{os.environ["PUB_DATE"]}</pubDate>
       <sparkle:version>{b}</sparkle:version>
       <sparkle:shortVersionString>{v}</sparkle:shortVersionString>
@@ -91,7 +91,7 @@ item = f"""    <item>
 {notes}
       ]]></description>
       <enclosure
-        url="{repo}/releases/download/v{v}/Omelette.dmg"
+        url="{repo}/releases/download/v{v}/Brioche.dmg"
         type="application/octet-stream"
         sparkle:edSignature="{ed}"
         length="{length}"/>

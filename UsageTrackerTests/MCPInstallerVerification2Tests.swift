@@ -7,11 +7,11 @@ import XCTest
 /// `docs/superpowers/reviews/2026-09-24-p2-verification-C-agents-cli.md` § 1, not from
 /// `MCPInstallerTests`. Focus: the exact three fixtures the astra review ran through
 /// Python's `tomllib` (`# comment`, a quoted key, extra brackets/spaces), combined with
-/// a CRLF file; the `[[mcp_servers.omelette]]` array-of-tables header, which must never
+/// a CRLF file; the `[[mcp_servers.brioche]]` array-of-tables header, which must never
 /// read as ours; and a hand-written `command = "…" # note` value.
 final class MCPInstallerVerification2Tests: XCTestCase {
     private var root: URL!
-    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette"
+    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/brioche"
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -46,10 +46,10 @@ final class MCPInstallerVerification2Tests: XCTestCase {
 
     // MARK: - The three review fixtures, each on its own
 
-    /// `[mcp_servers.omelette] # Omelette MCP` — a trailing comment outside quotes.
+    /// `[mcp_servers.brioche] # Brioche MCP` — a trailing comment outside quotes.
     func testACommentedHeaderIsInstalledAndInstallIsANoOp() throws {
         try write("""
-        [mcp_servers.omelette] # Omelette MCP
+        [mcp_servers.brioche] # Brioche MCP
         command = "\(cli)"
         args = ["mcp"]
 
@@ -60,10 +60,10 @@ final class MCPInstallerVerification2Tests: XCTestCase {
         XCTAssertEqual(ourHeaderCount(in: try text(at: codexURL)), 1)
     }
 
-    /// `[mcp_servers."omelette"]` — the key wrapped in a basic string.
+    /// `[mcp_servers."brioche"]` — the key wrapped in a basic string.
     func testAQuotedKeyHeaderIsInstalledAndInstallIsANoOp() throws {
         try write("""
-        [mcp_servers."omelette"]
+        [mcp_servers."brioche"]
         command = "\(cli)"
         args = ["mcp"]
 
@@ -74,10 +74,10 @@ final class MCPInstallerVerification2Tests: XCTestCase {
         XCTAssertEqual(ourHeaderCount(in: try text(at: codexURL)), 1)
     }
 
-    /// `[ mcp_servers.omelette ]` — extra spaces inside the brackets.
+    /// `[ mcp_servers.brioche ]` — extra spaces inside the brackets.
     func testASpacedHeaderIsInstalledAndInstallIsANoOp() throws {
         try write("""
-        [ mcp_servers.omelette ]
+        [ mcp_servers.brioche ]
         command = "\(cli)"
         args = ["mcp"]
 
@@ -96,7 +96,7 @@ final class MCPInstallerVerification2Tests: XCTestCase {
         let crlf = [
             "model = \"gpt-6-astra\"",
             "",
-            "[mcp_servers.\"omelette\"]",
+            "[mcp_servers.\"brioche\"]",
             "command = \"\(cli)\"",
             "args = [\"mcp\"]",
             "",
@@ -115,13 +115,13 @@ final class MCPInstallerVerification2Tests: XCTestCase {
 
     // MARK: - The array-of-tables header never counts as ours
 
-    /// A file with only `[[mcp_servers.omelette]]` (no plain table of ours at all).
+    /// A file with only `[[mcp_servers.brioche]]` (no plain table of ours at all).
     /// `codexIsOurHeader` explicitly excludes the "[[" spelling, so this must read as
     /// not installed, and `installCodex` must append our own table rather than
     /// treating the array header as already-installed or touching it.
     func testAnArrayOfTablesHeaderIsNeverOursSoStatusIsNotInstalled() throws {
         try write("""
-        [[mcp_servers.omelette]]
+        [[mcp_servers.brioche]]
         command = "/usr/local/bin/something-else"
 
         """, to: codexURL)
@@ -131,7 +131,7 @@ final class MCPInstallerVerification2Tests: XCTestCase {
         try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
 
         let after = try text(at: codexURL)
-        XCTAssertTrue(after.contains("[[mcp_servers.omelette]]"), "the array header is left exactly where it is")
+        XCTAssertTrue(after.contains("[[mcp_servers.brioche]]"), "the array header is left exactly where it is")
         XCTAssertTrue(after.contains("something-else"), "its body is untouched")
         XCTAssertEqual(
             SettingsFile.lines(of: after).filter {
@@ -145,12 +145,12 @@ final class MCPInstallerVerification2Tests: XCTestCase {
 
     // MARK: - A hand-written comment after the command value
 
-    /// `command = "…/omelette" # ours` — the README's own shape for a hand-added
+    /// `command = "…/brioche" # ours` — the README's own shape for a hand-added
     /// entry. `codexValue` has to strip the comment before comparing, or the table
     /// reads as ours-with-no-command and is refused as a conflict.
     func testAHandWrittenCommandWithATrailingCommentStillMatchesOurs() throws {
         try write("""
-        [mcp_servers.omelette]
+        [mcp_servers.brioche]
         command = "\(cli)" # ours
         args = ["mcp"]
 
@@ -167,7 +167,7 @@ final class MCPInstallerVerification2Tests: XCTestCase {
     /// entry.
     func testAForeignCommandWithATrailingCommentIsStillAConflict() throws {
         try write("""
-        [mcp_servers.omelette]
+        [mcp_servers.brioche]
         command = "/opt/homebrew/bin/some-other-tool" # not ours
         args = ["mcp"]
 

@@ -41,7 +41,7 @@ final class UpdateAppcastScriptVerificationTests: XCTestCase {
         try "#!/bin/sh\necho 'sparkle:edSignature=\"FIXTURE==\" length=\"3\"'\n"
             .write(to: signUpdate, atomically: true, encoding: .utf8)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: signUpdate.path)
-        try Data("dmg".utf8).write(to: directory.appendingPathComponent("build/Omelette.dmg"))
+        try Data("dmg".utf8).write(to: directory.appendingPathComponent("build/Brioche.dmg"))
     }
 
     override func tearDownWithError() throws {
@@ -73,9 +73,9 @@ final class UpdateAppcastScriptVerificationTests: XCTestCase {
 
     func testTheRealFeedsNewestExistingItemIsUnchangedAndNowSecond() throws {
         guard let firstTitle = Self.firstItemTitle(in: realFeed) else {
-            return XCTFail("could not find any <title>Omelette v…</title> in the real feed")
+            return XCTFail("could not find any item title in the real feed")
         }
-        let versionBefore = String(firstTitle.dropFirst("Omelette v".count))
+        let versionBefore = try XCTUnwrap(firstTitle.components(separatedBy: " v").last)
         let beforeBlock = try XCTUnwrap(Self.item(versionBefore, in: realFeed))
 
         let run = try runScript(version: "3.0.0-verify", build: "9002")
@@ -84,8 +84,8 @@ final class UpdateAppcastScriptVerificationTests: XCTestCase {
 
         XCTAssertEqual(Self.item(versionBefore, in: after), beforeBlock, "the item that was first before the update is untouched")
         // The new item must sit ahead of it: its <item> opening tag occurs earlier in the file.
-        let newRange = try XCTUnwrap(after.range(of: "<title>Omelette v3.0.0-verify</title>"))
-        let oldRange = try XCTUnwrap(after.range(of: "<title>Omelette v\(versionBefore)</title>"))
+        let newRange = try XCTUnwrap(after.range(of: "<title>Brioche v3.0.0-verify</title>"))
+        let oldRange = try XCTUnwrap(after.range(of: " v\(versionBefore)</title>"))
         XCTAssertLessThan(newRange.lowerBound, oldRange.lowerBound, "the new item must be prepended ahead of the previously-newest item")
     }
 
@@ -167,7 +167,8 @@ final class UpdateAppcastScriptVerificationTests: XCTestCase {
     }
 
     private static func item(_ version: String, in feed: String) -> String? {
-        guard let title = feed.range(of: "<title>Omelette v\(version)</title>"),
+        guard let title = feed.range(of: "<title>Brioche v\(version)</title>")
+                ?? feed.range(of: "<title>Omelette v\(version)</title>"),
               let start = feed.range(of: "    <item>\n", options: .backwards, range: feed.startIndex..<title.lowerBound),
               let end = feed.range(of: "    </item>\n", range: title.upperBound..<feed.endIndex)
         else { return nil }

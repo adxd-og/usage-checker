@@ -164,7 +164,7 @@ struct SettingsLogo: Equatable, Sendable {
     let glyphSize: CGFloat
 }
 
-/// A link under a row's note ("Copy Omelette's command").
+/// A link under a row's note ("Copy Brioche's command").
 struct SettingsLinkAction {
     let title: String
     let action: @MainActor () -> Void

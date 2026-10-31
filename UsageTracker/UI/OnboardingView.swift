@@ -12,7 +12,7 @@ struct OnboardingView: View {
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     /// Background polling never prompts, so the keychain dialog has to be asked for
     /// explicitly — here on first run, or from Settings later.
-    /// Whether Omelette can read Claude Code's item now, without a dialog. Not the token copy:
+    /// Whether Brioche can read Claude Code's item now, without a dialog. Not the token copy:
     /// since spec 2026-10-25 § Package 2 that lives in memory and is empty at every launch.
     @State private var keychainGranted = Self.keychainGranted(ClaudeKeychainReader.readItemSilently())
     @State private var keychainError: String?
@@ -113,7 +113,7 @@ struct OnboardingView: View {
                 // reading — the first screen shows what it is about to do.
                 OMRing(used: 37, mode: .used, size: .hero)
             }
-            Text("Welcome to Omelette")
+            Text("Welcome to Brioche")
                 .font(OMFont.screenTitle)
             Text("A menu bar widget that watches your AI usage limits in real time — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
                 .multilineTextAlignment(.center)
@@ -189,7 +189,7 @@ struct OnboardingView: View {
                 permissionRow(
                     icon: "bolt.horizontal.circle",
                     title: "Agent status (optional)",
-                    description: "Omelette can also show which Claude Code sessions are running, which one is **waiting for your approval**, and take you back to it in one click. Turning this on adds eight hooks to `~/.claude/settings.json` that call a small helper inside Omelette. They send the session id, the tool name and the folder — never your prompts or your files — and Claude Code never waits on them. Settings → Agents shows the exact JSON, adds Codex, and removes all of it again."
+                    description: "Brioche can also show which Claude Code sessions are running, which one is **waiting for your approval**, and take you back to it in one click. Turning this on adds eight hooks to `~/.claude/settings.json` that call a small helper inside Brioche. They send the session id, the tool name and the folder — never your prompts or your files — and Claude Code never waits on them. Settings → Agents shows the exact JSON, adds Codex, and removes all of it again."
                 )
 
                 HStack(spacing: OMSpacing.s) {
@@ -350,7 +350,7 @@ struct OnboardingView: View {
     }
 
     /// The keychain card's words: what is read, what to click, and where the button lives later.
-    nonisolated static let keychainDescription = "We read the sign-in Claude Code stored in your macOS Keychain. Click **Grant access** and macOS will ask you to allow it — choose **Always Allow**. Omelette then reads it without that dialog and keeps it in memory only; Settings → \(SettingsTab.advanced.rawValue) → **\(AdvancedSettingsCopy.keychainTitle)** brings the dialog back if it's ever needed again."
+    nonisolated static let keychainDescription = "We read the sign-in Claude Code stored in your macOS Keychain. Click **Grant access** and macOS will ask you to allow it — choose **Always Allow**. Brioche then reads it without that dialog and keeps it in memory only; Settings → \(SettingsTab.advanced.rawValue) → **\(AdvancedSettingsCopy.keychainTitle)** brings the dialog back if it's ever needed again."
 
     private func requestKeychainAccess() {
         do {

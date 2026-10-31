@@ -150,7 +150,7 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
         XCTAssertEqual(IntegrationsSettingsCopy.codexHooksCaption, "Trust once with /hooks inside Codex.")
         XCTAssertEqual(
             IntegrationsSettingsCopy.permissionsTitle,
-            "Answer permission requests from Omelette"
+            "Answer permission requests from Brioche"
         )
         XCTAssertEqual(
             IntegrationsSettingsCopy.permissionsCaption,
@@ -161,7 +161,7 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
         XCTAssertEqual(IntegrationsSettingsCopy.revealButton, "Reveal in Finder")
         XCTAssertEqual(
             IntegrationsSettingsCopy.commandLineFooter,
-            "Add the PATH line to ~/.zshrc, then omelette status works from any terminal."
+            "Add the PATH line to ~/.zshrc, then brioche status works from any terminal."
         )
     }
 
@@ -185,8 +185,8 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
         )
     }
 
-    /// `isConflict` gates the "Copy Omelette's command/line" note action: only a
-    /// `.conflict` status has anything of Omelette's own to copy.
+    /// `isConflict` gates the "Copy Brioche's command/line" note action: only a
+    /// `.conflict` status has anything of Brioche's own to copy.
     func testIsConflictIsTrueOnlyForConflictStatus() {
         XCTAssertTrue(IntegrationsSettingsCopy.isConflict(.conflict("someone else's line")))
         XCTAssertFalse(IntegrationsSettingsCopy.isConflict(.installed))

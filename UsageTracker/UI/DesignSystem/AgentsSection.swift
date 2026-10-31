@@ -88,7 +88,7 @@ struct AgentsSection: View {
             if !hooksInstalled {
                 Button("Enable precise status", action: onEnable)
                     .buttonStyle(.omLink)
-                    .help("Install Omelette's hooks so states are exact instead of guessed from log files")
+                    .help("Install Brioche's hooks so states are exact instead of guessed from log files")
                     .padding(.horizontal, textInset)
             }
         }

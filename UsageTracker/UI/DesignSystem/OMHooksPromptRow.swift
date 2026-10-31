@@ -2,7 +2,7 @@ import SwiftUI
 
 /// The one-time offer to install Claude Code's hooks, shown above the agents
 /// list until it is answered. It says what will be written and where to undo it,
-/// because the click writes to a file Omelette does not own — and "Not now" is a
+/// because the click writes to a file Brioche does not own — and "Not now" is a
 /// real answer: the row never comes back on its own. A group card like the agents
 /// below it; Enable is a glass capsule, because Allow is the popover's one filled
 /// control.
@@ -40,7 +40,7 @@ struct OMHooksPromptRow: View {
                 HStack(spacing: OMSpacing.s) {
                     Button("Enable", action: onEnable)
                         .buttonStyle(.omCapsule(Self.enableButtonSize))
-                        .help("Writes Omelette's hooks into ~/.claude/settings.json")
+                        .help("Writes Brioche's hooks into ~/.claude/settings.json")
                     Button("Not now", action: onDismiss)
                         .buttonStyle(.omText)
                         .font(.system(size: 12.5))

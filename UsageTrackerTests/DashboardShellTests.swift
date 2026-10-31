@@ -33,7 +33,7 @@ final class DashboardShellTests: XCTestCase {
     }
 
     func testTheAppNameRowIsTheMockups() {
-        XCTAssertEqual(DashboardSidebarRules.brandTitle, "Omelette")
+        XCTAssertEqual(DashboardSidebarRules.brandTitle, "Brioche")
         XCTAssertEqual(DashboardSidebarRules.brandIconSize, 24)
         XCTAssertEqual(DashboardSidebarRules.brandSpacing, 9)
         XCTAssertEqual(DashboardSidebarRules.brandFontSize, 13.5)

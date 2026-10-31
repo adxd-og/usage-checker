@@ -1,6 +1,6 @@
 import Foundation
 
-/// Omelette's MCP server in the two agents' own config files.
+/// Brioche's MCP server in the two agents' own config files.
 ///
 /// Claude Code keeps MCP servers in `~/.claude.json` under `mcpServers`; Codex keeps
 /// them in `[mcp_servers.<name>]` tables of `~/.codex/config.toml`. Both entries are
@@ -12,20 +12,29 @@ import Foundation
 enum MCPInstaller {
     typealias Error = SettingsFile.Error
 
-    /// The server's name in both files, and what an agent will call the tools through.
-    static let serverKey = "omelette"
+    /// The server's name in both files for a new setup, and what an agent calls the tools
+    /// through.
+    static let serverKey = "brioche"
 
-    /// An entry is ours when its command names the symlink, so one written by an older
-    /// build still matches after the app moves. Unlike the status line there is no
-    /// suffix to check: `omelette-hook` is never an MCP server, and the key is ours.
-    static let ourCommandMarker = "UsageTracker/bin/omelette"
+    /// What every setup before 4.0 wrote. Such an entry keeps working and stays ours; it moves
+    /// only when something writes, because moving it renames the tools an agent knows.
+    static let legacyServerKey = "omelette"
+
+    /// An entry is ours when its command names the symlink under either name, so one written
+    /// by an older build still matches after the app moves. Unlike the status line there is no
+    /// suffix to check: `omelette-hook` is never an MCP server.
+    static let ourCommandMarkers = ["UsageTracker/bin/brioche", "UsageTracker/bin/omelette"]
+
+    static func isOurCommand(_ command: String) -> Bool {
+        ourCommandMarkers.contains { command.contains($0) }
+    }
 
     static let argument = "mcp"
 
     static let claudeUnparsableReason = ".claude.json isn't valid JSON — fix or move it and try again."
-    static let claudeUnreadableReason = ".claude.json has an `omelette` MCP server Omelette can't read — fix or move it and try again."
+    static let claudeUnreadableReason = ".claude.json has a `brioche` MCP server Brioche can't read — fix or move it and try again."
     static let codexUnreadableReason = "config.toml can't be read as UTF-8 text."
-    static let codexUnreadableTableReason = "config.toml has an [mcp_servers.omelette] table with no command — fix or move it and try again."
+    static let codexUnreadableTableReason = "config.toml has an [mcp_servers.brioche] table with no command — fix or move it and try again."
 
     // MARK: - Claude Code (~/.claude.json)
 
@@ -38,23 +47,40 @@ enum MCPInstaller {
         SettingsFile.prettyJSON(["mcpServers": [serverKey: claudeTemplate(cliPath: cliPath)]]) ?? "{}"
     }
 
+    /// Our entry under the old name, if there is one. Anything else under that key is not ours
+    /// and does not concern us: we no longer want that name.
+    private static func ourLegacyClaudeEntry(in map: [String: Any]) -> [String: Any]? {
+        guard let object = map[legacyServerKey] as? [String: Any],
+              let command = object["command"] as? String,
+              isOurCommand(command)
+        else { return nil }
+        return object
+    }
+
     static func claudeStatus(configURL: URL, cliPath: String) -> HookInstallStatus {
         guard let file = try? SettingsFile.readJSON(configURL) else { return .conflict(claudeUnparsableReason) }
         guard let servers = file["mcpServers"] else { return .notInstalled }
         guard let map = servers as? [String: Any] else { return .conflict(claudeUnparsableReason) }
-        guard let entry = map[serverKey] else { return .notInstalled }
+        let legacy = ourLegacyClaudeEntry(in: map)
+        guard let entry = map[serverKey] else {
+            guard let legacy else { return .notInstalled }
+            let wanted = claudeTemplate(cliPath: AgentPaths.legacyCLIPath(for: cliPath))
+            return SettingsFile.canonicalJSON(legacy) == SettingsFile.canonicalJSON(wanted) ? .installed : .outdated
+        }
         guard let object = entry as? [String: Any], let command = object["command"] as? String else {
             return .conflict(claudeUnreadableReason)
         }
-        guard command.contains(ourCommandMarker) else { return .conflict(command) }
+        guard isOurCommand(command) else { return .conflict(command) }
+        // Both of ours: Update folds them into one.
+        if legacy != nil { return .outdated }
         return SettingsFile.canonicalJSON(object) == SettingsFile.canonicalJSON(claudeTemplate(cliPath: cliPath))
             ? .installed : .outdated
     }
 
     /// Merges our server in, keeping every other key of a file Claude Code writes
-    /// itself — project history, onboarding flags, other servers. It comes back
-    /// pretty-printed with sorted keys, which is why the original is copied to
-    /// `.claude.json.omelette-backup` first.
+    /// itself — project history, onboarding flags, other servers — and taking our entry under
+    /// the old name out, so one server stays. It comes back pretty-printed with sorted keys,
+    /// which is why the original is copied to `.claude.json.omelette-backup` first.
     static func installClaude(configURL: URL, cliPath: String) throws {
         var file = try SettingsFile.readJSON(configURL)
         var map: [String: Any] = [:]
@@ -68,24 +94,30 @@ enum MCPInstaller {
             guard let object = entry as? [String: Any], let command = object["command"] as? String else {
                 throw Error.conflict(claudeUnreadableReason)
             }
-            guard command.contains(ourCommandMarker) else { throw Error.conflict(command) }
+            guard isOurCommand(command) else { throw Error.conflict(command) }
         }
+        if ourLegacyClaudeEntry(in: map) != nil { map.removeValue(forKey: legacyServerKey) }
         map[serverKey] = claudeTemplate(cliPath: cliPath)
         file["mcpServers"] = map
         try SettingsFile.writeJSON(file, to: configURL)
     }
 
-    /// Deletes exactly our entry, and the `mcpServers` map with it when nothing else
-    /// is left — an empty object is clutter in a file we do not own.
+    /// Deletes exactly our entries, under either name, and the `mcpServers` map with them when
+    /// nothing else is left — an empty object is clutter in a file we do not own.
     static func removeClaude(configURL: URL, cliPath: String) throws {
         guard FileManager.default.fileExists(atPath: configURL.path) else { return }
         var file = try SettingsFile.readJSON(configURL)
-        guard var map = file["mcpServers"] as? [String: Any],
-              let object = map[serverKey] as? [String: Any],
-              let command = object["command"] as? String,
-              command.contains(ourCommandMarker)
-        else { return }                     // nothing of ours: do not reformat the file
-        map.removeValue(forKey: serverKey)
+        guard var map = file["mcpServers"] as? [String: Any] else { return }
+        var removed = false
+        for key in [serverKey, legacyServerKey] {
+            guard let object = map[key] as? [String: Any],
+                  let command = object["command"] as? String,
+                  isOurCommand(command)
+            else { continue }
+            map.removeValue(forKey: key)
+            removed = true
+        }
+        guard removed else { return }       // nothing of ours: do not reformat the file
         if map.isEmpty {
             file.removeValue(forKey: "mcpServers")
         } else {
@@ -101,6 +133,18 @@ enum MCPInstaller {
     /// The dotted key `codexHeader` names, as `codexHeaderKey` reads any header.
     static let codexKey = ["mcp_servers", serverKey]
 
+    static let legacyCodexHeader = "[mcp_servers.\(legacyServerKey)]"
+    static let legacyCodexKey = ["mcp_servers", legacyServerKey]
+
+    /// The table an older build wrote for this cliPath: the old header and the old link.
+    private static func legacyCodexTable(cliPath: String) -> [String] {
+        [
+            legacyCodexHeader,
+            "command = \"\(SettingsFile.tomlEscaped(AgentPaths.legacyCLIPath(for: cliPath)))\"",
+            "args = [\"\(argument)\"]",
+        ]
+    }
+
     static func codexTable(cliPath: String) -> [String] {
         [
             codexHeader,
@@ -115,25 +159,35 @@ enum MCPInstaller {
     }
 
     /// Our table's lines: the header, and everything up to the next header — except a
-    /// sub-table of ours (`[mcp_servers.omelette.env]`), which belongs to it. Leaving
+    /// sub-table of ours (`[mcp_servers.brioche.env]`), which belongs to it. Leaving
     /// an orphan sub-table behind would give Codex a config it refuses to parse. Both
     /// ends are decided by `codexHeaderKey`, so a header spelled with quotes, spaces or
     /// a trailing comment starts and ends a table like any other.
-    static func codexTableRange(in lines: [String]) -> Range<Int>? {
-        guard let start = lines.firstIndex(where: codexIsOurHeader) else { return nil }
+    static func codexTableRange(in lines: [String], key: [String] = codexKey) -> Range<Int>? {
+        guard let start = lines.firstIndex(where: { codexIsHeader($0, key: key) }) else { return nil }
         var end = start + 1
         while end < lines.count {
-            if let key = codexHeaderKey(lines[end]),
-               !(key.count > codexKey.count && key.starts(with: codexKey)) { break }
+            if let found = codexHeaderKey(lines[end]),
+               !(found.count > key.count && found.starts(with: key)) { break }
             end += 1
         }
         return start..<end
     }
 
+    /// Our table under the old name, or nil when there is none or it runs somebody else's
+    /// command, which is then none of our business.
+    static func codexLegacyRange(in lines: [String]) -> Range<Int>? {
+        guard let range = codexTableRange(in: lines, key: legacyCodexKey),
+              let command = codexValue("command", in: Array(lines[range])),
+              isOurCommand(command)
+        else { return nil }
+        return range
+    }
+
     /// The key a table header names, split on its dots, or nil when the line is not a
     /// header. TOML, and Codex with it, accepts one table under several spellings:
-    /// `[mcp_servers.omelette]`, `[mcp_servers.omelette] # note`,
-    /// `[mcp_servers."omelette"]`, `[ mcp_servers . 'omelette' ]`. Matching the exact
+    /// `[mcp_servers.brioche]`, `[mcp_servers.brioche] # note`,
+    /// `[mcp_servers."brioche"]`, `[ mcp_servers . 'brioche' ]`. Matching the exact
     /// text found only the first, so Settings said "not installed" and Enable appended
     /// a second table, which Codex refuses to load ("Cannot declare … twice").
     ///
@@ -160,13 +214,13 @@ enum MCPInstaller {
         raw.replacingOccurrences(of: "\r", with: "").trimmingCharacters(in: .whitespaces)
     }
 
-    /// Our table's header in any spelling — a standard table, not an array of tables
-    /// that happens to share the name.
-    private static func codexIsOurHeader(_ line: String) -> Bool {
-        codexHeaderKey(line) == codexKey && !codexInterpreted(line).hasPrefix("[[")
+    /// A table's header in any spelling — a standard table, not an array of tables that
+    /// happens to share the name.
+    private static func codexIsHeader(_ line: String, key: [String]) -> Bool {
+        codexHeaderKey(line) == key && !codexInterpreted(line).hasPrefix("[[")
     }
 
-    /// `mcp_servers . "omelette"` → `["mcp_servers", "omelette"]`; nil for anything
+    /// `mcp_servers . "brioche"` → `["mcp_servers", "brioche"]`; nil for anything
     /// that is not a well-formed dotted key.
     private static func codexDottedKey(_ text: Substring) -> [String]? {
         var segments: [String] = []
@@ -246,11 +300,11 @@ enum MCPInstaller {
     /// lines, and our header in the one spelling `codexTable` writes. A table that says
     /// exactly what ours says is installed, whether or not someone quoted the key or
     /// left a note beside a line.
-    private static func codexMeaningful(_ body: [String]) -> [String] {
+    private static func codexMeaningful(_ body: [String], key: [String] = codexKey, header: String = codexHeader) -> [String] {
         body.compactMap { raw -> String? in
             let line = codexStrippingComment(codexInterpreted(raw))
             guard !line.isEmpty else { return nil }
-            return codexIsOurHeader(line) ? codexHeader : line
+            return codexIsHeader(line, key: key) ? header : line
         }
     }
 
@@ -271,7 +325,7 @@ enum MCPInstaller {
     /// `key = "value"` inside a table's lines, unescaped. Hand-rolled for the same
     /// reason `AgentHooksInstaller.trustTable` is: this reads two keys of a file we
     /// otherwise only append to. A trailing `# comment` is not part of the value:
-    /// `command = "…/omelette"  # full path` is our command.
+    /// `command = "…/brioche"  # full path` is our command.
     static func codexValue(_ key: String, in lines: [String]) -> String? {
         for raw in lines {
             let line = codexInterpreted(raw)
@@ -290,18 +344,24 @@ enum MCPInstaller {
     static func codexStatus(configURL: URL, cliPath: String) -> HookInstallStatus {
         guard let text = try? SettingsFile.readText(configURL) else { return .conflict(codexUnreadableReason) }
         let lines = SettingsFile.lines(of: text)
-        guard let range = codexTableRange(in: lines) else { return .notInstalled }
+        let legacy = codexLegacyRange(in: lines)
+        guard let range = codexTableRange(in: lines) else {
+            guard let legacy else { return .notInstalled }
+            let meaningful = codexMeaningful(Array(lines[legacy]), key: legacyCodexKey, header: legacyCodexHeader)
+            return meaningful == legacyCodexTable(cliPath: cliPath) ? .installed : .outdated
+        }
         let body = Array(lines[range])
         guard let command = codexValue("command", in: body) else { return .conflict(codexUnreadableTableReason) }
-        guard command.contains(ourCommandMarker) else { return .conflict(command) }
-        let meaningful = codexMeaningful(body)
-        return meaningful == codexTable(cliPath: cliPath) ? .installed : .outdated
+        guard isOurCommand(command) else { return .conflict(command) }
+        // Both of ours: Update folds them into one.
+        if legacy != nil { return .outdated }
+        return codexMeaningful(body) == codexTable(cliPath: cliPath) ? .installed : .outdated
     }
 
-    /// Replaces our table where it is, or appends one at the end of the file. Appended
-    /// rather than inserted before the first table, unlike `notify`: a table header
-    /// ends the top level, so anything after it is already inside some table and ours
-    /// has to start its own.
+    /// Replaces our table where it is, our table under the old name where that is, or appends
+    /// one at the end of the file; with both of ours, one remains. Appended rather than
+    /// inserted before the first table, unlike `notify`: a table header ends the top level, so
+    /// anything after it is already inside some table and ours has to start its own.
     static func installCodex(configURL: URL, cliPath: String) throws {
         guard let text = try? SettingsFile.readText(configURL) else { throw Error.conflict(codexUnreadableReason) }
         var lines = SettingsFile.lines(of: text)
@@ -309,14 +369,22 @@ enum MCPInstaller {
         // Whatever the file already uses. Rewriting a CRLF config as LF would show up
         // as a whole-file diff in someone's dotfiles repo.
         let written = codexLines(table + [""], lineEnding: codexLineEnding(in: text))
+        let legacy = codexLegacyRange(in: lines)
 
         if let range = codexTableRange(in: lines) {
             let body = Array(lines[range])
             guard let command = codexValue("command", in: body) else { throw Error.conflict(codexUnreadableTableReason) }
-            guard command.contains(ourCommandMarker) else { throw Error.conflict(command) }
-            let meaningful = codexMeaningful(body)
-            if meaningful == table { return }
-            lines.replaceSubrange(range, with: written)
+            guard isOurCommand(command) else { throw Error.conflict(command) }
+            let current = codexMeaningful(body) == table
+            if current && legacy == nil { return }
+            // The later range first, so the earlier one still means the same lines.
+            var edits: [(range: Range<Int>, lines: [String])] = current ? [] : [(range, written)]
+            if let legacy { edits.append((legacy, [])) }
+            for edit in edits.sorted(by: { $0.range.lowerBound > $1.range.lowerBound }) {
+                lines.replaceSubrange(edit.range, with: edit.lines)
+            }
+        } else if let legacy {
+            lines.replaceSubrange(legacy, with: written)
         } else {
             while let last = lines.last, codexInterpreted(last).isEmpty { lines.removeLast() }
             if !lines.isEmpty { lines.append(contentsOf: codexLines([""], lineEnding: codexLineEnding(in: text))) }
@@ -325,18 +393,24 @@ enum MCPInstaller {
         try SettingsFile.writeText(lines, to: configURL)
     }
 
-    /// Removes our table only. A foreign `[mcp_servers.omelette]` is left exactly where
-    /// it is. `cliPath` is part of the shared signature and deliberately unused:
-    /// ownership is `ourCommandMarker`, so a table from an older build goes too.
+    /// Removes our tables only, under either name. A foreign one is left exactly where it is.
+    /// `cliPath` is part of the shared signature and deliberately unused: ownership is
+    /// `isOurCommand`, so a table from an older build goes too.
     static func removeCodex(configURL: URL, cliPath: String) throws {
         guard FileManager.default.fileExists(atPath: configURL.path) else { return }
         guard let text = try? SettingsFile.readText(configURL) else { throw Error.conflict(codexUnreadableReason) }
         var lines = SettingsFile.lines(of: text)
-        guard let range = codexTableRange(in: lines),
-              let command = codexValue("command", in: Array(lines[range])),
-              command.contains(ourCommandMarker)
-        else { return }
-        lines.removeSubrange(range)
+        var ranges: [Range<Int>] = []
+        if let range = codexTableRange(in: lines),
+           let command = codexValue("command", in: Array(lines[range])),
+           isOurCommand(command) {
+            ranges.append(range)
+        }
+        if let legacy = codexLegacyRange(in: lines) { ranges.append(legacy) }
+        guard !ranges.isEmpty else { return }
+        for range in ranges.sorted(by: { $0.lowerBound > $1.lowerBound }) {
+            lines.removeSubrange(range)
+        }
         try SettingsFile.writeText(lines, to: configURL)
     }
 }

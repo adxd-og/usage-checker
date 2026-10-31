@@ -26,7 +26,7 @@ final class NothingOnTooltipTests: XCTestCase {
             StatusBarController.tooltipText(
                 snapshot: empty, mode: .used, pollsNothing: true, now: now, calendar: calendar, locale: locale
             ),
-            "Omelette — all providers are off. Turn one on in Settings › Providers."
+            "Brioche — all providers are off. Turn one on in Settings › Providers."
         )
     }
 
@@ -36,7 +36,7 @@ final class NothingOnTooltipTests: XCTestCase {
             StatusBarController.tooltipText(
                 snapshot: unpolled, mode: .used, pollsNothing: false, now: now, calendar: calendar, locale: locale
             ),
-            "Omelette — loading…"
+            "Brioche — loading…"
         )
     }
 
@@ -47,7 +47,7 @@ final class NothingOnTooltipTests: XCTestCase {
                 snapshot: empty, mode: .used, keepAwake: armed, pollsNothing: true,
                 now: now, calendar: calendar, locale: locale
             ),
-            "Keep awake until 18:40\n\nOmelette — all providers are off. Turn one on in Settings › Providers."
+            "Keep awake until 18:40\n\nBrioche — all providers are off. Turn one on in Settings › Providers."
         )
     }
 
@@ -61,7 +61,7 @@ final class NothingOnTooltipTests: XCTestCase {
     func testTheWordsNameTheSettingsTabByItsOwnName() {
         XCTAssertEqual(NothingOnCopy.title, "All providers are off")
         XCTAssertEqual(NothingOnCopy.hint, "Turn one on in Settings › Providers.")
-        XCTAssertEqual(NothingOnCopy.tooltip, "Omelette — all providers are off. Turn one on in Settings › Providers.")
+        XCTAssertEqual(NothingOnCopy.tooltip, "Brioche — all providers are off. Turn one on in Settings › Providers.")
         XCTAssertTrue(NothingOnCopy.hint.contains("Settings › \(SettingsTab.providers.rawValue)"))
     }
 }

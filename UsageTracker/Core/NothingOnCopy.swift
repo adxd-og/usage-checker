@@ -1,6 +1,6 @@
 import Foundation
 
-/// What Omelette says when no provider is on: every switch in Settings › Providers is off
+/// What Brioche says when no provider is on: every switch in Settings › Providers is off
 /// and no Admin API key is set (spec 2026-10-25 § Design › Package 1, Nothing on). Before
 /// Claude had a switch this could not happen, and an empty poll meant "still loading";
 /// every surface takes its words from here so they agree.
@@ -14,17 +14,17 @@ enum NothingOnCopy {
     /// cannot see; a test holds the two together.
     static let hint = "Turn one on in Settings › Providers."
     /// The menu bar tooltip's whole usage part.
-    static let tooltip = "Omelette — all providers are off. Turn one on in Settings › Providers."
+    static let tooltip = "Brioche — all providers are off. Turn one on in Settings › Providers."
     /// The floating window's line: the fact and where to change it.
     static var sentence: String { "\(title). \(hint)" }
     /// The popover's link to the switches.
     static let button = "Open Settings › Providers"
     /// The widget's line. A widget sits on the desktop, away from the app, so it names
     /// whose Settings.
-    static let widget = "All providers are off. Turn one on in Omelette's Settings › Providers."
+    static let widget = "All providers are off. Turn one on in Brioche's Settings › Providers."
     /// A provider widget pinned to a provider that is switched off while others are on.
     /// Same shape as `widget`: it names whose Settings.
     static func providerOff(_ name: String) -> String {
-        "\(name) is off. Turn it on in Omelette's Settings › Providers."
+        "\(name) is off. Turn it on in Brioche's Settings › Providers."
     }
 }

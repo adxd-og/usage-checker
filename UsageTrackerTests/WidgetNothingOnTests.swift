@@ -2,7 +2,7 @@ import XCTest
 @testable import Omelette
 
 /// Spec 2026-10-25 (Claude switch and sign-in) § Design › Package 1, Nothing on: a widget
-/// whose file says no provider is on says so and points to Omelette's Settings › Providers,
+/// whose file says no provider is on says so and points to Brioche's Settings › Providers,
 /// tells that apart from "every enabled provider signed out", and never shows the sample
 /// numbers in that state.
 final class WidgetNothingOnTests: XCTestCase {
@@ -57,6 +57,6 @@ final class WidgetNothingOnTests: XCTestCase {
     }
 
     func testTheWidgetsLineSaysWhereToTurnOneOn() {
-        XCTAssertEqual(NothingOnCopy.widget, "All providers are off. Turn one on in Omelette's Settings › Providers.")
+        XCTAssertEqual(NothingOnCopy.widget, "All providers are off. Turn one on in Brioche's Settings › Providers.")
     }
 }

@@ -10,10 +10,10 @@ enum CLIText {
 
     /// The one sentence for every way the file can be missing: not written yet, too
     /// old, unreadable, from another version. They all mean the same thing to the user.
-    static let notRunning = "Omelette is not running or has not polled yet"
+    static let notRunning = "Brioche is not running or has not polled yet"
 
     /// The short qualifier for dollars that are an API-list-price equivalent of local
-    /// CLI usage rather than a bill. One spelling for `omelette status` and for the
+    /// CLI usage rather than a bill. One spelling for `brioche status` and for the
     /// app's notification body (`CostCopy.apiEquivalentSuffix`).
     static let apiEquivalentSuffix = "(API-equivalent)"
 
@@ -24,15 +24,18 @@ enum CLIText {
     static let usageExitCode: Int32 = 64
 
     static let usage = """
-    omelette — Omelette's usage numbers, in the terminal.
+    brioche — Brioche's usage numbers, in the terminal.
 
     Usage:
-      omelette status [--json]              every provider's windows, costs and agents
-      omelette statusline [--provider ID]   one line for a status bar (default: claude)
-                          [--no-color]
-      omelette mcp                          Model Context Protocol server on stdio
-      omelette --version
-      omelette --help
+      brioche status [--json]               every provider's windows, costs and agents
+      brioche statusline [--provider ID]    one line for a status bar (default: claude)
+                         [--no-color]
+      brioche mcp                           Model Context Protocol server on stdio
+      brioche --version
+      brioche --help
+
+    `omelette` is the same tool under its old name, so setups from before the rename
+    keep working.
 
     When Claude Code pipes its session JSON into `statusline`, the line opens with the
     model and a bar of how full its context window is, coloured for a status bar;
@@ -45,8 +48,8 @@ enum CLIText {
     subscription that is not the bill, so `status` marks them "(API-equivalent)"
     and `statusline` puts `≈` in front of them.
 
-    Reads ~/Library/Application Support/UsageTracker/status.json, which Omelette
-    writes after every poll. It never starts the app: with Omelette closed, `status`
+    Reads ~/Library/Application Support/UsageTracker/status.json, which Brioche
+    writes after every poll. It never starts the app: with Brioche closed, `status`
     exits 2 and `statusline` prints the session's half of the line, or an empty one.
     """
 }

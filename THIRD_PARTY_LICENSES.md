@@ -1,6 +1,6 @@
 # Third-party licenses
 
-Omelette bundles the following third-party software.
+Brioche bundles the following third-party software.
 
 ## CodexBarCore (steipete/CodexBar)
 

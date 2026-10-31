@@ -5,7 +5,7 @@ import XCTest
 /// the URLs it is handed, so nothing here can reach `~/.claude.json` or `~/.codex`.
 final class MCPInstallerTests: XCTestCase {
     private var root: URL!
-    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette"
+    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/brioche"
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -60,7 +60,7 @@ final class MCPInstallerTests: XCTestCase {
     func testInstallCreatesAMissingFile() throws {
         try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli)
 
-        let entry = try XCTUnwrap(try servers(at: claudeURL)["omelette"] as? [String: Any])
+        let entry = try XCTUnwrap(try servers(at: claudeURL)["brioche"] as? [String: Any])
         XCTAssertEqual(entry["command"] as? String, cli)
         XCTAssertEqual(claudeStatus, .installed)
     }
@@ -75,29 +75,29 @@ final class MCPInstallerTests: XCTestCase {
         XCTAssertNotNil(file["projects"])
         let all = try servers(at: claudeURL)
         XCTAssertEqual((all["xcode"] as? [String: Any])?["command"] as? String, "xcrun")
-        XCTAssertNotNil(all["omelette"])
+        XCTAssertNotNil(all["brioche"])
         XCTAssertTrue(
             FileManager.default.fileExists(atPath: SettingsFile.backupURL(for: claudeURL).path),
             "a live state file is exactly the one to back up before rewriting"
         )
     }
 
-    func testAnOmeletteEntryPointingSomewhereElseIsAConflict() throws {
-        try write(#"{"mcpServers":{"omelette":{"type":"stdio","command":"/usr/local/bin/omelette","args":["mcp"]}}}"#, to: claudeURL)
+    func testAnBriocheEntryPointingSomewhereElseIsAConflict() throws {
+        try write(#"{"mcpServers":{"brioche":{"type":"stdio","command":"/usr/local/bin/brioche","args":["mcp"]}}}"#, to: claudeURL)
 
-        XCTAssertEqual(claudeStatus, .conflict("/usr/local/bin/omelette"))
+        XCTAssertEqual(claudeStatus, .conflict("/usr/local/bin/brioche"))
         XCTAssertThrowsError(try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli)) {
-            XCTAssertEqual($0 as? MCPInstaller.Error, .conflict("/usr/local/bin/omelette"))
+            XCTAssertEqual($0 as? MCPInstaller.Error, .conflict("/usr/local/bin/brioche"))
         }
         XCTAssertEqual(
-            (try servers(at: claudeURL)["omelette"] as? [String: Any])?["command"] as? String,
-            "/usr/local/bin/omelette",
+            (try servers(at: claudeURL)["brioche"] as? [String: Any])?["command"] as? String,
+            "/usr/local/bin/brioche",
             "their entry is exactly where they left it"
         )
     }
 
     func testAnEntryOfOursFromAnotherHomeIsOutdatedAndUpdatable() throws {
-        try write(#"{"mcpServers":{"omelette":{"type":"stdio","command":"/Users/other/Library/Application Support/UsageTracker/bin/omelette","args":["mcp"]}}}"#, to: claudeURL)
+        try write(#"{"mcpServers":{"brioche":{"type":"stdio","command":"/Users/other/Library/Application Support/UsageTracker/bin/brioche","args":["mcp"]}}}"#, to: claudeURL)
 
         XCTAssertEqual(claudeStatus, .outdated)
         try MCPInstaller.installClaude(configURL: claudeURL, cliPath: cli)
@@ -116,14 +116,14 @@ final class MCPInstallerTests: XCTestCase {
         XCTAssertEqual(claudeStatus, .notInstalled)
     }
 
-    func testRemoveLeavesOtherServersAndAForeignOmeletteAlone() throws {
-        try write(#"{"mcpServers":{"xcode":{"command":"xcrun"},"omelette":{"command":"/usr/local/bin/omelette","args":["mcp"]}}}"#, to: claudeURL)
+    func testRemoveLeavesOtherServersAndAForeignBriocheAlone() throws {
+        try write(#"{"mcpServers":{"xcode":{"command":"xcrun"},"brioche":{"command":"/usr/local/bin/brioche","args":["mcp"]}}}"#, to: claudeURL)
 
         try MCPInstaller.removeClaude(configURL: claudeURL, cliPath: cli)
 
         let all = try servers(at: claudeURL)
         XCTAssertNotNil(all["xcode"])
-        XCTAssertNotNil(all["omelette"], "not ours, not ours to delete")
+        XCTAssertNotNil(all["brioche"], "not ours, not ours to delete")
     }
 
     func testAFileThatIsNotJSONIsARefusal() throws {
@@ -137,8 +137,8 @@ final class MCPInstallerTests: XCTestCase {
 
     func testTheCodexTableIsThreeLines() {
         XCTAssertEqual(MCPInstaller.codexTable(cliPath: cli), [
-            "[mcp_servers.omelette]",
-            #"command = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette""#,
+            "[mcp_servers.brioche]",
+            #"command = "/Users/tester/Library/Application Support/UsageTracker/bin/brioche""#,
             #"args = ["mcp"]"#,
         ])
     }
@@ -165,7 +165,7 @@ final class MCPInstallerTests: XCTestCase {
     }
 
     func testInstallIsIdempotentAndUpdatesAnOldPathInPlace() throws {
-        try MCPInstaller.installCodex(configURL: codexURL, cliPath: "/Users/other/Library/Application Support/UsageTracker/bin/omelette")
+        try MCPInstaller.installCodex(configURL: codexURL, cliPath: "/Users/other/Library/Application Support/UsageTracker/bin/brioche")
         XCTAssertEqual(codexStatus, .outdated)
 
         try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli)
@@ -180,27 +180,27 @@ final class MCPInstallerTests: XCTestCase {
         )
     }
 
-    func testAForeignOmeletteTableIsAConflict() throws {
+    func testAForeignBriocheTableIsAConflict() throws {
         try write("""
-        [mcp_servers.omelette]
-        command = "/opt/homebrew/bin/omelette"
+        [mcp_servers.brioche]
+        command = "/opt/homebrew/bin/brioche"
         args = ["serve"]
 
         """, to: codexURL)
 
-        XCTAssertEqual(codexStatus, .conflict("/opt/homebrew/bin/omelette"))
+        XCTAssertEqual(codexStatus, .conflict("/opt/homebrew/bin/brioche"))
         XCTAssertThrowsError(try MCPInstaller.installCodex(configURL: codexURL, cliPath: cli))
-        XCTAssertTrue(try text(at: codexURL).contains("/opt/homebrew/bin/omelette"))
+        XCTAssertTrue(try text(at: codexURL).contains("/opt/homebrew/bin/brioche"))
     }
 
     /// A sub-table belongs to its parent. Removing the server and leaving
-    /// `[mcp_servers.omelette.env]` behind would leave Codex with a config it refuses.
+    /// `[mcp_servers.brioche.env]` behind would leave Codex with a config it refuses.
     func testTheTableRangeSwallowsItsOwnSubTablesAndStopsAtTheNext() {
         let lines = [
-            "[mcp_servers.omelette]",
+            "[mcp_servers.brioche]",
             "command = \"x\"",
             "",
-            "[mcp_servers.omelette.env]",
+            "[mcp_servers.brioche.env]",
             "DEBUG = \"1\"",
             "",
             "[mcp_servers.other]",
@@ -213,7 +213,7 @@ final class MCPInstallerTests: XCTestCase {
         try write("""
         model = "gpt-6-astra"
 
-        [mcp_servers.omelette]
+        [mcp_servers.brioche]
         command = "\(cli)"
         args = ["mcp"]
 
@@ -225,7 +225,7 @@ final class MCPInstallerTests: XCTestCase {
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
 
         let after = try text(at: codexURL)
-        XCTAssertFalse(after.contains("mcp_servers.omelette"), after)
+        XCTAssertFalse(after.contains("mcp_servers.brioche"), after)
         XCTAssertTrue(after.contains("[mcp_servers.xcode]"), after)
         XCTAssertTrue(after.contains("model = \"gpt-6-astra\""), after)
         XCTAssertEqual(codexStatus, .notInstalled)
@@ -233,8 +233,8 @@ final class MCPInstallerTests: XCTestCase {
 
     func testRemoveLeavesAForeignTableAlone() throws {
         let theirs = """
-        [mcp_servers.omelette]
-        command = "/opt/homebrew/bin/omelette"
+        [mcp_servers.brioche]
+        command = "/opt/homebrew/bin/brioche"
 
         """
         try write(theirs, to: codexURL)
@@ -257,8 +257,8 @@ final class MCPInstallerTests: XCTestCase {
         let crlf = [
             "model = \"gpt-6-astra\"",
             "",
-            "[mcp_servers.omelette]",
-            "command = \"/Users/other/Library/Application Support/UsageTracker/bin/omelette\"",
+            "[mcp_servers.brioche]",
+            "command = \"/Users/other/Library/Application Support/UsageTracker/bin/brioche\"",
             "args = [\"mcp\"]",
             "",
         ].joined(separator: "\r\n")
@@ -279,17 +279,17 @@ final class MCPInstallerTests: XCTestCase {
         )
 
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
-        XCTAssertFalse(try text(at: codexURL).contains("mcp_servers.omelette"))
+        XCTAssertFalse(try text(at: codexURL).contains("mcp_servers.brioche"))
         XCTAssertTrue(try text(at: codexURL).contains("model = \"gpt-6-astra\""))
     }
 
     func testAPathWithAQuoteIsEscapedIntoTheTOMLAndReadBack() throws {
-        let weird = #"/Users/o"brien/Library/Application Support/UsageTracker/bin/omelette"#
+        let weird = #"/Users/o"brien/Library/Application Support/UsageTracker/bin/brioche"#
         try MCPInstaller.installCodex(configURL: codexURL, cliPath: weird)
 
         let written = try text(at: codexURL)
         XCTAssertTrue(
-            written.contains(#"command = "/Users/o\"brien/Library/Application Support/UsageTracker/bin/omelette""#),
+            written.contains(#"command = "/Users/o\"brien/Library/Application Support/UsageTracker/bin/brioche""#),
             written
         )
         XCTAssertEqual(MCPInstaller.codexStatus(configURL: codexURL, cliPath: weird), .installed)
@@ -311,22 +311,22 @@ final class MCPInstallerTests: XCTestCase {
     }
 
     /// Tables that are ours, counted through the installer's own header rule. A count
-    /// of the literal `[mcp_servers.omelette]` would miss the very spellings these
+    /// of the literal `[mcp_servers.brioche]` would miss the very spellings these
     /// tests are about.
     private func ourTableCount(in text: String) -> Int {
         SettingsFile.lines(of: text).filter { MCPInstaller.codexHeaderKey($0) == MCPInstaller.codexKey }.count
     }
 
     func testAHeaderKeyIsReadHoweverTOMLSpellsIt() {
-        let ours = ["mcp_servers", "omelette"]
+        let ours = ["mcp_servers", "brioche"]
         XCTAssertEqual(MCPInstaller.codexKey, ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette]"), ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette] # Omelette MCP"), ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."omelette"]"#), ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.'omelette']"), ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("[ mcp_servers.omelette ]"), ours)
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("  [mcp_servers . omelette]\r"), ours, "spaces around the dot, CRLF, indentation")
-        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.omelette.env]"), ["mcp_servers", "omelette", "env"])
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.brioche]"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.brioche] # Brioche MCP"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."brioche"]"#), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.'brioche']"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[ mcp_servers.brioche ]"), ours)
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("  [mcp_servers . brioche]\r"), ours, "spaces around the dot, CRLF, indentation")
+        XCTAssertEqual(MCPInstaller.codexHeaderKey("[mcp_servers.brioche.env]"), ["mcp_servers", "brioche", "env"])
         XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."a.b"]"#), ["mcp_servers", "a.b"], "a dot inside quotes is part of the name")
         XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."x#y"] # note"#), ["mcp_servers", "x#y"], "a hash inside quotes is not a comment")
         XCTAssertEqual(MCPInstaller.codexHeaderKey(#"[mcp_servers."say \"hi\""]"#), ["mcp_servers", #"say "hi""#], "an escaped quote does not close the name")
@@ -335,11 +335,11 @@ final class MCPInstallerTests: XCTestCase {
 
     func testALineThatIsNotAHeaderHasNoKey() {
         XCTAssertNil(MCPInstaller.codexHeaderKey(#"command = "x""#))
-        XCTAssertNil(MCPInstaller.codexHeaderKey("# [mcp_servers.omelette]"), "a commented-out header is a comment")
+        XCTAssertNil(MCPInstaller.codexHeaderKey("# [mcp_servers.brioche]"), "a commented-out header is a comment")
         XCTAssertNil(MCPInstaller.codexHeaderKey(#"  ["a", "b"],"#), "a row of a nested array is not a header")
-        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers.omelette"))
-        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers..omelette]"))
-        XCTAssertNil(MCPInstaller.codexHeaderKey(#"[mcp_servers."omelette]"#))
+        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers.brioche"))
+        XCTAssertNil(MCPInstaller.codexHeaderKey("[mcp_servers..brioche]"))
+        XCTAssertNil(MCPInstaller.codexHeaderKey(#"[mcp_servers."brioche]"#))
         XCTAssertNil(MCPInstaller.codexHeaderKey("[]"))
         XCTAssertNil(MCPInstaller.codexHeaderKey(""))
     }
@@ -347,12 +347,12 @@ final class MCPInstallerTests: XCTestCase {
     /// The three spellings the 2.7.0 review ran through Python's `tomllib`. Each one is
     /// our table, and each used to read as "not installed" and get a second table
     /// appended — a config Codex refuses to load ("Cannot declare ('mcp_servers',
-    /// 'omelette') twice").
+    /// 'brioche') twice").
     func testOurTableUnderAnyHeaderSpellingIsInstalledAndInstallLeavesItAlone() throws {
         for header in [
-            "[mcp_servers.omelette] # Omelette MCP",
-            #"[mcp_servers."omelette"]"#,
-            "[ mcp_servers.omelette ]",
+            "[mcp_servers.brioche] # Brioche MCP",
+            #"[mcp_servers."brioche"]"#,
+            "[ mcp_servers.brioche ]",
         ] {
             let existing = codexConfig(header: header)
             try write(existing, to: codexURL)
@@ -369,8 +369,8 @@ final class MCPInstallerTests: XCTestCase {
 
     func testAnOlderPathUnderAQuotedHeaderIsUpdatedInPlace() throws {
         try write("""
-        [mcp_servers."omelette"] # added by hand
-        command = "/Users/other/Library/Application Support/UsageTracker/bin/omelette"
+        [mcp_servers."brioche"] # added by hand
+        command = "/Users/other/Library/Application Support/UsageTracker/bin/brioche"
         args = ["mcp"]
 
         [mcp_servers.xcode]
@@ -392,13 +392,13 @@ final class MCPInstallerTests: XCTestCase {
     /// `# full path, no $HOME`. Read with the comment attached, the value ended in
     /// `$HOME`, not a quote, and the table was refused as one "with no command".
     func testACommentAfterTheCommandIsNotPartOfIt() throws {
-        XCTAssertEqual(MCPInstaller.codexValue("command", in: [#"command = "/bin/omelette" # ours"#]), "/bin/omelette")
+        XCTAssertEqual(MCPInstaller.codexValue("command", in: [#"command = "/bin/brioche" # ours"#]), "/bin/brioche")
         XCTAssertEqual(
-            MCPInstaller.codexValue("command", in: [#"command = "/tmp/#1/omelette"  # ours"#]), "/tmp/#1/omelette",
+            MCPInstaller.codexValue("command", in: [#"command = "/tmp/#1/brioche"  # ours"#]), "/tmp/#1/brioche",
             "a hash inside the quotes is part of the path"
         )
 
-        let existing = codexConfig(header: "[mcp_servers.omelette]", commandSuffix: "  # full path, no $HOME")
+        let existing = codexConfig(header: "[mcp_servers.brioche]", commandSuffix: "  # full path, no $HOME")
         try write(existing, to: codexURL)
 
         XCTAssertEqual(codexStatus, .installed)
@@ -407,7 +407,7 @@ final class MCPInstallerTests: XCTestCase {
     }
 
     func testRemoveFindsOurTableUnderAnyHeaderSpelling() throws {
-        try write(codexConfig(header: "[ mcp_servers.'omelette' ] # Omelette"), to: codexURL)
+        try write(codexConfig(header: "[ mcp_servers.'brioche' ] # Brioche"), to: codexURL)
 
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
 
@@ -420,16 +420,16 @@ final class MCPInstallerTests: XCTestCase {
 
     func testOurTableEndsAtTheNextHeaderHoweverEitherIsSpelled() {
         let lines = [
-            #"[mcp_servers."omelette"]"#,
+            #"[mcp_servers."brioche"]"#,
             "command = \"x\"",
-            "[ mcp_servers.omelette.env ] # ours too",
+            "[ mcp_servers.brioche.env ] # ours too",
             "DEBUG = \"1\"",
             "[[profiles]]",
             "name = \"fast\"",
         ]
         XCTAssertEqual(MCPInstaller.codexTableRange(in: lines), 0..<4)
         XCTAssertNil(
-            MCPInstaller.codexTableRange(in: ["[[mcp_servers.omelette]]", "command = \"x\""]),
+            MCPInstaller.codexTableRange(in: ["[[mcp_servers.brioche]]", "command = \"x\""]),
             "an array of tables that shares the name is not our table"
         )
     }

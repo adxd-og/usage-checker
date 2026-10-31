@@ -43,7 +43,7 @@ enum PopoverCopy {
     // MARK: - The island's own words (notch-island spec 2026-10-29 § 3.3)
 
     /// The strip's title, left of the camera.
-    static let appName = "Omelette"
+    static let appName = "Brioche"
     /// The body before the first poll lands.
     static let loading = "Loading…"
     /// The cannot-refresh notice's tooltip when the failed refresh left no error message.

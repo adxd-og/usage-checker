@@ -185,7 +185,7 @@ final class MenuBarRemainingTests: XCTestCase {
         XCTAssertEqual(
             StatusBarController.tooltipText(snapshot: snapshot([], at: now), mode: .remaining, now: now,
                                             calendar: calendar, locale: locale),
-            "Omelette — loading…"
+            "Brioche — loading…"
         )
     }
 }
