@@ -2,11 +2,11 @@ import AppKit
 import Foundation
 
 /// Sign in (spec 2026-10-25 § Design › Package 2): Terminal runs `<claude> auth login`, Claude
-/// Code's own sign-in, from a `.command` file Omelette writes and hands to Terminal. Not through
+/// Code's own sign-in, from a `.command` file Brioche writes and hands to Terminal. Not through
 /// Apple events: `SessionActivator.run` swallows a refused automation by design, and this button
 /// must never do nothing — every way it can fail comes back as words.
 enum ClaudeSignInLauncher {
-    /// In Omelette's Application Support folder, rewritten on every click.
+    /// In Brioche's Application Support folder, rewritten on every click.
     static let fileName = "claude-sign-in.command"
 
     enum Outcome: Equatable, Sendable {
@@ -23,7 +23,7 @@ enum ClaudeSignInLauncher {
         let prefix = ClaudeCLIEnvironment.scrubbedPrefix
         return """
         #!/bin/sh
-        # Written by Omelette: Claude Code's own sign-in, in a clean environment. Safe to delete.
+        # Written by Brioche: Claude Code's own sign-in, in a clean environment. Safe to delete.
         for name in $(/usr/bin/env | /usr/bin/sed -n 's/^\\(\(prefix)[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$name"; done
         unset \(ClaudeCLIEnvironment.scrubbedKeys.joined(separator: " "))
         exec \(shellQuoted(binary)) auth login
@@ -58,7 +58,7 @@ enum ClaudeSignInLauncher {
         }
     }
 
-    /// The button's launch: the file in Omelette's Application Support folder, Terminal found by
+    /// The button's launch: the file in Brioche's Application Support folder, Terminal found by
     /// its bundle id, opened through Launch Services.
     @MainActor
     static func launch(binary: String) async -> Outcome {

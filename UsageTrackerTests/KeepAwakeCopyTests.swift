@@ -30,7 +30,7 @@ final class KeepAwakeCopyTests: XCTestCase {
     func testTheApprovalTextNamesTheNoticeAndTheSwitch() {
         XCTAssertEqual(
             KeepAwakeCopy.approvalText,
-            "Omelette's helper needs your approval once. macOS announces it as “Background Items Added”: switch Omelette on in System Settings › General › Login Items & Extensions, then press Apply again."
+            "Brioche's helper needs your approval once. macOS announces it as “Background Items Added”: switch Brioche on in System Settings › General › Login Items & Extensions, then press Apply again."
         )
     }
 

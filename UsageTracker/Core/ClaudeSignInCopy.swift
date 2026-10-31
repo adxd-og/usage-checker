@@ -29,7 +29,7 @@ struct ClaudeSignInHelp: Equatable, Sendable {
     let noteIsFailure: Bool
 }
 
-/// Every word Omelette says about Claude's sign-in (spec 2026-10-25 § Design › Package 2): the
+/// Every word Brioche says about Claude's sign-in (spec 2026-10-25 § Design › Package 2): the
 /// snapshot's message per reason, the popover help, the Sign in button, the install link and
 /// the lines after a click. Sign-in and renewal are Claude Code's own; nothing here asks for a
 /// password or a command to type.
@@ -38,14 +38,14 @@ enum ClaudeSignInCopy {
 
     static let notFoundMessage = "Not signed in to Claude Code on this Mac."
     static let expiredMessage = "Claude Code's sign-in has expired."
-    static let deniedMessage = "Omelette needs your permission to read Claude Code's sign-in."
+    static let deniedMessage = "Brioche needs your permission to read Claude Code's sign-in."
     // An unreadable sign-in keeps the read's own words ("Keychain read failed (status …)").
 
     // MARK: - The popover help
 
-    static let signInHelp = "Sign in with Claude Code's own sign-in. It opens in Terminal; Omelette only reads the result."
+    static let signInHelp = "Sign in with Claude Code's own sign-in. It opens in Terminal; Brioche only reads the result."
     static let expiredHelp = "Claude Code's sign-in expired and Claude Code could not renew it on its own. Sign in again; it opens in Terminal."
-    static let deniedHelp = "Claude Code's sign-in is in your keychain, but Omelette may not read it yet. Request access in Settings › \(SettingsTab.advanced.rawValue) and click Always Allow."
+    static let deniedHelp = "Claude Code's sign-in is in your keychain, but Brioche may not read it yet. Request access in Settings › \(SettingsTab.advanced.rawValue) and click Always Allow."
     static let unreadableHelp = "Claude Code's sign-in is in your keychain but can't be read, so signing in again would not fix it."
     static let installHelp = "Claude Code isn't on this Mac. Install it, or the Claude app, then sign in here."
 
@@ -58,7 +58,7 @@ enum ClaudeSignInCopy {
 
     // MARK: - After a click
 
-    static let pendingLine = "Finish signing in in Terminal. Omelette checks again when you come back."
+    static let pendingLine = "Finish signing in in Terminal. Brioche checks again when you come back."
     static let terminalMissing = "Terminal is not on this Mac."
     static let binaryMissing = "Claude Code was not found on this Mac."
 

@@ -45,7 +45,7 @@ enum KeepAwakeCopy {
     static let openLoginItemsButton = "Open Login Items"
     /// What an empty duration field shows: the number Apply reads from it.
     static let fieldPlaceholder = "0"
-    static let approvalText = "Omelette's helper needs your approval once. macOS announces it as “Background Items Added”: switch Omelette on in System Settings › General › Login Items & Extensions, then press Apply again."
+    static let approvalText = "Brioche's helper needs your approval once. macOS announces it as “Background Items Added”: switch Brioche on in System Settings › General › Login Items & Extensions, then press Apply again."
 
     /// VoiceOver's value for a field: the number and its unit.
     static func unitValue(_ value: Int, unit: DurationUnit) -> String {

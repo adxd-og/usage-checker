@@ -16,10 +16,10 @@ enum AgyCommand {
     }
     /// The file agy logs a run to, in the log folder `fetch` is given.
     static let logFileName = "agy-usage.log"
-    /// Omelette's own Application Support folder, the one `HistoryStore` and the status
+    /// Brioche's own Application Support folder, the one `HistoryStore` and the status
     /// file use: where agy's log goes unless a test says otherwise.
     static var defaultLogDirectory: URL { AgentPaths.appSupportURL }
-    /// The variables agy gets from Omelette's environment, when set there.
+    /// The variables agy gets from Brioche's environment, when set there.
     static let inheritedVariables = ["HOME", "USER", "LOGNAME", "TMPDIR", "LANG"]
     /// agy's PATH before its own folder: the system's folders only.
     static let systemPath = "/usr/bin:/bin:/usr/sbin:/sbin"
@@ -80,7 +80,7 @@ enum AgyCommand {
     /// The environment agy runs with, an allowlist: `inheritedVariables` from `environment`
     /// when set there (HOME falls back to `homeDirectory`: agy keeps its state under it),
     /// PATH as `systemPath` plus the folder agy is in, and `environmentOverrides`. Nothing
-    /// else of Omelette's environment reaches agy: no token, proxy or `DYLD_` variable,
+    /// else of Brioche's environment reaches agy: no token, proxy or `DYLD_` variable,
     /// nothing a parent shell exported.
     static func childEnvironment(
         from environment: [String: String],
@@ -107,7 +107,7 @@ enum AgyCommand {
     /// or its stdout still open, at `deadline`: the caller is answered then, the stdout
     /// reader is closed, the child gets SIGTERM, and SIGKILL `killGrace` later if it is
     /// still there. The child is in `registry` from its start to its exit, so quitting
-    /// Omelette stops it; once the registry is closed (`terminateAll()`), no child starts
+    /// Brioche stops it; once the registry is closed (`terminateAll()`), no child starts
     /// and the answer is `.launchFailed`.
     static func run(
         executable: String,
@@ -221,7 +221,7 @@ private final class AgyChild: @unchecked Sendable {
         guard registry.register(process) else {
             process.terminationHandler = nil
             try? stdout.fileHandleForReading.close()
-            settle(.failure(AgyUsageError.launchFailed("Omelette is quitting")))
+            settle(.failure(AgyUsageError.launchFailed("Brioche is quitting")))
             return
         }
         do {

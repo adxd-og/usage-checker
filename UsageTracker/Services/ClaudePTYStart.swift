@@ -23,7 +23,7 @@ enum ClaudePTYStart {
 
     /// Runs `binary` until it exits or `duration` has passed, then asks it to stop (SIGTERM)
     /// and, after `grace`, makes it (SIGKILL). The program is in `registry` from its start to
-    /// its end, so Omelette quitting stops it (`applicationWillTerminate` → `terminateAll`);
+    /// its end, so Brioche quitting stops it (`applicationWillTerminate` → `terminateAll`);
     /// once the registry is closed nothing starts and the answer is `.launch`.
     static func run(
         binary: String,
@@ -54,7 +54,7 @@ enum ClaudePTYStart {
         // Registered before it starts, so a quit from here on reaches it.
         guard registry.register(process) else {
             try? secondaryHandle.close()
-            throw Failure.launch("Omelette is quitting")
+            throw Failure.launch("Brioche is quitting")
         }
         defer { registry.unregister(process) }
         do {

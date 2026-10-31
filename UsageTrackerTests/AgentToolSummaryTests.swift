@@ -289,7 +289,7 @@ final class AgentToolSummaryTests: XCTestCase {
 
     // MARK: truncation
 
-    private static let notice = "[truncated by Omelette — see the terminal for the full text]"
+    private static let notice = "[truncated by Brioche — see the terminal for the full text]"
 
     func testATruncatedInputSaysSoUnderTheDetail() throws {
         let command = String(repeating: "x", count: AgentToolSummary.maxDetailLength)
