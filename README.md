@@ -1,14 +1,12 @@
-# Omelette 🍳
+# Brioche
 
-![Omelette: AI usage at a glance](docs/banner.png)
+![Brioche: AI usage at a glance](docs/banner.png)
 
-Omelette is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
+Brioche is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
 This README is a map. Each section says what it covers and points to the next one.
 
-> **Why "Omelette"?** While reverse-engineering the usage API we found that
-> Anthropic's internal codename for Claude Design is `omelette` (the weekly
-> window arrives as `seven_day_omelette`). The name was too good to leave
-> buried in a JSON key.
+> Brioche was called Omelette until 4.0. An installed copy updates itself and keeps
+> everything, and the `omelette` command still works.
 
 ## Contents
 
@@ -174,25 +172,35 @@ Next: [Command line and MCP](#command-line-and-mcp).
 
 ## Command line and MCP
 
-A tiny `omelette` tool ships inside the app, for the terminal and for your
-agents.
+A tiny `brioche` tool ships inside the app, for the terminal and for your
+agents. `omelette` is the same tool under its old name, so anything set up
+before the rename keeps working: hooks, status line and MCP entries stay as
+they are. To move an entry to the new name, press Disable, then Enable in
+Settings → Integrations; an agent then calls its tools `mcp__brioche__*`.
+
+Another tool, the [Brioche package manager](https://github.com/brioche-dev/brioche),
+also installs a `brioche` command. Brioche never overwrites a file at its own
+`bin/brioche`. If you have both and put the PATH line first, `brioche` runs this
+app's tool: put the folder last instead
+(`export PATH="$PATH:$HOME/Library/Application Support/UsageTracker/bin"`), and
+use `omelette` for this one.
 
 | Command | What it prints |
 |---|---|
-| `omelette status` | every provider's windows with exact reset times, today's and this week's cost, what your agents are doing |
-| `omelette status --json` | the same snapshot as JSON, including each provider's recent chats |
-| `omelette statusline [--provider ID]` | one line for a status bar (default: claude) |
-| `omelette mcp` | a read-only MCP server on stdio |
-| `omelette --version` / `--help` | version and usage |
+| `brioche status` | every provider's windows with exact reset times, today's and this week's cost, what your agents are doing |
+| `brioche status --json` | the same snapshot as JSON, including each provider's recent chats |
+| `brioche statusline [--provider ID]` | one line for a status bar (default: claude) |
+| `brioche mcp` | a read-only MCP server on stdio |
+| `brioche --version` / `--help` | version and usage |
 
-`omelette statusline` installs with one click from Settings → Integrations →
+`brioche statusline` installs with one click from Settings → Integrations →
 Claude Code:
 `Fable 5.1 [######----] 55% · cache 47m · ◐ 42% · resets in 1h 10m · ≈$4.20 today · ⚑ 1`,
 where `cache 47m` is how long the session's prompt cache stays warm and
 `cache cold` (red) means the next turn writes it again (after updating, switch
 the status line off and on again in Settings → Integrations → Claude Code if
 the timer does not show up), and where `≈` marks
-API-equivalent dollars (`omelette status` writes "(API-equivalent)").
+API-equivalent dollars (`brioche status` writes "(API-equivalent)").
 Or add it yourself to `~/.claude/settings.json` (Claude Code runs the command
 through a shell, so `$HOME` expands):
 
@@ -200,7 +208,7 @@ through a shell, so `$HOME` expands):
 {
   "statusLine": {
     "type": "command",
-    "command": "\"$HOME/Library/Application Support/UsageTracker/bin/omelette\" statusline",
+    "command": "\"$HOME/Library/Application Support/UsageTracker/bin/brioche\" statusline",
     "refreshInterval": 60
   }
 }
@@ -210,7 +218,7 @@ through a shell, so `$HOME` expands):
 own events, so the countdown keeps ticking while the session is idle. The
 one-click install writes it too.
 
-`omelette mcp` answers three tools. Nothing is written, nothing leaves your
+`brioche mcp` answers three tools. Nothing is written, nothing leaves your
 Mac.
 
 | Tool | Arguments | Returns |
@@ -219,17 +227,17 @@ Mac.
 | `get_agents` | none | which sessions are working or waiting on you |
 | `get_sessions` | `provider` (`claude` or `codex`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count, and each chat's share of the current limit windows (`sessionShare`, `weekShare`) or of the budget or spend limit (`budgetShare`) |
 
-- One-click install for Claude Code (adds `omelette` to `~/.claude.json`)
-  and Codex (adds an `[mcp_servers.omelette]` table to
+- One-click install for Claude Code (adds `brioche` to `~/.claude.json`)
+  and Codex (adds an `[mcp_servers.brioche]` table to
   `~/.codex/config.toml`) from that same Settings section
 - Or add it by hand:
   ```bash
-  claude mcp add omelette -- "$HOME/Library/Application Support/UsageTracker/bin/omelette" mcp
+  claude mcp add brioche -- "$HOME/Library/Application Support/UsageTracker/bin/brioche" mcp
   ```
   or, in `~/.codex/config.toml`:
   ```toml
-  [mcp_servers.omelette]
-  command = "/Users/you/Library/Application Support/UsageTracker/bin/omelette"  # full path, no $HOME
+  [mcp_servers.brioche]
+  command = "/Users/you/Library/Application Support/UsageTracker/bin/brioche"  # full path, no $HOME
   args = ["mcp"]
   ```
 - What an agent does with `get_usage`: before a long task it asks and waits
@@ -270,7 +278,7 @@ the popover footer or ⌘D.
   the current window or a past one from the last 31 days; a timeline shows
   each half hour by project; a chat opens into its stretches between
   compactions and cold starts, with what each cold start cost; a chat run
-  in a git worktree counts under the repository once Omelette has seen a
+  in a git worktree counts under the repository once Brioche has seen a
   session there. The first card prices
   one percent in dollars and tokens and says when a percent buys less than
   in recent weeks. A pay-as-you-go account sees its last 7 days of spend
@@ -317,7 +325,7 @@ in the menu bar says it is on.
   more than that is brought down to it on Apply, and the block says so.
   The block shows "Awake until 18:40 · 4 h 52 min left" and **Cancel**; Apply
   again replaces the deadline. The menu bar tooltip's first line says until when
-- **Ends by itself**: at the deadline, even when Omelette is not running; on
+- **Ends by itself**: at the deadline, even when Brioche is not running; on
   battery below 25 % (Settings → General → Keep awake → **End below 25 % on
   battery**, on by default); and at a restart, after which nothing resumes.
   The block says when and why it ended until you dismiss it or apply again
@@ -328,14 +336,14 @@ in the menu bar says it is on.
 - **One-time approval**: the first Apply installs a helper,
   `omelette-keepawake`, that runs as root under launchd and sets macOS's sleep
   flag (`pmset disablesleep`). macOS announces it as **Background Items
-  Added**; switch Omelette on in System Settings → General → Login Items &
+  Added**; switch Brioche on in System Settings → General → Login Items &
   Extensions, then press Apply again. macOS may ask for your password there
 - **Reset**: Settings → Advanced → **Reset keep awake** asks first, then ends
   the mode, clears the flag, removes the helper from Login Items and puts the
   floor switch and the last duration back. It asks for an administrator
   password only when the helper cannot clear the flag; the line under it shows
   what `pmset -g` reports
-- **Before deleting Omelette, press Reset keep awake.** An app deleted while
+- **Before deleting Brioche, press Reset keep awake.** An app deleted while
   keep awake is on leaves the flag set, and the Mac never sleeps, lid open or
   closed, until you run `sudo pmset -a disablesleep 0` in Terminal
 
@@ -355,7 +363,7 @@ A sidebar window with six tabs.
   inline. With every provider off, the menu bar, popover and widgets say so.
   A signed-out Claude's row offers the way out that fits: **Sign in** when
   Claude Code is installed, the install link when it is not, and Settings ›
-  Advanced when Omelette needs keychain access
+  Advanced when Brioche needs keychain access
 - **Notifications**: the two limit warnings, session timing, agent alerts,
   quiet hours and the daily summary
 - **Integrations**: Claude Code (hooks, status line, MCP server), Codex
@@ -376,12 +384,12 @@ Next: [How it works](#how-it-works).
 Reads the OAuth token that **Claude Code** stores in your macOS Keychain
 (item name `Claude Code-credentials`) and calls
 `https://api.anthropic.com/api/oauth/usage`, the same undocumented endpoint
-Claude Code itself uses for its `/usage` command and status line. Omelette
+Claude Code itself uses for its `/usage` command and status line. Brioche
 never refreshes that token itself and keeps it in memory only: when it has
-expired (it lives 8 hours), Omelette starts Claude Code for a few seconds so
+expired (it lives 8 hours), Brioche starts Claude Code for a few seconds so
 Claude Code renews it. With no Claude Code sign-in on the Mac (the Claude app
 alone), **Sign in** in the popover opens Terminal on Claude Code's own
-`claude auth login`. Omelette writes that command to
+`claude auth login`. Brioche writes that command to
 `~/Library/Application Support/UsageTracker/claude-sign-in.command` for
 Terminal to run and leaves it there; it holds no secret.
 Other providers are read the same reuse-what's-already-there way: the local
@@ -401,7 +409,7 @@ to keep a year of them:
 ```
 
 - Uses only your own credentials, obtained by the tools themselves. Sign in
-  runs Claude Code's own sign-in in Terminal; Omelette never sees a password
+  runs Claude Code's own sign-in in Terminal; Brioche never sees a password
   and never asks for a token
 - Talks only to: `api.anthropic.com` (usage endpoint, plus Enterprise cost
   reports if you add an Admin API key), `models.dev` (public pricing data),
@@ -409,19 +417,19 @@ to keep a year of them:
   `grok.com` (Grok web-billing fallback, only if enabled), `github.com` and
   `adxd-og.github.io` (Sparkle update feed and DMG download), and local RPC
   to the Codex CLI or Antigravity's language server. The `agy` CLI, when
-  Omelette runs it, talks to Google itself under its own sign-in
+  Brioche runs it, talks to Google itself under its own sign-in
 - While Antigravity is closed or not answering, runs its CLI as
   `agy -p /usage` in the background about every five minutes and stops it
-  after 45 s or on a normal quit. agy gets none of Omelette's environment
+  after 45 s or on a normal quit. agy gets none of Brioche's environment
   beyond HOME, USER, LOGNAME, TMPDIR, LANG and a system PATH, and logs the run
-  to one file, `agy-usage.log` in Omelette's Application Support folder;
-  Omelette reads only the quota it prints, and skips the run unless the login
+  to one file, `agy-usage.log` in Brioche's Application Support folder;
+  Brioche reads only the quota it prints, and skips the run unless the login
   keychain is unlocked
 - When Claude Code's sign-in has expired, starts `claude` (the one on your
   PATH, else the Claude app's own copy) on a terminal of its own in
   `~/Library/Application Support/UsageTracker/ClaudeRenewal` for 8 s, at most
   every 5 minutes, and only while the login keychain is unlocked and Claude
-  Code's item reads without a prompt; quitting Omelette stops it. Nothing is
+  Code's item reads without a prompt; quitting Brioche stops it. Nothing is
   typed into it (it only gets a terminal's answer when it asks where the
   cursor is) and no message is sent; it runs without `CLAUDE_CONFIG_DIR`,
   `CLAUDE_CODE_OAUTH_TOKEN`,
@@ -432,19 +440,19 @@ to keep a year of them:
   removed; Claude Code's own bookkeeping (`history.jsonl`, `sessions/`, a
   `.claude.json` backup) stays
 - Agent status comes from a tiny `omelette-hook` helper inside the app that
-  Claude Code and Codex run on their hook events. It talks to Omelette over
+  Claude Code and Codex run on their hook events. It talks to Brioche over
   a local Unix socket (0600, 64 KB cap) and forwards only the session id,
   tool name, a truncated summary, folder and host process, never prompts
   or file contents. Every hook exits within 0.8 s except a permission
-  request, which the helper holds open for up to 140 s so Omelette can
+  request, which the helper holds open for up to 140 s so Brioche can
   answer Allow/Deny; a helper that gets no reply always fails safe
 - Keep awake's helper, `omelette-keepawake`, runs as root under launchd once
-  you approve it in Login Items. It answers only Omelette signed by the same
+  you approve it in Login Items. It answers only Brioche signed by the same
   developer team, runs nothing but `/usr/bin/pmset`, clears its own sleep flag
   every time it starts (a flag set by another tool or by hand is left alone,
   until an Apply takes it over: the end of that mode clears it),
   and exits a minute after it has nothing to do
-- The `omelette` command-line tool and MCP server only ever read
+- The `brioche` command-line tool and MCP server only ever read
   `~/Library/Application Support/UsageTracker/status.json`, written after
   every poll. They never start the app, open a socket, or touch the network
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
@@ -456,7 +464,7 @@ Next: [Requirements](#requirements).
 
 ## Requirements
 
-- macOS 26 (Tahoe) or newer from Omelette 3.0 on
+- macOS 26 (Tahoe) or newer from version 3.0 on
 - On macOS 14 or 15, [Omelette 2.7.1](../../releases/tag/v2.7.1) is the last version
   that runs; an installed copy stays on it and is not offered 3.0
 - [Claude Code](https://docs.anthropic.com/claude-code) or the Claude app.
@@ -473,12 +481,16 @@ Next: [Install](#install).
 
 ## Install
 
-1. Download the latest `Omelette.dmg` from [Releases](../../releases)
-2. Open the DMG and drag `Omelette.app` to `~/Applications/` (or `/Applications/`).
+1. Download the latest `Brioche.dmg` from [Releases](../../releases)
+2. Open the DMG and drag `Brioche.app` to `~/Applications/` (or `/Applications/`).
    Upgrading from Usage Checker ≤ 1.5? Delete the old `UsageChecker.app` first.
    Settings, history and widgets carry over automatically
+   Upgrading from Omelette? You don't need the DMG: it updates itself, stays
+   `Omelette.app` on disk and keeps everything. If you install the DMG anyway,
+   delete `Omelette.app` first (press **Reset keep awake** in Settings → Advanced
+   before that, if you use keep awake), so one copy runs.
 3. Launch it. macOS asks for permission to read the `Claude Code-credentials`
-   Keychain item: click **Always Allow**. From then on Omelette reads it
+   Keychain item: click **Always Allow**. From then on Brioche reads it
    without that dialog and keeps what it read in memory only. It can
    reappear after something resets the item's access list (a reinstall, or a
    differently signed build); Settings → Advanced → **Request keychain access
@@ -506,8 +518,7 @@ Next: [Disclaimer](#disclaimer).
 
 `/api/oauth/usage` is an **undocumented** endpoint that the official Claude Code CLI uses internally. Anthropic may change or remove it at any time. If that happens, this widget will gracefully show "Error" until it's updated.
 
-Omelette is **not** affiliated with or endorsed by Anthropic. The name is an
-affectionate nod to a codename in their API, nothing more.
+Brioche is **not** affiliated with or endorsed by Anthropic.
 
 ## License
 
