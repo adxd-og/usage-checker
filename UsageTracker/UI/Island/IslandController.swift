@@ -164,8 +164,8 @@ final class IslandController: NSObject {
         }
         earModel.watch(Publishers.MergeMany(Self.earSignals()))
         earModel.refresh()
-        restingView.onPress = { [weak self] option in
-            self?.notchPressed(option: option)
+        restingView.onPress = { [weak self] in
+            self?.handle(.notch)
         }
         restingView.onHover = { [weak self] inside in
             self?.notchHovered(inside)
@@ -525,19 +525,6 @@ final class IslandController: NSObject {
         } else {
             resting.orderFrontRegardless()
         }
-    }
-
-    /// A press on the bare notch, by mouse or VoiceOver (D1, D13). On the open island the
-    /// same spot is its notch strip, which closes it through `localClick`; this runs while
-    /// the island is closed or open on another display. Until P6's ears, a Debug ⌥-click
-    /// opens as an ear will, without key, so F4–F5 can be checked (ruling R4).
-    private func notchPressed(option: Bool) {
-        #if DEBUG
-        let debugBuild = true
-        #else
-        let debugBuild = false
-        #endif
-        handle(IslandEventRules.notchPressEntry(option: option, debugBuild: debugBuild))
     }
 
     // MARK: - The notch hint (§ 3.1, D13)

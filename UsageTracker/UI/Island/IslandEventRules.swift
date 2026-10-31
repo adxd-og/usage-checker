@@ -156,12 +156,6 @@ enum IslandEventRules {
         return handler(event)
     }
 
-    /// The entry a press on the bare notch makes, by mouse or VoiceOver: the notch. In a Debug
-    /// build an ⌥-click stands in for an ear until P6 (ruling R4).
-    static func notchPressEntry(option: Bool, debugBuild: Bool) -> IslandEntry {
-        option && debugBuild ? .ear : .notch
-    }
-
     /// What VoiceOver reads for the notch, a button (§ 3.8: the notch click is always an entry
     /// point, and on a notched Mac the status item is hidden by default).
     static let notchAccessibilityLabel = "Omelette"

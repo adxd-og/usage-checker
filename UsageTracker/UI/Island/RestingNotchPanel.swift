@@ -50,9 +50,8 @@ final class RestingNotchView: NSView {
             if tracksHint != oldValue { refreshTracking() }
         }
     }
-    /// A press on the notch, by mouse or VoiceOver; `option` is the ⌥ key (Debug's ear
-    /// stand-in, `IslandEventRules.notchPressEntry`).
-    var onPress: (@MainActor (_ option: Bool) -> Void)?
+    /// A press on the notch, by mouse or VoiceOver.
+    var onPress: (@MainActor () -> Void)?
     /// The pointer came over the notch, or left it.
     var onHover: (@MainActor (Bool) -> Void)?
 
@@ -98,7 +97,7 @@ final class RestingNotchView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
-        onPress?(event.modifierFlags.contains(.option))
+        onPress?()
     }
 
     // MARK: Hover
@@ -140,7 +139,7 @@ final class RestingNotchView: NSView {
     override func accessibilityHelp() -> String? { IslandEventRules.notchAccessibilityHelp }
 
     override func accessibilityPerformPress() -> Bool {
-        onPress?(false)
+        onPress?()
         return true
     }
 }

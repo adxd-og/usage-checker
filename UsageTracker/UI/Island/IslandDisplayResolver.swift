@@ -6,7 +6,7 @@ enum IslandEntry: Equatable, Sendable {
     case statusItem(buttonFrame: CGRect)
     /// A click on the notch itself (the resting notch panel).
     case notch
-    /// A click on an ear (P6; in P1 a Debug-only ⌥-click on the notch, plan ruling R4).
+    /// A click on an ear (§ 3.6).
     case ear
     /// The `.showPopover` route, with the pointer where it was.
     case notification(pointer: CGPoint)

@@ -106,16 +106,6 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(IslandEventRules.forward(7, to: nil), 7, "no controller: the event goes on")
     }
 
-    func testAPressOnTheNotchIsTheNotchEntry() {
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: false, debugBuild: false), .notch)
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: false, debugBuild: true), .notch)
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: true, debugBuild: false), .notch, "a release build has no ear stand-in")
-    }
-
-    func testADebugOptionClickOnTheNotchStandsInForAnEar() {
-        XCTAssertEqual(IslandEventRules.notchPressEntry(option: true, debugBuild: true), .ear)
-    }
-
     func testVoiceOverReadsTheNotchAsOmelette() {
         XCTAssertEqual(IslandEventRules.notchAccessibilityLabel, "Omelette")
     }
