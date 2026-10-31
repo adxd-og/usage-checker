@@ -306,7 +306,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
 
         let lines = run.stdout.split(separator: "\n", omittingEmptySubsequences: false).dropLast()
         XCTAssertEqual(lines.count, 3, "three requests carry an id; the notification is answered with nothing")
-        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"omelette""#), String(lines[0]))
+        XCTAssertTrue(lines[0].contains(#""serverInfo":{"name":"brioche""#), String(lines[0]))
         XCTAssertTrue(lines[1].contains(#""name":"get_usage""#), String(lines[1]))
         XCTAssertTrue(lines[2].contains("Claude (Max 5x): session 42%"), String(lines[2]))
 
@@ -342,7 +342,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(after.stdout.contains("heavy work should wait"), after.stdout)
     }
 
-    func testTheServerSaysOmeletteIsClosedRatherThanFailing() throws {
+    func testTheServerSaysBriocheIsClosedRatherThanFailing() throws {
         try publish(nil)
 
         let run = try runCLI(["mcp"], stdin: #"{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"get_agents"}}"# + "\n")

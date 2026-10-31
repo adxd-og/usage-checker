@@ -34,7 +34,7 @@ enum MCPSummary {
 
         var clauses = service.windows.map { window -> String in
             // A credit pool is money, not a window: its dollars and expiry, as
-            // `omelette status` prints them ("$231 used of $250, expires …").
+            // `brioche status` prints them ("$231 used of $250, expires …").
             if let figures = CreditCopy.terminalFigures(window, now: now, calendar: calendar, locale: locale) {
                 return "\(window.label.lowercased()) \(figures)"
             }
@@ -131,7 +131,7 @@ enum MCPSummary {
     }
 
     /// When these numbers were true, and — past the freshness window — that they may be
-    /// the last thing Omelette saw before it was closed.
+    /// the last thing Brioche saw before it was closed.
     static func stamp(
         _ snapshot: StatusSnapshot, now: Date,
         calendar: Calendar = .current, locale: Locale = .current
@@ -139,7 +139,7 @@ enum MCPSummary {
         let at = ResetCopy.absolute(resetsAt: snapshot.updatedAt, now: now, calendar: calendar, locale: locale)
             ?? "an unknown time"
         guard snapshot.isFresh(now: now) else {
-            return "Numbers are from \(at) and Omelette may not be running, so treat them as the last thing it saw."
+            return "Numbers are from \(at) and Brioche may not be running, so treat them as the last thing it saw."
         }
         return "Numbers as of \(at)."
     }

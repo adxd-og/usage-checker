@@ -132,7 +132,7 @@ final class MCPSessionsTests: XCTestCase {
             services: [service(sessions: [entry(id: "s1", title: "Anything")])], agents: .none
         )
         XCTAssertTrue(
-            text(stale).hasSuffix("Omelette may not be running, so treat them as the last thing it saw."),
+            text(stale).hasSuffix("Brioche may not be running, so treat them as the last thing it saw."),
             text(stale)
         )
     }
@@ -298,7 +298,7 @@ final class MCPSessionsTests: XCTestCase {
         }
     }
 
-    func testWithOmeletteClosedTheToolSaysSoAsAResultNotAnError() throws {
+    func testWithBriocheClosedTheToolSaysSoAsAResultNotAnError() throws {
         let result = try callResult("{}", snapshot: nil)
 
         XCTAssertEqual(result["isError"] as? Bool, true)

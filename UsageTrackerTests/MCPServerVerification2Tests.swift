@@ -10,7 +10,7 @@ import XCTest
 /// (a) every non-error result carries `updatedAt`;
 /// (b) with no readable snapshot every tool — not just `get_usage`/`get_agents` — returns
 ///     an error *result*, never a JSON-RPC protocol error;
-/// (c) a snapshot older than ten minutes says Omelette may not be running;
+/// (c) a snapshot older than ten minutes says Brioche may not be running;
 /// (d) `get_sessions`' `limit` maximum is 15, default 10, newest first;
 /// (f) cost is called an API-list-price equivalent only where `apiEquivalent` is true.
 final class MCPServerVerification2Tests: XCTestCase {
@@ -82,7 +82,7 @@ final class MCPServerVerification2Tests: XCTestCase {
             ))
             let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
             XCTAssertNotNil(object["result"], tool)
-            XCTAssertNil(object["error"], "\(tool): a closed Omelette is an answer, not a JSON-RPC error")
+            XCTAssertNil(object["error"], "\(tool): a closed Brioche is an answer, not a JSON-RPC error")
         }
     }
 
@@ -99,7 +99,7 @@ final class MCPServerVerification2Tests: XCTestCase {
         let file = snapshot(updatedAt: now.addingTimeInterval(-600))
         XCTAssertFalse(file.isFresh(now: now), "600s must already be past StatusSnapshot.freshness")
         for (tool, text) in try textsFor(file) {
-            XCTAssertTrue(text.contains("Omelette may not be running"), "\(tool): \(text)")
+            XCTAssertTrue(text.contains("Brioche may not be running"), "\(tool): \(text)")
         }
     }
 
