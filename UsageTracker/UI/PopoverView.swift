@@ -103,6 +103,12 @@ struct PopoverView: View {
                     else { return }
                     pendingReveal = nil
                 }
+                // A card an ear's open asked for (§ 3.6): the same wait as a pet click's.
+                .onChange(of: navigation.requestedCard, initial: true) { _, _ in
+                    guard let card = navigation.takeRequestedCard() else { return }
+                    revealAskedOn = navigation.page
+                    pendingReveal = card
+                }
             }
         }
         .padding(.horizontal, Self.padding)

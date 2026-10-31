@@ -32,6 +32,21 @@ final class IslandNavigationModel: ObservableObject {
     /// The controller's way in for the content's requests; nil in previews.
     var onRequest: (@MainActor (IslandNavigation.Input, [String]) -> Void)?
 
+    /// A card an open asked to show (an ear, § 3.6), until the content takes it.
+    @Published private(set) var requestedCard: PetCard?
+
+    /// The controller, after an open that is about a card.
+    func ask(toShow card: PetCard?) {
+        if requestedCard != card { requestedCard = card }
+    }
+
+    /// The content: the card asked for, once.
+    func takeRequestedCard() -> PetCard? {
+        guard let card = requestedCard else { return nil }
+        requestedCard = nil
+        return card
+    }
+
     private var drill = IslandDrill()
 
     /// A tile, a logo, "‹ All" or the providers changing, from the content: to the controller,
