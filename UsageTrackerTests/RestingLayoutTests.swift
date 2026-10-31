@@ -70,13 +70,31 @@ final class RestingLayoutTests: XCTestCase {
         XCTAssertTrue(attached.shape().contains(CGPoint(x: attached.notch.minX + 1, y: attached.notch.maxY - 1)))
     }
 
-    func testTheBreathGrowsTheNotchAndLeavesTheEarsAlone() throws {
+    func testTheBreathTakesTheEarsAlongWithTheNotch() throws {
         let both = layout(left: true, right: true)
         let look = NotchHint.Look(down: 5, widen: 3, outlined: false)
         let shape = both.shape(look)
         XCTAssertTrue(shape.contains(CGPoint(x: both.notch.midX, y: both.notch.maxY + 4)))
-        let ear = try XCTUnwrap(both.leftEar)
-        XCTAssertFalse(shape.contains(CGPoint(x: ear.midX, y: ear.maxY + 1)), "the ear keeps the notch's height")
+        let left = try XCTUnwrap(both.leftEar)
+        let right = try XCTUnwrap(both.rightEar)
+        XCTAssertTrue(shape.contains(CGPoint(x: left.midX, y: left.maxY + 4)), "the black goes down under the ear too")
+        XCTAssertTrue(shape.contains(CGPoint(x: right.midX, y: right.maxY + 4)))
+        XCTAssertTrue(shape.contains(CGPoint(x: left.minX - 2, y: left.midY)), "and a little wider outside it")
+        XCTAssertFalse(shape.contains(CGPoint(x: right.maxX + 4, y: right.midY)))
+    }
+
+    func testAnEarsContentRidesDownWithTheBreathAndHomeAtRest() throws {
+        let one = layout(right: true)
+        let ear = try XCTUnwrap(one.rightEar)
+        let look = NotchHint.Look(down: 5, widen: 3, outlined: false)
+        XCTAssertEqual(one.earFrame(ear, look: look), ear.offsetBy(dx: 0, dy: 5))
+        XCTAssertEqual(one.earFrame(ear, look: .rest), ear)
+        XCTAssertEqual(one.earFrame(nil, look: look), .zero)
+    }
+
+    func testTheHintsRoomCoversTheEarsSoNothingOfThemClips() {
+        let frame = RestingLayout.frame(notch: notch, left: true, right: true, hintRoom: true)
+        XCTAssertEqual(frame, CGRect(x: 623, y: 942, width: 266, height: 40))
     }
 
     func testTheOutlineSitsJustOutsideTheNotch() {

@@ -27,8 +27,8 @@ struct RestingLayout: Equatable, Sendable {
             rect = rect.union(CGRect(x: notch.maxX, y: notch.minY, width: ear, height: notch.height))
         }
         if hintRoom {
-            rect = rect.union(notch.insetBy(dx: -hintSideRoom, dy: 0))
-            rect = rect.union(CGRect(x: notch.minX, y: notch.minY - hintBottomRoom, width: notch.width, height: hintBottomRoom))
+            rect = rect.insetBy(dx: -hintSideRoom, dy: 0)
+            rect = rect.union(CGRect(x: rect.minX, y: notch.minY - hintBottomRoom, width: rect.width, height: hintBottomRoom))
         }
         return IslandDisplayResolver.restingFrame(notch: rect)
     }
@@ -42,8 +42,8 @@ struct RestingLayout: Equatable, Sendable {
         rightEar = right ? CGRect(x: local.maxX, y: local.minY, width: ear, height: local.height) : nil
     }
 
-    /// The black: the notch at the breath's `look`, and each ear shown, reaching under the notch's
-    /// rounded corner so no wedge shows between them. Ears keep the notch's height (plan R10).
+    /// The black: the notch and each ear shown breathe as one, each ear reaching under the notch's
+    /// rounded corner so no wedge shows between them (owner, after the first look at P6).
     func shape(_ look: NotchHint.Look = .rest) -> Path {
         let radius = IslandGeometry.restingBottomRadius
         var path = Path(
@@ -56,19 +56,30 @@ struct RestingLayout: Equatable, Sendable {
         )
         if let leftEar {
             path.addPath(Path(
-                roundedRect: CGRect(x: leftEar.minX, y: leftEar.minY, width: leftEar.width + radius, height: leftEar.height),
+                roundedRect: CGRect(
+                    x: leftEar.minX - look.widen, y: leftEar.minY,
+                    width: leftEar.width + look.widen + radius, height: leftEar.height + look.down
+                ),
                 cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: radius, bottomTrailing: 0, topTrailing: 0),
                 style: .continuous
             ))
         }
         if let rightEar {
             path.addPath(Path(
-                roundedRect: CGRect(x: rightEar.minX - radius, y: rightEar.minY, width: rightEar.width + radius, height: rightEar.height),
+                roundedRect: CGRect(
+                    x: rightEar.minX - radius, y: rightEar.minY,
+                    width: rightEar.width + radius + look.widen, height: rightEar.height + look.down
+                ),
                 cornerRadii: RectangleCornerRadii(topLeading: 0, bottomLeading: 0, bottomTrailing: radius, topTrailing: 0),
                 style: .continuous
             ))
         }
         return path
+    }
+
+    /// An ear's content at the breath's `look`: it rides down with the shape's lower edge.
+    func earFrame(_ ear: CGRect?, look: NotchHint.Look) -> CGRect {
+        ear?.offsetBy(dx: 0, dy: look.down) ?? .zero
     }
 
     /// Reduce Motion's outline: the notch's edge, a point out, where the display has pixels.

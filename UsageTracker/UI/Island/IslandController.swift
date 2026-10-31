@@ -518,8 +518,7 @@ final class IslandController: NSObject {
         )
         let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
         restingView.layout = layout
-        leftEarView.frame = layout.leftEar ?? .zero
-        rightEarView.frame = layout.rightEar ?? .zero
+        placeEars()
         if transition.phase != .closed {
             resting.order(.below, relativeTo: window.windowNumber)
         } else {
@@ -564,10 +563,18 @@ final class IslandController: NSObject {
         showHint(at: now)
     }
 
+    /// The ears' content where the black is at this moment of the breath.
+    private func placeEars() {
+        guard let layout = restingView.layout else { return }
+        leftEarView.frame = layout.earFrame(layout.leftEar, look: restingView.look)
+        rightEarView.frame = layout.earFrame(layout.rightEar, look: restingView.look)
+    }
+
     /// The hint as it is now, on screen: frames only while the spring moves, and the window's room
     /// only while something shows.
     private func showHint(at now: TimeInterval) {
         restingView.look = hint.look(at: now)
+        placeEars()
         restingView.tracksHint = hint.isUp
         if hint.needsFrames {
             hintFrames.start()
