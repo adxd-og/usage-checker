@@ -93,6 +93,73 @@ final class PetAlertSelectorTests: XCTestCase {
         )
     }
 
+    // MARK: - Off means off (ruling R10)
+
+    private func switchedOn(claude: Bool = true, antigravity: Bool = true, polled: Set<String>? = ["claude", "antigravity"]) -> Set<String>? {
+        AppState.switchedOnIDs(
+            polledIDs: polled, claudeEnabled: claude, codexEnabled: false,
+            antigravityEnabled: antigravity, grokEnabled: false
+        )
+    }
+
+    /// The poll that asked for Antigravity is still running: its numbers and `polledIDs` still say
+    /// it is on, and the switch says it is not.
+    func testAProviderSwitchedOffStopsAlarmingWithThePollStillRunning() {
+        let services = [service("antigravity", [week(99)])]
+        XCTAssertEqual(PetAlertSelector.alert(in: services, enabledIDs: switchedOn())?.serviceID, "antigravity")
+        XCTAssertNil(PetAlertSelector.alert(in: services, enabledIDs: switchedOn(antigravity: false)))
+    }
+
+    func testTheMoodAndTheEarsStopWithTheAlert() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let services = [service("antigravity", [week(99)])]
+        let mood = PetMoodInput(
+            sessions: [], services: services, enabledIDs: switchedOn(antigravity: false),
+            claudeBinaryFound: true, keepAwake: .idle
+        )
+        XCTAssertEqual(PetMoodRules.mood(mood, now: now, calendar: calendar), .idle)
+        let ears = IslandEarRules.ears(
+            IslandEarInput(
+                mood: mood, mode: .used, petOn: true, showsEars: true, statusItemShown: false, earHeight: 32
+            ),
+            now: now, calendar: calendar, locale: Locale(identifier: "en_US_POSIX")
+        )
+        XCTAssertEqual(ears, .none)
+    }
+
+    func testEveryProviderSwitchedOffIsNothingOnAtOnce() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let mood = PetMoodInput(
+            sessions: [], services: [service("claude", [week(99)])],
+            enabledIDs: switchedOn(claude: false, antigravity: false),
+            claudeBinaryFound: true, keepAwake: .idle
+        )
+        XCTAssertEqual(PetMoodRules.mood(mood, now: now, calendar: calendar), .nothingOn)
+    }
+
+    func testASwitchedOnSetFollowsTheSwitchesAndKeepsTheAdminKeyThePollFound() {
+        XCTAssertEqual(
+            AppState.switchedOnIDs(
+                polledIDs: ["claude", "anthropic-admin"], claudeEnabled: false, codexEnabled: true,
+                antigravityEnabled: false, grokEnabled: true
+            ),
+            ["codex", "grok", "anthropic-admin"]
+        )
+        XCTAssertEqual(
+            AppState.switchedOnIDs(
+                polledIDs: ["claude"], claudeEnabled: true, codexEnabled: false,
+                antigravityEnabled: false, grokEnabled: false
+            ),
+            ["claude"]
+        )
+    }
+
+    func testBeforeTheFirstPollThereIsNoSetToLimitBy() {
+        XCTAssertNil(switchedOn(polled: nil))
+    }
+
     // MARK: - Model-scoped windows (ruling R2, as `UsageNotifier` and `headlinePercent`)
 
     func testAModelScopedWindowDoesNotAlarmBesideACoreWindow() {

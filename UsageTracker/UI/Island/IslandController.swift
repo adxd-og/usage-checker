@@ -690,7 +690,7 @@ final class IslandController: NSObject {
             mood: PetMoodInput(
                 sessions: AgentSessionStore.shared.sessions,
                 services: AppState.shared.snapshot.services,
-                enabledIDs: AppState.shared.polledIDs,
+                enabledIDs: AppState.shared.switchedOnIDs,
                 claudeBinaryFound: ClaudeSignInModel.shared.binaryFound,
                 keepAwake: KeepAwakeModel.shared.state
             ),
@@ -718,6 +718,10 @@ final class IslandController: NSObject {
             settings.$petEnabled.map { _ in () }.eraseToAnyPublisher(),
             settings.$earsEnabled.map { _ in () }.eraseToAnyPublisher(),
             settings.$showInMenuBar.map { _ in () }.eraseToAnyPublisher(),
+            // A provider's switch is `@AppStorage`, which publishes nothing (`SettingsPage`): a
+            // defaults write is its signal, so off means off with a poll still running.
+            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
+                .map { _ in () }.eraseToAnyPublisher(),
         ]
     }
 

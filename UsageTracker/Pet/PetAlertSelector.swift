@@ -27,8 +27,8 @@ enum PetAlertSelector {
     static let threshold: Double = 90
 
     /// The alert among `services` (the snapshot's, in display order), or nil. `enabledIDs` is
-    /// the set the poll asks for (`AppState.polledIDs`); nil, before the first poll, limits
-    /// nothing.
+    /// the set switched on this moment (`AppState.switchedOnIDs`); nil, before the first poll,
+    /// limits nothing.
     static func alert(in services: [ServiceSnapshot], enabledIDs: Set<String>?) -> PetAlert? {
         var best: (alert: PetAlert, rank: Rank)?
         for (order, service) in services.enumerated() where service.state == .ok {
