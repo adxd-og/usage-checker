@@ -1,6 +1,11 @@
 import SwiftUI
 import UserNotifications
 
+/// The tour's pages, in order.
+enum OnboardingPage: Int, CaseIterable {
+    case welcome, permissions, agents, pet, ready
+}
+
 struct OnboardingView: View {
     @StateObject private var settings = SettingsStore.shared
     @State private var page: Int
@@ -22,7 +27,7 @@ struct OnboardingView: View {
         self.onFinish = onFinish
     }
 
-    private let totalPages = 4
+    private let totalPages = OnboardingPage.allCases.count
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,11 +90,12 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var content: some View {
-        switch page {
-        case 0: welcomePage
-        case 1: permissionsPage
-        case 2: agentsPage
-        default: readyPage
+        switch OnboardingPage(rawValue: page) {
+        case .welcome: welcomePage
+        case .permissions: permissionsPage
+        case .agents: agentsPage
+        case .pet: petPage
+        case .ready, nil: readyPage
         }
     }
 
@@ -212,6 +218,19 @@ struct OnboardingView: View {
             Spacer()
         }
         .onAppear(perform: refreshAgentHooks)
+    }
+
+    /// The same picker as Settings › Pet (notch-island spec 2026-10-29 § 3.7).
+    private var petPage: some View {
+        VStack(alignment: .leading, spacing: OMSpacing.m) {
+            Text(PetSettingsCopy.onboardingTitle)
+                .font(OMFont.screenTitle)
+            Text(PetSettingsCopy.onboardingCaption)
+                .font(OMFont.caption)
+                .foregroundStyle(.secondary)
+            PetPickerView()
+            Spacer()
+        }
     }
 
     private var agentHooksInstalled: Bool {
@@ -409,6 +428,7 @@ struct OnboardingView: View {
 #Preview("Tour — permissions, dark") { OnboardingView(page: 1, onFinish: {}).preferredColorScheme(.dark) }
 #Preview("Tour — agents") { OnboardingView(page: 2, onFinish: {}) }
 #Preview("Tour — agents, dark") { OnboardingView(page: 2, onFinish: {}).preferredColorScheme(.dark) }
-#Preview("Tour — ready") { OnboardingView(page: 3, onFinish: {}) }
-#Preview("Tour — ready, dark") { OnboardingView(page: 3, onFinish: {}).preferredColorScheme(.dark) }
+#Preview("Tour — pet") { OnboardingView(page: 3, onFinish: {}) }
+#Preview("Tour — ready") { OnboardingView(page: 4, onFinish: {}) }
+#Preview("Tour — ready, dark") { OnboardingView(page: 4, onFinish: {}).preferredColorScheme(.dark) }
 #endif
