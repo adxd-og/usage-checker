@@ -12,7 +12,8 @@ This README is a map. Each section says what it covers and points to the next on
 
 - [Screenshots](#screenshots)
 - [What it shows](#what-it-shows)
-- [Popover](#popover)
+- [Island](#island)
+- [Pet](#pet)
 - [Agents at a glance](#agents-at-a-glance)
 - [Command line and MCP](#command-line-and-mcp)
 - [Dashboard](#dashboard)
@@ -29,9 +30,10 @@ This README is a map. Each section says what it covers and points to the next on
 
 ## Screenshots
 
-The popover and the dashboard, one shot of each below. More of both live in the
-two disclosures underneath.
+The menu bar panel (the island's predecessor) and the dashboard, one shot of each
+below. More of both live in the two disclosures underneath.
 
+<!-- screenshots: retake for 4.0 -->
 <table>
   <tr>
     <td width="36%"><img src="docs/screenshots/popover-all-needs-you.png" alt="The popover: every provider on one tab, a session waiting for your Allow / Deny, one working, one idle"></td>
@@ -111,20 +113,38 @@ never catches you mid-task.
   that launched it
 - **Last known numbers.** A provider that's closed or signed out keeps its
   last good reading, dimmed, with "as of 14:05" on the chip, on every
-  surface (All tab, popover, dashboard, menu bar, widgets). A **Forget last
+  surface (All, island, dashboard, menu bar, widgets). A **Forget last
   known numbers** button per provider in Settings clears it on demand
 - **Pay-as-you-go mode.** Accounts without rate windows get a "$ spent"
   pill and an optional weekly budget with percentage bars and alerts
 
-Next: [Popover](#popover).
+Next: [Island](#island).
 
-## Popover
+## Island
 
-Click the menu bar icon. Every provider on one tab (`All`), or one at a time
-on its own tab.
+Click the notch. Brioche opens as an island that grows out of it, with every
+provider in a two-column grid. Click a tile for that provider's page. On a Mac
+or display without a notch it is a panel under the menu bar icon.
+
+- **Open and close**: a click on the notch opens it. A click on the notch strip
+  of the open island, a click outside it, or Esc at All closes it. Hovering the
+  notch nudges it down a little and never opens it
+- **Menu bar icon**: Settings → General → **Show in menu bar**. Off by default
+  on a Mac with a notched display, so the icon is not there until you turn it
+  on; click the notch instead. With no notched display attached (lid closed,
+  an external display only) the icon is always shown
+- **Navigation**: a provider's page has **‹ All** and the provider logos beside
+  the notch. Esc, ‹ All, ⌘0 or a two-finger swipe right go back. **⌘0** is All
+  and **⌘1–⌘9** are the providers in display order. With one provider on, its
+  page is home
+- **Ears**: with the island closed, the notch grows an ear when something needs
+  you: a waiting agent, a signed-out Claude, a limit at 90 %, and ☾ for keep
+  awake while the menu bar icon is hidden. A click on an ear opens that
+  provider, or brings the one waiting agent forward. Settings → Pet turns them
+  off
 
 - **All-tab tiles lead with the 5-hour session window**, the number people
-  open the popover to check, with the weekly window on the line below
+  open the island to check, with the weekly window on the line below
 - **The cost tile shows today's spend first**, with the 7-day total and the
   per-provider split underneath
 - **Spend-limit and extra-usage providers show both dollar amounts under the
@@ -137,11 +157,27 @@ on its own tab.
 - **Keep awake with the lid closed**: a block above the footer, see
   [Keep awake with the lid closed](#keep-awake-with-the-lid-closed)
 
+Next: [Pet](#pet).
+
+## Pet
+
+A pixel pet stands in the island's left column, beside your limits. Cat, duck,
+dog or raccoon, three colourways each. Pick one in Settings → Pet or in the
+welcome tour.
+
+- **It reacts**: a waiting agent, a signed-out Claude, a limit at 90 % or more,
+  keep awake at night, agents working. A line under it says which
+- **A click** does what the line says: jump to the waiting agent, sign in, open
+  the provider at 90 %, show keep awake. Otherwise it pats the pet
+- **It moves only while the island is open** and Reduce Motion is off
+- **Off or smaller**: Settings → Pet → **Show the pet**. The column is also
+  dropped on a display narrower than 1420 pt
+
 Next: [Agents at a glance](#agents-at-a-glance).
 
 ## Agents at a glance
 
-The popover doubles as a control panel for the Claude Code and Codex
+The island doubles as a control panel for the Claude Code and Codex
 sessions you already have running.
 
 - **Live sessions**: every session, grouped *Needs you / Working / Done /
@@ -249,7 +285,7 @@ Next: [Dashboard](#dashboard).
 ## Dashboard
 
 A separate window, per provider, built from the same local logs. Opens from
-the popover footer or ⌘D.
+the island footer or ⌘D.
 
 - **Overview**: every window of the provider as concentric rings; hovering
   or focusing a legend row magnifies its ring and puts its figure in the
@@ -285,7 +321,7 @@ the popover footer or ⌘D.
   (on Claude, against the weekly budget when one is set), a spend-limit
   account its month against the limit
 - **Agents tab**: the Sessions figure and the Live card (the same rows as
-  the popover, full width), with a link to History's chats
+  the island, full width), with a link to History's chats
 - The sidebar footer says when the numbers were last updated, with a status
   dot
 - Every dollar figure here is the API-equivalent cost of your CLI usage,
@@ -318,8 +354,8 @@ Next: [Keep awake with the lid closed](#keep-awake-with-the-lid-closed).
 ## Keep awake with the lid closed
 
 Keeps a MacBook working with its lid closed for a set time, so agents carry on
-in a bag or under a cat. Set it from the block above the popover's footer; a ☾
-in the menu bar says it is on.
+in a bag or under a cat. Set it from the block above the island's footer; a ☾
+in the menu bar says it is on (in the notch's right ear while the icon is hidden).
 
 - **Timed only**: days, hours and minutes (the fields stop at 7, 24 and 60), 1 minute to 7 d 23 h 59 min, then **Apply**;
   more than that is brought down to it on Apply, and the block says so.
@@ -351,16 +387,17 @@ Next: [Settings](#settings).
 
 ## Settings
 
-A sidebar window with six tabs.
+A sidebar window with seven tabs.
 
-- **General**: launch at login, refresh interval, the keep-awake battery
+- **General**: launch at login, Show in menu bar, refresh interval, the keep-awake battery
   floor, automatic updates and Check now, the version and the GitHub link
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
   providers show in the menu bar, agents in the menu bar
+- **Pet**: the pet on or off, the ears, the animal and its colourway
 - **Providers**: one row per provider with its source, status and switch
   (Claude's too: off means not polled at all), and Forget last known numbers
-  inline. With every provider off, the menu bar, popover and widgets say so.
+  inline. With every provider off, the menu bar, island and widgets say so.
   A signed-out Claude's row offers the way out that fits: **Sign in** when
   Claude Code is installed, the install link when it is not, and Settings ›
   Advanced when Brioche needs keychain access
@@ -388,7 +425,7 @@ Claude Code itself uses for its `/usage` command and status line. Brioche
 never refreshes that token itself and keeps it in memory only: when it has
 expired (it lives 8 hours), Brioche starts Claude Code for a few seconds so
 Claude Code renews it. With no Claude Code sign-in on the Mac (the Claude app
-alone), **Sign in** in the popover opens Terminal on Claude Code's own
+alone), **Sign in** in the island opens Terminal on Claude Code's own
 `claude auth login`. Brioche writes that command to
 `~/Library/Application Support/UsageTracker/claude-sign-in.command` for
 Terminal to run and leaves it there; it holds no secret.
@@ -468,7 +505,7 @@ Next: [Requirements](#requirements).
 - On macOS 14 or 15, [Omelette 2.7.1](../../releases/tag/v2.7.1) is the last version
   that runs; an installed copy stays on it and is not offered 3.0
 - [Claude Code](https://docs.anthropic.com/claude-code) or the Claude app.
-  Without a Claude Code sign-in, **Sign in** in the popover runs Claude
+  Without a Claude Code sign-in, **Sign in** in the island runs Claude
   Code's own sign-in in Terminal
 - Works with Pro / Max / Team / Enterprise subscriptions **and**
   pay-as-you-go Enterprise accounts
