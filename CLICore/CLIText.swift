@@ -49,7 +49,8 @@ enum CLIText {
     and `statusline` puts `≈` in front of them.
 
     Reads ~/Library/Application Support/UsageTracker/status.json, which Brioche
-    writes after every poll. It never starts the app: with Brioche closed, `status`
-    exits 2 and `statusline` prints the session's half of the line, or an empty one.
+    writes after every poll. It never starts the app: once the file is ten minutes old
+    (Brioche closed or asleep), `status` exits 2 and `statusline` prints the session's
+    half of the line, or an empty one.
     """
 }
