@@ -111,11 +111,30 @@ enum AgentPaths {
         try refreshSymlink(link: link, target: target)
     }
 
+    /// How a link to any copy of this app's CLI ends, wherever that copy lives or lived.
+    static let earlierCLICopySuffix = "/Contents/Helpers/omelette"
+
+    /// Whether something at a CLI link's path is not ours to replace: a regular file, a
+    /// directory, or a link that points at anything but a copy of this app's binary, dangling
+    /// or not. Another tool ships a `brioche`, and a file we did not make is never ours to
+    /// remove. Nothing at the path is not foreign.
+    static func cliLinkIsForeign(_ link: URL, target: URL = bundledCLIURL) -> Bool {
+        let fm = FileManager.default
+        // `attributesOfItem` uses lstat: it sees a dangling link, and it does not follow one.
+        guard let attributes = try? fm.attributesOfItem(atPath: link.path) else { return false }
+        guard attributes[.type] as? FileAttributeType == .typeSymbolicLink,
+              let destination = try? fm.destinationOfSymbolicLink(atPath: link.path)
+        else { return true }
+        return destination != target.path && !destination.hasSuffix(earlierCLICopySuffix)
+    }
+
     /// The CLI's link. Two named entry points because the two links have different
-    /// defaults and different failure stories; one implementation because "replace a
-    /// link that points somewhere else" has no reason to exist twice.
+    /// defaults and different failure stories: the hook helper's name is ours alone and hooks
+    /// stop without it, so that one replaces what is in its way; this one leaves anything
+    /// foreign and returns false.
     @discardableResult
     static func refreshCLISymlink(link: URL = cliSymlinkURL, target: URL = bundledCLIURL) throws -> Bool {
-        try refreshSymlink(link: link, target: target)
+        guard !cliLinkIsForeign(link, target: target) else { return false }
+        return try refreshSymlink(link: link, target: target)
     }
 }
