@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A click on the notch opens the island; a click on the notch strip of the open
   island, a click anywhere outside it, or Esc at All closes it.
 - Hover over the notch and it nudges down a little. Hover never opens.
+- The first launch after an update on a notched Mac opens the island once, since
+  the menu bar icon is gone.
+- Closing it returns the keyboard to the app behind.
 
 ### Menu bar icon
 - New switch: Settings › General › Menu bar icon › **Show in menu bar**. On a
@@ -33,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Shortcut change:** ⌘0 is All and ⌘1–⌘9 are the providers in display order
   (⌘1 was All). A digit with no provider behind it does nothing.
 - With one provider on, its page is the home page: no ‹ All, no logos.
+- Waiting agents stay reachable with every provider off, and from a sole
+  provider's page.
 
 ### Pet
 - A pixel pet lives beside your limits: cat, duck, dog or raccoon, each in
@@ -48,6 +53,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New tab Settings › Pet: show the pet, ears on or off, animal and colourway.
   The pet can be turned off. The tour gains a step to pick one.
 - The pet's column is dropped on a display narrower than 1420 pt.
+- A window for one model does not set it off, unless that is all a provider has.
+  A provider switched off stops at once.
 
 ### Ears
 - With the island closed, the notch grows an ear when something needs you: the
