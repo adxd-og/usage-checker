@@ -514,7 +514,7 @@ final class IslandController: NSObject {
         let left = ears.left != nil
         let right = ears.right != nil
         resting.setFrame(
-            RestingLayout.frame(notch: notch, left: left, right: right, hintRoom: restingRoom), display: true
+            RestingLayout.frame(notch: notch, left: left, right: right, hintRoom: restingRoom), display: false
         )
         let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
         restingView.layout = layout
@@ -721,7 +721,8 @@ final class IslandController: NSObject {
         earOpen = EarOpen(subject: subject, reveal: reveal, morphs: morphs)
         handle(.ear)
         earOpen = nil
-        navigation.ask(toShow: reveal)
+        // With its display gone nothing opened, and a request left waiting would surface at the next open.
+        if isOpen { navigation.ask(toShow: reveal) }
     }
 
     /// The head sets off from the left ear toward the pet's place, where the presentation has a
