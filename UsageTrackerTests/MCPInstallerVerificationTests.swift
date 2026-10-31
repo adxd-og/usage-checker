@@ -5,11 +5,11 @@ import XCTest
 /// `docs/superpowers/specs/2026-09-06-release-2.4.1-design.md` ("Package 1") and the
 /// plan's Task 13, not from `MCPInstallerTests`. Focus: the Codex TOML path with a
 /// CRLF file (an explicit item on the verification attack list) and the
-/// `[mcp_servers.omelette.env]` sub-table end to end through `installCodex` /
+/// `[mcp_servers.brioche.env]` sub-table end to end through `installCodex` /
 /// `removeCodex`, not just the pure `codexTableRange` helper.
 final class MCPInstallerVerificationTests: XCTestCase {
     private var root: URL!
-    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/omelette"
+    private let cli = "/Users/tester/Library/Application Support/UsageTracker/bin/brioche"
 
     override func setUpWithError() throws {
         root = FileManager.default.temporaryDirectory
@@ -63,7 +63,7 @@ final class MCPInstallerVerificationTests: XCTestCase {
 
     /// Same CRLF file: `installCodex` must recognise the existing table as already
     /// correct and leave the file alone rather than appending a second
-    /// `[mcp_servers.omelette]` table.
+    /// `[mcp_servers.brioche]` table.
     func testInstallCodexDoesNotDuplicateTheTableInACRLFFile() throws {
         let existing = [
             "model = \"gpt-6-astra\"",
@@ -89,7 +89,7 @@ final class MCPInstallerVerificationTests: XCTestCase {
     func testInstallCodexUpdatesAnOutdatedTableInACRLFFileInPlace() throws {
         let existing = [
             MCPInstaller.codexHeader,
-            "command = \"/Users/other/Library/Application Support/UsageTracker/bin/omelette\"",
+            "command = \"/Users/other/Library/Application Support/UsageTracker/bin/brioche\"",
             "args = [\"mcp\"]",
             "",
         ].joined(separator: "\r\n")
@@ -101,7 +101,7 @@ final class MCPInstallerVerificationTests: XCTestCase {
         XCTAssertEqual(codexStatus, .installed)
         let after = try text(at: codexURL)
         XCTAssertEqual(
-            after.components(separatedBy: "[mcp_servers.omelette]").count - 1, 1,
+            after.components(separatedBy: "[mcp_servers.brioche]").count - 1, 1,
             "one table after the update, not the old one plus a new one:\n\(after)"
         )
     }
@@ -121,10 +121,10 @@ final class MCPInstallerVerificationTests: XCTestCase {
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
 
         let after = try text(at: codexURL)
-        XCTAssertFalse(after.contains("mcp_servers.omelette"), "the table must be gone:\n\(after)")
+        XCTAssertFalse(after.contains("mcp_servers.brioche"), "the table must be gone:\n\(after)")
     }
 
-    // MARK: - [mcp_servers.omelette.env] sub-table, end to end
+    // MARK: - [mcp_servers.brioche.env] sub-table, end to end
 
     /// The pure `codexTableRange` helper is already shown to swallow a sub-table of
     /// its own; this checks the same guarantee holds through the public
@@ -134,11 +134,11 @@ final class MCPInstallerVerificationTests: XCTestCase {
         let existing = """
         model = "gpt-6-astra"
 
-        [mcp_servers.omelette]
-        command = "/Users/other/Library/Application Support/UsageTracker/bin/omelette"
+        [mcp_servers.brioche]
+        command = "/Users/other/Library/Application Support/UsageTracker/bin/brioche"
         args = ["mcp"]
 
-        [mcp_servers.omelette.env]
+        [mcp_servers.brioche.env]
         DEBUG = "1"
 
         [mcp_servers.xcode]
@@ -156,11 +156,11 @@ final class MCPInstallerVerificationTests: XCTestCase {
         XCTAssertTrue(after.contains("command = \"xcrun\""), after)
         // The rewrite replaces the whole range starting at our header, including our
         // own sub-table (which described the *old* invocation) — it must not survive
-        // detached from any `[mcp_servers.omelette]` header, which Codex would refuse.
-        if after.contains("[mcp_servers.omelette.env]") {
+        // detached from any `[mcp_servers.brioche]` header, which Codex would refuse.
+        if after.contains("[mcp_servers.brioche.env]") {
             XCTAssertTrue(
-                after.range(of: "[mcp_servers.omelette]")!.lowerBound
-                    < after.range(of: "[mcp_servers.omelette.env]")!.lowerBound,
+                after.range(of: "[mcp_servers.brioche]")!.lowerBound
+                    < after.range(of: "[mcp_servers.brioche.env]")!.lowerBound,
                 "an env sub-table must never precede its own parent header:\n\(after)"
             )
         }
@@ -168,11 +168,11 @@ final class MCPInstallerVerificationTests: XCTestCase {
 
     func testRemoveCodexTakesTheEnvSubTableWithIt() throws {
         let existing = """
-        [mcp_servers.omelette]
+        [mcp_servers.brioche]
         command = "\(cli)"
         args = ["mcp"]
 
-        [mcp_servers.omelette.env]
+        [mcp_servers.brioche.env]
         DEBUG = "1"
 
         [mcp_servers.xcode]
@@ -184,7 +184,7 @@ final class MCPInstallerVerificationTests: XCTestCase {
         try MCPInstaller.removeCodex(configURL: codexURL, cliPath: cli)
 
         let after = try text(at: codexURL)
-        XCTAssertFalse(after.contains("mcp_servers.omelette"), "server and its env sub-table must both be gone:\n\(after)")
+        XCTAssertFalse(after.contains("mcp_servers.brioche"), "server and its env sub-table must both be gone:\n\(after)")
         XCTAssertTrue(after.contains("[mcp_servers.xcode]"), "the unrelated table must survive:\n\(after)")
     }
 }
