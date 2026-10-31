@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The first launch after an update on a notched Mac opens the island once, since
   the menu bar icon is gone.
 - Closing it returns the keyboard to the app behind.
+- The Dashboard, Settings and the tour are in Cmd+Tab, with a Dock icon, while
+  one of them is open.
 
 ### Menu bar icon
 - New switch: Settings › General › Menu bar icon › **Show in menu bar**. On a

@@ -34,6 +34,7 @@ final class FloatingWindowController {
         win.level = .floating
         win.collectionBehavior = [.canJoinAllSpaces, .stationary]
         win.hidesOnDeactivate = false
+        win.canHide = false
         win.isReleasedWhenClosed = false
         win.backgroundColor = .clear
         win.isOpaque = false

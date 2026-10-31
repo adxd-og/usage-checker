@@ -18,4 +18,20 @@ final class ReopenRulesTests: XCTestCase {
         XCTAssertEqual(ReopenRules.action(hasVisibleWindows: true), .leaveAlone)
         XCTAssertTrue(ReopenRules.Action.leaveAlone.appKitHandlesReopen)
     }
+
+    /// With a Dock icon up, the reopen is a click on it while the Dashboard is in the Dock or
+    /// the app is hidden: AppKit and SwiftUI bring the window back, the island stays closed.
+    func testAReopenWithADockIconAndNoVisibleWindowLeavesTheWindowToAppKit() {
+        let action = ReopenRules.action(hasVisibleWindows: false, hasDockIcon: true)
+        XCTAssertEqual(action, .leaveAlone)
+        XCTAssertTrue(action.appKitHandlesReopen)
+    }
+
+    func testAReopenWithADockIconAndAWindowOnScreenIsLeftAsItWas() {
+        XCTAssertEqual(ReopenRules.action(hasVisibleWindows: true, hasDockIcon: true), .leaveAlone)
+    }
+
+    func testAReopenWithNoDockIconAndNoVisibleWindowStillOpensTheIsland() {
+        XCTAssertEqual(ReopenRules.action(hasVisibleWindows: false, hasDockIcon: false), .openIsland)
+    }
 }
