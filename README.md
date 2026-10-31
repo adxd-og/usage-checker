@@ -2,6 +2,15 @@
 
 ![Brioche: AI usage at a glance](docs/banner.png)
 
+<table>
+  <tr>
+    <td width="56%"><img src="docs/screenshots/island.gif" alt="The island grows out of the notch on a click and goes back in on the next."></td>
+    <td width="44%"><img src="docs/screenshots/pet.gif" alt="The pixel cat climbing the wall of its column."></td>
+  </tr>
+</table>
+
+[Watch the 30-second film](https://github.com/adxd-og/usage-checker/releases/latest/download/brioche-promo.mp4) (MP4, no sound, sample data).
+
 Brioche is a macOS menu bar app for AI coding usage: Claude, Codex, Antigravity and Grok limits, local CLI cost accounting, and the agent sessions that need you.
 This README is a map. Each section says what it covers and points to the next one.
 
