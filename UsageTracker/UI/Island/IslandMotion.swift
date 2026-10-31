@@ -14,6 +14,9 @@ enum IslandMotion {
     static let drill = Spring(response: 0.40, dampingRatio: 0.86)
     /// A provider page going back into its tile (P3b).
     static let back = Spring(response: 0.32, dampingRatio: 1.0)
+    /// The notch's breath going up and back (D13): the island's own springs, as the P0 spike had them.
+    static let hintUp = open
+    static let hintBack = close
 
     // MARK: The content stage
 
@@ -30,6 +33,15 @@ enum IslandMotion {
     /// A drill with no source tile (an ear, a shortcut): the page slides this far as it
     /// cross-fades (P3b).
     static let drillSlide: CGFloat = 8
+
+    // MARK: The notch hint (§ 3.1, D13; the P0 spike's numbers)
+
+    /// How long the pointer stays on the notch before it breathes.
+    static let hintDelay: TimeInterval = 0.15
+    /// How far the notch's lower edge moves down (the spec's 4–6).
+    static let hintDown: CGFloat = 5
+    /// How far each side moves out.
+    static let hintWiden: CGFloat = 3
 
     /// A spring is at rest this close to its target and this slow (the P0 spike's values):
     /// 0.0005 of a 700 pt open is a third of a point.
