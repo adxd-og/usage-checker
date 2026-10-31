@@ -81,6 +81,19 @@ final class PetSpriteCache: @unchecked Sendable {
         _ = image(Key(animal: animal, palette: palette, sprite: .ear, pixelsPerBead: pixelsPerBead))
     }
 
+    /// Builds what the picker draws (§ 3.7): each cell's still and the selected pet's idle loop. Off
+    /// the main thread. Marks nothing warm: events wait for `prewarm`.
+    func prewarmPicker(cells: [PetChoice], selected: PetChoice?, pixelsPerBead: Int) {
+        for cell in cells {
+            guard let manifest = library.manifests[cell.animal] else { continue }
+            _ = image(Key(animal: cell.animal, palette: cell.palette, sprite: .frame(manifest.still.idle), pixelsPerBead: pixelsPerBead))
+        }
+        guard let selected, let manifest = library.manifests[selected.animal] else { return }
+        for frame in manifest.animations.idle.frames {
+            _ = image(Key(animal: selected.animal, palette: selected.palette, sprite: .frame(frame), pixelsPerBead: pixelsPerBead))
+        }
+    }
+
     /// `prewarm` finished for this animal, palette and scale: every frame is a lookup.
     func isWarm(animal: String, palette: String, pixelsPerBead: Int) -> Bool {
         lock.lock()
