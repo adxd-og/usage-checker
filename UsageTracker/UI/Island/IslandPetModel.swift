@@ -34,9 +34,10 @@ final class IslandPetModel: ObservableObject {
     private var jumps = 0
     private var latestJump: JumpTicket?
 
-    init(keeper: PetKeeper, clock: @escaping @MainActor () -> Date = { Date() }) {
+    init(keeper: PetKeeper, clock: @escaping @MainActor () -> Date = { Date() }, choice: PetChoice = .standard) {
         self.keeper = keeper
         self.clock = clock
+        self.choice = choice
     }
 
     /// The gate's conditions: the surface is the island open with its habitat drawn.
@@ -54,8 +55,29 @@ final class IslandPetModel: ObservableObject {
 
     // MARK: - The pet shown
 
+    /// The user's choice as stored (Settings › Pet, § 3.7), stale or not: `shown(in:)` makes it real.
+    @Published private(set) var choice: PetChoice
+
+    /// The pet shown changed: the head and the ear tips follow. Nothing without a controller.
+    var onPetChange: @MainActor () -> Void = {}
+
+    /// Settings › Pet chose. The old pet's events are not this one's, so they end here. In Debug the
+    /// menu's animal gives way: the latest word wins (plan ruling R2).
+    func setChoice(_ next: PetChoice) {
+        #if DEBUG
+        let overridden = debugAnimal != nil
+        if overridden { debugAnimal = nil }
+        #else
+        let overridden = false
+        #endif
+        guard overridden || choice != next else { return }
+        choice = next
+        keeper.dropEvents()
+        onPetChange()
+    }
+
     #if DEBUG
-    /// The animal Debug's menu chose; in memory only, until Settings › Pet (P6).
+    /// The animal Debug's menu chose; in memory only.
     @Published private(set) var debugAnimal: String?
 
     /// Debug's menu: another animal. The old one's events are not this one's, so they end here.
@@ -63,25 +85,27 @@ final class IslandPetModel: ObservableObject {
         guard animal != id else { return }
         debugAnimal = id
         keeper.dropEvents()
+        onPetChange()
     }
     #endif
 
-    /// The animal on the island.
+    /// The animal asked for, before the library has its say.
     var animal: String {
         #if DEBUG
-        return debugAnimal ?? PetHabitatRules.animal
+        return debugAnimal ?? choice.animal
         #else
-        return PetHabitatRules.animal
+        return choice.animal
         #endif
     }
 
-    /// The palette `manifest`, the animal on the island, draws in.
-    func palette(of manifest: PetManifest) -> String {
+    /// The animal and palette to draw out of `library`, always a pair it has; nil with no pets.
+    func shown(in library: PetLibrary) -> PetChoice? {
         #if DEBUG
-        return PetDebugMenuRules.palette(of: manifest)
-        #else
-        return PetHabitatRules.palette
+        if let debugAnimal, let manifest = library.manifests[debugAnimal] {
+            return PetChoice(animal: debugAnimal, palette: PetDebugMenuRules.palette(of: manifest))
+        }
         #endif
+        return PetChoiceRules.resolved(choice, in: library)
     }
 
     // MARK: - The gate

@@ -46,15 +46,16 @@ struct PetHabitatView: View {
 
     var body: some View {
         Group {
-            if let assets = store.assets, let manifest = assets.library.manifests[pet.animal] {
+            if let assets = store.assets, let shown = pet.shown(in: assets.library),
+               let manifest = assets.library.manifests[shown.animal] {
                 if pet.islandOpen {
                     // Night, the sky and keep awake's clock turn on the minute while the island
                     // is open, Reduce Motion or not.
                     TimelineView(.everyMinute) { context in
-                        habitat(manifest, assets, now: context.date)
+                        habitat(manifest, assets, palette: shown.palette, now: context.date)
                     }
                 } else {
-                    habitat(manifest, assets, now: Date())
+                    habitat(manifest, assets, palette: shown.palette, now: Date())
                 }
             } else {
                 // The manifests are not read yet, or the pet failed its contract check (P5a): the
@@ -103,8 +104,8 @@ struct PetHabitatView: View {
 
     /// Nil until the assets are there.
     private var warmth: Warmth? {
-        guard let manifest = store.assets?.library.manifests[pet.animal] else { return nil }
-        return Warmth(animal: manifest.id, palette: pet.palette(of: manifest), pixels: pixelsPerBead)
+        guard let library = store.assets?.library, let shown = pet.shown(in: library) else { return nil }
+        return Warmth(animal: shown.animal, palette: shown.palette, pixels: pixelsPerBead)
     }
 
     /// What the mood is decided from: the app's state as it is published (`PetMoodInput`).
@@ -136,14 +137,13 @@ struct PetHabitatView: View {
     }
 
     /// The sky, the pet on the floor in its mood's pose, and the mood line under it, at `now`.
-    private func habitat(_ manifest: PetManifest, _ assets: PetAssets, now: Date) -> some View {
+    private func habitat(_ manifest: PetManifest, _ assets: PetAssets, palette: String, now: Date) -> some View {
         let scene = PetHabitatRules.scene(
             moodInput, petName: manifest.name, mode: settings.percentMode,
             now: now, calendar: .current, locale: .current
         )
         let presentation = scene.presentation
         let scale = PetHabitatRules.scale(petBeads: manifest.size, backingScale: displayScale)
-        let palette = pet.palette(of: manifest)
         let isWarm = warmedFor == warmth || assets.sprites.isWarm(
             animal: manifest.id, palette: palette, pixelsPerBead: scale.pixelsPerBead
         )

@@ -14,8 +14,7 @@ struct PetHabitatScene: Equatable, Sendable {
 /// time. The column draws no surface (owner 2026-10-30) and the pet always stands on its floor,
 /// whatever the mood (owner 2026-10-30, P5c plan). Pure.
 enum PetHabitatRules {
-    /// The pet on the island until Settings › Pet lets the user choose (§ 3.5 Roster: the cat,
-    /// ginger).
+    /// The default pet (§ 3.5 Roster: the cat, ginger): `PetChoice.standard`.
     static let animal = "cat"
     static let palette = "ginger"
 
