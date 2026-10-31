@@ -719,7 +719,7 @@ final class StatusLineCacheDocsVerificationTests: XCTestCase {
     func testTheHelpStillListsTheOtherMarks() {
         XCTAssertTrue(CLIText.usage.contains("≈"))
         XCTAssertTrue(CLIText.usage.contains(CLIText.apiEquivalentSuffix))
-        XCTAssertTrue(CLIText.usage.contains("omelette statusline"))
+        XCTAssertTrue(CLIText.usage.contains("brioche statusline"))
     }
 
 }

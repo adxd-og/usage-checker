@@ -1,6 +1,6 @@
 import Foundation
 
-// omelette — Omelette's numbers in the terminal.
+// brioche — Brioche's numbers in the terminal.
 //
 // Contract: read ~/Library/Application Support/UsageTracker/status.json and print it.
 // Never start the app, never open a socket, never touch the network, never write
@@ -15,7 +15,7 @@ enum CLIMain {
             out(CLIText.usage + "\n")
             exit(0)
         case .version:
-            out("omelette \(CLIText.version)\n")
+            out("brioche \(CLIText.version)\n")
             exit(0)
         case .status(let json):
             exit(status(json: json))
@@ -32,8 +32,8 @@ enum CLIMain {
     // MARK: - Commands (filled in by the tasks that own them)
 
     /// Exit 2 for every way the file can be missing — not written yet, too old,
-    /// unreadable, from another version. A script asking "is Omelette up?" gets one
-    /// answer, and the sentence goes to stderr so `omelette status | …` pipes nothing
+    /// unreadable, from another version. A script asking "is Brioche up?" gets one
+    /// answer, and the sentence goes to stderr so `brioche status | …` pipes nothing
     /// but numbers.
     static func status(json: Bool) -> Int32 {
         let url = StatusFile.url()
@@ -44,7 +44,7 @@ enum CLIMain {
         }
         if json {
             // The file verbatim: re-encoding it would mean two spellings of the same
-            // bytes, and `omelette status --json | jq` should see what is on disk.
+            // bytes, and `brioche status --json | jq` should see what is on disk.
             guard var data = StatusFile.read(from: url) else {
                 err(CLIText.notRunning + "\n")
                 return CLIText.noDataExitCode

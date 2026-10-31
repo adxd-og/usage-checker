@@ -116,7 +116,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         let run = try runCLI(["--version"])
 
         XCTAssertEqual(run.status, 0)
-        XCTAssertEqual(run.stdout, "omelette \(CLIText.version)\n")
+        XCTAssertEqual(run.stdout, "brioche \(CLIText.version)\n")
         XCTAssertTrue(run.stderr.isEmpty)
         XCTAssertLessThan(run.elapsed, 1, "process spawn included; the work itself is a string")
     }
@@ -125,9 +125,15 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         let run = try runCLI(["--help"])
 
         XCTAssertEqual(run.status, 0)
-        XCTAssertTrue(run.stdout.contains("omelette status"))
-        XCTAssertTrue(run.stdout.contains("omelette statusline"))
-        XCTAssertTrue(run.stdout.contains("omelette mcp"))
+        XCTAssertTrue(run.stdout.contains("brioche status"))
+        XCTAssertTrue(run.stdout.contains("brioche statusline"))
+        XCTAssertTrue(run.stdout.contains("brioche mcp"))
+    }
+
+    func testHelpSaysTheOldNameStillWorks() throws {
+        let run = try runCLI(["--help"])
+
+        XCTAssertTrue(run.stdout.contains("`omelette` is the same tool under its old name"), run.stdout)
     }
 
     func testABadCommandExits64WithTheReasonOnStderr() throws {
@@ -136,7 +142,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertEqual(run.status, CLIText.usageExitCode)
         XCTAssertTrue(run.stdout.isEmpty, "a usage error is not output")
         XCTAssertTrue(run.stderr.contains("Unknown command: stats"), run.stderr)
-        XCTAssertTrue(run.stderr.contains("omelette status"), "the usage text follows the reason")
+        XCTAssertTrue(run.stderr.contains("brioche status"), "the usage text follows the reason")
     }
 
     // MARK: - status

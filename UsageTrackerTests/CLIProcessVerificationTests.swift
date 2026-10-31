@@ -106,8 +106,8 @@ final class CLIProcessVerificationTests: XCTestCase {
     func testNoArgumentsPrintsUsageAndExitsZeroNotSixtyFour() throws {
         let run = try runCLI([])
 
-        XCTAssertEqual(run.status, 0, "bare `omelette` is the same as --help, not a usage error")
-        XCTAssertTrue(run.stdout.contains("omelette status"), run.stdout)
+        XCTAssertEqual(run.status, 0, "bare `brioche` is the same as --help, not a usage error")
+        XCTAssertTrue(run.stdout.contains("brioche status"), run.stdout)
         XCTAssertTrue(run.stderr.isEmpty)
     }
 
