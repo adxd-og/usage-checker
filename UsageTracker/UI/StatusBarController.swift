@@ -52,10 +52,35 @@ final class StatusBarController: NSObject {
             self, selector: #selector(screensChanged(_:)),
             name: NSApplication.didChangeScreenParametersNotification, object: nil
         )
+        // A lid closed during sleep moves it too, the same signals `IslandController` re-reads on.
+        let workspace = NSWorkspace.shared.notificationCenter
+        for name in [
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidSleepNotification,
+            NSWorkspace.screensDidWakeNotification,
+            NSWorkspace.sessionDidBecomeActiveNotification,
+        ] {
+            workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
+        }
+        DistributedNotificationCenter.default().addObserver(
+            self, selector: #selector(woke(_:)),
+            name: Notification.Name("com.apple.screenIsUnlocked"), object: nil
+        )
     }
 
     @objc private func screensChanged(_ note: Notification) {
         updateVisibility(setting: SettingsStore.shared.showInMenuBar)
+    }
+
+    /// Read now and a second later, since the first read of the screens after these can be stale
+    /// (`IslandController.woke`, P0 run 1). A stale "notched display attached" would leave no item
+    /// and no notch to open the island from.
+    @objc private func woke(_ note: Notification) {
+        updateVisibility(setting: SettingsStore.shared.showInMenuBar)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.updateVisibility(setting: SettingsStore.shared.showInMenuBar)
+        }
     }
 
     private func updateVisibility(setting: Bool?) {
