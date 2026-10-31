@@ -62,11 +62,11 @@ final class PetAlertSelectorTests: XCTestCase {
 
     func testAWindowOfUnknownLengthLosesATieAndEqualWindowsKeepTheProvidersOrder() {
         let unknown = Fixture.bucket(id: "claude_other", label: "Other", percent: 94, kind: .other)
-        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 94, kind: .modelSpecific)
-        let fable = Fixture.bucket(id: "seven_day_fable", label: "Fable only", percent: 94, kind: .modelSpecific)
+        let first = week(94, id: "seven_day_first")
+        let second = week(94, id: "seven_day_second")
         XCTAssertNil(unknown.windowDuration)
-        let alert = PetAlertSelector.alert(in: [service("claude", [unknown, opus, fable])], enabledIDs: all)
-        XCTAssertEqual(alert?.bucket.id, "seven_day_opus")
+        let alert = PetAlertSelector.alert(in: [service("claude", [unknown, first, second])], enabledIDs: all)
+        XCTAssertEqual(alert?.bucket.id, "seven_day_first")
     }
 
     func testARetainedOrFailedProviderNeverFires() {
@@ -93,11 +93,59 @@ final class PetAlertSelectorTests: XCTestCase {
         )
     }
 
-    func testModelScopedWindowsAlarmToo() {
+    // MARK: - Model-scoped windows (ruling R2, as `UsageNotifier` and `headlinePercent`)
+
+    func testAModelScopedWindowDoesNotAlarmBesideACoreWindow() {
         let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        XCTAssertNil(PetAlertSelector.alert(in: [service("claude", [week(30), opus])], enabledIDs: all))
+    }
+
+    /// Live on this Mac when ruled: Argon full for days, the Gemini windows nearly empty, and a
+    /// real Claude session at 95 % hidden behind it.
+    func testAFullModelWindowNeitherAlarmsNorMasksARealWindowElsewhere() {
+        let argon = Fixture.bucket(
+            id: "antigravity_model-gemini-4-argon", label: "Gemini 4 Argon", percent: 100, kind: .modelSpecific
+        )
+        let antigravity = service("antigravity", [week(3, id: "antigravity_weekly", label: "Gemini weekly"), argon])
+        XCTAssertNil(PetAlertSelector.alert(in: [antigravity], enabledIDs: all))
         XCTAssertEqual(
-            PetAlertSelector.alert(in: [service("claude", [week(30), opus])], enabledIDs: all)?.bucket.id,
-            "seven_day_opus"
+            PetAlertSelector.alert(in: [antigravity, service("claude", [session(95)])], enabledIDs: all)?.serviceID,
+            "claude"
+        )
+    }
+
+    func testACoreWindowStillAlarmsBesideAModelWindowThatIsFuller() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 99, kind: .modelSpecific)
+        XCTAssertEqual(
+            PetAlertSelector.alert(in: [service("claude", [week(92), opus])], enabledIDs: all)?.bucket.id,
+            "seven_day"
+        )
+    }
+
+    /// Scoping is all this provider has, so those windows are its limits.
+    func testAProviderWithOnlyModelWindowsStillAlarms() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        XCTAssertEqual(PetAlertSelector.alert(in: [service("claude", [opus])], enabledIDs: all)?.bucket.id, "seven_day_opus")
+    }
+
+    /// A bonus pool is not a core window: beside one, the model windows are still all there is.
+    func testAPoolBesideModelWindowsDoesNotTakeTheirPlace() {
+        let opus = Fixture.bucket(id: "seven_day_opus", label: "Opus only", percent: 91, kind: .modelSpecific)
+        let pool = Fixture.bucket(
+            id: "cloud_credits", label: "Cloud session credits", percent: 95, kind: .other,
+            credit: CreditPool(usedDollars: 95, limitDollars: 100)
+        )
+        XCTAssertEqual(PetAlertSelector.alert(in: [service("claude", [pool, opus])], enabledIDs: all)?.bucket.id, "seven_day_opus")
+    }
+
+    /// The self-set weekly budget a pay-as-you-go user chose is a limit they want to hear about.
+    func testTheSelfSetBudgetWindowStaysEligible() {
+        let budget = Fixture.bucket(
+            id: AppState.payAsYouGoBudgetBucketID, label: "Weekly budget", percent: 93, kind: .weekly
+        )
+        XCTAssertEqual(
+            PetAlertSelector.alert(in: [service("claude", [budget])], enabledIDs: all)?.bucket.id,
+            AppState.payAsYouGoBudgetBucketID
         )
     }
 

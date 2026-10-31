@@ -14,7 +14,11 @@ struct PetAlert: Equatable, Sendable {
 
 /// Which reading the pet alarms for (notch-island spec 2026-10-29 § 3.5, § 3.9
 /// `PetAlertSelector`). Eligible: the live windows of enabled providers (never a retained or
-/// failed one), except prepaid credit pools and promotional pools. It fires at 90 % used; the
+/// failed one), except prepaid credit pools and promotional pools, and except model-scoped
+/// windows, as in `UsageNotifier.watchableBuckets` and `headlinePercent`: a saturated "Fable only"
+/// is not the limit, and can sit at 100 % for days with nothing to act on (ruling R2, which narrows
+/// § 3.5). Unless scoping is all a provider has: then its per-model windows are its
+/// limits. A self-set budget (`AppState.payAsYouGoBudgetBucketID`) counts. It fires at 90 % used; the
 /// highest used percent wins, ties going to the provider shown first, then to the shorter
 /// window, then to the provider's own order. It is not the tile's hero: a 92 % week wins over
 /// the 40 % session the tile leads with. Pure.
@@ -29,7 +33,9 @@ enum PetAlertSelector {
         var best: (alert: PetAlert, rank: Rank)?
         for (order, service) in services.enumerated() where service.state == .ok {
             if let enabledIDs, !enabledIDs.contains(service.id) { continue }
-            for (index, bucket) in service.buckets.enumerated() where !bucket.isBonusPool && bucket.clampedPercent >= threshold {
+            let hasCoreWindow = service.buckets.contains { !$0.isBonusPool && $0.kind != .modelSpecific }
+            for (index, bucket) in service.buckets.enumerated()
+            where !bucket.isBonusPool && bucket.clampedPercent >= threshold && (!hasCoreWindow || bucket.kind != .modelSpecific) {
                 let rank = Rank(
                     percent: bucket.clampedPercent,
                     order: order,
