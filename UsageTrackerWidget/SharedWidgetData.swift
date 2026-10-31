@@ -214,7 +214,7 @@ enum SharedWidgetStore {
 enum WidgetEntryRules {
     /// No file to read: the app has never published, or wrote one this build cannot
     /// decode (`SharedWidgetStore.read()` answers nil for both).
-    static let openAppMessage = "Open Omelette"
+    static let openAppMessage = "Open Brioche"
     /// The chosen provider is not in the file: signed out, not reported yet, forgotten, or
     /// switched off in a file an older build wrote (no `enabledProviderIDs`).
     static let noDataMessage = "No data"
@@ -223,7 +223,7 @@ enum WidgetEntryRules {
     static let nothingReportingMessage = "No provider is reporting"
 
     /// The snapshot an entry is built from. `.placeholder` is invented — Claude at 42%
-    /// on a Mac that has never run Omelette — so it stands in only where WidgetKit asks
+    /// on a Mac that has never run Brioche — so it stands in only where WidgetKit asks
     /// for a preview (the widget gallery). A widget on the desktop with nothing to read
     /// says so instead.
     static func snapshot(read: WidgetSnapshot?, isPreview: Bool) -> WidgetSnapshot? {

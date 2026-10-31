@@ -110,8 +110,8 @@ final class RemainingModeVerification2Tests: XCTestCase {
 
     func testTooltipTextIsLoadingWhenThereIsNoServiceRegardlessOfMode() {
         let empty = UsageSnapshot(services: [], fetchedAt: now, isStale: true, lastError: nil)
-        XCTAssertEqual(StatusBarController.tooltipText(snapshot: empty, mode: .used), "Omelette — loading…")
-        XCTAssertEqual(StatusBarController.tooltipText(snapshot: empty, mode: .remaining), "Omelette — loading…")
+        XCTAssertEqual(StatusBarController.tooltipText(snapshot: empty, mode: .used), "Brioche — loading…")
+        XCTAssertEqual(StatusBarController.tooltipText(snapshot: empty, mode: .remaining), "Brioche — loading…")
     }
 
     // MARK: - OMProviderTile.accessibilityText

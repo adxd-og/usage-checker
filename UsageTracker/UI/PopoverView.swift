@@ -11,7 +11,7 @@ enum PopoverEmptyBody: Equatable, Sendable {
 }
 
 /// The island's content (notch-island spec 2026-10-29 § 3.3, § 3.4), in the island and in the
-/// panel alike: the strip beside the camera ("Omelette"; how long ago, and the spinner — in a
+/// panel alike: the strip beside the camera ("Brioche"; how long ago, and the spinner — in a
 /// provider's page "‹ All" and the providers' logos), then the habitat's column and one
 /// two-column grid — the provider tiles or a provider's page, the agents card beside the cost
 /// tile over keep awake, the footer. The rules decide (`ProviderGridRules`,
@@ -63,7 +63,7 @@ struct PopoverView: View {
     /// `IslandRootView` draws behind the content (§ 3.1, Appearance: glass only on chrome).
     nonisolated static let bodyCorner: OMCornerContext = .popover
     nonisolated static let bodyGlass: OMGlassKind = .chrome
-    /// "Omelette" in the strip.
+    /// "Brioche" in the strip.
     nonisolated static let stripTitleSize: CGFloat = 13
     nonisolated static let metaSize: CGFloat = 11.5
     /// Between the camera and the strip's words on either side of it.
@@ -308,7 +308,7 @@ struct PopoverView: View {
 
     // MARK: - The strip
 
-    /// Beside the camera (§ 3.3, § 3.4): at All and at the only provider's page "Omelette" on
+    /// Beside the camera (§ 3.3, § 3.4): at All and at the only provider's page "Brioche" on
     /// the left and, on the right, how long ago the numbers came (and the spinner while a
     /// refresh runs); in a page with siblings "‹ All" on the left and the providers' logos on
     /// the right (plan ruling R9). During a move the two sets cross-fade late

@@ -190,7 +190,7 @@ struct FloatingMiniContent: View {
                         .truncationMode(.tail)
                 }
             } else {
-                Text("Omelette")
+                Text("Brioche")
                     .font(OMFont.caption)
                     .foregroundStyle(.secondary)
             }

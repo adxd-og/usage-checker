@@ -56,7 +56,7 @@ final class KeepAwakeTooltipTests: XCTestCase {
         let empty = UsageSnapshot(services: [], fetchedAt: Date(timeIntervalSince1970: 0), isStale: false, lastError: nil)
         XCTAssertEqual(
             StatusBarController.tooltipText(snapshot: empty, mode: .used, keepAwake: armed, now: now, calendar: calendar, locale: locale),
-            "Keep awake until 18:40\n\nOmelette — loading…"
+            "Keep awake until 18:40\n\nBrioche — loading…"
         )
     }
 }

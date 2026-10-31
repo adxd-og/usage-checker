@@ -45,7 +45,7 @@ final class PopoverFooterRulesTests: XCTestCase {
         XCTAssertEqual(PopoverFooterRules.help(.dashboard), "Open dashboard (⌘D)")
         XCTAssertEqual(PopoverFooterRules.help(.settings), "Settings (⌘,)")
         XCTAssertEqual(PopoverFooterRules.help(.refresh), "Refresh now (⌘R)")
-        XCTAssertEqual(PopoverFooterRules.help(.quit), "Quit Omelette (⌘Q)")
+        XCTAssertEqual(PopoverFooterRules.help(.quit), "Quit Brioche (⌘Q)")
     }
 
     func testTheFloatingWindowsTooltipSaysWhatTheClickWillDo() {

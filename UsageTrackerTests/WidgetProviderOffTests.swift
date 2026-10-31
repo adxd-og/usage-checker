@@ -5,7 +5,7 @@ import XCTest
 /// switched-off provider says so.
 final class WidgetProviderOffTests: XCTestCase {
     private let at = Date(timeIntervalSince1970: 1_790_000_000)
-    private let offLine = "Claude is off. Turn it on in Omelette's Settings › Providers."
+    private let offLine = "Claude is off. Turn it on in Brioche's Settings › Providers."
 
     private func service(_ id: String) -> WidgetService {
         WidgetService(

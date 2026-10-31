@@ -168,7 +168,7 @@ final class StatusBarController: NSObject {
         locale: Locale
     ) -> String {
         let services = snapshot.services.filter { !$0.buckets.isEmpty || $0.weekCost != nil }
-        guard !services.isEmpty else { return "Omelette — loading…" }
+        guard !services.isEmpty else { return "Brioche — loading…" }
         var lines: [String] = []
         for service in services {
             if !lines.isEmpty { lines.append("") }

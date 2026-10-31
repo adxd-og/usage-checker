@@ -18,7 +18,7 @@ enum IslandEarCopy {
     static func waiting(_ waiting: [AgentSession]) -> String {
         waiting.count == 1
             ? "\(PetMoodCopy.waitingLine(project: waiting[0].projectName)), go to it"
-            : "\(waiting.count) agents are waiting, open Omelette"
+            : "\(waiting.count) agents are waiting, open Brioche"
     }
 
     static func signedOut(_ recovery: ClaudeRecovery) -> String {
@@ -31,6 +31,6 @@ enum IslandEarCopy {
     }
 
     static func moon(deadline: Date, now: Date, calendar: Calendar, locale: Locale) -> String {
-        "Keep awake until \(KeepAwakeCopy.clock(deadline, now: now, calendar: calendar, locale: locale)), open Omelette"
+        "Keep awake until \(KeepAwakeCopy.clock(deadline, now: now, calendar: calendar, locale: locale)), open Brioche"
     }
 }

@@ -46,7 +46,7 @@ final class WidgetProviderOffVerificationTests: XCTestCase {
         for (id, name) in [("claude", "Claude"), ("codex", "Codex"), ("antigravity", "Antigravity"), ("grok", "Grok")] {
             XCTAssertEqual(
                 WidgetEntryRules.providerContent(snapshot, providerID: id, providerName: name),
-                .message("\(name) is off. Turn it on in Omelette's Settings › Providers."),
+                .message("\(name) is off. Turn it on in Brioche's Settings › Providers."),
                 id
             )
         }
@@ -83,8 +83,8 @@ final class WidgetProviderOffVerificationTests: XCTestCase {
     // MARK: - The line
 
     func testTheLineNamesTheProviderAndPointsToSettingsInEachCase() {
-        XCTAssertEqual(NothingOnCopy.providerOff("Claude"), "Claude is off. Turn it on in Omelette's Settings › Providers.")
-        XCTAssertEqual(NothingOnCopy.providerOff("Antigravity"), "Antigravity is off. Turn it on in Omelette's Settings › Providers.")
+        XCTAssertEqual(NothingOnCopy.providerOff("Claude"), "Claude is off. Turn it on in Brioche's Settings › Providers.")
+        XCTAssertEqual(NothingOnCopy.providerOff("Antigravity"), "Antigravity is off. Turn it on in Brioche's Settings › Providers.")
     }
 
     // MARK: - The file an older build wrote, and the file a newer one writes
@@ -148,7 +148,7 @@ final class WidgetProviderOffVerificationTests: XCTestCase {
         )
     }
 
-    func testNoFileStillSaysOpenOmeletteWhateverTheProviderIs() {
+    func testNoFileStillSaysOpenBriocheWhateverTheProviderIs() {
         XCTAssertEqual(
             WidgetEntryRules.providerContent(nil, providerID: "claude", providerName: "Claude"),
             .message(WidgetEntryRules.openAppMessage)

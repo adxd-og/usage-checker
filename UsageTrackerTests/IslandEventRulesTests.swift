@@ -3,7 +3,7 @@ import XCTest
 
 /// Notch-island spec 2026-10-29 § 3.1 (Clicks through the transparent part, Focus,
 /// Dismissal, Entry points) and § 3.8: an outside click, Esc, the open island's notch strip,
-/// the status item and another Omelette window close it; its child windows count as inside;
+/// the status item and another Brioche window close it; its child windows count as inside;
 /// a status-item click is one action and one dismissal; a swallowed event stays swallowed;
 /// the notch is a button VoiceOver can press.
 final class IslandEventRulesTests: XCTestCase {
@@ -34,7 +34,7 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(IslandEventRules.localClick(.childOfIsland), .pass)
     }
 
-    func testAClickInAnotherOmeletteWindowClosesTheIslandAndStillReachesIt() {
+    func testAClickInAnotherBriocheWindowClosesTheIslandAndStillReachesIt() {
         XCTAssertEqual(IslandEventRules.localClick(.otherWindow), .close)
     }
 
@@ -106,12 +106,12 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(IslandEventRules.forward(7, to: nil), 7, "no controller: the event goes on")
     }
 
-    func testVoiceOverReadsTheNotchAsOmelette() {
-        XCTAssertEqual(IslandEventRules.notchAccessibilityLabel, "Omelette")
+    func testVoiceOverReadsTheNotchAsBrioche() {
+        XCTAssertEqual(IslandEventRules.notchAccessibilityLabel, "Brioche")
     }
 
     /// The P1 review's item 4, carried here: a label alone says nothing of what the button does.
     func testVoiceOverHearsWhatTheNotchDoes() {
-        XCTAssertEqual(IslandEventRules.notchAccessibilityHelp, "Opens Omelette. Press again to close it.")
+        XCTAssertEqual(IslandEventRules.notchAccessibilityHelp, "Opens Brioche. Press again to close it.")
     }
 }

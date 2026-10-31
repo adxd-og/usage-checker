@@ -14,8 +14,8 @@ final class PopoverCopyIslandTests: XCTestCase {
         return calendar
     }
 
-    func testTheStripSaysOmeletteAndTheLoadingRowSaysLoading() {
-        XCTAssertEqual(PopoverCopy.appName, "Omelette")
+    func testTheStripSaysBriocheAndTheLoadingRowSaysLoading() {
+        XCTAssertEqual(PopoverCopy.appName, "Brioche")
         XCTAssertEqual(PopoverCopy.loading, "Loading…")
     }
 

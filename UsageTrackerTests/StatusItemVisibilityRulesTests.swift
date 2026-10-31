@@ -25,10 +25,10 @@ final class StatusItemVisibilityRulesTests: XCTestCase {
         XCTAssertFalse(StatusItemVisibilityRules.switchEnabled(notchedDisplayAttached: false))
     }
 
-    func testTheCaptionSaysHowToOpenOmeletteOrWhyTheItemStays() {
+    func testTheCaptionSaysHowToOpenBriocheOrWhyTheItemStays() {
         XCTAssertEqual(
             StatusItemVisibilityRules.caption(notchedDisplayAttached: true),
-            "Click the notch to open Omelette."
+            "Click the notch to open Brioche."
         )
         XCTAssertEqual(
             StatusItemVisibilityRules.caption(notchedDisplayAttached: false),
