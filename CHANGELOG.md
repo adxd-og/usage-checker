@@ -5,7 +5,7 @@ All notable changes to Brioche (formerly Omelette, before that Usage Checker) wi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [4.0.0] — Unreleased
+## [4.0.0] — 2026-11-01
 
 ### Island
 - The popover is now an island that grows out of the notch. On a Mac or display
