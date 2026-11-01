@@ -53,12 +53,14 @@ struct UsageTrackerApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var island: IslandController?
     private var statusBar: StatusBarController?
+    private var activationPolicy: ActivationPolicyController?
     private var onboardingWindow: NSWindow?
     private var replayObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         guard !AppEnvironment.isRunningTests else { return }
+        activationPolicy = ActivationPolicyController()
         let island = IslandController()
         self.island = island
         self.statusBar = StatusBarController(island: island)
@@ -137,9 +139,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// A click on a notification or a double click on the app in Finder (notch-island spec
     /// 2026-10-29 § 3.1, Reopen): with no window on screen it opens the island, never the
-    /// hidden Dashboard (`ReopenRules`).
+    /// hidden Dashboard. A click on the Dock icon brings the window back (`ReopenRules`).
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        let action = ReopenRules.action(hasVisibleWindows: flag)
+        let action = ReopenRules.action(
+            hasVisibleWindows: flag, hasDockIcon: NSApp.activationPolicy() == .regular
+        )
         if action == .openIsland {
             island?.handle(.notification(pointer: NSEvent.mouseLocation))
         }

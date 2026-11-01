@@ -30,14 +30,16 @@ final class IslandWindow: NSPanel {
 
 extension NSPanel {
     /// What the island and the resting notch panel share: transparent, no shadow, never
-    /// hidden when the app deactivates, fixed in place, no system animation, a click inside
-    /// makes it key, at `.statusBar`, on every space including full-screen ones (§ 3.1; no
-    /// full-screen detection, owner 2026-10-29).
+    /// hidden when the app deactivates or is hidden (⌘H, with a real window up, has it in the
+    /// Dock), fixed in place, no system animation, a click inside makes it key, at `.statusBar`,
+    /// on every space including full-screen ones (§ 3.1; no full-screen detection, owner
+    /// 2026-10-29).
     func configureAsOverlay() {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = false
         hidesOnDeactivate = false
+        canHide = false
         becomesKeyOnlyIfNeeded = false
         isMovable = false
         isReleasedWhenClosed = false

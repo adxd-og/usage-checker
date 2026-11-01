@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The first launch after an update on a notched Mac opens the island once, since
   the menu bar icon is gone.
 - Closing it returns the keyboard to the app behind.
+- The Dashboard, Settings, the tour and an update window are in Cmd+Tab, with a Dock
+  icon and the app's menu, while one of them is open. Quit there stops Brioche;
+  closing the last window does not.
 - With no window on screen, a click on a Brioche notification or a double click on
   the app in Finder opens the island, not the Dashboard.
 

@@ -2,8 +2,10 @@
 /// 2026-10-30): a click on an Omelette notification or a double click on the app in Finder,
 /// with no window on screen, opens the island the way the notification route does; the
 /// Dashboard opens only from the island's footer. With a window on screen (the Dashboard,
-/// Settings) the reopen is left as it was. Pure: `AppDelegate.applicationShouldHandleReopen`
-/// applies the answer.
+/// Settings) the reopen is left as it was, and so it is with a Dock icon up
+/// (`ActivationPolicyRules`), which means a window is in the Dock or the app is hidden: a
+/// click on the icon brings it back. Pure: `AppDelegate.applicationShouldHandleReopen` applies
+/// the answer.
 enum ReopenRules {
     enum Action: Equatable, Sendable {
         /// Open the island, as `IslandController.handle(.notification)` does.
@@ -23,7 +25,7 @@ enum ReopenRules {
 
     /// `hasVisibleWindows` is AppKit's flag, which counts windows, not panels: the island and
     /// the resting notch never count, the Dashboard and Settings do.
-    static func action(hasVisibleWindows: Bool) -> Action {
-        hasVisibleWindows ? .leaveAlone : .openIsland
+    static func action(hasVisibleWindows: Bool, hasDockIcon: Bool = false) -> Action {
+        hasVisibleWindows || hasDockIcon ? .leaveAlone : .openIsland
     }
 }
