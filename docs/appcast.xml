@@ -6,6 +6,70 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Brioche v4.0.0</title>
+      <pubDate>Sun, 01 Nov 2026 18:21:51 +0200</pubDate>
+      <sparkle:version>57</sparkle:version>
+      <sparkle:shortVersionString>4.0.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Island</h3>
+<ul>
+<li>The popover is now an island that grows out of the notch. On a Mac or display without a notch it is a panel under the menu bar icon.</li>
+<li>Opening and closing are animated. Reduce Motion turns them into a short cross-fade.</li>
+<li>A click on the notch opens the island; a click on the notch strip of the open island, a click anywhere outside it, or Esc at All closes it.</li>
+<li>Hover over the notch and it nudges down a little. Hover never opens.</li>
+<li>The first launch after an update on a notched Mac opens the island once, since the menu bar icon is gone.</li>
+<li>Closing it returns the keyboard to the app behind.</li>
+<li>The Dashboard, Settings, the tour and an update window are in Cmd+Tab, with a Dock icon and the app's menu, while one of them is open. Quit there stops Brioche; closing the last window does not.</li>
+<li>With no window on screen, a click on a Brioche notification or a double click on the app in Finder opens the island, not the Dashboard.</li>
+</ul>
+<h3>Menu bar icon</h3>
+<ul>
+<li>New switch: Settings › General › Menu bar icon › <b>Show in menu bar</b>. On a Mac with a notched display it is <b>off by default</b>, so the menu bar icon is hidden after the update: click the notch to open Brioche, or turn the switch on.</li>
+<li>With no notched display attached (lid closed, an external display only) the icon is always shown and the switch is locked on.</li>
+<li>While the icon is hidden, keep awake's ☾ moves to the notch's right ear.</li>
+</ul>
+<h3>Layout and navigation</h3>
+<ul>
+<li>Providers sit in a two-column grid; the agents list, cost and keep awake below them.</li>
+<li>Click a provider's tile to open its page. <b>‹ All</b>, the provider logos, Esc, or a two-finger swipe right go back.</li>
+<li><b>Shortcut change:</b> ⌘0 is All and ⌘1–⌘9 are the providers in display order (⌘1 was All). A digit with no provider behind it does nothing.</li>
+<li>With one provider on, its page is the home page: no ‹ All, no logos.</li>
+<li>Waiting agents stay reachable with every provider off, and from a sole provider's page.</li>
+</ul>
+<h3>Pet</h3>
+<ul>
+<li>A pixel pet lives beside your limits: cat, duck, dog or raccoon, each in three colourways.</li>
+<li>It shows what is going on: an agent waiting, Claude signed out, a limit at 90 % or more, keep awake at night, agents working, all providers off.</li>
+<li>A click on the pet does what its line says: jump to the waiting agent, sign in, open the provider at 90 %, show keep awake, open Settings › Providers with all providers off. Otherwise it pats the pet.</li>
+<li>It idles, blinks, naps, plays hand-drawn events and looks up when a limit window resets. It animates only while the island is open and Reduce Motion is off.</li>
+<li>New tab Settings › Pet: show the pet, ears on or off, animal and colourway. The pet can be turned off. The tour gains a step to pick one.</li>
+<li>The pet's column is dropped on a display narrower than 1420 pt.</li>
+<li>A window for one model does not set it off, unless that is all a provider has. A provider switched off stops at once.</li>
+</ul>
+<h3>Ears</h3>
+<ul>
+<li>With the island closed, the notch grows an ear when something needs you: the pet's head (a neutral dot with the pet off) for a waiting agent, a signed-out Claude or a limit at 90 %, and the number on the right ear.</li>
+<li>A click on an ear does what it shows: one waiting agent is brought forward, otherwise the island opens on that provider, or on keep awake for ☾.</li>
+<li>Settings › Pet › <b>Ears beside the notch</b> turns them off. Only on a display with a notch.</li>
+</ul>
+<h3>Name</h3>
+<ul>
+<li>Omelette is now Brioche. Same app, same data: settings, history, the Claude sign-in, widgets and keep awake carry over.</li>
+<li>A new icon to match: a brioche with cat ears, drawn in the pets' pixels.</li>
+<li>An installed copy updates in place and stays <code>Omelette.app</code> on disk. A new download is <code>Brioche.app</code>; if you install it by hand, delete <code>Omelette.app</code> first.</li>
+<li>The command and the MCP server are <code>brioche</code> for new setups. <code>omelette</code> keeps working: hooks, status line and MCP entries already installed stay as they are, and Disable, then Enable in Settings › Integrations moves one to the new name.</li>
+<li>A file at <code>bin/brioche</code> that another tool put there is left alone, and new setups then use <code>omelette</code>.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v4.0.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v4.0.0/Brioche.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="KQPXFRpuTriNRLcybGofJTCvK4CdPDvm2b4PkuapLVmgRrSn7YPBdT9GCWdLwmSx9y7AG3WTDhClVEg2AJRJBQ=="
+        length="25495343"/>
+    </item>
+    <item>
       <title>Omelette v3.3.0</title>
       <pubDate>Thu, 29 Oct 2026 09:41:36 +0200</pubDate>
       <sparkle:version>55</sparkle:version>
