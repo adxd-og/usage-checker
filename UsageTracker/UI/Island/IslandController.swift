@@ -722,9 +722,16 @@ final class IslandController: NSObject {
             settings.$showInMenuBar.map { _ in () }.eraseToAnyPublisher(),
             // A provider's switch is `@AppStorage`, which publishes nothing (`SettingsPage`): a
             // defaults write is its signal, so off means off with a poll still running.
-            NotificationCenter.default.publisher(for: UserDefaults.didChangeNotification)
-                .map { _ in () }.eraseToAnyPublisher(),
+            defaultsWriteSignal(),
         ]
+    }
+
+    /// The notification comes on the writing thread (keep awake's Apply, Sparkle), and the `map`
+    /// below is main-actor code: the hop comes first, as in `SettingsPage`.
+    static func defaultsWriteSignal(center: NotificationCenter = .default) -> AnyPublisher<Void, Never> {
+        center.publisher(for: UserDefaults.didChangeNotification)
+            .receive(on: DispatchQueue.main)
+            .map { _ in () }.eraseToAnyPublisher()
     }
 
     private func showEars(_ ears: IslandEars) {

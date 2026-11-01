@@ -39,23 +39,22 @@ This README is a map. Each section says what it covers and points to the next on
 
 ## Screenshots
 
-The menu bar panel (the island's predecessor) and the dashboard, one shot of each
-below. More of both live in the two disclosures underneath.
+The island and the dashboard, one shot of each below. More of both live in the two
+disclosures underneath; the provider shots there are from before the island.
 
-<!-- screenshots: retake for 4.0 -->
 <table>
   <tr>
-    <td width="36%"><img src="docs/screenshots/popover-all-needs-you.png" alt="The popover: every provider on one tab, a session waiting for your Allow / Deny, one working, one idle"></td>
+    <td width="36%"><img src="docs/screenshots/island-all.png" alt="The island: four providers with their rings, agents, today's cost, keep awake and the pixel cat in its column. Project names are blurred."></td>
     <td width="64%"><img src="docs/screenshots/dashboard-overview-claude.png" alt="Dashboard Overview for Claude: concentric rings per window with reset times, today's CLI cost by model, Tokens today against cost"></td>
   </tr>
   <tr>
-    <td>The popover, All tab. An agent asked a question, so its row got Allow / Deny.</td>
+    <td>The island, All page. A click on a ring opens that provider.</td>
     <td>Dashboard Overview. Tokens today: input, output (with thinking), cache read, cache write, and dollars per category.</td>
   </tr>
 </table>
 
 <details>
-<summary><b>More of the popover</b>: one tab per provider, last-known numbers when one is closed</summary>
+<summary><b>Before the island</b>: one page per provider, last-known numbers when one is closed</summary>
 <br>
 <table>
   <tr>
