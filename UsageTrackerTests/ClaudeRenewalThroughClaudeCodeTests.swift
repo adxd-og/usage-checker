@@ -150,6 +150,7 @@ final class ClaudeRenewalThroughClaudeCodeTests: XCTestCase {
             cache: cache,
             sources: claudeCode.sources,
             renewal: ClaudeRenewal(gate: gate, locateBinary: { binary }, start: { claudeCode.start($0) }),
+            accountReader: ClaudeCodeAccountReader(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("absent-\(UUID().uuidString).json")),
             now: { date }
         )
     }

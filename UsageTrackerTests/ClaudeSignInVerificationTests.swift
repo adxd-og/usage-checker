@@ -139,7 +139,8 @@ private func tracedFetch(
     configuration.protocolClasses = [GuardEndpointStub.self]
     return await ClaudeOAuthProvider(
         http: HTTPClient(session: URLSession(configuration: configuration)),
-        cache: cache, sources: claudeCode.sources, renewal: claudeCode.renewal(gate: gate), now: { date }
+        cache: cache, sources: claudeCode.sources, renewal: claudeCode.renewal(gate: gate),
+        accountReader: ClaudeCodeAccountReader(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("absent-\(UUID().uuidString).json")), now: { date }
     ).fetch()
 }
 

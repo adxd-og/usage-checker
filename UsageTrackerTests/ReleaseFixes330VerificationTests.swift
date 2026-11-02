@@ -130,6 +130,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
             cache: cache,
             sources: claudeCode.sources,
             renewal: ClaudeRenewal(gate: gate, locateBinary: { bin }, start: { _ in claudeCode.start() }),
+            accountReader: ClaudeCodeAccountReader(fileURL: directory.appendingPathComponent("absent.json")),
             now: { at }
         )
     }
