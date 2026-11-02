@@ -13,9 +13,9 @@ import Foundation
 enum StatusLineDrop {
     /// Redirects the drop to another folder, as `OMELETTE_STATUS_FILE` redirects the
     /// status file: the end-to-end tests point it at a temp path, so no test ever
-    /// writes into the real Application Support. It needs no Debug-only allowlist for
-    /// the same reason: anything that can set this variable can already write any file
-    /// as you.
+    /// writes into the real Application Support. Unlike the status file it is a path
+    /// the CLI writes to, and it still needs no Debug-only allowlist: anything that can
+    /// set this variable can already write any file as you.
     static let environmentKey = "OMELETTE_STATUSLINE_DIR"
 
     static let directoryName = "statusline"
@@ -40,7 +40,8 @@ enum StatusLineDrop {
 
     /// What a session id may hold to become a file name: ASCII letters, digits and the
     /// hyphen of a UUID. Nothing that climbs out of the folder (`/`, `..`), hides a file
-    /// (`.`), or spells the same name two ways (anything beyond ASCII).
+    /// (`.`), or spells the same name two ways (anything beyond ASCII). Case still folds
+    /// on a case-insensitive volume; Claude Code's ids are lowercase UUIDs.
     private static let fileNameCharacters = CharacterSet(
         charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-"
     )
