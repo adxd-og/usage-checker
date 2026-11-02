@@ -6,7 +6,7 @@ import XCTest
 /// action (Allow)") and 3 (no uppercase headings: each row says its state).
 /// `Main.dc.html`, `Popover-Claude.dc.html`.
 final class AgentRowLookTests: XCTestCase {
-    func testOnlyNeedsYouIsSaidOnTheTitleLine() {
+    func testOnlyNeedsYouGetsTheAccentWord() {
         XCTAssertEqual(AgentRowText.titleBadge(.needsYou), "Needs you")
         XCTAssertNil(AgentRowText.titleBadge(.working))
         XCTAssertNil(AgentRowText.titleBadge(.done))
