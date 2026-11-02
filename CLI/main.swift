@@ -63,17 +63,34 @@ enum CLIMain {
     /// Colour follows the pipe, not `--no-color` alone: a payload on stdin means
     /// Claude Code is asking, and Claude Code renders the escape codes. Run by hand
     /// there is no payload, so there is no prefix and nothing to colour anyway.
+    ///
+    /// After the line, never before it, the payload's rate limits go into the reading
+    /// drop for the app (`StatusLineDrop`), whichever provider the line shows. The line
+    /// is out by then, so a drop that fails — a full disk, a folder that is not one —
+    /// cannot delay it, change it or turn the exit code, and it says nothing: a status
+    /// line has nowhere to say it.
     static func statusLine(provider: String, colour: Bool) -> Int32 {
         let piped = readPipedStandardInput()
+        let input = StatusLineInput.parse(piped ?? Data())
+        let now = Date()
         let snapshot = StatusFile.load(from: StatusFile.url())
         let line = StatusLineText.render(
             snapshot: snapshot,
             provider: provider,
-            now: Date(),
-            input: StatusLineInput.parse(piped ?? Data()),
+            now: now,
+            input: input,
             colour: colour && piped != nil
         )
         out(line + "\n")
+        let environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        StatusLineDrop.write(
+            input,
+            to: StatusLineDrop.directoryURL(environment: environment, home: home),
+            now: now,
+            environment: environment,
+            home: home
+        )
         return 0
     }
 

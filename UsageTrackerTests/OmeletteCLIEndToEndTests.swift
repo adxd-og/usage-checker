@@ -11,6 +11,7 @@ import XCTest
 final class OmeletteCLIEndToEndTests: XCTestCase {
     private var directory: URL!
     private var statusURL: URL!
+    private var dropURL: URL!
 
     /// 2026-09-06 11:20:00 UTC.
     let now = Date(timeIntervalSince1970: 1_788_693_600)
@@ -20,6 +21,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
             .appendingPathComponent("OmeletteCLITests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         statusURL = directory.appendingPathComponent("status.json")
+        dropURL = directory.appendingPathComponent("statusline", isDirectory: true)
         XCTAssertTrue(
             FileManager.default.isExecutableFile(atPath: AgentPaths.bundledCLIURL.path),
             "omelette missing at \(AgentPaths.bundledCLIURL.path) — check the OmeletteCLI target and the embed dependency in project.yml"
@@ -49,12 +51,17 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
     }
 
     @discardableResult
-    func runCLI(_ arguments: [String], stdin input: String? = nil) throws -> Run {
+    func runCLI(
+        _ arguments: [String], stdin input: String? = nil, environment extra: [String: String] = [:]
+    ) throws -> Run {
         let process = Process()
         process.executableURL = AgentPaths.bundledCLIURL
         process.arguments = arguments
         var environment = ProcessInfo.processInfo.environment
         environment[StatusFile.environmentKey] = statusURL.path
+        // Whatever a payload carries, no run ever writes the developer's own drop.
+        environment[StatusLineDrop.environmentKey] = dropURL.path
+        environment.merge(extra) { _, given in given }
         process.environment = environment
         let stdout = Pipe()
         let stderr = Pipe()
@@ -284,6 +291,82 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
 
         XCTAssertEqual(run.status, 0)
         XCTAssertEqual(run.stdout, "⚑ 1\n", "no Codex in the file; the flag is not Codex's")
+    }
+
+    // MARK: - The reading drop (spec 2026-11-02 Claude limits from the status line, § Design › Wire)
+
+    /// Claude Code 2.1.316's payload carries both windows: the line prints as it always
+    /// did, and the session's reading is left for the app in a folder only the user can
+    /// open.
+    func testAStatusLineWithRateLimitsLeavesTheSessionsReadingForTheApp() throws {
+        try publish(sample())
+        let configDir = directory.appendingPathComponent("claude-config", isDirectory: true)
+        let before = Date()
+
+        let run = try runCLI(
+            ["statusline", "--no-color"],
+            stdin: StatusLineFixture.payload(),
+            environment: ["CLAUDE_CONFIG_DIR": configDir.path]
+        )
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("Opus [####------] 42% · ◐ 42% · resets in "), run.stdout)
+        XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1)
+        XCTAssertTrue(run.stderr.isEmpty, run.stderr)
+        let file = dropURL.appendingPathComponent(StatusLineFixture.sessionID + ".json")
+        let reading = try StatusLineDrop.decoder.decode(StatusLineDrop.Reading.self, from: Data(contentsOf: file))
+        XCTAssertEqual(reading.formatVersion, 1)
+        XCTAssertEqual(reading.sessionID, StatusLineFixture.sessionID)
+        XCTAssertEqual(reading.promptID, StatusLineFixture.promptID)
+        XCTAssertEqual(reading.totalAPIDurationMs, 18_250)
+        XCTAssertEqual(
+            reading.fiveHour,
+            StatusLineInput.RateLimits.Window(usedPercent: 23.5, resetsAt: StatusLineFixture.fiveHourResetsAt)
+        )
+        XCTAssertEqual(
+            reading.sevenDay,
+            StatusLineInput.RateLimits.Window(usedPercent: 41.2, resetsAt: StatusLineFixture.sevenDayResetsAt)
+        )
+        XCTAssertEqual(reading.configDir, configDir.path)
+        XCTAssertGreaterThanOrEqual(reading.writtenAt, before.addingTimeInterval(-1))
+        XCTAssertLessThanOrEqual(reading.writtenAt, Date().addingTimeInterval(1))
+        let mode = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: dropURL.path)[.posixPermissions] as? NSNumber
+        )
+        XCTAssertEqual(mode.intValue, 0o700)
+    }
+
+    /// A drop that cannot be written changes nothing the user sees: the same line,
+    /// exit 0, nothing on stderr.
+    func testADropThatFailsKeepsTheLineAndTheExitCode() throws {
+        try publish(sample())
+        let blocker = directory.appendingPathComponent("blocker")
+        try Data("not a folder".utf8).write(to: blocker)
+
+        let run = try runCLI(
+            ["statusline", "--no-color"],
+            stdin: StatusLineFixture.payload(),
+            environment: [StatusLineDrop.environmentKey: blocker.appendingPathComponent("statusline").path]
+        )
+
+        XCTAssertEqual(run.status, 0, "a status line must never report an error")
+        XCTAssertTrue(run.stdout.hasPrefix("Opus [####------] 42% · ◐ 42% · resets in "), run.stdout)
+        XCTAssertTrue(run.stdout.contains("$4.20 today"), run.stdout)
+        XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1)
+        XCTAssertTrue(run.stderr.isEmpty, "a failed drop says nothing: \(run.stderr)")
+        XCTAssertEqual(try String(contentsOf: blocker, encoding: .utf8), "not a folder")
+    }
+
+    /// No window, no file: a payload from before the session's first API response
+    /// leaves nothing behind, not even the folder.
+    func testAStatusLineWithoutRateLimitsWritesNothing() throws {
+        try publish(sample())
+
+        let run = try runCLI(["statusline", "--no-color"], stdin: StatusLineFixture.payload(rateLimits: nil))
+
+        XCTAssertEqual(run.status, 0)
+        XCTAssertTrue(run.stdout.hasPrefix("Opus [####------] 42% · ◐ 42% · resets in "), run.stdout)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: dropURL.path))
     }
 
     // MARK: - mcp
