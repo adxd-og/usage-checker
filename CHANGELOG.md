@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens the second line instead of following the name, which cut it to "Us…ker".
   The Dashboard's Agents tab is unchanged.
 
+### Agents
+- A session whose last answer, tool output or pasted prompt was very long (over
+  64 KB) no longer stays "working": the hook sends what the app reads instead of
+  dropping the event. Codex turns with long histories arrive too.
+
 ### Claude
 - Plans carry Anthropic's new names: Max 20x is "Claude Ultra", Max 5x is
   "Claude Max".
