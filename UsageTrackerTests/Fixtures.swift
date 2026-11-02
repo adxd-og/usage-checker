@@ -12,7 +12,9 @@ enum Fixture {
         resetsAt: Date = .distantFuture,
         kind: BucketKind = .other,
         windowLength: TimeInterval? = nil,
-        credit: CreditPool? = nil
+        credit: CreditPool? = nil,
+        source: ReadingSource? = nil,
+        asOf: Date? = nil
     ) -> UsageBucket {
         UsageBucket(
             id: id,
@@ -21,7 +23,9 @@ enum Fixture {
             resetsAt: resetsAt,
             kind: kind,
             windowLength: windowLength,
-            credit: credit
+            credit: credit,
+            source: source,
+            asOf: asOf
         )
     }
 
