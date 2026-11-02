@@ -13,4 +13,13 @@ enum ReadingSource: String, Codable, Equatable, Sendable {
     /// Claude Code's status line: the limits `brioche statusline` left for the app
     /// (`StatusLineDrop`), newer than the OAuth reading they replaced.
     case statusLine
+
+    /// What a surface says after a window from here: "from Claude Code" for the status
+    /// line; nothing for the provider's own fetch, which every surface already assumes.
+    var words: String? {
+        switch self {
+        case .oauth: return nil
+        case .statusLine: return "from Claude Code"
+        }
+    }
 }
