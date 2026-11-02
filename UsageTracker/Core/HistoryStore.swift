@@ -24,6 +24,14 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     /// tells one window from the next by them (spec 2026-10-16 limit analytics § Design,
     /// Window bounds).
     let bucketWindows: [String: HistoryWindow]?
+    /// Where each window's numbers came from, by bucket id (`ReadingSource.rawValue`), for
+    /// the windows that say: "statusLine" where Claude Code's status line fed Claude's
+    /// session or weekly window (spec 2026-11-02 § Source tag). The Limits tab's price of a
+    /// percent can tell the status line's one-decimal readings from OAuth's whole numbers
+    /// by it. nil when no window says, and in every record written before it. Strings, not
+    /// the enum: a source a later build adds must not make this build drop the line as
+    /// corrupt.
+    let bucketSources: [String: String]?
     /// Absent in every record written before history went multi-provider, and back
     /// then only Claude was ever recorded — so a missing field means "claude".
     private let storedServiceID: String?
@@ -31,7 +39,7 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     var serviceID: String { storedServiceID ?? "claude" }
 
     private enum CodingKeys: String, CodingKey {
-        case id, timestamp, plan, bucketPercents, bucketWindows
+        case id, timestamp, plan, bucketPercents, bucketWindows, bucketSources
         case fiveHourPercent, fiveHourResetsAt
         case sevenDayPercent, sevenDayResetsAt
         case opusWeeklyPercent, sonnetWeeklyPercent
@@ -72,6 +80,11 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
             windows[core.id] = HistoryWindow(resetsAt: resetsAt, length: core.windowDuration)
         }
         self.bucketWindows = windows.isEmpty ? nil : windows
+        let sources = Dictionary(
+            snapshot.buckets.compactMap { bucket in bucket.source.map { (bucket.id, $0.rawValue) } },
+            uniquingKeysWith: { first, _ in first }
+        )
+        self.bucketSources = sources.isEmpty ? nil : sources
     }
 
     func percent(for bucketId: String) -> Double? {
@@ -105,6 +118,13 @@ struct HistoryRecord: Codable, Equatable, Sendable, Identifiable {
     /// say.
     func windowLength(for bucketId: String) -> TimeInterval? {
         bucketWindows?[bucketId]?.length
+    }
+
+    /// Where the window `bucketId`'s numbers came from at this reading: what the record
+    /// says, else `.oauth` — every record from before the tag, every untagged window. A
+    /// source this build does not know reads as `.oauth` too.
+    func source(for bucketId: String) -> ReadingSource {
+        bucketSources?[bucketId].flatMap(ReadingSource.init(rawValue:)) ?? .oauth
     }
 }
 
