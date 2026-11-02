@@ -508,9 +508,13 @@ to keep a year of them:
   every time it starts (a flag set by another tool or by hand is left alone,
   until an Apply takes it over: the end of that mode clears it),
   and exits a minute after it has nothing to do
-- The `brioche` command-line tool and MCP server only ever read
+- The `brioche` command-line tool and MCP server read
   `~/Library/Application Support/UsageTracker/status.json`, written after
-  every poll. They never start the app, open a socket, or touch the network
+  every poll. They never start the app, open a socket, or touch the network,
+  and write one thing only: when Claude Code hands `brioche statusline` its
+  5-hour and weekly limits, the tool leaves them, with the session's id and
+  the time, in `~/Library/Application Support/UsageTracker/statusline/`, a
+  folder only you can open, one small file per session, for Brioche to read
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`
 - **No telemetry, no analytics.** Usage history and cost accounting stay
   on your Mac

@@ -3,10 +3,13 @@ import Foundation
 // brioche — Brioche's numbers in the terminal.
 //
 // Contract: read ~/Library/Application Support/UsageTracker/status.json and print it.
-// Never start the app, never open a socket, never touch the network, never write
-// anywhere. Foundation only — no AppKit, no Security. Every command is a file read and
-// a string, so the work is under 50 ms; the only thing that can block is `mcp`, which
-// is a server and blocks on its own stdin by design.
+// Never start the app, never open a socket, never touch the network. Never write,
+// except the status line's reading drop: `statusline` leaves the rate limits Claude
+// Code pipes in under ~/Library/Application Support/UsageTracker/statusline/ for the
+// app (`StatusLineDrop`). Foundation only — no AppKit, no Security. Every command is a
+// file read and a string, plus that one small file for `statusline`, so the work is
+// under 50 ms; the only thing that can block is `mcp`, which is a server and blocks on
+// its own stdin by design.
 
 enum CLIMain {
     static func run() -> Never {
@@ -130,8 +133,8 @@ enum CLIMain {
 
     /// Claude Code writes its session JSON to our stdin and closes it. It has to be
     /// read to the end whatever is in it — leaving the pipe unread risks a write error
-    /// on their side — and `StatusLineInput` takes the model, the context window and
-    /// the prompt cache out of it.
+    /// on their side — and `StatusLineInput` takes the model, the context window, the
+    /// prompt cache, the rate limits and the session's counters out of it.
     ///
     /// Only when stdin is a pipe: run by hand in a terminal there is nothing to read
     /// and `readToEnd` would sit there until the user pressed ^D. nil is "nobody piped
