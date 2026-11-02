@@ -514,6 +514,13 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         ("iguana_necktie", cloudSessionCreditsLabel, .other),
     ]
 
+    /// The label and kind this build gives a window it knows by id — what `buckets(from:)`
+    /// calls it. A status-line window OAuth did not report takes them
+    /// (`StatusLineMergeRules`), so it reads as the window it is.
+    static func knownWindow(id: String) -> (label: String, kind: BucketKind)? {
+        knownWindows.first { $0.id == id }.map { (label: $0.label, kind: $0.kind) }
+    }
+
     /// claude.ai's name for its prepaid cloud-session pool. `knownWindows` labels the
     /// pool's key with it, and `creditPoolIDs` finds the key by it.
     private static let cloudSessionCreditsLabel = "Cloud session credits"
