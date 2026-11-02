@@ -111,4 +111,67 @@ final class StatusLinePollTests: XCTestCase {
         XCTAssertFalse(shown.applied)
         XCTAssertEqual(shown.snapshot.services, [oauth])
     }
+
+    // MARK: - Between polls (session ruling 2026-11-02)
+
+    private func healthyOnScreen() -> UsageSnapshot {
+        poll(
+            [Fixture.snapshot(
+                id: "claude", displayName: "Claude", plan: "Max 20x",
+                buckets: [oauthSession, oauthWeek, opus], at: now.addingTimeInterval(-120)
+            )],
+            at: now.addingTimeInterval(-120)
+        )
+    }
+
+    func testANewReadingBetweenPollsFeedsTheSnapshotOnScreen() throws {
+        let fed = try XCTUnwrap(
+            AppState.statusLineRemerged(healthyOnScreen(), sessions: fresh(), defaultConfigDir: defaultDir, now: now)
+        )
+
+        XCTAssertTrue(fed.applied)
+        let claude = try XCTUnwrap(fed.snapshot.services.first)
+        XCTAssertEqual(claude.buckets.map(\.utilization), [23.5, 41.2, 12])
+        XCTAssertEqual(claude.buckets.map(\.asOf), [now.addingTimeInterval(-60), now.addingTimeInterval(-60), nil])
+        XCTAssertEqual(claude.fetchedAt, now.addingTimeInterval(-120), "no fetch: OAuth's numbers keep their time")
+    }
+
+    func testARemergeThatChangesNothingShowsNothingNew() throws {
+        let onScreen = healthyOnScreen()
+        let fed = try XCTUnwrap(
+            AppState.statusLineRemerged(onScreen, sessions: fresh(), defaultConfigDir: defaultDir, now: now)
+        )
+
+        XCTAssertNil(
+            AppState.statusLineRemerged(fed.snapshot, sessions: fresh(), defaultConfigDir: defaultDir, now: now),
+            "the same reading again"
+        )
+        XCTAssertNil(AppState.statusLineRemerged(onScreen, sessions: [], defaultConfigDir: defaultDir, now: now), "no reading")
+        XCTAssertNil(
+            AppState.statusLineRemerged(onScreen, sessions: fresh(), defaultConfigDir: defaultDir, now: now.addingTimeInterval(301)),
+            "a reading dated more than five minutes back"
+        )
+    }
+
+    /// A 429 holds every poll back for up to five minutes. The status line still reaches the
+    /// screen, on the retained, dimmed Claude, and no endpoint is asked.
+    func testARemergeDuringABackoffFeedsTheRateLimitedClaude() throws {
+        var limited = failingClaude(at: now.addingTimeInterval(-90))
+        limited.retryAfter = 60
+        let backedOff = AppState.shownAfterPoll(
+            previous: .empty, next: poll([limited], at: now.addingTimeInterval(-90)), stored: stored(),
+            statusLine: [], defaultConfigDir: defaultDir, now: now.addingTimeInterval(-90)
+        )
+
+        let fed = try XCTUnwrap(
+            AppState.statusLineRemerged(backedOff.snapshot, sessions: fresh(), defaultConfigDir: defaultDir, now: now)
+        )
+
+        let claude = try XCTUnwrap(fed.snapshot.services.first)
+        XCTAssertEqual(claude.state, .error)
+        XCTAssertEqual(claude.stateMessage, "Rate limited by usage API")
+        XCTAssertTrue(claude.isRetained)
+        XCTAssertEqual(claude.buckets.map(\.utilization), [23.5, 41.2, 12])
+        XCTAssertEqual(claude.retryAfter, 60, "the backoff is the poll's business; the re-merge leaves it")
+    }
 }

@@ -92,4 +92,31 @@ final class StatusLineReadingStoreWatchTests: XCTestCase {
         let seen = await eventually { await watched.sessions.isEmpty == false }
         XCTAssertTrue(seen)
     }
+
+    /// The app's re-merge between polls hangs on this: a load a folder event caused is told
+    /// to the listener, after the table moved.
+    func testAFolderEventTellsTheListenerAfterTheTableMoved() async throws {
+        let folder = root.appendingPathComponent("statusline", isDirectory: true)
+        let fixed = now
+        let watched = StatusLineReadingStore(directoryURL: folder, clock: { fixed })
+        store = watched
+        let heard = Heard()
+        await watched.startWatching {
+            Task { await heard.record(await watched.sessions.map(\.sessionID)) }
+        }
+
+        try write(StatusLineFixture.reading(writtenAt: now.addingTimeInterval(-30)), into: folder)
+
+        let told = await eventually { await heard.last == [StatusLineFixture.sessionID] }
+        XCTAssertTrue(told, "the listener ran after the load, and saw the new session")
+    }
+}
+
+/// What the store's listener heard, for the watch test.
+private actor Heard {
+    private(set) var last: [String]?
+
+    func record(_ ids: [String]) {
+        last = ids
+    }
 }

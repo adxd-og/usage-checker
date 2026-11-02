@@ -29,6 +29,9 @@ actor StatusLineReadingStore {
     /// Set by `startWatching`: a watch the folder's removal ended is armed again by the
     /// next load.
     private var wantsWatching = false
+    /// Told after every load a folder event caused, on this actor's executor — never the
+    /// main actor; a listener that needs it hops there itself.
+    private var onChange: (@Sendable () -> Void)?
 
     init(
         directoryURL: URL = StatusLineDrop.directoryURL(),
@@ -72,16 +75,20 @@ actor StatusLineReadingStore {
 
     // MARK: - Watching the folder
 
-    /// Loads the folder whenever something in it changes, besides every poll. Makes the
-    /// folder when it is not there yet — a watch needs something to watch — owner-only
-    /// (0700) as the CLI makes it, its parents with the default mode.
-    func startWatching() {
+    /// Loads the folder whenever something in it changes, besides every poll, then tells
+    /// `onChange`: the app puts a new reading on screen between polls with it (session
+    /// ruling 2026-11-02). Makes the folder when it is not there yet — a watch needs
+    /// something to watch — owner-only (0700) as the CLI makes it, its parents with the
+    /// default mode.
+    func startWatching(onChange: (@Sendable () -> Void)? = nil) {
         wantsWatching = true
+        self.onChange = onChange
         arm()
     }
 
     func stopWatching() {
         wantsWatching = false
+        onChange = nil
         watcher?.cancel()
         watcher = nil
     }
@@ -124,6 +131,7 @@ actor StatusLineReadingStore {
             return
         }
         load(now: clock())
+        onChange?()
     }
 
     // MARK: - Rules
