@@ -4,10 +4,14 @@ import Foundation
 /// from the status line, § Design › App): the folder `brioche statusline` writes
 /// (`StatusLineDrop`), one file per session, read into `StatusLineFreshnessRules`' table.
 ///
-/// An actor, so two loads never read the folder at once. The folder is injected — tests
-/// point it at a temp directory — and defaults to the one the CLI writes, by the CLI's own
-/// rule (`StatusLineDrop.directoryURL`). Loading also sweeps: a reading, or a temp file a
-/// killed writer left, older than an hour goes.
+/// Read at every poll and whenever the folder changes (`startWatching`): a reading is dated
+/// by the file in which its API time grew, and between two polls Claude Code may write
+/// that file and re-run the line over it. A folder event moves the table. An actor, so a
+/// poll and a folder event never read the
+/// folder at once. The folder is injected — tests point it at a temp directory — and
+/// defaults to the one the CLI writes, by the CLI's own rule (`StatusLineDrop.directoryURL`).
+/// Loading also sweeps: a reading, or a temp file a killed writer left, older than an hour
+/// goes.
 actor StatusLineReadingStore {
     static let shared = StatusLineReadingStore()
 
@@ -15,11 +19,23 @@ actor StatusLineReadingStore {
     /// ended its session (`StatusLineFreshnessRules.evictionAge`).
     static let sweepAge: TimeInterval = 3600
 
-    private let directoryURL: URL
-    private var table: [String: StatusLineFreshnessRules.Session] = [:]
+    private static let watchQueue = DispatchQueue(label: "com.usagetracker.app.statusline-watch", qos: .utility)
 
-    init(directoryURL: URL = StatusLineDrop.directoryURL()) {
+    private let directoryURL: URL
+    /// The clock a folder event loads with; a poll passes its own `now`. Tests pin it.
+    private let clock: @Sendable () -> Date
+    private var table: [String: StatusLineFreshnessRules.Session] = [:]
+    private var watcher: DispatchSourceFileSystemObject?
+    /// Set by `startWatching`: a watch the folder's removal ended is armed again by the
+    /// next load.
+    private var wantsWatching = false
+
+    init(
+        directoryURL: URL = StatusLineDrop.directoryURL(),
+        clock: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.directoryURL = directoryURL
+        self.clock = clock
     }
 
     /// The sessions as the last load left them, in id order.
@@ -28,9 +44,11 @@ actor StatusLineReadingStore {
     }
 
     /// Reads the folder at `now`: sweeps what is old, reads every reading, advances each
-    /// session. A missing or unreadable folder is an empty one, and is not made here.
+    /// session. A missing or unreadable folder is an empty one, and is not made here — only
+    /// a watch makes it.
     @discardableResult
     func load(now: Date) -> [StatusLineFreshnessRules.Session] {
+        if wantsWatching, watcher == nil { arm() }
         let fileManager = FileManager.default
         let names = (try? fileManager.contentsOfDirectory(atPath: directoryURL.path)) ?? []
         var readings: [StatusLineDrop.Reading] = []
@@ -51,6 +69,64 @@ actor StatusLineReadingStore {
         table = StatusLineFreshnessRules.table(table, readings: readings, now: now)
         return sessions
     }
+
+    // MARK: - Watching the folder
+
+    /// Loads the folder whenever something in it changes, besides every poll. Makes the
+    /// folder when it is not there yet — a watch needs something to watch — owner-only
+    /// (0700) as the CLI makes it, its parents with the default mode.
+    func startWatching() {
+        wantsWatching = true
+        arm()
+    }
+
+    func stopWatching() {
+        wantsWatching = false
+        watcher?.cancel()
+        watcher = nil
+    }
+
+    private func arm() {
+        guard watcher == nil else { return }
+        let fileManager = FileManager.default
+        if !fileManager.fileExists(atPath: directoryURL.path) {
+            do {
+                try fileManager.createDirectory(
+                    at: directoryURL.deletingLastPathComponent(), withIntermediateDirectories: true
+                )
+                try fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+                try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
+            } catch {
+                return
+            }
+        }
+        let descriptor = open(directoryURL.path, O_EVTONLY)
+        guard descriptor >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: descriptor, eventMask: [.write, .delete, .rename], queue: Self.watchQueue
+        )
+        // @Sendable, so neither block inherits this actor's isolation: GCD runs them on its
+        // own queue, and an isolated block run there is what Swift 6 traps on.
+        source.setEventHandler { @Sendable [weak self] in
+            Task { await self?.folderChanged() }
+        }
+        source.setCancelHandler { @Sendable in close(descriptor) }
+        watcher = source
+        source.resume()
+    }
+
+    private func folderChanged() {
+        guard FileManager.default.fileExists(atPath: directoryURL.path) else {
+            // The folder itself went: this watch sees nothing more. The next load arms a
+            // new one.
+            watcher?.cancel()
+            watcher = nil
+            return
+        }
+        load(now: clock())
+    }
+
+    // MARK: - Rules
 
     /// A reading's name: `<session_id>.json`, never a hidden file — the writer's temp file
     /// is `.<session_id>.json.<UUID>.tmp` — so a half-written file is never opened.
