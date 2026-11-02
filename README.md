@@ -439,7 +439,11 @@ Claude Code renews it. With no Claude Code sign-in on the Mac (the Claude app
 alone), **Sign in** in the island opens Terminal on Claude Code's own
 `claude auth login`. Brioche writes that command to
 `~/Library/Application Support/UsageTracker/claude-sign-in.command` for
-Terminal to run and leaves it there; it holds no secret.
+Terminal to run and leaves it there; it holds no secret. The plan's name
+comes from Claude Code's `~/.claude.json`: Brioche reads only
+`oauthAccount.planDisplayName` and `organizationRateLimitTier` from it, keeps
+nothing else, and uses the name only when that tier is the signed-in
+credential's.
 Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server (while
 the app is closed or not answering, Antigravity's own `agy` CLI), or the local
