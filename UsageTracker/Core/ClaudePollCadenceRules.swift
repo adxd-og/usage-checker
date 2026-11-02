@@ -53,4 +53,58 @@ enum ClaudePollCadenceRules {
         guard sinceFetch >= 0 else { return true }
         return sinceFetch + tickTolerance >= fetchInterval(refreshIntervalSeconds: refreshIntervalSeconds)
     }
+
+    /// Claude's last fetch: the provider's answer, and the time `startRefresh` stamped for
+    /// the poll that asked for it — the tick's own time, which the interval is measured
+    /// from.
+    struct LastFetch: Equatable, Sendable {
+        let snapshot: ServiceSnapshot
+        let at: Date
+    }
+
+    /// What this poll shows for Claude without asking: the last answer, while Claude is on
+    /// and the cadence holds this poll's fetch back. Its Retry-After is spent: the backoff
+    /// it asked for was applied when it arrived, and carried it would back every provider
+    /// off again on every poll. nil when this poll asks.
+    static func heldAnswer(
+        last: LastFetch?,
+        claudeEnabled: Bool,
+        trigger: Trigger,
+        statusLineAppliedAt: Date?,
+        refreshIntervalSeconds: Int,
+        now: Date
+    ) -> ServiceSnapshot? {
+        guard claudeEnabled,
+              let last,
+              !shouldFetch(
+                  trigger: trigger,
+                  lastFetchAt: last.at,
+                  statusLineAppliedAt: statusLineAppliedAt,
+                  refreshIntervalSeconds: refreshIntervalSeconds,
+                  now: now
+              )
+        else { return nil }
+        var held = last.snapshot
+        held.retryAfter = nil
+        return held
+    }
+
+    /// What the next poll measures from: this poll's Claude answer when it asked, the last
+    /// fetch unchanged when it held, nothing while Claude is off.
+    static func lastFetch(
+        after services: [ServiceSnapshot], held: ServiceSnapshot?, previous: LastFetch?, at now: Date
+    ) -> LastFetch? {
+        if held != nil { return previous }
+        return services
+            .first { $0.id == ClaudeOAuthProvider.serviceID }
+            .map { LastFetch(snapshot: $0, at: now) }
+    }
+
+    /// What a poll leaves as the popover's last refresh (`AppState.popoverRefreshFloor`):
+    /// its own time when it asks Claude, the earlier one when it held Claude's fetch back —
+    /// it asked Claude nothing, so an island opened right after it still asks (session
+    /// ruling 2026-11-02).
+    static func refreshStamp(previous: Date, pollAt: Date, held: Bool) -> Date {
+        held ? previous : pollAt
+    }
 }

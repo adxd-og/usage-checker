@@ -15,6 +15,13 @@ final class AppState: ObservableObject {
     private var timerTask: Task<Void, Never>?
     private var lastRefreshAt: Date = .distantPast
     private var nextAllowedRefresh: Date = .distantPast
+    /// Claude's last fetched answer and when its poll started (spec 2026-11-02 Claude limits
+    /// from the status line, § Cadence): what a poll the cadence holds back shows again.
+    private var lastClaudeFetch: ClaudePollCadenceRules.LastFetch?
+    /// When Claude Code's status line last fed Claude's windows (`StatusLineMergeRules`), at
+    /// a poll or between polls: for five minutes after it, Claude's endpoint is asked at
+    /// most every five minutes.
+    private var statusLineAppliedAt: Date?
     /// A user request that arrived while a poll was in flight — run one more
     /// poll right after instead of silently dropping it (multiple requests
     /// coalesce into a single rerun).
@@ -359,10 +366,15 @@ final class AppState: ObservableObject {
     /// even then subject to the server's Retry-After like the timer's polls.
     func refreshForPopover() {
         guard Self.shouldRefreshOnPopoverOpen(lastRefreshAt: lastRefreshAt, now: Date()) else { return }
-        refreshNow(userInitiated: false)
+        // Not a user request — it keeps the Retry-After backoff — but it asks Claude's
+        // endpoint whatever the status line feeds (spec 2026-11-02 § Cadence).
+        refreshNow(userInitiated: false, trigger: .asked)
     }
 
-    func refreshNow(userInitiated: Bool = true) {
+    /// `trigger` says whether this poll may hold Claude's endpoint back while Claude Code's
+    /// status line feeds it (spec 2026-11-02 § Cadence). Left out, a user request asks and
+    /// the timer or a wake may hold.
+    func refreshNow(userInitiated: Bool = true, trigger: ClaudePollCadenceRules.Trigger? = nil) {
         if inflight != nil {
             if userInitiated { pendingUserRefresh = true }
             return
@@ -373,25 +385,39 @@ final class AppState: ObservableObject {
             if now < nextAllowedRefresh { return }
             if now.timeIntervalSince(lastRefreshAt) < 0.5 { return }
         }
-        startRefresh(at: now)
+        startRefresh(at: now, trigger: trigger ?? (userInitiated ? .asked : .tick))
     }
 
-    private func startRefresh(at now: Date) {
-        lastRefreshAt = now
+    private func startRefresh(at now: Date, trigger: ClaudePollCadenceRules.Trigger) {
+        // Decided before the stamp (spec 2026-11-02 § Cadence; session ruling 2026-11-02): a
+        // poll that shows Claude's last answer instead of asking does not move the popover's
+        // floor, so an island opened right after it still asks.
+        let claudeHeld = ClaudePollCadenceRules.heldAnswer(
+            last: lastClaudeFetch,
+            claudeEnabled: SettingsStore.shared.claudeProviderEnabled,
+            trigger: trigger,
+            statusLineAppliedAt: statusLineAppliedAt,
+            refreshIntervalSeconds: SettingsStore.shared.refreshIntervalSeconds,
+            now: now
+        )
+        lastRefreshAt = ClaudePollCadenceRules.refreshStamp(
+            previous: lastRefreshAt, pollAt: now, held: claudeHeld != nil
+        )
         inflight = Task { [weak self] in
-            await self?.performRefresh()
+            await self?.performRefresh(claudeHeld: claudeHeld, startedAt: now)
             await MainActor.run {
                 guard let self else { return }
                 self.inflight = nil
                 if self.pendingUserRefresh {
                     self.pendingUserRefresh = false
-                    self.startRefresh(at: Date())
+                    // Only a user request is ever pending, and a user request asks.
+                    self.startRefresh(at: Date(), trigger: .asked)
                 }
             }
         }
     }
 
-    private func performRefresh() async {
+    private func performRefresh(claudeHeld: ServiceSnapshot?, startedAt: Date) async {
         isLoading = true
         defer { isLoading = false }
 
@@ -415,7 +441,16 @@ final class AppState: ObservableObject {
             claudeEnabled: polled.contains("claude"),
             codexEnabled: polled.contains("codex"),
             antigravityEnabled: polled.contains("antigravity"),
-            grokEnabled: polled.contains("grok")
+            grokEnabled: polled.contains("grok"),
+            // While Claude Code's status line feeds Claude's two windows, a held poll shows
+            // Claude's last answer instead of asking (spec 2026-11-02 Claude limits from the
+            // status line, § Cadence). The other providers poll as before.
+            claudeHeld: claudeHeld
+        )
+        // Claude's answer as the provider gave it, before anything below dresses it, dated by
+        // the poll's start: what the interval is measured from.
+        lastClaudeFetch = ClaudePollCadenceRules.lastFetch(
+            after: next.services, held: claudeHeld, previous: lastClaudeFetch, at: startedAt
         )
         // Before retention: a Codex account that answered without the windows it had a
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
@@ -440,6 +475,8 @@ final class AppState: ObservableObject {
             now: statusLineNow
         )
         next = shown.snapshot
+        // A window the status line fed keeps Claude's endpoint slow for five minutes.
+        if shown.applied { statusLineAppliedAt = statusLineNow }
         snapshot = next
         // The Sign in button follows what Claude just said (spec 2026-10-25 § Package 2).
         ClaudeSignInModel.shared.pollLanded(claude: next.services.first { $0.id == ClaudeOAuthProvider.serviceID })
@@ -598,6 +635,8 @@ final class AppState: ObservableObject {
             ),
             now: now
         ) else { return }
+        // A reading put on screen between polls keeps Claude's endpoint slow as well.
+        statusLineAppliedAt = now
         snapshot = fed.snapshot
         WidgetBridge.publish(
             snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
