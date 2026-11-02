@@ -63,6 +63,8 @@ enum AgentEventDecoder {
         )
     }
 
+    // A payload key read here, in `codexEvent` or in `codexNotifyEvent` must also be in
+    // `HookMain.keptPayloadKeys` (HookHelper/main.swift), or an oversized payload loses it.
     private static func claudeEvent(payload: [String: Any], host: AgentHostInfo, receivedAt: Date, requestID: String?) throws -> AgentEvent {
         guard let name = payload["hook_event_name"] as? String else { throw Error.missingField("hook_event_name") }
         guard let sessionID = payload["session_id"] as? String, !sessionID.isEmpty else { throw Error.missingField("session_id") }
@@ -155,6 +157,7 @@ enum AgentEventDecoder {
     }
 
     /// The `notify` transport: one event, kebab-case keys, no tool and no hold.
+    /// Its keys are kept for an oversized payload by `HookMain.keptPayloadKeys`.
     private static func codexNotifyEvent(payload: [String: Any], host: AgentHostInfo, receivedAt: Date) throws -> AgentEvent {
         guard let type = payload["type"] as? String else { throw Error.missingField("type") }
         guard let threadID = payload["thread-id"] as? String, !threadID.isEmpty else { throw Error.missingField("thread-id") }
