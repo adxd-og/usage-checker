@@ -36,7 +36,10 @@ final class AppState: ObservableObject {
     /// The last dollars `StatusCosts` produced. The poll refreshes them; an agent
     /// starting a tool reuses them, because it did not change what you spent today.
     private var lastCosts: [String: StatusFileWriter.CostEntry] = [:] {
-        didSet { todayCosts = lastCosts.mapValues(\.todayCost) }
+        didSet {
+            todayCosts = lastCosts.mapValues(\.todayCost)
+            weekCosts = lastCosts.mapValues(\.weekCost)
+        }
     }
     /// The last chats `StatusCosts` produced, kept for exactly the same reason as
     /// `lastCosts`: an agent starting a tool re-publishes the file, and it did not
@@ -51,6 +54,10 @@ final class AppState: ObservableObject {
     /// tile can lead with today rather than with the week. A service with no local
     /// cost log is absent here, which is what keeps "no log" apart from "$0 today".
     @Published private(set) var todayCosts: [String: Double] = [:]
+    /// The week's dollars per service, mirrored out of `lastCosts` for the same tile:
+    /// a subscription's Claude snapshot carries no `weekCost`, so the week comes from
+    /// the same gathering as today. Absent where there is no local cost log.
+    @Published private(set) var weekCosts: [String: Double] = [:]
 
     /// What the poll asks for: `polledServiceIDs` of the switches and the admin key, set as
     /// each poll starts. nil until the first one has, which is still "loading". The

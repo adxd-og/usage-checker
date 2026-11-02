@@ -125,4 +125,47 @@ final class OMCostTileTests: XCTestCase {
             "Today $12.50"
         )
     }
+
+    // MARK: - The week from the cost gathering
+
+    /// A subscription's Claude snapshot carries no `weekCost`; the week comes from the
+    /// same gathering as today, so "Last 7 days" counts Claude too.
+    func testASubscriptionsClaudeCountsInTheWeekFromTheCostGathering() {
+        let services = [
+            Fixture.snapshot(id: "claude", displayName: "Claude", weekCost: nil),
+            Fixture.snapshot(id: "codex", displayName: "Codex", weekCost: 96.59),
+            Fixture.snapshot(id: "grok", displayName: "Grok", weekCost: 2.09),
+        ]
+        let week = ["claude": 1601.14, "codex": 96.59, "grok": 2.09]
+        XCTAssertEqual(OMCostTile.total(services, week: week), 1699.82, accuracy: 0.0001)
+        XCTAssertEqual(
+            OMCostTile.secondary(services: services, today: ["claude": 32.40], week: week, locale: us),
+            "Last 7 days $1,699.82 · Claude $1,601.14 · Codex $96.59 · Grok $2.09"
+        )
+    }
+
+    func testAServiceMissingFromTheGatheringKeepsItsSnapshotsWeek() {
+        let services = [
+            Fixture.snapshot(id: "claude", displayName: "Claude", weekCost: nil),
+            Fixture.snapshot(id: "codex", displayName: "Codex", weekCost: 5),
+        ]
+        XCTAssertEqual(OMCostTile.total(services, week: ["claude": 10]), 15, accuracy: 0.0001)
+    }
+
+    func testTheGatheringWinsOverASnapshotsWeek() {
+        let services = [Fixture.snapshot(id: "codex", displayName: "Codex", weekCost: 5)]
+        XCTAssertEqual(OMCostTile.total(services, week: ["codex": 7]), 7, accuracy: 0.0001)
+    }
+
+    func testASubscriptionWithOnlyTheGatheredWeekIsCaptioned() {
+        let claude = Fixture.snapshot(
+            id: "claude", displayName: "Claude", plan: "Max 20x",
+            buckets: [Fixture.bucket(id: "five_hour", label: "Current session", percent: 42, kind: .session)],
+            weekCost: nil
+        )
+        XCTAssertEqual(
+            OMCostTile.caption(services: [claude], today: [:], week: ["claude": 40]),
+            CostCopy.apiEquivalent
+        )
+    }
 }

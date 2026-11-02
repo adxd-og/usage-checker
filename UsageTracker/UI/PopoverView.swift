@@ -673,7 +673,7 @@ struct PopoverView: View {
     private var tiles: ProviderGridRules.Grid {
         ProviderGridRules.grid(
             serviceIDs: displayedServices.map(\.id),
-            showsCostTile: ProviderGridRules.showsCostTile(displayedServices)
+            showsCostTile: ProviderGridRules.showsCostTile(displayedServices, week: state.weekCosts)
         )
     }
 
@@ -721,7 +721,7 @@ struct PopoverView: View {
                 .opacity(id == hidden ? 0 : 1)
             }
         case .cost:
-            OMCostTile(services: displayedServices, today: state.todayCosts, fillsHeight: true)
+            OMCostTile(services: displayedServices, today: state.todayCosts, week: state.weekCosts, fillsHeight: true)
         case .empty:
             Color.clear.frame(maxWidth: .infinity, maxHeight: 0)
         }
@@ -823,7 +823,7 @@ struct PopoverView: View {
             }
             VStack(spacing: ProviderGridRules.gap) {
                 if showsCostInLowerRow {
-                    OMCostTile(services: displayedServices, today: state.todayCosts)
+                    OMCostTile(services: displayedServices, today: state.todayCosts, week: state.weekCosts)
                         .onGeometryChange(for: CGFloat.self) { proxy in
                             proxy.size.height
                         } action: { height in

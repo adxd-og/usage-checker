@@ -75,6 +75,13 @@ final class ProviderGridRulesTests: XCTestCase {
         XCTAssertFalse(ProviderGridRules.showsCostTile([]))
     }
 
+    /// A subscription's Claude snapshot has no `weekCost`; the gathered week shows the tile.
+    func testAClaudeOnlySubscriptionShowsTheCostTile() {
+        let claude = [Fixture.snapshot(id: "claude", weekCost: nil)]
+        XCTAssertTrue(ProviderGridRules.showsCostTile(claude, week: ["claude": 12]))
+        XCTAssertFalse(ProviderGridRules.showsCostTile(claude))
+    }
+
     func testAt640WithTheHabitatTheGridIs450AndAHalf220() {
         let columns = ProviderGridRules.columns(bodyWidth: 640, showsHabitat: true)
         XCTAssertEqual(columns, .init(content: 612, right: 450, half: 220))
