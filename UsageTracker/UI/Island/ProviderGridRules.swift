@@ -109,8 +109,8 @@ enum ProviderGridRules {
     }
 
     /// The cost tile is drawn only when the week has dollars.
-    static func showsCostTile(_ services: [ServiceSnapshot]) -> Bool {
-        OMCostTile.total(services) > 0
+    static func showsCostTile(_ services: [ServiceSnapshot], week: [String: Double] = [:]) -> Bool {
+        OMCostTile.total(services, week: week) > 0
     }
 
     /// Two tiles a row in the providers' order. An odd count's last row has an orphan
