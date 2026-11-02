@@ -148,7 +148,8 @@ final class ClaudeSignedOutReasonTests: XCTestCase {
         ]
         for (item, reason, message) in cases {
             let snapshot = await ClaudeOAuthProvider(
-                cache: ClaudeCredentialsCache(), sources: sources(file: nil, item: item), now: { at }
+                cache: ClaudeCredentialsCache(), sources: sources(file: nil, item: item),
+                accountReader: ClaudeCodeAccountReader(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("absent-\(UUID().uuidString).json")), now: { at }
             ).fetch()
             XCTAssertEqual(snapshot.state, .notSignedIn, "\(reason)")
             XCTAssertEqual(snapshot.signedOutReason, reason)
@@ -172,7 +173,8 @@ final class ClaudeSignedOutReasonTests: XCTestCase {
         ]
         for (item, recovery) in cases {
             let fresh = await ClaudeOAuthProvider(
-                cache: ClaudeCredentialsCache(), sources: sources(file: nil, item: item), now: { at }
+                cache: ClaudeCredentialsCache(), sources: sources(file: nil, item: item),
+                accountReader: ClaudeCodeAccountReader(fileURL: FileManager.default.temporaryDirectory.appendingPathComponent("absent-\(UUID().uuidString).json")), now: { at }
             ).fetch()
             for previous in [UsageSnapshot.empty, UsageSnapshot(services: [kept], fetchedAt: earlier, isStale: false, lastError: nil)] {
                 let shown = AppState.mergingPoll(

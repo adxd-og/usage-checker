@@ -251,6 +251,8 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
     private let sources: ClaudeCredentialSources
     /// How Claude Code is asked to renew an expired sign-in.
     private let renewal: ClaudeRenewal
+    /// Claude Code's signed-in account in `~/.claude.json`, for the plan's name.
+    private let accountReader: ClaudeCodeAccountReader
     private let now: @Sendable () -> Date
 
     init(
@@ -259,6 +261,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         cache: ClaudeCredentialsCache = .shared,
         sources: ClaudeCredentialSources = .live,
         renewal: ClaudeRenewal = .live,
+        accountReader: ClaudeCodeAccountReader = .shared,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.http = http
@@ -266,6 +269,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         self.cache = cache
         self.sources = sources
         self.renewal = renewal
+        self.accountReader = accountReader
         self.now = now
     }
 
@@ -311,8 +315,9 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
         // Claude read fine: a sign-in launched from the button is over.
         await renewal.gate.tokenArrived()
 
-        let tier = SubscriptionTier(
-            rawSubscriptionType: oauth.subscriptionType,
+        let plan = ClaudePlanName.plan(
+            configAccount: await accountReader.account(),
+            subscriptionType: oauth.subscriptionType,
             rateLimitTier: oauth.rateLimitTier
         )
 
@@ -323,7 +328,7 @@ final class ClaudeOAuthProvider: UsageProvider, Sendable {
             id: serviceID,
             displayName: "Claude",
             icon: "sparkles",
-            plan: tier.displayName,
+            plan: plan,
             accountLabel: nil,
             buckets: buckets,
             extraUsage: extra,
