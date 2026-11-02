@@ -53,4 +53,114 @@ enum StatusLineDrop {
         else { return nil }
         return sessionID + ".json"
     }
+
+    // MARK: - What the file says
+
+    /// One reading as the file spells it:
+    /// `{v, session_id, prompt_id?, total_api_duration_ms?, five_hour?, seven_day?, written_at, config_dir}`.
+    /// A key whose value is not known is absent, never `null`. Times are epoch seconds,
+    /// as Claude Code writes `resets_at`.
+    struct Reading: Codable, Equatable, Sendable {
+        /// `v`. A reader skips a file whose version it does not know.
+        static let currentFormatVersion = 1
+
+        let formatVersion: Int
+        let sessionID: String
+        /// With `totalAPIDurationMs`, what tells a reading Claude Code just received from
+        /// the same one re-sent on its timer. Absent when the payload had none.
+        let promptID: String?
+        let totalAPIDurationMs: Double?
+        let fiveHour: StatusLineInput.RateLimits.Window?
+        let sevenDay: StatusLineInput.RateLimits.Window?
+        /// When the CLI wrote the file. Not when Claude Code got the numbers: the
+        /// payload does not say.
+        let writtenAt: Date
+        /// The Claude Code configuration folder the session runs under, so the app can
+        /// bind a reading to its account.
+        let configDir: String
+
+        enum CodingKeys: String, CodingKey {
+            case formatVersion = "v"
+            case sessionID = "session_id"
+            case promptID = "prompt_id"
+            case totalAPIDurationMs = "total_api_duration_ms"
+            case fiveHour = "five_hour"
+            case sevenDay = "seven_day"
+            case writtenAt = "written_at"
+            case configDir = "config_dir"
+        }
+    }
+
+    /// The reading a payload makes, or nil without a session id or a window: nothing
+    /// else is worth a file.
+    static func reading(from input: StatusLineInput, now: Date, configDir: String) -> Reading? {
+        guard let sessionID = input.sessionID,
+              let limits = input.rateLimits,
+              limits.fiveHour != nil || limits.sevenDay != nil
+        else { return nil }
+        return Reading(
+            formatVersion: Reading.currentFormatVersion,
+            sessionID: sessionID,
+            promptID: input.promptID,
+            totalAPIDurationMs: input.totalAPIDurationMs,
+            fiveHour: limits.fiveHour,
+            sevenDay: limits.sevenDay,
+            writtenAt: now,
+            configDir: configDir
+        )
+    }
+
+    static let configDirEnvironmentKey = "CLAUDE_CONFIG_DIR"
+
+    /// `CLAUDE_CONFIG_DIR` when it is set and not blank, else `~/.claude`: where Claude
+    /// Code keeps the session's account. One spelling per folder — no trailing slash,
+    /// no `.` or `..` — so the app can compare it with its own; symlinks and `~` are
+    /// left as given.
+    static func configDir(environment: [String: String], home: URL) -> String {
+        if let value = environment[configDirEnvironmentKey],
+           !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return URL(fileURLWithPath: value, isDirectory: true).standardizedFileURL.path
+        }
+        return home.appendingPathComponent(".claude", isDirectory: true).standardizedFileURL.path
+    }
+
+    /// Computed, as `StatusFile.encoder` is: a shared `JSONEncoder` would be a mutable
+    /// global.
+    static var encoder: JSONEncoder {
+        let e = JSONEncoder()
+        e.dateEncodingStrategy = .secondsSince1970
+        e.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return e
+    }
+
+    static var decoder: JSONDecoder {
+        let d = JSONDecoder()
+        d.dateDecodingStrategy = .secondsSince1970
+        return d
+    }
+}
+
+/// The drop writes a window in Claude Code's own spelling — `used_percentage`, and
+/// `resets_at` in epoch seconds through the drop's encoder — so the file reads like the
+/// payload it came from. Here rather than on the type: the parser reads the payload
+/// with `JSONSerialization`, and the wire format is this file's business.
+extension StatusLineInput.RateLimits.Window: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case usedPercent = "used_percentage"
+        case resetsAt = "resets_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            usedPercent: try container.decode(Double.self, forKey: .usedPercent),
+            resetsAt: try container.decode(Date.self, forKey: .resetsAt)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(usedPercent, forKey: .usedPercent)
+        try container.encode(resetsAt, forKey: .resetsAt)
+    }
 }
