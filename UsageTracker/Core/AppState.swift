@@ -102,6 +102,10 @@ final class AppState: ObservableObject {
         removeLegacyClaudeTokenCopy()
         refreshNow()
         startTimer()
+        // Claude Code's status line leaves Claude's limits in a folder (spec 2026-11-02 Claude
+        // limits from the status line, § Design › App). Reading it as it changes dates each
+        // reading by the file its API time grew in; every poll reads it too.
+        Task { await StatusLineReadingStore.shared.startWatching() }
         // Keep awake (spec 2026-10-26 § Behaviour, Visible): what the helper says, once
         // at launch, so a mode armed before a relaunch shows at once. No XPC when the
         // helper was never registered.
@@ -408,10 +412,25 @@ final class AppState: ObservableObject {
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
         next = CodexProvider.flaggingMissingWindows(in: next, previous: snapshot, stored: lastKnown)
         next = await Self.applyPayAsYouGo(to: next)
+        // Claude Code's status line, read at every poll as well as on the folder's own
+        // events (spec 2026-11-02 Claude limits from the status line, § Design › App).
+        let statusLineNow = Date()
+        let statusLine = await StatusLineReadingStore.shared.load(now: statusLineNow)
         // Per service, never the whole array: a failed provider keeps its last good
         // reading beside its state chip, and a provider this poll no longer returned
-        // (switched off) is gone. From here on `next` is what the app shows.
-        next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
+        // (switched off) is gone. Then Claude's session and weekly windows from the status
+        // line, where its reading is newer. From here on `next` is what the app shows.
+        let shown = Self.shownAfterPoll(
+            previous: snapshot,
+            next: next,
+            stored: lastKnown,
+            statusLine: statusLine,
+            defaultConfigDir: StatusLineMergeRules.defaultConfigDir(
+                home: FileManager.default.homeDirectoryForCurrentUser
+            ),
+            now: statusLineNow
+        )
+        next = shown.snapshot
         snapshot = next
         // The Sign in button follows what Claude just said (spec 2026-10-25 § Package 2).
         ClaudeSignInModel.shared.pollLanded(claude: next.services.first { $0.id == ClaudeOAuthProvider.serviceID })
@@ -755,6 +774,27 @@ final class AppState: ObservableObject {
                 : merged.fetchedAt,
             isStale: allFailed,
             lastError: merged.lastError
+        )
+    }
+
+    /// What the app shows after a poll: `mergingPoll`'s retention first, then Claude's
+    /// session and weekly windows from Claude Code's status line where its reading is newer
+    /// (`StatusLineMergeRules`, spec 2026-11-02 § Design › App). In that order: a failed
+    /// Claude keeps its last-known numbers, dimmed, and the status line then freshens the
+    /// two it knows; the next poll's retention carries the windows it fed, tag and all.
+    nonisolated static func shownAfterPoll(
+        previous: UsageSnapshot,
+        next: UsageSnapshot,
+        stored: [String: LastKnownService],
+        statusLine: [StatusLineFreshnessRules.Session],
+        defaultConfigDir: String,
+        now: Date
+    ) -> StatusLineMergeRules.Result {
+        StatusLineMergeRules.merge(
+            mergingPoll(previous: previous, next: next, stored: stored),
+            sessions: statusLine,
+            defaultConfigDir: defaultConfigDir,
+            now: now
         )
     }
 
