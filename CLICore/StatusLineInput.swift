@@ -4,8 +4,10 @@ import Foundation
 ///
 /// It writes a JSON object to our stdin and closes the pipe. Three things in it are
 /// worth a status line: the model's display name, how full the context window is, and
-/// how long the prompt cache stays warm. Everything else in that object is Claude
-/// Code's business.
+/// how long the prompt cache stays warm. The account's 5-hour and weekly rate limits
+/// are read too, for the app rather than for the line, with the session's id and the
+/// counters that tell one reading from the next. Everything else in that object is
+/// Claude Code's business.
 ///
 /// The payload is somebody else's format and may change under us, so every shape that
 /// is not the one we expect — a missing key, an id where a name belongs, a number
@@ -47,10 +49,66 @@ struct StatusLineInput: Equatable, Sendable {
         let cachingObserved: Bool
     }
 
-    init(model: String?, contextUsedPercent: Double?, promptCache: PromptCache? = nil) {
+    /// `rate_limits` — the account's 5-hour and weekly windows as of the last API
+    /// response Claude Code received. Only on Pro, Max and Ultra, and only after the
+    /// session's first API response; nil then, and nil when neither window is the shape
+    /// `RateLimits.Window` describes. The line does not draw it; the app gets it through
+    /// the status line's reading drop.
+    let rateLimits: RateLimits?
+
+    /// The two windows of `rate_limits`, each present only when Claude Code knows it;
+    /// the parser never returns one with both nil. `spend_limit`, which only a gateway
+    /// sends, stays Claude Code's business.
+    struct RateLimits: Equatable, Sendable {
+        /// `five_hour`.
+        let fiveHour: Window?
+        /// `seven_day`.
+        let sevenDay: Window?
+
+        /// Both fields or no window: a window without its reset is not the documented
+        /// shape, and the app would have nothing to age it by.
+        struct Window: Equatable, Sendable {
+            /// `used_percentage`, clamped to 0…100. Claude Code rounds it to one decimal
+            /// (`Math.round(utilization * 1000) / 10`) and the decimal is kept.
+            let usedPercent: Double
+            /// `resets_at` — epoch seconds, as a JSON number or a numeric string.
+            let resetsAt: Date
+        }
+    }
+
+    /// `session_id` — whose reading this is. It becomes the drop file's name only
+    /// once `StatusLineDrop` has checked it can be one.
+    let sessionID: String?
+
+    /// `prompt_id` — changes with every prompt the user sends.
+    let promptID: String?
+
+    /// `cost.total_api_duration_ms` — grows with every API response. With `promptID`,
+    /// how the app tells a reading Claude Code just received from the same reading
+    /// re-sent on its timer: the payload has no "last updated" field.
+    let totalAPIDurationMs: Double?
+
+    /// `version` — the Claude Code that wrote the payload.
+    let version: String?
+
+    init(
+        model: String?,
+        contextUsedPercent: Double?,
+        promptCache: PromptCache? = nil,
+        rateLimits: RateLimits? = nil,
+        sessionID: String? = nil,
+        promptID: String? = nil,
+        totalAPIDurationMs: Double? = nil,
+        version: String? = nil
+    ) {
         self.model = model
         self.contextUsedPercent = contextUsedPercent
         self.promptCache = promptCache
+        self.rateLimits = rateLimits
+        self.sessionID = sessionID
+        self.promptID = promptID
+        self.totalAPIDurationMs = totalAPIDurationMs
+        self.version = version
     }
 
     /// Nothing was piped in, or nothing in it was ours.
@@ -64,7 +122,12 @@ struct StatusLineInput: Equatable, Sendable {
         return StatusLineInput(
             model: name(root["model"]),
             contextUsedPercent: percent((root["context_window"] as? [String: Any])?["used_percentage"]),
-            promptCache: readPromptCache(root["prompt_cache"])
+            promptCache: readPromptCache(root["prompt_cache"]),
+            rateLimits: readRateLimits(root["rate_limits"]),
+            sessionID: text(root["session_id"]),
+            promptID: text(root["prompt_id"]),
+            totalAPIDurationMs: number((root["cost"] as? [String: Any])?["total_api_duration_ms"]),
+            version: text(root["version"])
         )
     }
 
@@ -97,6 +160,26 @@ struct StatusLineInput: Equatable, Sendable {
             expiresAt: expiresAt,
             cachingObserved: cachingObserved
         )
+    }
+
+    /// nil unless at least one window reads: an object with neither — `{}`, a
+    /// gateway's `spend_limit` alone — has nothing for the app.
+    private static func readRateLimits(_ value: Any?) -> RateLimits? {
+        guard let limits = value as? [String: Any] else { return nil }
+        let fiveHour = readWindow(limits["five_hour"])
+        let sevenDay = readWindow(limits["seven_day"])
+        guard fiveHour != nil || sevenDay != nil else { return nil }
+        return RateLimits(fiveHour: fiveHour, sevenDay: sevenDay)
+    }
+
+    /// A percent and a reset, or no window. A window we cannot read costs that window,
+    /// not its neighbour and not the line.
+    private static func readWindow(_ value: Any?) -> RateLimits.Window? {
+        guard let window = value as? [String: Any],
+              let usedPercent = percent(window["used_percentage"]),
+              let resetsAt = number(window["resets_at"])
+        else { return nil }
+        return RateLimits.Window(usedPercent: usedPercent, resetsAt: Date(timeIntervalSince1970: resetsAt))
     }
 
     /// A string, trimmed; nil when it is not a string or nothing is left of it.

@@ -3,10 +3,13 @@ import Foundation
 // brioche — Brioche's numbers in the terminal.
 //
 // Contract: read ~/Library/Application Support/UsageTracker/status.json and print it.
-// Never start the app, never open a socket, never touch the network, never write
-// anywhere. Foundation only — no AppKit, no Security. Every command is a file read and
-// a string, so the work is under 50 ms; the only thing that can block is `mcp`, which
-// is a server and blocks on its own stdin by design.
+// Never start the app, never open a socket, never touch the network. Never write,
+// except the status line's reading drop: `statusline` leaves the rate limits Claude
+// Code pipes in under ~/Library/Application Support/UsageTracker/statusline/ for the
+// app (`StatusLineDrop`). Foundation only — no AppKit, no Security. Every command is a
+// file read and a string, plus that one small file for `statusline`, so the work is
+// under 50 ms; the only thing that can block is `mcp`, which is a server and blocks on
+// its own stdin by design.
 
 enum CLIMain {
     static func run() -> Never {
@@ -63,17 +66,34 @@ enum CLIMain {
     /// Colour follows the pipe, not `--no-color` alone: a payload on stdin means
     /// Claude Code is asking, and Claude Code renders the escape codes. Run by hand
     /// there is no payload, so there is no prefix and nothing to colour anyway.
+    ///
+    /// After the line, never before it, the payload's rate limits go into the reading
+    /// drop for the app (`StatusLineDrop`), whichever provider the line shows. The line
+    /// is out by then, so a drop that fails — a full disk, a folder that is not one —
+    /// cannot delay it, change it or turn the exit code, and it says nothing: a status
+    /// line has nowhere to say it.
     static func statusLine(provider: String, colour: Bool) -> Int32 {
         let piped = readPipedStandardInput()
+        let input = StatusLineInput.parse(piped ?? Data())
+        let now = Date()
         let snapshot = StatusFile.load(from: StatusFile.url())
         let line = StatusLineText.render(
             snapshot: snapshot,
             provider: provider,
-            now: Date(),
-            input: StatusLineInput.parse(piped ?? Data()),
+            now: now,
+            input: input,
             colour: colour && piped != nil
         )
         out(line + "\n")
+        let environment = ProcessInfo.processInfo.environment
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        StatusLineDrop.write(
+            input,
+            to: StatusLineDrop.directoryURL(environment: environment, home: home),
+            now: now,
+            environment: environment,
+            home: home
+        )
         return 0
     }
 
@@ -113,8 +133,8 @@ enum CLIMain {
 
     /// Claude Code writes its session JSON to our stdin and closes it. It has to be
     /// read to the end whatever is in it — leaving the pipe unread risks a write error
-    /// on their side — and `StatusLineInput` takes the model, the context window and
-    /// the prompt cache out of it.
+    /// on their side — and `StatusLineInput` takes the model, the context window, the
+    /// prompt cache, the rate limits and the session's counters out of it.
     ///
     /// Only when stdin is a pipe: run by hand in a terminal there is nothing to read
     /// and `readToEnd` would sit there until the user pressed ^D. nil is "nobody piped

@@ -4,15 +4,18 @@ import XCTest
 /// The JSON Claude Code pipes into `omelette statusline`. Everything in it is
 /// somebody else's format: the parser reads the fields we draw — the model, the
 /// context window, the prompt cache (spec 2026-09-30 status line cache timer,
-/// § Input) — and treats every other shape — a missing key, a string where a number
-/// belongs, an 8 MB blob of nothing — as "no session information", never as an error.
+/// § Input) — and the ones the app keeps — the rate limits and the session's counters
+/// (spec 2026-11-02 Claude limits from the status line, § Design › Wire) — and treats
+/// every other shape — a missing key, a string where a number belongs, an 8 MB blob
+/// of nothing — as "no session information", never as an error.
 final class StatusLineInputTests: XCTestCase {
     private func input(_ json: String) -> StatusLineInput {
         StatusLineInput.parse(Data(json.utf8))
     }
 
-    /// The documented payload, with the keys we do not read left in: the parser has to
-    /// walk past `session_id`, `workspace`, `cost` and the rest without noticing them.
+    /// The documented payload of an older Claude Code, with the keys we do not read
+    /// left in: the parser keeps `session_id` and `version` and walks past `workspace`,
+    /// `cost`'s dollars and the rest without noticing them.
     func testTheShapeClaudeCodeWrites() {
         let payload = """
         {
@@ -30,7 +33,15 @@ final class StatusLineInputTests: XCTestCase {
         }
         """
 
-        XCTAssertEqual(input(payload), StatusLineInput(model: "Fable", contextUsedPercent: 42.4))
+        XCTAssertEqual(
+            input(payload),
+            StatusLineInput(
+                model: "Fable",
+                contextUsedPercent: 42.4,
+                sessionID: "0f3a5c1e-7b2d-4a91-8c6f-2d5e9b0a4c73",
+                version: "2.5.0"
+            )
+        )
     }
 
     func testAPayloadWithoutAModelKeepsTheContext() {
@@ -246,5 +257,168 @@ final class StatusLineInputTests: XCTestCase {
         XCTAssertEqual(ttl("\"2h\""), "2h")
         XCTAssertNil(ttl("\"  \""))
         XCTAssertNil(ttl("3600"))
+    }
+
+    // MARK: - rate_limits
+
+    /// `rate_limits` inside a payload that also names the model, so a test can see the
+    /// windows go without the rest of the session going with them.
+    private func rateLimits(_ json: String) -> StatusLineInput.RateLimits? {
+        input(#"{"model":{"display_name":"Opus"},"rate_limits":"# + json + "}").rateLimits
+    }
+
+    private func window(_ percent: Double, _ resetsAt: TimeInterval) -> StatusLineInput.RateLimits.Window {
+        StatusLineInput.RateLimits.Window(usedPercent: percent, resetsAt: Date(timeIntervalSince1970: resetsAt))
+    }
+
+    /// Claude Code 2.1.316's payload, both windows known. The line's own fields read as
+    /// they always did beside them.
+    func testTheRateLimitsClaudeCodeWrites() {
+        let parsed = input(StatusLineFixture.payload())
+
+        XCTAssertEqual(
+            parsed.rateLimits,
+            StatusLineInput.RateLimits(
+                fiveHour: StatusLineInput.RateLimits.Window(
+                    usedPercent: 23.5, resetsAt: StatusLineFixture.fiveHourResetsAt
+                ),
+                sevenDay: StatusLineInput.RateLimits.Window(
+                    usedPercent: 41.2, resetsAt: StatusLineFixture.sevenDayResetsAt
+                )
+            )
+        )
+        XCTAssertEqual(parsed.model, "Opus")
+        XCTAssertEqual(parsed.contextUsedPercent, 42.4)
+        XCTAssertNil(parsed.promptCache)
+    }
+
+    /// Each window is there only when Claude Code knows it.
+    func testEachWindowIsThereOnlyWhenKnown() {
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":23.5,"resets_at":1788703200}}"#),
+            StatusLineInput.RateLimits(fiveHour: window(23.5, 1_788_703_200), sevenDay: nil)
+        )
+        XCTAssertEqual(
+            rateLimits(#"{"seven_day":{"used_percentage":41.2,"resets_at":1789065600}}"#),
+            StatusLineInput.RateLimits(fiveHour: nil, sevenDay: window(41.2, 1_789_065_600))
+        )
+    }
+
+    /// Absent before the session's first API response and on a plan without limits. An
+    /// object with no window we can read — a gateway's `spend_limit` alone — is no rate
+    /// limits either. The rest of the payload reads as before.
+    func testNoRateLimitsWithoutAWindow() {
+        XCTAssertNil(input(StatusLineFixture.payload(rateLimits: nil)).rateLimits)
+        for json in [
+            "null",
+            "42",
+            "true",
+            "\"5h\"",
+            "[]",
+            "{}",
+            #"{"spend_limit":{"used_percentage":12,"resets_at":1788703200}}"#,
+        ] {
+            XCTAssertNil(rateLimits(json), json)
+        }
+        XCTAssertEqual(
+            input(StatusLineFixture.payload(rateLimits: "[]")).model,
+            "Opus",
+            "limits we cannot read cost the limits, not the model"
+        )
+    }
+
+    /// Claude Code rounds to one decimal and the decimal is kept: the app tells a
+    /// status-line reading from the OAuth endpoint's integers by it.
+    func testTheDecimalIsKept() {
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":0.1,"resets_at":1788703200}}"#)?.fiveHour?.usedPercent,
+            0.1
+        )
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":99.9,"resets_at":1788703200}}"#)?.fiveHour?.usedPercent,
+            99.9
+        )
+        XCTAssertEqual(
+            rateLimits(#"{"seven_day":{"used_percentage":100,"resets_at":1789065600}}"#)?.sevenDay?.usedPercent,
+            100
+        )
+    }
+
+    func testAWindowPercentOutsideTheRangeIsClamped() {
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":137,"resets_at":1788703200}}"#)?.fiveHour?.usedPercent,
+            100
+        )
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":-4,"resets_at":1788703200}}"#)?.fiveHour?.usedPercent,
+            0
+        )
+    }
+
+    /// The same tolerance as the context percentage and the cache expiry: a hook that
+    /// builds the payload in a shell writes numbers as strings.
+    func testAPercentOrAResetWrittenAsAStringIsStillANumber() {
+        XCTAssertEqual(
+            rateLimits(#"{"five_hour":{"used_percentage":"23.5","resets_at":" 1788703200 "}}"#)?.fiveHour,
+            window(23.5, 1_788_703_200)
+        )
+    }
+
+    /// A window is a percent and a reset, or it is not a window we understand: no
+    /// guessing a reset, and `true` is not 1 %. The other window stands.
+    func testAWindowThatIsNotTheDocumentedShapeIsNoWindow() {
+        let seven = #""seven_day":{"used_percentage":41.2,"resets_at":1789065600}"#
+        for five in [
+            #"{"resets_at":1788703200}"#,
+            #"{"used_percentage":23.5}"#,
+            #"{"used_percentage":null,"resets_at":1788703200}"#,
+            #"{"used_percentage":true,"resets_at":1788703200}"#,
+            #"{"used_percentage":"nope","resets_at":1788703200}"#,
+            #"{"used_percentage":23.5,"resets_at":null}"#,
+            #"{"used_percentage":23.5,"resets_at":false}"#,
+            #"{"used_percentage":23.5,"resets_at":"soon"}"#,
+            #"{"used_percentage":23.5,"resets_at":{}}"#,
+            "23.5",
+            "null",
+        ] {
+            XCTAssertEqual(
+                rateLimits(#"{"five_hour":"# + five + "," + seven + "}"),
+                StatusLineInput.RateLimits(fiveHour: nil, sevenDay: window(41.2, 1_789_065_600)),
+                five
+            )
+        }
+        XCTAssertNil(
+            rateLimits(#"{"five_hour":{"used_percentage":true,"resets_at":1788703200}}"#),
+            "no window left is no rate limits"
+        )
+    }
+
+    // MARK: - The session's counters
+
+    /// What tells one reading from the next: the payload has no "last updated" field,
+    /// so the app compares the prompt id and the API time between two files.
+    func testTheSessionsCountersClaudeCodeWrites() {
+        let parsed = input(StatusLineFixture.payload())
+
+        XCTAssertEqual(parsed.sessionID, StatusLineFixture.sessionID)
+        XCTAssertEqual(parsed.promptID, StatusLineFixture.promptID)
+        XCTAssertEqual(parsed.totalAPIDurationMs, 18_250)
+        XCTAssertEqual(parsed.version, "2.1.316")
+    }
+
+    /// Ids and the version are strings, trimmed; the API time is a number or a numeric
+    /// string, inside `cost`. Any other shape is no counter and costs nothing else.
+    func testACounterInAnotherShapeIsNoCounter() {
+        XCTAssertEqual(input(#"{"session_id":" abc-123 "}"#).sessionID, "abc-123")
+        XCTAssertNil(input(#"{"session_id":42}"#).sessionID)
+        XCTAssertNil(input(#"{"session_id":"   "}"#).sessionID)
+        XCTAssertNil(input(#"{"prompt_id":7}"#).promptID)
+        XCTAssertNil(input(#"{"version":2.1}"#).version)
+        XCTAssertEqual(input(#"{"cost":{"total_api_duration_ms":"18250"}}"#).totalAPIDurationMs, 18_250)
+        XCTAssertNil(input(#"{"cost":{"total_api_duration_ms":true}}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"cost":{"total_api_duration_ms":"soon"}}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"cost":18250}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"total_api_duration_ms":18250}"#).totalAPIDurationMs, "inside cost, nowhere else")
+        XCTAssertEqual(input(#"{"model":{"display_name":"Opus"},"session_id":42,"cost":"x"}"#).model, "Opus")
     }
 }
