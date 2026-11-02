@@ -1,10 +1,13 @@
 import Foundation
 
+/// The Claude plan as the credentials name it. Since 2026-10-30 Anthropic calls the
+/// former Max 5x "Max" and the former Max 20x "Ultra"; the credentials may still say
+/// `max` with a `5x` / `20x` rate-limit tier, or already `ultra`.
 enum SubscriptionTier: String, Equatable, Sendable {
     case free
     case pro
-    case max5x
-    case max20x
+    case max
+    case ultra
     case team
     case enterprise
     case unknown
@@ -17,10 +20,8 @@ enum SubscriptionTier: String, Equatable, Sendable {
         case "pro": self = .pro
         case "team": self = .team
         case "enterprise": self = .enterprise
-        case "max":
-            if t.contains("20x") { self = .max20x }
-            else if t.contains("5x") { self = .max5x }
-            else { self = .max5x }
+        case "max": self = t.contains("20x") ? .ultra : .max
+        case "ultra": self = .ultra
         default:
             self = .unknown
         }
@@ -30,8 +31,8 @@ enum SubscriptionTier: String, Equatable, Sendable {
         switch self {
         case .free: return "Claude Free"
         case .pro: return "Claude Pro"
-        case .max5x: return "Claude Max 5x"
-        case .max20x: return "Claude Max 20x"
+        case .max: return "Claude Max"
+        case .ultra: return "Claude Ultra"
         case .team: return "Claude Team"
         case .enterprise: return "Claude Enterprise"
         case .unknown: return "Claude"
