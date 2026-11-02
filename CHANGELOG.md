@@ -5,6 +5,16 @@ All notable changes to Brioche (formerly Omelette, before that Usage Checker) wi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Island
+- "Last 7 days" in the cost tile counts Claude. On a subscription it was left out
+  of the week and its split, while "Today" included it. A Mac with only Claude now
+  shows the tile at all.
+- A session that needs you keeps its project name in the agents card: "Needs you"
+  opens the second line instead of following the name, which cut it to "Us…ker".
+  The Dashboard's Agents tab is unchanged.
+
 ## [4.0.0] — 2026-11-01
 
 ### Island
