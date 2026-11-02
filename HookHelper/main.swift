@@ -73,7 +73,7 @@ enum HookMain {
 
         guard var line = encodeLine(envelope) else { exit(0) }
         if line.count > maxLineBytes {
-            envelope["payload"] = shrinkingToolInput(input.payload)
+            envelope["payload"] = shrinkingPayload(input.payload)
             guard let smaller = encodeLine(envelope), smaller.count <= maxLineBytes else { exit(0) }
             line = smaller
         }
@@ -147,6 +147,24 @@ enum HookMain {
         else { return nil }
         data.append(0x0A)
         return data
+    }
+
+    /// The payload keys the app reads — keep in step with `AgentEventDecoder`
+    /// (Claude and Codex hook: `claudeEvent` / `codexEvent`; Codex notify:
+    /// `codexNotifyEvent`). An oversized payload keeps only these, so a long
+    /// `last_assistant_message`, `tool_response` or `prompt` no longer loses the event.
+    static let keptPayloadKeys: Set<String> = [
+        "hook_event_name", "session_id", "tool_name", "tool_input",
+        "notification_type", "agent_id", "cwd",
+        "type", "thread-id",
+    ]
+
+    /// Only past `maxLineBytes`: the read keys, with `tool_input` shrunk when there
+    /// is one. A payload without `tool_input` does not gain one — a shrunk Stop must
+    /// not show a tool summary or the truncation notice.
+    static func shrinkingPayload(_ payload: [String: Any]) -> [String: Any] {
+        let kept = payload.filter { keptPayloadKeys.contains($0.key) }
+        return kept["tool_input"] == nil ? kept : shrinkingToolInput(kept)
     }
 
     /// A Write's `tool_input` carries the whole file, an ExitPlanMode the whole
