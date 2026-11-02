@@ -117,15 +117,50 @@ enum AgentRowText {
         return parts.joined(separator: ", ")
     }
 
-    /// The state on the title line, after the project and in the accent: only Needs
-    /// you, the one state that asks for the user (`Main.dc.html`: "test · Needs you").
-    /// Every other state is the dot's colour.
+    /// The state's accent word: only Needs you, the one state that asks for the user.
+    /// Every other state is the dot's colour. `Main.dc.html` puts it on the title
+    /// ("test · Needs you"); the dashboard's row keeps that, while the popover departs
+    /// from the mockup since 2026-11-02 by the owner's decision (narrow column) and
+    /// opens the second line with it (`titleBadge(_:metrics:)`, `subtitleBadge`).
     static func titleBadge(_ state: AgentState) -> String? {
         state == .needsYou ? "Needs you" : nil
     }
 
+    /// The accent word on the title after the project: Needs you in the dashboard's
+    /// row only.
+    static func titleBadge(_ state: AgentState, metrics: OMAgentRowMetrics) -> String? {
+        needsYouOnTitle(metrics) ? titleBadge(state) : nil
+    }
+
+    /// Whether Needs you rides on the title. Only the dashboard's wide row has room for
+    /// both; in the island's half column (220 pt in the 640 pt island) the badge left
+    /// the project "Us…ker", so there it opens the second line instead (owner,
+    /// 2026-11-02).
+    static func needsYouOnTitle(_ metrics: OMAgentRowMetrics) -> Bool {
+        metrics == .dashboard
+    }
+
+    /// The accent word that opens the second line where the title has no room for it.
+    static func subtitleBadge(_ state: AgentState, metrics: OMAgentRowMetrics) -> String? {
+        needsYouOnTitle(metrics) ? nil : titleBadge(state)
+    }
+
+    /// The subtitle after the second line's badge: what the agent is doing, or nothing
+    /// when it reported no activity — the state phrase ("Needs approval") would only
+    /// repeat the badge (owner, 2026-11-02).
+    static func badgedSubtitle(for session: AgentSession) -> String {
+        let activity = session.activity?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return activity.isEmpty ? "" : subtitle(for: session, showsState: false)
+    }
+
+    /// What follows the second line's badge: " · " and the subtitle, or nothing when
+    /// there is no subtitle, so the badge stands alone.
+    static func subtitleTail(_ subtitle: String) -> String {
+        subtitle.isEmpty ? "" : " · \(subtitle)"
+    }
+
     /// The row's second line. A provider tab has no logo to set the state against, so
-    /// the line says it ("Done · Probe whether…") — except Needs you, which the title
+    /// the line says it ("Done · Probe whether…") — except Needs you, which the badge
     /// already says.
     static func rowSubtitle(for session: AgentSession, providerTab: Bool) -> String {
         subtitle(for: session, showsState: providerTab && titleBadge(session.state) == nil)
@@ -191,8 +226,9 @@ struct OMAgentRowMetrics: Equatable, Sendable {
 /// One agent session (`Main.dc.html`'s agents card). The leading mark is the provider
 /// logo with a state dot at its bottom-right on the All tab and the dashboard, where
 /// rows from every provider mix, and the state dot alone — haloed while live — on a
-/// provider tab, where the provider is already the tab. The title says Needs you in
-/// the accent. The row's summary line is a button: clicking it jumps to that session.
+/// provider tab, where the provider is already the tab. Needs you is in the accent:
+/// the dashboard's title says it, the popover's second line opens with it. The row's
+/// summary line is a button: clicking it jumps to that session.
 /// A session with a held permission request grows a second line carrying **Allow**,
 /// the one filled accent control, and **Deny** on glass — which is why the button is
 /// the line and not the whole row.
@@ -345,9 +381,8 @@ struct OMAgentRow: View {
             leading
             VStack(alignment: .leading, spacing: 1) {
                 titleLine
-                Text(AgentRowText.rowSubtitle(for: session, providerTab: !showsProviderIcon))
+                subtitleText
                     .font(.system(size: metrics.subtitleSize))
-                    .foregroundStyle(.om(.secondary))
                     .lineLimit(1)
                     .truncationMode(.tail)
             }
@@ -364,14 +399,28 @@ struct OMAgentRow: View {
         .contentShape(Rectangle())
     }
 
-    /// "test · Needs you": the project, and the badge in the accent when there is one.
+    /// The second line: "Needs you · Which option…" with the badge in the accent where
+    /// the title has no room for it, otherwise the subtitle alone.
+    private var subtitleText: Text {
+        guard let badge = AgentRowText.subtitleBadge(session.state, metrics: metrics) else {
+            return Text(AgentRowText.rowSubtitle(for: session, providerTab: !showsProviderIcon))
+                .foregroundStyle(.om(.secondary))
+        }
+        let badgeText = Text(badge).foregroundStyle(.om(.accentText)).fontWeight(.semibold)
+        let tail = AgentRowText.subtitleTail(AgentRowText.badgedSubtitle(for: session))
+        let tailText = Text(tail).foregroundStyle(.om(.secondary))
+        return Text("\(badgeText)\(tailText)")
+    }
+
+    /// "test · Needs you" in the dashboard's row: the project, and the badge in the
+    /// accent when there is one. Elsewhere the title is the project alone.
     private var titleLine: some View {
         HStack(spacing: 0) {
             Text(session.projectName)
                 .foregroundStyle(.om(.text))
                 .lineLimit(1)
                 .truncationMode(.middle)
-            if let badge = AgentRowText.titleBadge(session.state) {
+            if let badge = AgentRowText.titleBadge(session.state, metrics: metrics) {
                 Text(" · \(badge)")
                     .foregroundStyle(.om(.accentText))
                     .lineLimit(1)
