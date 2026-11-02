@@ -13,8 +13,9 @@ final class StatusLineInputTests: XCTestCase {
         StatusLineInput.parse(Data(json.utf8))
     }
 
-    /// The documented payload, with the keys we do not read left in: the parser has to
-    /// walk past `session_id`, `workspace`, `cost` and the rest without noticing them.
+    /// The documented payload of an older Claude Code, with the keys we do not read
+    /// left in: the parser keeps `session_id` and `version` and walks past `workspace`,
+    /// `cost`'s dollars and the rest without noticing them.
     func testTheShapeClaudeCodeWrites() {
         let payload = """
         {
@@ -32,7 +33,15 @@ final class StatusLineInputTests: XCTestCase {
         }
         """
 
-        XCTAssertEqual(input(payload), StatusLineInput(model: "Fable", contextUsedPercent: 42.4))
+        XCTAssertEqual(
+            input(payload),
+            StatusLineInput(
+                model: "Fable",
+                contextUsedPercent: 42.4,
+                sessionID: "0f3a5c1e-7b2d-4a91-8c6f-2d5e9b0a4c73",
+                version: "2.5.0"
+            )
+        )
     }
 
     func testAPayloadWithoutAModelKeepsTheContext() {
@@ -382,5 +391,34 @@ final class StatusLineInputTests: XCTestCase {
             rateLimits(#"{"five_hour":{"used_percentage":true,"resets_at":1788703200}}"#),
             "no window left is no rate limits"
         )
+    }
+
+    // MARK: - The session's counters
+
+    /// What tells one reading from the next: the payload has no "last updated" field,
+    /// so the app compares the prompt id and the API time between two files.
+    func testTheSessionsCountersClaudeCodeWrites() {
+        let parsed = input(StatusLineFixture.payload())
+
+        XCTAssertEqual(parsed.sessionID, StatusLineFixture.sessionID)
+        XCTAssertEqual(parsed.promptID, StatusLineFixture.promptID)
+        XCTAssertEqual(parsed.totalAPIDurationMs, 18_250)
+        XCTAssertEqual(parsed.version, "2.1.316")
+    }
+
+    /// Ids and the version are strings, trimmed; the API time is a number or a numeric
+    /// string, inside `cost`. Any other shape is no counter and costs nothing else.
+    func testACounterInAnotherShapeIsNoCounter() {
+        XCTAssertEqual(input(#"{"session_id":" abc-123 "}"#).sessionID, "abc-123")
+        XCTAssertNil(input(#"{"session_id":42}"#).sessionID)
+        XCTAssertNil(input(#"{"session_id":"   "}"#).sessionID)
+        XCTAssertNil(input(#"{"prompt_id":7}"#).promptID)
+        XCTAssertNil(input(#"{"version":2.1}"#).version)
+        XCTAssertEqual(input(#"{"cost":{"total_api_duration_ms":"18250"}}"#).totalAPIDurationMs, 18_250)
+        XCTAssertNil(input(#"{"cost":{"total_api_duration_ms":true}}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"cost":{"total_api_duration_ms":"soon"}}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"cost":18250}"#).totalAPIDurationMs)
+        XCTAssertNil(input(#"{"total_api_duration_ms":18250}"#).totalAPIDurationMs, "inside cost, nowhere else")
+        XCTAssertEqual(input(#"{"model":{"display_name":"Opus"},"session_id":42,"cost":"x"}"#).model, "Opus")
     }
 }
