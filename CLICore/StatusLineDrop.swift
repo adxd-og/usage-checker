@@ -138,6 +138,65 @@ enum StatusLineDrop {
         d.dateDecodingStrategy = .secondsSince1970
         return d
     }
+
+    // MARK: - Writing it
+
+    /// What a write came to. The CLI ignores it — every outcome prints the same line —
+    /// and the tests read it.
+    enum Outcome: Equatable, Sendable {
+        case written
+        /// No session id, no window, or an id that cannot be a file name.
+        case nothingToWrite
+        /// The folder could not be made, or the file could not be written or renamed.
+        case failed
+    }
+
+    /// Writes the payload's reading to `<directory>/<session_id>.json`.
+    ///
+    /// The folder is made owner-only (0700) on every write, the file 0600; the folder's
+    /// parents get the default mode. A folder whose mode cannot be changed is still
+    /// written into if it takes the file. The bytes go to a hidden temporary name in the
+    /// same folder and are renamed over the old file, so a reader sees the last reading
+    /// whole or the new one whole, never half of one. Any failure removes the temporary
+    /// file and is `.failed`: never thrown, never printed.
+    @discardableResult
+    static func write(
+        _ input: StatusLineInput,
+        to directory: URL,
+        now: Date,
+        environment: [String: String],
+        home: URL
+    ) -> Outcome {
+        guard let entry = reading(from: input, now: now, configDir: configDir(environment: environment, home: home)),
+              let name = fileName(sessionID: entry.sessionID)
+        else { return .nothingToWrite }
+        let fileManager = FileManager.default
+        let target = directory.appendingPathComponent(name, isDirectory: false)
+        // Dot-prefixed and not `.json`: a reader listing `*.json` never opens it.
+        let temporary = directory.appendingPathComponent(".\(name).\(UUID().uuidString).tmp", isDirectory: false)
+        do {
+            try fileManager.createDirectory(
+                at: directory.deletingLastPathComponent(), withIntermediateDirectories: true
+            )
+            try fileManager.createDirectory(
+                at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+            )
+            // An existing folder is tightened too: whoever made it, the reading is the
+            // user's alone.
+            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+            let data = try encoder.encode(entry)
+            try data.write(to: temporary, options: [.withoutOverwriting])
+            try fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: temporary.path)
+            guard Darwin.rename(temporary.path, target.path) == 0 else {
+                try? fileManager.removeItem(at: temporary)
+                return .failed
+            }
+            return .written
+        } catch {
+            try? fileManager.removeItem(at: temporary)
+            return .failed
+        }
+    }
 }
 
 /// The drop writes a window in Claude Code's own spelling — `used_percentage`, and
