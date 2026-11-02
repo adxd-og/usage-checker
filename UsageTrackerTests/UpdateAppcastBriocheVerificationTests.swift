@@ -24,6 +24,15 @@ final class UpdateAppcastBriocheVerificationTests: XCTestCase {
         for file in ["scripts/update_appcast.sh", "project.yml", "CHANGELOG.md", "docs/appcast.xml"] {
             try fm.copyItem(at: repo.appendingPathComponent(file), to: directory.appendingPathComponent(file))
         }
+        // 4.0.0 is published now: the copy goes back to the feed it was released into.
+        let feed = directory.appendingPathComponent("docs/appcast.xml")
+        var xml = try String(contentsOf: feed, encoding: .utf8)
+        if let title = xml.range(of: "<title>Brioche v4.0.0</title>"),
+           let start = xml.range(of: "    <item>\n", options: .backwards, range: xml.startIndex..<title.lowerBound),
+           let end = xml.range(of: "    </item>\n", range: title.upperBound..<xml.endIndex) {
+            xml.removeSubrange(start.lowerBound..<end.upperBound)
+            try xml.write(to: feed, atomically: true, encoding: .utf8)
+        }
         let signUpdate = directory.appendingPathComponent("build/DerivedData/SourcePackages/artifacts/sparkle/bin/sign_update")
         try "#!/bin/sh\necho 'sparkle:edSignature=\"FIXTURE==\" length=\"3\"'\n"
             .write(to: signUpdate, atomically: true, encoding: .utf8)
