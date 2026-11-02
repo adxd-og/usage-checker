@@ -15,6 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   opens the second line instead of following the name, which cut it to "Us…ker".
   The Dashboard's Agents tab is unchanged.
 
+### Claude
+- Plans carry Anthropic's new names: Max 20x is "Claude Ultra", Max 5x is
+  "Claude Max".
+- The plan line says what Claude Code calls the plan (`~/.claude.json`), so the
+  next rename shows without a Brioche update; the mapping above is the fallback.
+
 ## [4.0.0] — 2026-11-01
 
 ### Island
