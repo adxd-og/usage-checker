@@ -52,4 +52,13 @@ final class IslandScreenTests: XCTestCase {
         XCTAssertTrue(screen().hasNotch)
         XCTAssertFalse(screen(top: 0).hasNotch)
     }
+
+    /// Spec 2026-11-03 § Virtual notch: what the visible frame leaves at the top, 0 when the menu
+    /// bar is hidden there.
+    func testTheMenuBarHeightIsWhatTheVisibleFrameLeavesAtTheTop() {
+        XCTAssertEqual(ScreenFixture.builtIn.menuBarHeight, 32)
+        XCTAssertEqual(ScreenFixture.narrowNotched.menuBarHeight, 34)
+        XCTAssertEqual(ScreenFixture.externalRight.menuBarHeight, 24)
+        XCTAssertEqual(ScreenFixture.externalRightMenuBarHidden.menuBarHeight, 0)
+    }
 }

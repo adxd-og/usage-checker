@@ -31,6 +31,11 @@ struct IslandScreen: Equatable, Sendable {
     }
 
     var hasNotch: Bool { notchRect != nil }
+
+    /// The menu bar's height on this display: what the visible frame leaves at the top (spec
+    /// 2026-11-03 § Virtual notch). 0 while the menu bar is hidden there (auto-hide, or a display
+    /// without a menu bar of its own).
+    var menuBarHeight: CGFloat { max(frame.maxY - visibleFrame.maxY, 0) }
 }
 
 extension IslandScreen {
