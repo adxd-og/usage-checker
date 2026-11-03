@@ -70,16 +70,15 @@ enum IslandEarRules {
         )
     }
 
-    /// The ears on these displays: the primary island display gives the room — its notch, physical
-    /// or virtual (spec 2026-11-03) — and with no island display there are none. So the displays are
-    /// an input like any other (plan R18).
+    /// The ears on one display (spec 2026-11-03 § Ears and hint): the same marks, actions and words on
+    /// every island display, set for this display's notch, physical or virtual — a 24 pt pill keeps
+    /// the number on one line. None on a display without an island. So the displays are an input like
+    /// any other (plan R18).
     static func ears(
         mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
-        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+        on screen: IslandScreen, now: Date, calendar: Calendar, locale: Locale
     ) -> IslandEars {
-        guard let screen = IslandDisplayResolver.primaryIslandScreen(screens), let notch = screen.islandNotch else {
-            return .none
-        }
+        guard let notch = screen.islandNotch else { return .none }
         let presentation = IslandPresentationRules.presentation(
             notchPresent: true, screenWidth: screen.frame.width, petOn: petOn, earsOn: earsOn
         )
@@ -90,6 +89,36 @@ enum IslandEarRules {
                 earHeight: notch.height
             ),
             now: now, calendar: calendar, locale: locale
+        )
+    }
+
+    /// Every island display's ears, keyed by display id: what each resting pill draws. A display
+    /// without an island (its menu bar hidden, or under 1280 pt) has no entry; one with nothing to
+    /// say, or with the ears off, has `.none`.
+    static func earsByDisplay(
+        mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
+        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+    ) -> [UInt32: IslandEars] {
+        var byDisplay: [UInt32: IslandEars] = [:]
+        for screen in screens where screen.islandNotch != nil {
+            byDisplay[screen.id] = ears(
+                mood: mood, mode: mode, petOn: petOn, earsOn: earsOn, showInMenuBar: showInMenuBar,
+                on: screen, now: now, calendar: calendar, locale: locale
+            )
+        }
+        return byDisplay
+    }
+
+    /// The primary island display's ears (`IslandDisplayResolver.primaryIslandScreen`); none with no
+    /// island display. The one-display view of `earsByDisplay`, which § 3.6's matrix is checked through.
+    static func ears(
+        mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
+        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+    ) -> IslandEars {
+        guard let screen = IslandDisplayResolver.primaryIslandScreen(screens) else { return .none }
+        return ears(
+            mood: mood, mode: mode, petOn: petOn, earsOn: earsOn, showInMenuBar: showInMenuBar,
+            on: screen, now: now, calendar: calendar, locale: locale
         )
     }
 
