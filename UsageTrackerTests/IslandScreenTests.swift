@@ -53,8 +53,8 @@ final class IslandScreenTests: XCTestCase {
         XCTAssertFalse(screen(top: 0).hasNotch)
     }
 
-    /// Spec 2026-11-03 § Virtual notch: what the visible frame leaves at the top, 0 when the menu
-    /// bar is hidden there.
+    /// Spec 2026-11-03 § Virtual notch: without a measurement, what the visible frame leaves at the
+    /// top, 0 when the menu bar is hidden there.
     func testTheMenuBarHeightIsWhatTheVisibleFrameLeavesAtTheTop() {
         XCTAssertEqual(ScreenFixture.builtIn.menuBarHeight, 32)
         XCTAssertEqual(ScreenFixture.narrowNotched.menuBarHeight, 34)
@@ -97,5 +97,61 @@ final class IslandScreenTests: XCTestCase {
         XCTAssertNotNil(screens[0].islandNotch)
         XCTAssertNil(screens[1].islandNotch)
         XCTAssertNil(screens[2].islandNotch)
+    }
+
+    // MARK: - The measured menu bar (spec 2026-11-03, Amendment after the spike)
+
+    func testAReadingWithoutAMeasurementKeepsTheVisibleFramesAnswer() {
+        XCTAssertNil(ScreenFixture.externalRight.measuredMenuBarHeight)
+        XCTAssertEqual(ScreenFixture.externalRight.menuBarHeight, 24)
+        XCTAssertEqual(IslandScreen.attached([ScreenFixture.externalRight]).map(\.menuBarHeight), [24])
+    }
+
+    func testAMeasuredHeightWinsOverTheVisibleFrame() {
+        var screen = ScreenFixture.externalRight
+        screen.measuredMenuBarHeight = 30
+        XCTAssertEqual(screen.menuBarHeight, 30)
+        screen.measuredMenuBarHeight = 0
+        XCTAssertEqual(screen.menuBarHeight, 0, "a menu bar measured absent stays absent")
+        XCTAssertNil(screen.islandNotch)
+    }
+
+    /// Setup 1: 2560 wide from x 1512, centre 2792; top 982, menu bar 30, so 952–982.
+    func testASecondaryExternalGetsItsPillFromItsMenuBarWindow() {
+        XCTAssertNil(ScreenFixture.secondaryExternal.islandNotch, "its visible frame alone gives no pill")
+        let screens = IslandScreen.attached(
+            [ScreenFixture.builtIn, ScreenFixture.secondaryExternal],
+            menuBarWindows: [MenuBarWindowFixture.builtIn, MenuBarWindowFixture.secondaryExternal]
+        )
+        XCTAssertEqual(screens.map(\.id), [1, 2], "the order is kept")
+        XCTAssertEqual(screens.map(\.measuredMenuBarHeight), [33, 30])
+        XCTAssertEqual(screens.map(\.referenceNotchWidth), [185, 185], "the notch width is still carried")
+        XCTAssertEqual(screens[1].islandNotch, CGRect(x: 2699.5, y: 952, width: 185, height: 30))
+        XCTAssertEqual(screens[1].islandNotch, VirtualNotchRules.rect(screen: screens[1], referenceNotchWidth: 185))
+        XCTAssertEqual(screens[0].islandNotch, ScreenFixture.builtIn.notchRect, "the built-in keeps its camera housing")
+    }
+
+    /// Full screen on the external, or its menu bar hidden: no window there, no pill.
+    func testWithoutItsMenuBarWindowTheExternalGetsNoPill() {
+        let screens = IslandScreen.attached(
+            [ScreenFixture.builtIn, ScreenFixture.secondaryExternal], menuBarWindows: [MenuBarWindowFixture.builtIn]
+        )
+        XCTAssertEqual(screens.map(\.measuredMenuBarHeight), [33, 0])
+        XCTAssertNil(screens[1].islandNotch)
+    }
+
+    func testAMeasuredReadingWithNoMenuBarWindowOverridesWhatTheVisibleFrameLeaves() {
+        let screens = IslandScreen.attached([ScreenFixture.externalRight], menuBarWindows: [])
+        XCTAssertEqual(screens.map(\.measuredMenuBarHeight), [0])
+        XCTAssertNil(screens[0].islandNotch)
+    }
+
+    /// The first display is the main one, the origin of both coordinate systems: here 1440 tall.
+    func testWithTheLidClosedTheWindowsAreMeasuredFromTheExternalAsMain() {
+        let screens = IslandScreen.attached(
+            [ScreenFixture.lidClosedExternal], menuBarWindows: [MenuBarWindowFixture.lidClosedExternal]
+        )
+        XCTAssertEqual(screens.map(\.measuredMenuBarHeight), [30])
+        XCTAssertEqual(screens[0].islandNotch, CGRect(x: 1187.5, y: 1410, width: 185, height: 30))
     }
 }
