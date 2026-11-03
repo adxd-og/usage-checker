@@ -845,6 +845,12 @@ final class IslandController: NSObject {
         ] {
             workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
         }
+        // A full-screen space can hide its display's menu bar, and the pill with it (spec 2026-11-03
+        // § Hidden menu bar). Lighter than a wake: only a changed set of island displays moves anything.
+        workspace.addObserver(
+            self, selector: #selector(spaceChanged(_:)),
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil
+        )
         // The motion's frames pause while the displays sleep and stop for good if the island's
         // window ever closes (it is normally only ordered out). Any wake signal resumes them:
         // a missed screensDidWake must not leave a pending motion frozen.
@@ -930,6 +936,30 @@ final class IslandController: NSObject {
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(1))
             self?.replace()
+        }
+    }
+
+    /// Another space (review F6): now and a second later, since the first read after a switch can be
+    /// stale as after a wake, but only the pills, and only when the set of displays that carry an
+    /// island changed — a full-screen space whose visible frame takes its menu bar away, or the way
+    /// back. The notched Mac alone, or any switch that leaves every menu bar where it was, does
+    /// nothing: no hint cut, no ear re-read, no open island re-resolved.
+    @objc private func spaceChanged(_ note: Notification) {
+        placePillsIfTheirSetChanged()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.placePillsIfTheirSetChanged()
+        }
+    }
+
+    /// A changed set reads the ears (a pill that comes back needs its display's) and places the
+    /// pills; a hint on a pill that stays keeps going, and an open island stays as it is.
+    private func placePillsIfTheirSetChanged() {
+        let screens = IslandScreen.current()
+        guard !RestingPillRules.changes(kept: Set(pills.keys), wanted: RestingPillRules.pills(screens)).isEmpty
+        else { return }
+        earModel.displaysChanged {
+            placeResting(screens)
         }
     }
 

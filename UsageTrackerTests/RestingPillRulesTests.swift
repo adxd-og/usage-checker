@@ -58,4 +58,31 @@ final class RestingPillRulesTests: XCTestCase {
             RestingPillRules.Changes(create: [3, 1], drop: [])
         )
     }
+
+    // MARK: - A space change (spec 2026-11-03 § Hidden menu bar; review F6)
+
+    /// The notched Mac alone, or any space that leaves every menu bar where it was: nothing to do.
+    func testASpaceThatKeepsEveryIslandChangesNothing() {
+        XCTAssertTrue(
+            RestingPillRules.changes(kept: [1], wanted: RestingPillRules.pills([ScreenFixture.builtIn])).isEmpty
+        )
+        let both = RestingPillRules.pills(IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRight]))
+        XCTAssertTrue(RestingPillRules.changes(kept: [1, 2], wanted: both).isEmpty)
+    }
+
+    /// A full-screen space whose visible frame takes the external's menu bar away drops that pill
+    /// only; leaving the space brings it back.
+    func testASpaceThatHidesAnExternalsMenuBarMovesOnlyItsPill() {
+        let hidden = RestingPillRules.pills(
+            IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden])
+        )
+        let entering = RestingPillRules.changes(kept: [1, 2], wanted: hidden)
+        XCTAssertEqual(entering, RestingPillRules.Changes(create: [], drop: [2]))
+        XCTAssertFalse(entering.isEmpty)
+        let shown = RestingPillRules.pills(IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRight]))
+        XCTAssertEqual(
+            RestingPillRules.changes(kept: [1], wanted: shown),
+            RestingPillRules.Changes(create: [2], drop: [])
+        )
+    }
 }
