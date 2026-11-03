@@ -154,8 +154,8 @@ targets:
         # names paths); see docs/superpowers/plans/2026-10-31-brioche-rename.md.
         PRODUCT_MODULE_NAME: Omelette
         EXECUTABLE_NAME: Omelette
-        MARKETING_VERSION: "4.0.0"
-        CURRENT_PROJECT_VERSION: "57"
+        MARKETING_VERSION: "4.1.0"
+        CURRENT_PROJECT_VERSION: "58"
         CODE_SIGN_ENTITLEMENTS: UsageTracker/UsageTracker.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_EMIT_LOC_STRINGS: NO
@@ -221,8 +221,8 @@ targets:
       base:
         PRODUCT_NAME: UsageTrackerWidget
         PRODUCT_BUNDLE_IDENTIFIER: com.usagetracker.app.widget
-        MARKETING_VERSION: "4.0.0"
-        CURRENT_PROJECT_VERSION: "57"
+        MARKETING_VERSION: "4.1.0"
+        CURRENT_PROJECT_VERSION: "58"
         INFOPLIST_FILE: UsageTrackerWidget/Info.plist
         CODE_SIGN_ENTITLEMENTS: UsageTrackerWidget/UsageTrackerWidget.entitlements
         SWIFT_EMIT_LOC_STRINGS: NO
