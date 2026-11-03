@@ -6,6 +6,37 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Brioche v4.1.0</title>
+      <pubDate>Tue, 03 Nov 2026 21:28:28 +0200</pubDate>
+      <sparkle:version>58</sparkle:version>
+      <sparkle:shortVersionString>4.1.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Island</h3>
+<ul>
+<li>Displays without a notch get the island: an external display, a MacBook with its lid closed or a Mac without a notch shows a black pill in the middle of its menu bar, with the ears and the hover hint, and a click opens the island there. Displays under 1280 pt keep the panel; a display in a full-screen space or with its menu bar set to hide has no pill. The menu bar icon follows Show in menu bar, off by default, while a display shows the island, and is forced on while none does (a full-screen app on the only notchless display included); the first launch after the update opens the island once.</li>
+<li>"Last 7 days" in the cost tile counts Claude. On a subscription it was left out of the week and its split, while "Today" included it. A Mac with only Claude now shows the tile at all.</li>
+<li>A session that needs you keeps its project name in the agents card: "Needs you" opens the second line instead of following the name, which cut it to "Us…ker". The Dashboard's Agents tab is unchanged.</li>
+</ul>
+<h3>Agents</h3>
+<ul>
+<li>A session whose last answer, tool output or pasted prompt was very long (over 64 KB) no longer stays "working": the hook sends what the app reads instead of dropping the event. Codex turns with long histories arrive too.</li>
+</ul>
+<h3>Claude</h3>
+<ul>
+<li>Claude's 5-hour and weekly numbers also come from Claude Code itself: when <code>brioche statusline</code> is your status line, each answer leaves Claude's limits in <code>~/Library/Application Support/UsageTracker/statusline/</code> and the island shows them a second later, marked "from Claude Code" with their age, when they are newer than the usage endpoint's. While they keep coming, the endpoint is asked at most every 5 minutes; opening the island still asks. <code>status.json</code>, MCP <code>get_usage</code> and history say which source each window had.</li>
+<li>Plans carry Anthropic's new names: Max 20x is "Claude Ultra", Max 5x is "Claude Max".</li>
+<li>The plan line says what Claude Code calls the plan (<code>~/.claude.json</code>), so the next rename shows without a Brioche update; the mapping above is the fallback.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v4.1.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v4.1.0/Brioche.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="WAh8iRVlwncxWF4vovBjsJdpxHBG3iFvvrv976DpQsaeNFj5SnNuEiuWFQCSuMnWOSrD9inj6+eCKZ8QValGCA=="
+        length="25686129"/>
+    </item>
+    <item>
       <title>Brioche v4.0.0</title>
       <pubDate>Sun, 01 Nov 2026 18:21:51 +0200</pubDate>
       <sparkle:version>57</sparkle:version>
