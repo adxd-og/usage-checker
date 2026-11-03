@@ -27,10 +27,10 @@ struct IslandLayout: Equatable, Sendable {
 }
 
 extension IslandLayout {
-    /// The layout on `screen`: the island where it has a notch, the panel elsewhere; the
-    /// width and the habitat from `IslandPresentationRules`.
+    /// The layout on `screen`: the island where it has an island notch, physical or virtual (spec
+    /// 2026-11-03), the panel elsewhere; the width and the habitat from `IslandPresentationRules`.
     init(on screen: IslandScreen, petOn: Bool) {
-        let notch = screen.notchRect
+        let notch = screen.islandNotch
         let presentation = IslandPresentationRules.presentation(
             notchPresent: notch != nil, screenWidth: screen.frame.width, petOn: petOn, earsOn: false
         )

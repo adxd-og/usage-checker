@@ -14,7 +14,7 @@ final class IslandShapeTests: XCTestCase {
     /// x 12 ..< 652, y 0 ..< 746.
     private func island(on screen: IslandScreen = ScreenFixture.builtIn) -> IslandGeometry {
         let placement = IslandDisplayResolver.placement(
-            on: screen, entry: .notch, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
+            on: screen, entry: .notch(displayID: screen.id), statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
         )
         return IslandGeometry(placement: placement, appliedFrame: placement.windowFrame)
     }
@@ -122,7 +122,7 @@ final class IslandShapeTests: XCTestCase {
     func testThePanelsShapeDoesNotMove() {
         let button = CGRect(x: 3800, y: 1416, width: 36, height: 24)
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.externalRight, entry: .statusItem(buttonFrame: button),
+            on: ScreenFixture.externalRightMenuBarHidden, entry: .statusItem(buttonFrame: button),
             statusItemFrame: button, panelWidth: 360, menuBarHeight: 24
         )
         let g = IslandGeometry(placement: placement, appliedFrame: placement.windowFrame)

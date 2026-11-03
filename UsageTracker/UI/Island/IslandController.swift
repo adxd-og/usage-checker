@@ -4,7 +4,8 @@ import QuartzCore
 import SwiftUI
 
 /// Opens and closes Omelette's window (notch-island spec 2026-10-29 § 3.1): the island grown
-/// out of the notch, or a plain panel under the status item on a display without one. It
+/// out of the notch — the camera housing, or the virtual one on a display without (spec
+/// 2026-11-03) — or a plain panel under the status item on a display with neither. It
 /// replaces 3.x's `NSPopover` and hosts the island's content (`PopoverView`, § 3.3). Every
 /// decision is a pure rule: `IslandDisplayResolver` (which display, which window),
 /// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry, a
@@ -32,9 +33,15 @@ final class IslandController: NSObject {
     /// What the island tells its pet (§ 3.5): its phase, the display, the lock, Reduce Motion, the
     /// opens and closes for the jumps; it holds the app's one pet runtime.
     private let pet: IslandPetModel
-    /// The notch-sized panel at rest over the notch (D13), and its view.
+    /// The notch-sized panel at rest over the primary island display's notch, physical or virtual (D13; spec 2026-11-03), with the ears and the hint, and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
+    /// The display `resting` covers; nil while it is ordered out. A click on it, or on an ear, opens
+    /// the island there (spec 2026-11-03 § Opening).
+    private var restingDisplayID: UInt32?
+    /// A bare pill on every other island display (spec 2026-11-03 § Resting pill), keyed by display
+    /// id: its click opens the island there. The ears and the hint stay on `resting` until P2.
+    private var pills: [UInt32: RestingPill] = [:]
     /// The hover hint (D13): its value, its frames while the spring moves, and the one wait a
     /// pointer's arrival arms.
     private var hint = NotchHint()
@@ -91,6 +98,10 @@ final class IslandController: NSObject {
     /// The status item's window, so a click there is left to the item's own toggle (one
     /// action, one dismissal). Set by `StatusBarController`.
     var statusItemWindow: @MainActor () -> NSWindow? = { nil }
+    /// Has the status item read its visibility again, after a click on a pill left behind by its
+    /// display's island placed the pills again: a setup whose last pill went gets the item back at
+    /// once (spec 2026-11-03, review round 2). Set by `StatusBarController`.
+    var updateStatusItemVisibility: @MainActor () -> Void = {}
 
     override init() {
         let model = IslandModel()
@@ -165,7 +176,8 @@ final class IslandController: NSObject {
         earModel.watch(Publishers.MergeMany(Self.earSignals()))
         earModel.refresh()
         restingView.onPress = { [weak self] in
-            self?.handle(.notch)
+            guard let self, let id = self.restingDisplayID else { return }
+            self.handle(.notch(displayID: id))
         }
         restingView.onHover = { [weak self] inside in
             self?.notchHovered(inside)
@@ -226,6 +238,15 @@ final class IslandController: NSObject {
     func handle(_ entry: IslandEntry) {
         let screens = IslandScreen.current()
         let target = IslandDisplayResolver.display(for: entry, screens: screens, mainScreenID: CGMainDisplayID())
+        // A pill left behind by its display's island (review F4): it still opens, as the panel there,
+        // and the pills catch up — a turn later, never from inside the pill's own click, whose window
+        // may be the one that goes — and the status item with them.
+        if IslandDisplayResolver.clickedPillIsStale(entry, screens: screens) {
+            Task { @MainActor [weak self] in
+                self?.placeResting(IslandScreen.current())
+                self?.updateStatusItemVisibility()
+            }
+        }
         switch pet.entryVerdict(entry, isOpen: isOpen, openScreenID: placement?.screenID, entryScreenID: target?.id) {
         case .open:
             if let target { open(entry, on: target) }
@@ -251,14 +272,16 @@ final class IslandController: NSObject {
             alreadyMarked: settings.hasOpenedIslandAfterUpdate,
             hasSeenOnboarding: settings.hasSeenOnboarding,
             setting: settings.showInMenuBar,
-            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+            islandDisplayAttached: StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
         )
         guard verdict != .nothing else { return }
         settings.hasOpenedIslandAfterUpdate = true
         guard verdict == .openIsland else { return }
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(0.6))
-            self?.handle(.ear)
+            // The display that carries the island by then: one may have come or gone in the beat.
+            guard let id = IslandDisplayResolver.primaryIslandScreen(IslandScreen.current())?.id else { return }
+            self?.handle(.ear(displayID: id))
         }
     }
 
@@ -460,7 +483,7 @@ final class IslandController: NSObject {
             )
             return .island(geometry.region(of: point, contentSize: model.contentSize, progress: shapeModel.progress))
         }
-        if target === resting { return .restingNotch }
+        if target === resting || pills.values.contains(where: { $0.panel === target }) { return .restingNotch }
         if target === statusItemWindow() { return .statusItem }
         if isChildOfIsland(target) { return .childOfIsland }
         return .otherWindow
@@ -544,15 +567,24 @@ final class IslandController: NSObject {
         }
     }
 
-    // MARK: - The resting notch
+    // MARK: - The resting pills
 
-    /// Over the notched display's notch, under the island while it is open; ordered out
-    /// while no notched display is attached.
+    /// `resting`, with the ears and the hint, over the primary island display's notch, physical or
+    /// virtual; a bare pill over every other island display's (spec 2026-11-03 § Resting pill). All
+    /// under the island while it is open; none where no display carries an island.
     private func placeResting(_ screens: [IslandScreen]) {
-        guard let notch = screens.lazy.compactMap(\.notchRect).first else {
+        let primary = IslandDisplayResolver.primaryIslandScreen(screens)
+        placePrimaryResting(on: primary)
+        placePills(RestingPillRules.pills(screens).filter { $0.displayID != primary?.id })
+    }
+
+    private func placePrimaryResting(on screen: IslandScreen?) {
+        guard let screen, let notch = screen.islandNotch else {
+            restingDisplayID = nil
             resting.orderOut(nil)
             return
         }
+        restingDisplayID = screen.id
         restingRoom = !hint.isAtRest
         let ears = earModel.ears
         let left = ears.left != nil
@@ -563,10 +595,43 @@ final class IslandController: NSObject {
         let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
         restingView.layout = layout
         placeEars()
+        orderResting(resting)
+    }
+
+    /// The bare pills: made for a display that gained an island, dropped for one that lost it or
+    /// went away, placed over each notch (`RestingPillRules`).
+    private func placePills(_ wanted: [RestingPillRules.Pill]) {
+        let changes = RestingPillRules.changes(kept: Set(pills.keys), wanted: wanted)
+        for id in changes.drop {
+            guard let pill = pills.removeValue(forKey: id) else { continue }
+            pill.panel.orderOut(nil)
+            pill.panel.close()
+        }
+        for id in changes.create {
+            let pill = RestingPill(displayID: id)
+            pill.notchView.onPress = { [weak self] in
+                self?.handle(.notch(displayID: id))
+            }
+            pills[id] = pill
+        }
+        for wanted in wanted {
+            guard let pill = pills[wanted.displayID] else { continue }
+            pill.panel.setFrame(
+                RestingLayout.frame(notch: wanted.notch, left: false, right: false, hintRoom: false), display: false
+            )
+            pill.notchView.layout = RestingLayout(
+                notch: wanted.notch, left: false, right: false, appliedFrame: pill.panel.frame
+            )
+            orderResting(pill.panel)
+        }
+    }
+
+    /// Under the island while it is open, in front otherwise.
+    private func orderResting(_ panel: NSPanel) {
         if transition.phase != .closed {
-            resting.order(.below, relativeTo: window.windowNumber)
+            panel.order(.below, relativeTo: window.windowNumber)
         } else {
-            resting.orderFrontRegardless()
+            panel.orderFrontRegardless()
         }
     }
 
@@ -649,7 +714,7 @@ final class IslandController: NSObject {
               let assets = PetAssetStore.shared.assets,
               let shown = pet.shown(in: assets.library),
               let manifest = assets.library.manifests[shown.animal],
-              let notch = IslandScreen.current().lazy.compactMap(\.notchRect).first
+              let notch = IslandDisplayResolver.primaryIslandScreen(IslandScreen.current())?.islandNotch
         else {
             showRestingArt(nil, tips: nil)
             return
@@ -750,38 +815,39 @@ final class IslandController: NSObject {
         placeResting(IslandScreen.current())
     }
 
-    /// The ear as it is at the click, never as it was drawn (plan R15).
+    /// The ear as it is at the click, never as it was drawn (plan R15), on the display it is on.
     private func leftEarPressed() {
-        guard let ear = earModel.ears.left else { return }
-        earPressed(ear.action, morphs: ear.mark == .head)
+        guard let ear = earModel.ears.left, let id = restingDisplayID else { return }
+        earPressed(ear.action, morphs: ear.mark == .head, on: id)
     }
 
     private func rightEarPressed() {
-        guard let ear = earModel.ears.right else { return }
-        earPressed(ear.action, morphs: false)
+        guard let ear = earModel.ears.right, let id = restingDisplayID else { return }
+        earPressed(ear.action, morphs: false, on: id)
     }
 
-    private func earPressed(_ action: IslandEarAction, morphs: Bool) {
+    /// `displayID`: the ear's display, kept for a jump's late fallback too (spec 2026-11-03 § Opening).
+    private func earPressed(_ action: IslandEarAction, morphs: Bool, on displayID: UInt32) {
         switch action {
         case .jump(let id):
             // A failed jump would be silent with no row on screen (plan R6).
             guard let session = AgentSessionStore.shared.sessions.first(where: { $0.id == id }) else {
-                openFromEar(subject: nil, reveal: .agents, morphs: false)
+                openFromEar(on: displayID, subject: nil, reveal: .agents, morphs: false)
                 return
             }
             SessionActivator.jump(to: session, landed: pet.earJumpStarted(orElse: { [weak self] in
-                self?.openFromEar(subject: nil, reveal: .agents, morphs: false)
+                self?.openFromEar(on: displayID, subject: nil, reveal: .agents, morphs: false)
             }))
         case .open(let subject, let reveal):
-            openFromEar(subject: subject, reveal: reveal, morphs: morphs)
+            openFromEar(on: displayID, subject: subject, reveal: reveal, morphs: morphs)
         }
     }
 
-    /// The island at the ear's subject, not key until the user clicks inside (§ 3.1, Focus). The
-    /// card is asked for once the content has joined the window.
-    private func openFromEar(subject: String?, reveal: PetCard?, morphs: Bool) {
+    /// The island at the ear's subject on the ear's display, not key until the user clicks inside
+    /// (§ 3.1, Focus). The card is asked for once the content has joined the window.
+    private func openFromEar(on displayID: UInt32, subject: String?, reveal: PetCard?, morphs: Bool) {
         earOpen = EarOpen(subject: subject, reveal: reveal, morphs: morphs)
-        handle(.ear)
+        handle(.ear(displayID: displayID))
         earOpen = nil
         // With its display gone nothing opened, and a request left waiting would surface at the next open.
         if isOpen { navigation.ask(toShow: reveal) }
@@ -923,17 +989,20 @@ final class IslandController: NSObject {
         }
     }
 
-    /// The resting notch follows the notch; an open island is re-resolved on its own display
-    /// and closes when that display is gone (§ 3.1, Display and anchor; ruling R13).
+    /// The resting pills follow the displays' notches, physical or virtual; an open island is
+    /// re-resolved on its own display and closes when that display is gone (§ 3.1, Display and
+    /// anchor; ruling R13; spec 2026-11-03).
     private func replace() {
         endHint()
-        warmRestingArt()
         let screens = IslandScreen.current()
-        // A lid open or a notched display arriving changes no other state, so nothing else would
+        // A lid open or a display gaining an island changes no other state, so nothing else would
         // read the ears (plan R18).
         earModel.displaysChanged {
             placeResting(screens)
         }
+        // After the panels stand on their displays: the head is built at the scale of the display
+        // `resting` is on now, not the one it left (a lid closing onto a 1× external).
+        warmRestingArt()
         guard transition.phase != .closed, let entry, let placement else { return }
         // The status item as it is now: it moves with the displays, and the resolver
         // prefers it over the frame a status-item entry was clicked on.

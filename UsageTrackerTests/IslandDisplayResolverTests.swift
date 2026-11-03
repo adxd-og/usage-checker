@@ -1,14 +1,17 @@
 import XCTest
 @testable import Omelette
 
-/// Notch-island spec 2026-10-29 § 3.1 (Display and anchor) and § 3.9 (`IslandDisplayResolver`):
-/// the entry picks the display — the status item's, the notched one, the pointer's, else the
-/// main one; a notch makes it the island centred on the notch, no notch a panel under the
-/// status item (whatever the entry, when the item is shown on that display) clamped inside
-/// the visible frame. The window reaches 8 pt above the Dock and is re-resolved on its own
+/// Notch-island spec 2026-10-29 § 3.1 (Display and anchor) and § 3.9 (`IslandDisplayResolver`),
+/// with spec 2026-11-03 § Virtual notch and Opening: the entry picks the display — the status
+/// item's, the island's, the pointer's, else the main one; a notch, physical or virtual, makes it
+/// the island centred on that notch; a display with neither (under 1280 pt, menu bar hidden) gets a
+/// panel under the status item (whatever the entry, when the item is shown on that display) clamped
+/// inside the visible frame. The window reaches 8 pt above the Dock and is re-resolved on its own
 /// display, or closes when that display is gone.
 final class IslandDisplayResolverTests: XCTestCase {
     private let screens = [ScreenFixture.builtIn, ScreenFixture.externalRight]
+    /// The external display with its menu bar hidden: no virtual notch, so the panel's display.
+    private let panelScreens = [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden]
 
     private func place(
         _ entry: IslandEntry, on screens: [IslandScreen]? = nil, main: UInt32? = 1, item: CGRect? = nil
@@ -32,9 +35,9 @@ final class IslandDisplayResolverTests: XCTestCase {
         )
     }
 
-    func testTheStatusItemOnAnExternalDisplayOpensThePanelUnderIt() {
+    func testTheStatusItemOnADisplayWithoutAnIslandOpensThePanelUnderIt() {
         XCTAssertEqual(
-            place(.statusItem(buttonFrame: CGRect(x: 3800, y: 1416, width: 36, height: 24))),
+            place(.statusItem(buttonFrame: CGRect(x: 3800, y: 1416, width: 36, height: 24)), on: panelScreens),
             IslandDisplayResolver.Placement(
                 kind: .panel, screenID: 2,
                 windowFrame: CGRect(x: 3626, y: 8, width: 384, height: 1402),
@@ -44,7 +47,7 @@ final class IslandDisplayResolverTests: XCTestCase {
     }
 
     func testAPanelNearTheRightEdgeIsClampedInsideTheVisibleFrame() {
-        let panel = place(.statusItem(buttonFrame: CGRect(x: 4040, y: 1416, width: 30, height: 24)))
+        let panel = place(.statusItem(buttonFrame: CGRect(x: 4040, y: 1416, width: 30, height: 24)), on: panelScreens)
         XCTAssertEqual(panel?.windowFrame, CGRect(x: 3688, y: 8, width: 384, height: 1402))
         XCTAssertEqual(panel?.anchorMidX, 4055)
     }
@@ -52,28 +55,73 @@ final class IslandDisplayResolverTests: XCTestCase {
     func testAPanelOnADisplayLeftOfTheMainOneKeepsItsNegativeOrigin() {
         let panel = place(
             .statusItem(buttonFrame: CGRect(x: -1910, y: 1056, width: 30, height: 24)),
-            on: [ScreenFixture.builtIn, ScreenFixture.externalLeft]
+            on: [ScreenFixture.builtIn, ScreenFixture.externalLeftMenuBarHidden]
         )
         XCTAssertEqual(panel?.screenID, 3)
         XCTAssertEqual(panel?.windowFrame, CGRect(x: -1920, y: 8, width: 384, height: 1042))
     }
 
-    func testTheNotchAndAnEarOpenOnTheNotchedDisplayWhereverItIsListed() {
-        let reversed = [ScreenFixture.externalRight, ScreenFixture.builtIn]
-        XCTAssertEqual(IslandDisplayResolver.display(for: .notch, screens: reversed, mainScreenID: 2)?.id, 1)
-        XCTAssertEqual(IslandDisplayResolver.display(for: .ear, screens: reversed, mainScreenID: 2)?.id, 1)
-        XCTAssertEqual(place(.notch, on: reversed, main: 2)?.kind, .island)
+    func testTheNotchAndAnEarOpenOnTheDisplayTheyWereClickedOn() {
+        let two = [ScreenFixture.builtIn, ScreenFixture.narrowNotched]
+        XCTAssertEqual(IslandDisplayResolver.display(for: .notch(displayID: 4), screens: two, mainScreenID: 1)?.id, 4)
+        XCTAssertEqual(IslandDisplayResolver.display(for: .ear(displayID: 1), screens: two, mainScreenID: 4)?.id, 1)
+        XCTAssertEqual(place(.notch(displayID: 4), on: two, main: 1)?.kind, .island)
     }
 
-    func testWithoutANotchedDisplayTheNotchAndAnEarOpenNothing() {
-        let externals = [ScreenFixture.externalRight, ScreenFixture.externalLeft]
-        XCTAssertNil(place(.notch, on: externals, main: 2))
-        XCTAssertNil(place(.ear, on: externals, main: 2))
+    /// Review F4: a pill drawn before its display's menu bar started hiding still opens Brioche, as
+    /// the panel on that display, hanging under where the menu bar shows.
+    func testAPillOrEarOnADisplayThatLostItsIslandOpensThePanelThere() {
+        let bare = [ScreenFixture.externalRightMenuBarHidden, ScreenFixture.narrow1279]
+        XCTAssertEqual(
+            place(.notch(displayID: 2), on: bare, main: 2),
+            IslandDisplayResolver.Placement(
+                kind: .panel, screenID: 2,
+                windowFrame: CGRect(x: 2600, y: 8, width: 384, height: 1402),
+                anchorMidX: 2792, notch: nil, bodyWidth: 360
+            )
+        )
+        XCTAssertEqual(
+            place(.ear(displayID: 13), on: bare, main: 2),
+            IslandDisplayResolver.Placement(
+                kind: .panel, screenID: 13,
+                windowFrame: CGRect(x: 1959, y: 8, width: 384, height: 762),
+                anchorMidX: 2151.5, notch: nil, bodyWidth: 360
+            )
+        )
+    }
+
+    func testAClickOnADisplayThatWentAwayOpensNothing() {
+        XCTAssertNil(place(.notch(displayID: 99), main: 1))
+        XCTAssertNil(place(.ear(displayID: 99), main: 1))
+    }
+
+    /// Only a notch or an ear whose display is gone or has no island any more came from a pill the
+    /// displays have left behind: those ask for the pills to be placed again.
+    func testOnlyAClickFromAPillLeftBehindIsStale() {
+        let hidden = [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden]
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 2), screens: hidden))
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.ear(displayID: 2), screens: hidden))
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 99), screens: hidden), "gone")
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 1), screens: hidden))
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 2), screens: screens), "the pill is current")
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.statusItem(buttonFrame: .zero), screens: hidden))
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notification(pointer: .zero), screens: hidden))
+    }
+
+    /// Spec 2026-11-03 § Opening: the external's pill or ear opens the island on the external, not
+    /// on the MacBook's notch.
+    func testAClickOnAnExternalDisplaysPillOrEarOpensTheIslandThere() {
+        for entry in [IslandEntry.notch(displayID: 2), .ear(displayID: 2)] {
+            let island = place(entry)
+            XCTAssertEqual(island?.screenID, 2, "\(entry)")
+            XCTAssertEqual(island?.kind, .island, "\(entry)")
+            XCTAssertEqual(island?.notch, CGRect(x: 2699.5, y: 1416, width: 185, height: 24), "\(entry)")
+        }
     }
 
     func testANotificationOpensOnTheDisplayUnderThePointer() {
         XCTAssertEqual(
-            place(.notification(pointer: CGPoint(x: 2000, y: 700))),
+            place(.notification(pointer: CGPoint(x: 2000, y: 700)), on: panelScreens),
             IslandDisplayResolver.Placement(
                 kind: .panel, screenID: 2,
                 windowFrame: CGRect(x: 2600, y: 8, width: 384, height: 1402),
@@ -110,7 +158,7 @@ final class IslandDisplayResolverTests: XCTestCase {
     func testANotificationOnADisplayThatShowsTheStatusItemHangsUnderTheItem() {
         XCTAssertEqual(
             place(
-                .notification(pointer: CGPoint(x: 2000, y: 700)),
+                .notification(pointer: CGPoint(x: 2000, y: 700)), on: panelScreens,
                 item: CGRect(x: 3800, y: 1416, width: 36, height: 24)
             ),
             IslandDisplayResolver.Placement(
@@ -123,7 +171,7 @@ final class IslandDisplayResolverTests: XCTestCase {
 
     func testAStatusItemShownOnAnotherDisplayLeavesThePanelCentred() {
         let panel = place(
-            .notification(pointer: CGPoint(x: 2000, y: 700)),
+            .notification(pointer: CGPoint(x: 2000, y: 700)), on: panelScreens,
             item: CGRect(x: 1100, y: 950, width: 40, height: 32)
         )
         XCTAssertEqual(panel?.screenID, 2)
@@ -144,7 +192,7 @@ final class IslandDisplayResolverTests: XCTestCase {
     }
 
     func testAnOpenIslandIsReplacedOnItsOwnDisplay() {
-        let open = place(.notch)!
+        let open = place(.notch(displayID: 1))!
         let dockHidden = IslandScreen(
             id: 1,
             frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
@@ -152,7 +200,7 @@ final class IslandDisplayResolverTests: XCTestCase {
             safeAreaTop: 32, auxiliaryLeftWidth: 663.5, auxiliaryRightWidth: 663.5
         )
         let again = IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [ScreenFixture.externalRight, dockHidden],
+            for: open, entry: .notch(displayID: 1), screens: [ScreenFixture.externalRight, dockHidden],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         )
         XCTAssertEqual(again?.screenID, 1)
@@ -160,9 +208,9 @@ final class IslandDisplayResolverTests: XCTestCase {
     }
 
     func testAVanishedDisplayClosesTheIsland() {
-        let open = place(.notch)!
+        let open = place(.notch(displayID: 1))!
         XCTAssertNil(IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [ScreenFixture.externalRight],
+            for: open, entry: .notch(displayID: 1), screens: [ScreenFixture.externalRight],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         ))
     }
@@ -176,8 +224,102 @@ final class IslandDisplayResolverTests: XCTestCase {
 
     func testOnlyAnEarOpensWithoutKey() {
         XCTAssertTrue(IslandEntry.statusItem(buttonFrame: .zero).becomesKey)
-        XCTAssertTrue(IslandEntry.notch.becomesKey)
+        XCTAssertTrue(IslandEntry.notch(displayID: 1).becomesKey)
         XCTAssertTrue(IslandEntry.notification(pointer: .zero).becomesKey)
-        XCTAssertFalse(IslandEntry.ear.becomesKey)
+        XCTAssertFalse(IslandEntry.ear(displayID: 1).becomesKey)
+    }
+
+    // MARK: - Displays without a notch (spec 2026-11-03 § Virtual notch, Opening)
+
+    func testTheStatusItemOnAnExternalDisplayOpensTheIslandOnItsVirtualNotch() {
+        XCTAssertEqual(
+            place(.statusItem(buttonFrame: CGRect(x: 3800, y: 1416, width: 36, height: 24))),
+            IslandDisplayResolver.Placement(
+                kind: .island, screenID: 2,
+                windowFrame: CGRect(x: 2420, y: 8, width: 744, height: 1432),
+                anchorMidX: 2792,
+                notch: CGRect(x: 2699.5, y: 1416, width: 185, height: 24),
+                bodyWidth: 720
+            )
+        )
+    }
+
+    func testANotificationOnAnExternalDisplayOpensTheIslandThere() {
+        let island = place(.notification(pointer: CGPoint(x: 2000, y: 700)))
+        XCTAssertEqual(island?.kind, .island)
+        XCTAssertEqual(island?.screenID, 2)
+        XCTAssertEqual(island?.anchorMidX, 2792)
+    }
+
+    func testAnIslandOnADisplayLeftOfTheMainOneKeepsItsNegativeOrigin() {
+        XCTAssertEqual(
+            place(.notification(pointer: CGPoint(x: -500, y: 500)), on: [ScreenFixture.builtIn, ScreenFixture.externalLeft]),
+            IslandDisplayResolver.Placement(
+                kind: .island, screenID: 3,
+                windowFrame: CGRect(x: -1332, y: 8, width: 744, height: 1072),
+                anchorMidX: -960,
+                notch: CGRect(x: -1052.5, y: 1056, width: 185, height: 24),
+                bodyWidth: 720
+            )
+        )
+    }
+
+    func testA1279PointDisplayKeepsThePanelAndA1280PointOneGetsThe560Island() {
+        let item = CGRect(x: 2700, y: 776, width: 30, height: 24)
+        XCTAssertEqual(
+            place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.narrow1279]),
+            IslandDisplayResolver.Placement(
+                kind: .panel, screenID: 13,
+                windowFrame: CGRect(x: 2407, y: 8, width: 384, height: 762),
+                anchorMidX: 2715, notch: nil, bodyWidth: 360
+            )
+        )
+        XCTAssertEqual(
+            place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.wide1280]),
+            IslandDisplayResolver.Placement(
+                kind: .island, screenID: 12,
+                windowFrame: CGRect(x: 1860, y: 8, width: 584, height: 792),
+                anchorMidX: 2152,
+                notch: CGRect(x: 2059.5, y: 776, width: 185, height: 24),
+                bodyWidth: 560
+            )
+        )
+    }
+
+    func testThePrimaryIslandDisplayIsTheNotchedOneWhereverItIsListed() {
+        XCTAssertEqual(
+            IslandDisplayResolver.primaryIslandScreen([ScreenFixture.externalRight, ScreenFixture.builtIn])?.id, 1
+        )
+        XCTAssertEqual(
+            IslandDisplayResolver.primaryIslandScreen([ScreenFixture.externalLeft, ScreenFixture.narrowNotched])?.id, 4
+        )
+    }
+
+    func testWithoutANotchThePrimaryIsTheFirstDisplayWithAnIslandAndWithoutOneThereIsNone() {
+        XCTAssertEqual(
+            IslandDisplayResolver.primaryIslandScreen(
+                [ScreenFixture.narrow1279, ScreenFixture.externalLeft, ScreenFixture.externalRight]
+            )?.id,
+            3
+        )
+        XCTAssertNil(IslandDisplayResolver.primaryIslandScreen([ScreenFixture.narrow1279, ScreenFixture.externalRightMenuBarHidden]))
+        XCTAssertNil(IslandDisplayResolver.primaryIslandScreen([]))
+    }
+
+    /// A mode of the 14-inch with no camera housing reported: its virtual notch is the housing's
+    /// own rect, so the open island does not move.
+    func testAnIslandWhoseDisplayLostItsNotchStaysAnIslandOnAVirtualOne() {
+        let item = CGRect(x: 1100, y: 950, width: 40, height: 32)
+        let open = place(.statusItem(buttonFrame: item))!
+        let lost = IslandScreen(
+            id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: ScreenFixture.builtIn.visibleFrame,
+            safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil
+        )
+        let again = IslandDisplayResolver.replacement(
+            for: open, entry: .statusItem(buttonFrame: item), screens: [lost, ScreenFixture.externalRight],
+            statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
+        )
+        XCTAssertEqual(again?.kind, .island)
+        XCTAssertEqual(again, open)
     }
 }

@@ -149,6 +149,9 @@ struct OMAccentButtonStyle: ButtonStyle {
 /// `Label` shows its icon and title 7 pt apart.
 struct OMCapsuleButtonStyle: ButtonStyle {
     let size: OMButtonSize
+    /// A height other than the size's own, for a capsule fitted to a shorter row (the island's
+    /// strip on an external display, `IslandStripRules`); nil keeps `OMButtonRules.height(size)`.
+    var height: CGFloat? = nil
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -158,7 +161,7 @@ struct OMCapsuleButtonStyle: ButtonStyle {
             .lineLimit(1)
             .padding(.leading, OMButtonRules.leadingPadding(size, accent: false))
             .padding(.trailing, OMButtonRules.trailingPadding(size, accent: false))
-            .frame(height: OMButtonRules.height(size))
+            .frame(height: height ?? OMButtonRules.height(size))
             .omGlass(OMButtonRules.capsuleSurface, in: Capsule(style: .continuous))
             .contentShape(Capsule(style: .continuous))
             .modifier(OMHoverHighlight(shape: Capsule(style: .continuous), isPressed: configuration.isPressed))
@@ -207,7 +210,9 @@ extension ButtonStyle where Self == OMAccentButtonStyle {
 }
 
 extension ButtonStyle where Self == OMCapsuleButtonStyle {
-    static func omCapsule(_ size: OMButtonSize) -> OMCapsuleButtonStyle { OMCapsuleButtonStyle(size: size) }
+    static func omCapsule(_ size: OMButtonSize, height: CGFloat? = nil) -> OMCapsuleButtonStyle {
+        OMCapsuleButtonStyle(size: size, height: height)
+    }
 }
 
 extension ButtonStyle where Self == OMCircleButtonStyle {

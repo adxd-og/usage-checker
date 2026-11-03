@@ -157,7 +157,7 @@ enum IslandEventRules {
     }
 
     /// What VoiceOver reads for the notch, a button (§ 3.8: the notch click is always an entry
-    /// point, and on a notched Mac the status item is hidden by default).
+    /// point, and while a display shows the island the status item is hidden by default).
     static let notchAccessibilityLabel = "Brioche"
     /// What the button does, as VoiceOver's hint.
     static let notchAccessibilityHelp = "Opens Brioche. Press again to close it."

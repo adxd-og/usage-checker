@@ -10,14 +10,14 @@ final class IslandGeometryTests: XCTestCase {
 
     private func island(applied: CGRect? = nil) -> IslandGeometry {
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.builtIn, entry: .notch, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
+            on: ScreenFixture.builtIn, entry: .notch(displayID: 1), statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
         )
         return IslandGeometry(placement: placement, appliedFrame: applied ?? placement.windowFrame)
     }
 
     private func panel(button: CGRect = CGRect(x: 3800, y: 1416, width: 36, height: 24)) -> IslandGeometry {
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.externalRight, entry: .statusItem(buttonFrame: button),
+            on: ScreenFixture.externalRightMenuBarHidden, entry: .statusItem(buttonFrame: button),
             statusItemFrame: button, panelWidth: 360, menuBarHeight: 24
         )
         return IslandGeometry(placement: placement, appliedFrame: placement.windowFrame)

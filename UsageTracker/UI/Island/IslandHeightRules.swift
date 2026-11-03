@@ -43,11 +43,11 @@ enum IslandHeightRules {
 
     /// The most the content under the strip may measure on `screen`.
     static func budget(on screen: IslandScreen, screenVisibleHeight: CGFloat) -> CGFloat {
-        guard let notch = screen.notchRect else {
+        guard let notch = screen.islandNotch else {
             return PopoverHeightRules.budget(screenVisibleHeight: screenVisibleHeight)
         }
         let window = IslandDisplayResolver.placement(
-            on: screen, entry: .notch, statusItemFrame: nil, panelWidth: 0, menuBarHeight: 0
+            on: screen, entry: .notch(displayID: screen.id), statusItemFrame: nil, panelWidth: 0, menuBarHeight: 0
         ).windowFrame
         return window.height - notch.height - IslandGeometry.islandBottomPadding
     }
@@ -64,7 +64,7 @@ enum IslandHeightRules {
     /// The right column's budget on `screen`.
     static func rightColumnBudget(on screen: IslandScreen, screenVisibleHeight: CGFloat) -> CGFloat {
         budget(on: screen, screenVisibleHeight: screenVisibleHeight)
-            - outsideRightColumn(screen.hasNotch ? .island : .panel)
+            - outsideRightColumn(screen.islandNotch != nil ? .island : .panel)
     }
 
     /// The lower row's other half at its own height: the cost tile and the gap when it is

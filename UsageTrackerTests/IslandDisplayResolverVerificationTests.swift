@@ -7,6 +7,7 @@ import XCTest
 /// one and raised above its baseline, notches on half points, the 1419/1420/1699/1700 width
 /// breakpoints as the window sees them, a status item on either edge, and a replacement that
 /// follows the status item as it is now.
+/// Since spec 2026-11-03 the panel's display is one without an island notch: its arrangements run on the externals with their menu bars hidden (the same numbers).
 final class IslandDisplayResolverVerificationTests: XCTestCase {
     /// The 14-inch as a second, notched display to the left of the main one and raised 200 pt:
     /// every x is negative, y does not start at 0.
@@ -43,7 +44,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
 
     func testTheIslandOnANotchedDisplayLeftOfTheMainOneHangsFromItsOwnTopOnItsNotch() {
         XCTAssertEqual(
-            place(.notch, on: [ScreenFixture.externalRight, notchedLeftRaised], main: 2),
+            place(.notch(displayID: 7), on: [ScreenFixture.externalRight, notchedLeftRaised], main: 2),
             IslandDisplayResolver.Placement(
                 kind: .island, screenID: 7,
                 // 8 pt above the Dock (278 + 8), up to the display's own top edge (200 + 982).
@@ -80,7 +81,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
         let notch = quarter.notchRect!
         XCTAssertEqual(notch.minX, 663.25)
         XCTAssertEqual(notch.width, 185.25)
-        let placement = place(.notch, on: [quarter], main: 5)!
+        let placement = place(.notch(displayID: 5), on: [quarter], main: 5)!
         XCTAssertEqual(placement.anchorMidX, notch.midX, "the anchor is the notch's centre, not a rounded one")
         XCTAssertEqual(placement.windowFrame.minX, placement.windowFrame.minX.rounded(), "window origins are whole points")
         XCTAssertEqual(placement.windowFrame.width, 664)
@@ -99,7 +100,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
             visibleFrame: CGRect(x: 0, y: 78.4, width: 1512, height: 872.6),
             safeAreaTop: 32, auxiliaryLeftWidth: 663.5, auxiliaryRightWidth: 663.5
         )
-        let frame = place(.notch, on: [fractional], main: 11)!.windowFrame
+        let frame = place(.notch(displayID: 11), on: [fractional], main: 11)!.windowFrame
         // Bottom: 78.4 + 8 = 86.4 rounds up so the window never reaches into the margin; top rounds down.
         XCTAssertEqual(frame.minY, 87)
         XCTAssertEqual(frame.maxY, 982)
@@ -121,7 +122,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
             (1419, 560 + 24), (1420, 640 + 24), (1699, 640 + 24), (1700, 720 + 24),
         ]
         for pair in widths {
-            let placement = place(.notch, on: [notched(width: pair.screen)], main: 9)
+            let placement = place(.notch(displayID: 9), on: [notched(width: pair.screen)], main: 9)
             XCTAssertEqual(placement?.windowFrame.width, pair.window, "screen \(pair.screen)")
             XCTAssertEqual(
                 placement?.bodyWidth, pair.window - 24, "the body is the window less the two side margins at \(pair.screen)"
@@ -145,7 +146,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
         XCTAssertEqual(place(.statusItem(buttonFrame: lost), on: screens, main: 1)?.kind, .island)
     }
 
-    private var screens: [IslandScreen] { [ScreenFixture.builtIn, ScreenFixture.externalRight] }
+    private var screens: [IslandScreen] { [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden] }
 
     // MARK: Clamping on both edges
 
@@ -160,7 +161,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
 
     func testAPanelUnderAnItemAtTheRightEdgeOfADisplayLeftOfTheMainOneIsClamped() {
         let item = CGRect(x: -35, y: 1056, width: 30, height: 24)
-        let panel = place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.externalLeft])
+        let panel = place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.externalLeftMenuBarHidden])
         XCTAssertEqual(panel?.screenID, 3)
         XCTAssertEqual(panel?.windowFrame.maxX, 0, "the visible frame ends at x 0")
         XCTAssertEqual(panel?.windowFrame, CGRect(x: -384, y: 8, width: 384, height: 1042))
@@ -197,23 +198,24 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
     }
 
     func testAnIslandReplacedWithoutAChangeIsTheSamePlacement() throws {
-        let open = try XCTUnwrap(place(.notch, on: screens, main: 1))
+        let open = try XCTUnwrap(place(.notch(displayID: 1), on: screens, main: 1))
         XCTAssertEqual(
             IslandDisplayResolver.replacement(
-                for: open, entry: .notch, screens: screens, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
+                for: open, entry: .notch(displayID: 1), screens: screens, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
             ),
             open
         )
     }
 
-    func testAnIslandWhoseDisplayLostItsNotchBecomesAPanelOnTheSameDisplay() throws {
-        let open = try XCTUnwrap(place(.notch, on: screens, main: 1))
+    func testAnIslandWhoseDisplayLostItsNotchAndItsMenuBarBecomesAPanelOnTheSameDisplay() throws {
+        let open = try XCTUnwrap(place(.notch(displayID: 1), on: screens, main: 1))
         let mode = IslandScreen(
-            id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: ScreenFixture.builtIn.visibleFrame,
+            // No menu bar either (spec 2026-11-03): no virtual notch, so the panel.
+            id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: CGRect(x: 0, y: 78, width: 1512, height: 904),
             safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil
         )
         let again = IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [mode, ScreenFixture.externalRight],
+            for: open, entry: .notch(displayID: 1), screens: [mode, ScreenFixture.externalRight],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         )
         XCTAssertEqual(again?.screenID, 1)

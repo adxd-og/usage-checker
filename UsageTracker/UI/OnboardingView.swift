@@ -6,6 +6,17 @@ enum OnboardingPage: Int, CaseIterable {
     case welcome, permissions, agents, pet, ready
 }
 
+/// The tour's words that depend on the displays (spec 2026-11-03 § Status item).
+enum OnboardingCopy {
+    /// After "Click" on the last page: the island wherever a display shows it — a notch or a pill —
+    /// else the menu bar icon, which is always shown then.
+    static func openTip(islandDisplayAttached: Bool) -> String {
+        islandDisplayAttached
+            ? "the island at the top of the screen to open Brioche"
+            : "the menu bar icon to open Brioche"
+    }
+}
+
 struct OnboardingView: View {
     @StateObject private var settings = SettingsStore.shared
     @State private var page: Int
@@ -399,7 +410,9 @@ struct OnboardingView: View {
             Text("You're all set!")
                 .font(OMFont.screenTitle)
             card {
-                tip("Click", "the notch to open the island (no notch: the menu bar icon)")
+                tip("Click", OnboardingCopy.openTip(
+                    islandDisplayAttached: StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
+                ))
                 tip("From the island", "open Dashboard or Settings; ⌘R refreshes")
                 tip("Updates", "install themselves — signed and notarized")
             }

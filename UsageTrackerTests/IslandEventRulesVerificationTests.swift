@@ -7,7 +7,7 @@ import XCTest
 /// and `forward` returning what the handler returned.
 final class IslandEventRulesVerificationTests: XCTestCase {
     private let entries: [(String, IslandEntry)] = [
-        ("statusItem", .statusItem(buttonFrame: .zero)), ("notch", .notch), ("ear", .ear),
+        ("statusItem", .statusItem(buttonFrame: .zero)), ("notch", .notch(displayID: 1)), ("ear", .ear(displayID: 1)),
         ("notification", .notification(pointer: .zero)),
     ]
 

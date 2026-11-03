@@ -42,11 +42,11 @@ struct GeneralSettingsView: View {
     /// OS state (`SMAppService`), not a preference: read when the page is built, so a
     /// reset on Advanced shows here the next time General opens.
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
-    /// Whether a display with a notch is attached: Show in menu bar's value, whether it moves,
-    /// and its caption follow it (notch-island spec 2026-10-29 § 3.7). Read for the first
-    /// frame, so a Mac with no notched display never flashes the switch as off and movable,
-    /// and again whenever the displays change.
-    @State private var notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+    /// Whether a display shows the island, a notch or a virtual one: Show in menu bar's value,
+    /// whether it moves, and its caption follow it (notch-island spec 2026-10-29 § 3.7; spec
+    /// 2026-11-03 § Status item). Read for the first frame, so a Mac with no island display never
+    /// flashes the switch as off and movable, and again whenever the displays change.
+    @State private var islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -72,7 +72,7 @@ struct GeneralSettingsView: View {
     }
 
     private func readDisplays() {
-        notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+        islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
     }
 
     private var startup: some View {
@@ -90,24 +90,24 @@ struct GeneralSettingsView: View {
         }
     }
 
-    /// Show in menu bar (§ 3.7, D4): off by default with a notched display attached, on and
+    /// Show in menu bar (§ 3.7, D4; spec 2026-11-03): off by default while a display shows the island, on and
     /// held while none is (ruling R15). `StatusBarController` adds or removes the item at once.
     private var menuBarIcon: some View {
         SettingsSection(header: GeneralSettingsCopy.menuBarIconHeader) {
             SettingsSwitchRow(
                 title: GeneralSettingsCopy.showInMenuBarTitle,
-                caption: StatusItemVisibilityRules.caption(notchedDisplayAttached: notchedDisplayAttached),
+                caption: StatusItemVisibilityRules.caption(islandDisplayAttached: islandDisplayAttached),
                 isOn: Binding(
                     get: {
                         StatusItemVisibilityRules.isShown(
                             setting: settings.showInMenuBar,
-                            notchedDisplayAttached: notchedDisplayAttached
+                            islandDisplayAttached: islandDisplayAttached
                         )
                     },
                     set: { settings.showInMenuBar = $0 }
                 )
             )
-            .disabled(!StatusItemVisibilityRules.switchEnabled(notchedDisplayAttached: notchedDisplayAttached))
+            .disabled(!StatusItemVisibilityRules.switchEnabled(islandDisplayAttached: islandDisplayAttached))
         }
     }
 

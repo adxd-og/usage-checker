@@ -77,7 +77,7 @@ struct PopoverView: View {
         let columns = placed.columns
         VStack(alignment: .leading, spacing: ProviderGridRules.gap) {
             if placed.kind == .panel {
-                stripRow(notchWidth: 0)
+                stripRow(notchWidth: 0, rowHeight: IslandHeightRules.panelHeaderHeight)
                     .frame(height: IslandHeightRules.panelHeaderHeight)
             }
             // One scroll reader for the habitat and the right column: a pet click can bring a card
@@ -123,7 +123,7 @@ struct PopoverView: View {
         // `IslandGeometry` keeps for the notch, inside the island's shape (plan ruling R5).
         .overlay(alignment: .top) {
             if placed.kind == .island {
-                stripRow(notchWidth: placed.notchWidth)
+                stripRow(notchWidth: placed.notchWidth, rowHeight: placed.stripHeight)
                     .padding(.horizontal, Self.padding)
                     .frame(width: placed.bodyWidth, height: placed.stripHeight)
                     .offset(y: -placed.stripHeight)
@@ -318,7 +318,7 @@ struct PopoverView: View {
     /// the right (plan ruling R9). During a move the two sets cross-fade late
     /// (`IslandDrillLook.navigationOpacity`); only the set of the page shown takes clicks and
     /// VoiceOver. In the panel the same row, with no camera between.
-    private func stripRow(notchWidth: CGFloat) -> some View {
+    private func stripRow(notchWidth: CGFloat, rowHeight: CGFloat) -> some View {
         let shown = IslandNavigation.isDrilledIn(IslandDrillLook.shownPage(navigation.frame), providers: providerIDs)
         let fade = IslandDrillLook.navigationOpacity(navigation.frame, providers: providerIDs)
         return HStack(spacing: 0) {
@@ -326,7 +326,7 @@ struct PopoverView: View {
                 stripTitle
                     .opacity(1 - fade)
                     .accessibilityHidden(shown)
-                backButton
+                backButton(rowHeight: rowHeight)
                     .opacity(fade)
                     .allowsHitTesting(shown)
                     .accessibilityHidden(!shown)
@@ -340,7 +340,7 @@ struct PopoverView: View {
                 metaLine(service: selectedService)
                     .opacity(1 - fade)
                     .accessibilityHidden(shown)
-                logos
+                logos(rowHeight: rowHeight)
                     .opacity(fade)
                     .allowsHitTesting(shown)
                     .accessibilityHidden(!shown)
@@ -356,28 +356,34 @@ struct PopoverView: View {
             .lineLimit(1)
     }
 
-    /// "‹ All": back to All (§ 3.4), as Esc, ⌘0 and a swipe right are.
-    private var backButton: some View {
+    /// "‹ All": back to All (§ 3.4), as Esc, ⌘0 and a swipe right are. As tall as the strip
+    /// leaves room for (`IslandStripRules`, spec 2026-11-03).
+    private func backButton(rowHeight: CGFloat) -> some View {
         Button {
             navigation.request(.back, providers: providerIDs)
         } label: {
             Label(IslandNavigationCopy.backTitle, systemImage: "chevron.left")
         }
-        .buttonStyle(.omCapsule(.small))
+        .buttonStyle(.omCapsule(
+            .small,
+            height: IslandStripRules.controlHeight(native: OMButtonRules.height(.small), rowHeight: rowHeight)
+        ))
         .help(IslandNavigationCopy.backHelp)
         .accessibilityLabel(IslandNavigationCopy.backAccessibilityLabel)
     }
 
     /// The providers' logos, the sibling switcher (§ 3.4): the page shown on the raised pill,
-    /// the needs-you dot on a provider whose session waits; a click opens that page.
-    private var logos: some View {
+    /// the needs-you dot on a provider whose session waits; a click opens that page. Each as large
+    /// as the strip leaves room for (`IslandLogoButton.diameter`, spec 2026-11-03).
+    private func logos(rowHeight: CGFloat) -> some View {
         HStack(spacing: IslandLogoButton.spacing) {
             ForEach(Array(displayedServices.enumerated()), id: \.element.id) { index, service in
                 IslandLogoButton(
                     service: service,
                     selected: IslandDrillLook.shownPage(navigation.frame) == .provider(service.id),
                     waiting: ProviderGridRules.showsWaitingDot(serviceID: service.id, sessions: agents.sessions),
-                    position: index + 1
+                    position: index + 1,
+                    diameter: IslandLogoButton.diameter(rowHeight: rowHeight)
                 ) {
                     navigation.request(.logo(service.id), providers: providerIDs)
                 }

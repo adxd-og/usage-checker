@@ -49,21 +49,21 @@ final class IslandHeightRulesVerificationTests: XCTestCase {
         XCTAssertEqual(IslandHeightRules.budget(on: bare, screenVisibleHeight: 982), 928)
     }
 
-    func testThePanelKeepsThe3xRuleOnEveryNonNotchedDisplayWhateverItsFrame() {
+    func testThePanelKeepsThe3xRuleOnEveryDisplayWithoutAnIslandWhateverItsFrame() {
         for visible in [600, 1056, 1416] as [CGFloat] {
-            XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalLeft, screenVisibleHeight: visible), visible - 40)
-            XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalRight, screenVisibleHeight: visible), visible - 40)
+            XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalLeftMenuBarHidden, screenVisibleHeight: visible), visible - 40)
+            XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalRightMenuBarHidden, screenVisibleHeight: visible), visible - 40)
             XCTAssertEqual(
-                IslandHeightRules.budget(on: ScreenFixture.externalRight, screenVisibleHeight: visible),
+                IslandHeightRules.budget(on: ScreenFixture.externalRightMenuBarHidden, screenVisibleHeight: visible),
                 PopoverHeightRules.budget(screenVisibleHeight: visible)
             )
         }
     }
 
-    func testASafeAreaWithoutAuxiliaryAreasIsNoNotchSoItIsThePanelsRule() {
+    func testASafeAreaWithoutAuxiliaryAreasAndAHiddenMenuBarIsNoIslandSoItIsThePanelsRule() {
         let odd = IslandScreen(
             id: 9, frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
-            visibleFrame: CGRect(x: 0, y: 78, width: 1512, height: 872),
+            visibleFrame: CGRect(x: 0, y: 78, width: 1512, height: 904), // and no menu bar: no virtual notch (spec 2026-11-03)
             safeAreaTop: 32, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil
         )
         XCTAssertEqual(IslandHeightRules.budget(on: odd, screenVisibleHeight: 872), 832)

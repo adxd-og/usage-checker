@@ -10,7 +10,7 @@ final class IslandGeometryVerificationTests: XCTestCase {
 
     private func island(on screen: IslandScreen = ScreenFixture.builtIn) -> (IslandGeometry, IslandDisplayResolver.Placement) {
         let placement = IslandDisplayResolver.placement(
-            on: screen, entry: .notch, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
+            on: screen, entry: .notch(displayID: screen.id), statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
         )
         return (IslandGeometry(placement: placement, appliedFrame: placement.windowFrame), placement)
     }
@@ -34,7 +34,7 @@ final class IslandGeometryVerificationTests: XCTestCase {
 
     func testThePanelNeverHasANotchStrip() {
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.externalRight, entry: .statusItem(buttonFrame: CGRect(x: 3800, y: 1416, width: 36, height: 24)),
+            on: ScreenFixture.externalRightMenuBarHidden, entry: .statusItem(buttonFrame: CGRect(x: 3800, y: 1416, width: 36, height: 24)),
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         )
         let g = IslandGeometry(placement: placement, appliedFrame: placement.windowFrame)
