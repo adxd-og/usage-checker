@@ -7,8 +7,7 @@ import Foundation
 /// Read at every poll and whenever the folder changes (`startWatching`): a reading is dated
 /// by the file in which its API time grew, and between two polls Claude Code may write
 /// that file and re-run the line over it. A folder event moves the table. An actor, so a
-/// poll and a folder event never read the
-/// folder at once. The folder is injected — tests point it at a temp directory — and
+/// poll and a folder event never read the folder at once. The folder is injected — tests point it at a temp directory — and
 /// defaults to the one the CLI writes, by the CLI's own rule (`StatusLineDrop.directoryURL`).
 /// Loading also sweeps: a reading, or a temp file a killed writer left, older than an hour
 /// goes.
