@@ -36,4 +36,13 @@ enum RestingPillRules {
             drop: kept.subtracting(ids).sorted()
         )
     }
+
+    /// What an ear update lays out (4.1.0 release review F2): the pills `kept`, each over its notch in
+    /// `screens`, the reading they were placed from, in the displays' order. It never makes or drops
+    /// one: the set changes only at a re-place point, so an auto-hidden menu bar slid down while the
+    /// ears move leaves no pill behind when it slides back up. A pill kept whose display has no island
+    /// in `screens` gets nothing to lay.
+    static func relaid(kept: Set<UInt32>, screens: [IslandScreen]) -> [Pill] {
+        pills(screens).filter { kept.contains($0.displayID) }
+    }
 }

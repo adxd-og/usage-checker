@@ -85,4 +85,38 @@ final class RestingPillRulesTests: XCTestCase {
             RestingPillRules.Changes(create: [2], drop: [])
         )
     }
+
+    // MARK: - An ear update (4.1.0 release review F2)
+
+    private let lidOpen = [ScreenFixture.builtIn, ScreenFixture.secondaryExternal]
+
+    /// The pills were placed while the external's bar was up; a reading with its auto-hidden bar slid
+    /// down has an island there, and an ear update still lays only the MacBook's pill.
+    func testAnEarUpdateMakesNoPillForADisplayWhoseMenuBarSlidDownSinceThePlacement() {
+        let slidDown = IslandScreen.attached(
+            lidOpen, menuBarWindows: [MenuBarWindowFixture.builtIn, MenuBarWindowFixture.secondaryExternal]
+        )
+        XCTAssertEqual(RestingPillRules.pills(slidDown).map(\.displayID), [1, 2], "the reading itself has two islands")
+        XCTAssertEqual(
+            RestingPillRules.relaid(kept: [1], screens: slidDown),
+            [Pill(displayID: 1, notch: CGRect(x: 663.5, y: 950, width: 185, height: 32))]
+        )
+    }
+
+    /// Over the reading the pills were placed from, every pill kept is laid over its own notch, in
+    /// the displays' order.
+    func testAnEarUpdateLaysEveryPillKeptOverItsNotchInThePlacementsReading() {
+        let placed = IslandScreen.attached(
+            lidOpen, menuBarWindows: [MenuBarWindowFixture.builtIn, MenuBarWindowFixture.secondaryExternal]
+        )
+        XCTAssertEqual(RestingPillRules.relaid(kept: [2, 1], screens: placed), RestingPillRules.pills(placed))
+    }
+
+    /// A display whose island is gone from the reading gets nothing to lay; its pill is not the ear
+    /// update's to drop.
+    func testAnEarUpdateLaysNothingForAPillWhoseDisplayHasNoIslandInTheReading() {
+        let externalFullScreen = IslandScreen.attached(lidOpen, menuBarWindows: [MenuBarWindowFixture.builtIn])
+        XCTAssertEqual(RestingPillRules.relaid(kept: [1, 2], screens: externalFullScreen).map(\.displayID), [1])
+        XCTAssertEqual(RestingPillRules.relaid(kept: [], screens: externalFullScreen), [])
+    }
 }

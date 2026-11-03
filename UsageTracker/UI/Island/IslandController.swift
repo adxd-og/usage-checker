@@ -40,8 +40,15 @@ final class IslandController: NSObject {
     /// The pill whose left ear's head is riding the morph into the island; nil otherwise.
     private var morphingPillID: UInt32?
     private var restingArtObservers = Set<AnyCancellable>()
-    /// The ears on every island display (§ 3.6; spec 2026-11-03), keyed by display id.
-    private let earModel = IslandEarModel(read: { IslandController.readEars() })
+    /// The displays as the last re-place point read them (`placePills`): the reading the pills stand
+    /// on. The ears, a pill's hint and its head read this, never the window list, so between re-place
+    /// points the set of pills does not change (4.1.0 release review F2, F3).
+    private var placedScreens: [IslandScreen] = []
+    /// The ears on every island display (§ 3.6; spec 2026-11-03), keyed by display id, read on the
+    /// displays the pills stand on.
+    private lazy var earModel = IslandEarModel(read: { [weak self] in
+        Self.readEars(screens: self?.placedScreens ?? [])
+    })
     /// The open a click on an ear is making: its subject, its card, and whether the head morphs.
     private struct EarOpen {
         let subject: String?
@@ -134,7 +141,6 @@ final class IslandController: NSObject {
             self?.showEars(ears)
         }
         earModel.watch(Publishers.MergeMany(Self.earSignals()))
-        earModel.refresh()
         // The head for the tips, built before any hover: when the manifests are read, the pet changes
         // or it is switched. `@Published` sends before the value lands, hence the hop.
         PetAssetStore.shared.$assets
@@ -150,7 +156,8 @@ final class IslandController: NSObject {
         pet.onPetChange = { [weak self] in
             self?.warmRestingArt()
         }
-        placeResting(IslandScreen.current())
+        // The launch is a re-place point: the ears are read on its reading, then the pills placed.
+        placePills(on: IslandScreen.current())
         window.contentView = placeholder
         // `@Published` sends before the value lands: the hit test takes the sent size.
         contentSizeObserver = model.$contentSize
@@ -193,7 +200,7 @@ final class IslandController: NSObject {
         // may be the one that goes — and the status item with them.
         if IslandDisplayResolver.clickedPillIsStale(entry, screens: screens) {
             Task { @MainActor [weak self] in
-                self?.placeResting(IslandScreen.current())
+                self?.placePills(on: IslandScreen.current())
                 self?.updateStatusItemVisibility()
             }
         }
@@ -519,9 +526,20 @@ final class IslandController: NSObject {
 
     // MARK: - The resting pills
 
+    /// A re-place point (launch, a display change, wake or unlock, a space change that moved the set,
+    /// a click on a pill left behind) with its reading of the displays: kept as the reading the pills
+    /// stand on, the ears read on it, the pills made, dropped and laid over it. Only here does the set
+    /// of pills change.
+    private func placePills(on screens: [IslandScreen]) {
+        placedScreens = screens
+        earModel.displaysChanged {
+            placeResting(screens)
+        }
+    }
+
     /// A pill over every island display's notch, physical or virtual, with that display's ears,
     /// under the island while it is open (spec 2026-11-03 § Resting pill, § Ears and hint); made for
-    /// a display that gains an island, dropped for one that loses it or goes away.
+    /// a display that gains an island, dropped for one that loses it or goes away. `placePills`'s.
     private func placeResting(_ screens: [IslandScreen]) {
         let wanted = RestingPillRules.pills(screens)
         let changes = RestingPillRules.changes(kept: Set(pills.keys), wanted: wanted)
@@ -540,6 +558,15 @@ final class IslandController: NSObject {
         }
         // A new pill's head and tips, at its own display's scale, once it stands on that display.
         if !changes.create.isEmpty { warmRestingArt() }
+    }
+
+    /// The pills there are, each over its notch in the reading it was placed from, with its ears as
+    /// they are now: an ear update never makes or drops one (`RestingPillRules.relaid`).
+    private func layOutPills() {
+        for wanted in RestingPillRules.relaid(kept: Set(pills.keys), screens: placedScreens) {
+            guard let pill = pills[wanted.displayID] else { continue }
+            place(pill, over: wanted.notch)
+        }
     }
 
     /// A new display's pill: its click and its ears open the island on that display; its tracking
@@ -634,7 +661,7 @@ final class IslandController: NSObject {
             pill.hintFrames.stop()
         }
         if pill.room == pill.hint.isAtRest,
-           let notch = IslandScreen.current().first(where: { $0.id == pill.displayID })?.islandNotch {
+           let notch = placedScreens.first(where: { $0.id == pill.displayID })?.islandNotch {
             place(pill, over: notch)
         }
     }
@@ -666,7 +693,7 @@ final class IslandController: NSObject {
             for pill in pills.values { pill.showArt(nil, tips: nil) }
             return
         }
-        let screens = IslandScreen.current()
+        let screens = placedScreens
         let sprites = assets.sprites
         for pill in pills.values {
             guard let screen = screens.first(where: { $0.id == pill.displayID }), let notch = screen.islandNotch
@@ -694,8 +721,9 @@ final class IslandController: NSObject {
 
     // MARK: - The ears (§ 3.6)
 
-    /// The ears on every island display from the app's state as it is now.
-    private static func readEars() -> [UInt32: IslandEars] {
+    /// The ears on every island display of `screens`, the reading the pills stand on, from the app's
+    /// state as it is now.
+    private static func readEars(screens: [IslandScreen]) -> [UInt32: IslandEars] {
         let settings = SettingsStore.shared
         return IslandEarRules.earsByDisplay(
             mood: PetMoodInput(
@@ -709,7 +737,7 @@ final class IslandController: NSObject {
             petOn: settings.petEnabled,
             earsOn: settings.earsEnabled,
             showInMenuBar: settings.showInMenuBar,
-            screens: IslandScreen.current(),
+            screens: screens,
             now: Date(), calendar: .current, locale: .current
         )
     }
@@ -743,11 +771,13 @@ final class IslandController: NSObject {
             .map { _ in () }.eraseToAnyPublisher()
     }
 
+    /// The ears moved: each pill redraws them and is laid out again where it stands, never made or
+    /// dropped, with no window list read (4.1.0 release review F2, F3).
     private func showEars(_ ears: [UInt32: IslandEars]) {
         for (id, pill) in pills {
             pill.show(ears[id] ?? .none)
         }
-        placeResting(IslandScreen.current())
+        layOutPills()
     }
 
     /// The ear as it is at the click, never as it was drawn (plan R15), on the display it is on: the
@@ -953,14 +983,13 @@ final class IslandController: NSObject {
     }
 
     /// A changed set reads the ears (a pill that comes back needs its display's) and places the
-    /// pills; a hint on a pill that stays keeps going, and an open island stays as it is.
+    /// pills; a hint on a pill that stays keeps going, and an open island stays as it is. An unchanged
+    /// set keeps the reading the pills stand on.
     private func placePillsIfTheirSetChanged() {
         let screens = IslandScreen.current()
         guard !RestingPillRules.changes(kept: Set(pills.keys), wanted: RestingPillRules.pills(screens)).isEmpty
         else { return }
-        earModel.displaysChanged {
-            placeResting(screens)
-        }
+        placePills(on: screens)
     }
 
     /// The resting pills follow the displays' notches, physical or virtual; an open island is
@@ -971,9 +1000,7 @@ final class IslandController: NSObject {
         let screens = IslandScreen.current()
         // A lid open or a display gaining an island changes no other state, so nothing else would
         // read the ears (plan R18).
-        earModel.displaysChanged {
-            placeResting(screens)
-        }
+        placePills(on: screens)
         // After the pills stand on their displays: each head is built at its own display's scale (R9).
         warmRestingArt()
         guard transition.phase != .closed, let entry, let placement else { return }
