@@ -140,7 +140,7 @@ bar, below), which opens it as a panel under the icon.
 
 - **Open and close**: a click on the notch, or on the pill, opens it. A click on the notch strip
   of the open island, a click outside it, or Esc at All closes it. Hovering the
-  notch nudges it down a little and never opens it
+  notch or a pill nudges it down a little and never opens it
 - **Menu bar icon**: Settings → General → **Show in menu bar**. Off by default
   while a display shows the island, so the icon is not there until you turn it
   on; click the island at the top of the screen instead. With no display
@@ -150,11 +150,13 @@ bar, below), which opens it as a panel under the icon.
   the notch. Esc, ‹ All, ⌘0 or a two-finger swipe right go back. **⌘0** is All
   and **⌘1–⌘9** are the providers in display order. With one provider on, its
   page is home
-- **Ears**: with the island closed, the notch grows an ear when something needs
-  you: a waiting agent, a signed-out Claude, a limit at 90 %, and ☾ for keep
-  awake while the menu bar icon is hidden. A click on an ear does what it
-  shows: the one waiting agent comes forward; otherwise the island opens on the
-  agents list, that provider or keep awake. Settings → Pet turns them off
+- **Ears**: with the island closed, the notch and every display's pill grow an
+  ear when something needs you: a waiting agent, a signed-out Claude, a limit
+  at 90 %, and ☾ for keep awake while the menu bar icon is hidden. A click on
+  an ear does what it shows, on that display: the one waiting agent comes
+  forward; otherwise the island opens there on the agents list, that provider
+  or keep awake. A display in a full-screen space, or whose menu bar is set to
+  hide, has no pill and no ears. Settings → Pet turns them off
 
 - **Tiles on All lead with the 5-hour session window**, the number people
   open the island to check, with the weekly window on the line below

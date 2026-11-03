@@ -99,6 +99,14 @@ final class IslandScreenTests: XCTestCase {
         XCTAssertNil(screens[2].islandNotch)
     }
 
+    /// Review F2: each display keeps its own backing scale through a reading; built by hand it is 2×.
+    func testAReadingKeepsEachDisplaysBackingScale() {
+        var external = ScreenFixture.externalRight
+        external.backingScale = 1
+        XCTAssertEqual(ScreenFixture.builtIn.backingScale, 2)
+        XCTAssertEqual(IslandScreen.attached([ScreenFixture.builtIn, external]).map(\.backingScale), [2, 1])
+    }
+
     // MARK: - The measured menu bar (spec 2026-11-03, Amendment after the spike)
 
     func testAReadingWithoutAMeasurementKeepsTheVisibleFramesAnswer() {

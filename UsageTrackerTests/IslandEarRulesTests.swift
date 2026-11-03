@@ -18,14 +18,15 @@ final class IslandEarRulesTests: XCTestCase {
     private func input(
         sessions: [AgentSession] = [], services: [ServiceSnapshot] = [], keepAwake: KeepAwakeState = .idle,
         mode: PercentDisplay.Mode = .used, pet: Bool = true, ears: Bool = true, itemShown: Bool = false,
-        earHeight: CGFloat = 32
+        earHeight: CGFloat = 32, backingScale: CGFloat = 2
     ) -> IslandEarInput {
         IslandEarInput(
             mood: PetMoodInput(
                 sessions: sessions, services: services, enabledIDs: ["claude", "codex"],
                 claudeBinaryFound: true, keepAwake: keepAwake
             ),
-            mode: mode, petOn: pet, showsEars: ears, statusItemShown: itemShown, earHeight: earHeight
+            mode: mode, petOn: pet, showsEars: ears, statusItemShown: itemShown, earHeight: earHeight,
+            backingScale: backingScale
         )
     }
 
@@ -231,5 +232,107 @@ final class IslandEarRulesTests: XCTestCase {
             onDisplays: IslandScreen.attached([ScreenFixture.externalRight, ScreenFixture.builtIn])
         )
         XCTAssertEqual(shown.right?.mark, .number(lines: ["8%", "left"]))
+    }
+
+    // MARK: - Every island display (spec 2026-11-03 § Ears and hint)
+
+    private func earsByDisplay(
+        _ state: IslandEarInput, onDisplays screens: [IslandScreen], earsOn: Bool = true
+    ) -> [UInt32: IslandEars] {
+        IslandEarRules.earsByDisplay(
+            mood: state.mood, mode: state.mode, petOn: state.petOn, earsOn: earsOn, showInMenuBar: nil,
+            screens: screens, now: now, calendar: utc, locale: locale
+        )
+    }
+
+    func testEachIslandDisplayGetsTheEarsAtItsOwnHeight() {
+        let byDisplay = earsByDisplay(
+            input(services: [claude(week: 92)], mode: .remaining),
+            onDisplays: IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRight])
+        )
+        XCTAssertEqual(byDisplay[1]?.right?.mark, .number(lines: ["8%", "left"]))
+        XCTAssertEqual(byDisplay[2]?.right?.mark, .number(lines: ["8%"]), "the external's pill is 24 pt")
+    }
+
+    func testTheEarsSayAndDoTheSameOnEveryDisplay() {
+        let session = waiting("a")
+        let byDisplay = earsByDisplay(
+            input(sessions: [session]),
+            onDisplays: IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRight, ScreenFixture.externalLeft])
+        )
+        XCTAssertEqual(Set(byDisplay.keys), [1, 2, 3])
+        for (id, ears) in byDisplay {
+            XCTAssertEqual(ears.left?.mark, .head, "display \(id)")
+            XCTAssertEqual(ears.left?.action, .jump(sessionID: session.id), "display \(id)")
+            XCTAssertEqual(ears.left?.label, byDisplay[1]?.left?.label, "display \(id)")
+        }
+    }
+
+    /// The pill goes with a hidden menu bar, and its ears with it; the other displays keep theirs.
+    func testADisplayWhoseMenuBarHidesHasNoEarsAndTheOthersKeepTheirs() {
+        let byDisplay = earsByDisplay(
+            input(sessions: [waiting("a")]),
+            onDisplays: IslandScreen.attached(
+                [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden, ScreenFixture.narrow1279]
+            )
+        )
+        XCTAssertEqual(Set(byDisplay.keys), [1])
+        XCTAssertEqual(byDisplay[1]?.left?.mark, .head)
+    }
+
+    func testWithTheEarsOffEveryDisplayKeepsItsPillButShowsNoEar() {
+        let byDisplay = earsByDisplay(
+            input(sessions: [waiting("a")]),
+            onDisplays: IslandScreen.attached([ScreenFixture.builtIn, ScreenFixture.externalRight]),
+            earsOn: false
+        )
+        XCTAssertEqual(byDisplay, [1: IslandEars.none, 2: IslandEars.none])
+    }
+
+    func testTheOneDisplayRuleIsThePrimaryDisplaysEars() {
+        let state = input(services: [claude(week: 92)], mode: .remaining)
+        let both = IslandScreen.attached([ScreenFixture.externalRight, ScreenFixture.builtIn])
+        XCTAssertEqual(ears(state, onDisplays: both), earsByDisplay(state, onDisplays: both)[1])
+        let external = [ScreenFixture.externalRight]
+        XCTAssertEqual(ears(state, onDisplays: external), earsByDisplay(state, onDisplays: external)[2])
+    }
+
+    // MARK: - The head where it fits (spec 2026-11-03 § Ears and hint; review F2)
+
+    /// 26 beads at one pixel each are 26 pt on a 1× display; at 2× one pixel a bead is 13 pt.
+    func testTheHeadFitsAnEarOnlyWhereItsWholePixelsDo() {
+        let cases: [(height: CGFloat, backing: CGFloat, fits: Bool)] = [
+            (24, 1, false), (25, 1, false), (26, 1, true),
+            (24, 2, true), (25, 2, true), (26, 2, true),
+        ]
+        for item in cases {
+            XCTAssertEqual(
+                IslandEarRules.headFits(earHeight: item.height, backingScale: item.backing), item.fits,
+                "\(item.height) pt at \(item.backing)×"
+            )
+        }
+    }
+
+    /// The dot stands in for the head and still does what the ear says; a dot never morphs.
+    func testWhereTheHeadDoesNotFitTheLeftEarShowsTheDotAndStillDoesWhatItSays() {
+        let session = waiting("a")
+        let small = ears(input(sessions: [session], earHeight: 24, backingScale: 1))
+        XCTAssertEqual(small.left?.mark, .neutralDot)
+        XCTAssertEqual(small.left?.action, .jump(sessionID: session.id))
+        XCTAssertFalse(IslandEarMorph.eligible(mark: small.left?.mark, morphEligible: true, reduceMotion: false))
+        XCTAssertEqual(ears(input(sessions: [session], earHeight: 24, backingScale: 2)).left?.mark, .head)
+        XCTAssertEqual(ears(input(sessions: [session], earHeight: 26, backingScale: 1)).left?.mark, .head)
+        XCTAssertEqual(ears(input(sessions: [session], pet: false, earHeight: 32, backingScale: 2)).left?.mark, .neutralDot)
+    }
+
+    /// A MacBook beside a 1× external: the head beside the MacBook's notch, the dot beside the pill.
+    func testOnA1xExternalThePillGetsTheDotAndTheMacBookTheHead() {
+        var external = ScreenFixture.externalRight
+        external.backingScale = 1
+        let byDisplay = earsByDisplay(
+            input(sessions: [waiting("a")]), onDisplays: IslandScreen.attached([ScreenFixture.builtIn, external])
+        )
+        XCTAssertEqual(byDisplay[1]?.left?.mark, .head)
+        XCTAssertEqual(byDisplay[2]?.left?.mark, .neutralDot)
     }
 }

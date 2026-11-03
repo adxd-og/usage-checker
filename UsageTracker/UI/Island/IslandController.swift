@@ -33,36 +33,15 @@ final class IslandController: NSObject {
     /// What the island tells its pet (§ 3.5): its phase, the display, the lock, Reduce Motion, the
     /// opens and closes for the jumps; it holds the app's one pet runtime.
     private let pet: IslandPetModel
-    /// The notch-sized panel at rest over the primary island display's notch, physical or virtual (D13; spec 2026-11-03), with the ears and the hint, and its view.
-    private let resting: RestingNotchPanel
-    private let restingView: RestingNotchView
-    /// The display `resting` covers; nil while it is ordered out. A click on it, or on an ear, opens
-    /// the island there (spec 2026-11-03 § Opening).
-    private var restingDisplayID: UInt32?
-    /// A bare pill on every other island display (spec 2026-11-03 § Resting pill), keyed by display
-    /// id: its click opens the island there. The ears and the hint stay on `resting` until P2.
+    /// A resting pill on every island display, keyed by display id (spec 2026-11-03 § Resting pill,
+    /// § Ears and hint): the black shape over its notch, physical or virtual, its ears and its own
+    /// hover hint. A click on the pill or one of its ears opens the island on that display.
     private var pills: [UInt32: RestingPill] = [:]
-    /// The hover hint (D13): its value, its frames while the spring moves, and the one wait a
-    /// pointer's arrival arms.
-    private var hint = NotchHint()
-    private let hintFrames: IslandFrameDriver
-    private var hintDelay: Task<Void, Never>?
-    private var lastHintFrameTime: TimeInterval?
-    /// The resting window holds the hint's room.
-    private var restingRoom = false
-    /// The chosen pet's head as built off the main thread (`prewarmEar`): the ear tips', the left
-    /// ear's and the morph's image.
-    private struct RestingHead {
-        let image: CGImage
-        let scale: PetScaleRules.Scale
-    }
-    private var restingHead: RestingHead?
+    /// The pill whose left ear's head is riding the morph into the island; nil otherwise.
+    private var morphingPillID: UInt32?
     private var restingArtObservers = Set<AnyCancellable>()
-    /// The ears (§ 3.6): what they show, and their views over the notch's.
+    /// The ears on every island display (§ 3.6; spec 2026-11-03), keyed by display id.
     private let earModel = IslandEarModel(read: { IslandController.readEars() })
-    private let restingRoot = RestingRootView(frame: .zero)
-    private let leftEarView = RestingEarView(frame: .zero)
-    private let rightEarView = RestingEarView(frame: .zero)
     /// The open a click on an ear is making: its subject, its card, and whether the head morphs.
     private struct EarOpen {
         let subject: String?
@@ -115,10 +94,6 @@ final class IslandController: NSObject {
         self.navigation = navigation
         self.pet = pet
         self.window = IslandWindow.make()
-        self.resting = RestingNotchPanel.make()
-        let restingView = RestingNotchView(frame: .zero)
-        self.restingView = restingView
-        self.hintFrames = IslandFrameDriver(source: DisplayLinkFrameSource(view: restingView))
         let earMorph = IslandEarMorphModel()
         self.earMorph = earMorph
         let host = NSHostingView(rootView: IslandRootView(
@@ -155,36 +130,11 @@ final class IslandController: NSObject {
         // The manifests, events included, are read once off the main thread; the habitat is bare
         // until they are. No image is built until `prewarm`.
         PetAssetStore.shared.load()
-        restingRoot.autoresizesSubviews = true
-        restingView.frame = restingRoot.bounds
-        restingView.autoresizingMask = [.width, .height]
-        restingRoot.addSubview(restingView)
-        restingRoot.addSubview(leftEarView)
-        restingRoot.addSubview(rightEarView)
-        leftEarView.isHidden = true
-        rightEarView.isHidden = true
-        resting.contentView = restingRoot
-        leftEarView.onPress = { [weak self] in
-            self?.leftEarPressed()
-        }
-        rightEarView.onPress = { [weak self] in
-            self?.rightEarPressed()
-        }
         earModel.onChange = { [weak self] ears in
             self?.showEars(ears)
         }
         earModel.watch(Publishers.MergeMany(Self.earSignals()))
         earModel.refresh()
-        restingView.onPress = { [weak self] in
-            guard let self, let id = self.restingDisplayID else { return }
-            self.handle(.notch(displayID: id))
-        }
-        restingView.onHover = { [weak self] inside in
-            self?.notchHovered(inside)
-        }
-        hintFrames.onFrame = { [weak self] now in
-            self?.hintFrame(now)
-        }
         // The head for the tips, built before any hover: when the manifests are read, the pet changes
         // or it is switched. `@Published` sends before the value lands, hence the hop.
         PetAssetStore.shared.$assets
@@ -310,7 +260,7 @@ final class IslandController: NSObject {
         let islandWasKey = window.isKeyWindow
         frames.stop()
         earMorph.stop()
-        leftEarView.hidesHead = false
+        releaseMorphHead()
         transition.reset()
         window.ignoresMouseEvents = true
         removeMonitors()
@@ -483,7 +433,7 @@ final class IslandController: NSObject {
             )
             return .island(geometry.region(of: point, contentSize: model.contentSize, progress: shapeModel.progress))
         }
-        if target === resting || pills.values.contains(where: { $0.panel === target }) { return .restingNotch }
+        if pills.values.contains(where: { $0.panel === target }) { return .restingNotch }
         if target === statusItemWindow() { return .statusItem }
         if isChildOfIsland(target) { return .childOfIsland }
         return .otherWindow
@@ -569,191 +519,185 @@ final class IslandController: NSObject {
 
     // MARK: - The resting pills
 
-    /// `resting`, with the ears and the hint, over the primary island display's notch, physical or
-    /// virtual; a bare pill over every other island display's (spec 2026-11-03 § Resting pill). All
-    /// under the island while it is open; none where no display carries an island.
+    /// A pill over every island display's notch, physical or virtual, with that display's ears,
+    /// under the island while it is open (spec 2026-11-03 § Resting pill, § Ears and hint); made for
+    /// a display that gains an island, dropped for one that loses it or goes away.
     private func placeResting(_ screens: [IslandScreen]) {
-        let primary = IslandDisplayResolver.primaryIslandScreen(screens)
-        placePrimaryResting(on: primary)
-        placePills(RestingPillRules.pills(screens).filter { $0.displayID != primary?.id })
-    }
-
-    private func placePrimaryResting(on screen: IslandScreen?) {
-        guard let screen, let notch = screen.islandNotch else {
-            restingDisplayID = nil
-            resting.orderOut(nil)
-            return
-        }
-        restingDisplayID = screen.id
-        restingRoom = !hint.isAtRest
-        let ears = earModel.ears
-        let left = ears.left != nil
-        let right = ears.right != nil
-        resting.setFrame(
-            RestingLayout.frame(notch: notch, left: left, right: right, hintRoom: restingRoom), display: false
-        )
-        let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
-        restingView.layout = layout
-        placeEars()
-        orderResting(resting)
-    }
-
-    /// The bare pills: made for a display that gained an island, dropped for one that lost it or
-    /// went away, placed over each notch (`RestingPillRules`).
-    private func placePills(_ wanted: [RestingPillRules.Pill]) {
+        let wanted = RestingPillRules.pills(screens)
         let changes = RestingPillRules.changes(kept: Set(pills.keys), wanted: wanted)
         for id in changes.drop {
-            guard let pill = pills.removeValue(forKey: id) else { continue }
-            pill.panel.orderOut(nil)
-            pill.panel.close()
+            if morphingPillID == id { morphingPillID = nil }
+            pills.removeValue(forKey: id)?.close()
         }
         for id in changes.create {
-            let pill = RestingPill(displayID: id)
-            pill.notchView.onPress = { [weak self] in
-                self?.handle(.notch(displayID: id))
-            }
+            let pill = makePill(id)
+            pill.show(earModel.ears[id] ?? .none)
             pills[id] = pill
         }
         for wanted in wanted {
             guard let pill = pills[wanted.displayID] else { continue }
-            pill.panel.setFrame(
-                RestingLayout.frame(notch: wanted.notch, left: false, right: false, hintRoom: false), display: false
-            )
-            pill.notchView.layout = RestingLayout(
-                notch: wanted.notch, left: false, right: false, appliedFrame: pill.panel.frame
-            )
-            orderResting(pill.panel)
+            place(pill, over: wanted.notch)
         }
+        // A new pill's head and tips, at its own display's scale, once it stands on that display.
+        if !changes.create.isEmpty { warmRestingArt() }
     }
 
-    /// Under the island while it is open, in front otherwise.
-    private func orderResting(_ panel: NSPanel) {
+    /// A new display's pill: its click and its ears open the island on that display; its tracking
+    /// area drives its own hint.
+    private func makePill(_ id: UInt32) -> RestingPill {
+        let pill = RestingPill(displayID: id)
+        pill.notchView.onPress = { [weak self] in
+            self?.handle(.notch(displayID: id))
+        }
+        pill.notchView.onHover = { [weak self] inside in
+            self?.notchHovered(inside, on: id)
+        }
+        pill.hintFrames.onFrame = { [weak self] now in
+            self?.hintFrame(now, on: id)
+        }
+        pill.leftEarView.onPress = { [weak self] in
+            self?.leftEarPressed(on: id)
+        }
+        pill.rightEarView.onPress = { [weak self] in
+            self?.rightEarPressed(on: id)
+        }
+        return pill
+    }
+
+    /// `pill` over `notch` with its display's ears, holding the hint's room while its hint shows.
+    private func place(_ pill: RestingPill, over notch: CGRect) {
+        pill.room = !pill.hint.isAtRest
+        let ears = earModel.ears[pill.displayID] ?? .none
+        let left = ears.left != nil
+        let right = ears.right != nil
+        pill.panel.setFrame(
+            RestingLayout.frame(notch: notch, left: left, right: right, hintRoom: pill.room), display: false
+        )
+        pill.notchView.layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: pill.panel.frame)
+        pill.placeEars()
         if transition.phase != .closed {
-            panel.order(.below, relativeTo: window.windowNumber)
+            pill.panel.order(.below, relativeTo: window.windowNumber)
         } else {
-            panel.orderFrontRegardless()
+            pill.panel.orderFrontRegardless()
         }
     }
 
-    // MARK: - The notch hint (§ 3.1, D13)
+    // MARK: - The notch hint (§ 3.1, D13; spec 2026-11-03: on the hovered pill only)
 
-    /// The tracking area's report. One wait per arrival, cancelled by a leave: no timer otherwise.
-    private func notchHovered(_ inside: Bool) {
+    /// A pill's tracking area's report. One wait per arrival, cancelled by a leave: no timer otherwise.
+    private func notchHovered(_ inside: Bool, on id: UInt32) {
+        guard let pill = pills[id] else { return }
         if inside {
-            guard hint.pointerEntered() else { return }
-            hintDelay?.cancel()
-            hintDelay = Task { @MainActor [weak self] in
+            guard pill.hint.pointerEntered() else { return }
+            pill.hintDelay?.cancel()
+            pill.hintDelay = Task { @MainActor [weak self] in
                 guard (try? await Task.sleep(for: .seconds(IslandMotion.hintDelay))) != nil else { return }
-                self?.hintDelayElapsed()
+                self?.hintDelayElapsed(on: id)
             }
         } else {
-            hintDelay?.cancel()
-            hintDelay = nil
-            let now = hintEventTime()
-            hint.pointerLeft(at: now)
-            showHint(at: now)
+            pill.hintDelay?.cancel()
+            pill.hintDelay = nil
+            let now = hintEventTime(pill)
+            pill.hint.pointerLeft(at: now)
+            showHint(pill, at: now)
         }
     }
 
-    private func hintDelayElapsed() {
-        hintDelay = nil
-        let now = hintEventTime()
-        hint.delayElapsed(
+    private func hintDelayElapsed(on id: UInt32) {
+        guard let pill = pills[id] else { return }
+        pill.hintDelay = nil
+        let now = hintEventTime(pill)
+        pill.hint.delayElapsed(
             at: now, islandClosed: transition.phase == .closed,
             reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
-        showHint(at: now)
+        showHint(pill, at: now)
     }
 
-    /// One frame of the spring.
-    private func hintFrame(_ now: TimeInterval) {
-        lastHintFrameTime = now
-        hint.advance(to: now)
-        showHint(at: now)
+    /// One frame of a pill's spring.
+    private func hintFrame(_ now: TimeInterval, on id: UInt32) {
+        guard let pill = pills[id] else { return }
+        pill.lastHintFrameTime = now
+        pill.hint.advance(to: now)
+        showHint(pill, at: now)
     }
 
-    /// The ears' content where the black is at this moment of the breath.
-    private func placeEars() {
-        guard let layout = restingView.layout else { return }
-        leftEarView.frame = layout.earFrame(layout.leftEar, look: restingView.look)
-        rightEarView.frame = layout.earFrame(layout.rightEar, look: restingView.look)
-    }
-
-    /// The hint as it is now, on screen: frames only while the spring moves, and the window's room
-    /// only while something shows.
-    private func showHint(at now: TimeInterval) {
-        restingView.look = hint.look(at: now)
-        placeEars()
-        restingView.tracksHint = hint.isUp
-        if hint.needsFrames {
-            hintFrames.start()
+    /// A pill's hint as it is now, on screen: frames only while its spring moves, and its window's
+    /// room only while something shows.
+    private func showHint(_ pill: RestingPill, at now: TimeInterval) {
+        pill.notchView.look = pill.hint.look(at: now)
+        pill.placeEars()
+        pill.notchView.tracksHint = pill.hint.isUp
+        if pill.hint.needsFrames {
+            pill.hintFrames.start()
         } else {
-            hintFrames.stop()
+            pill.hintFrames.stop()
         }
-        if restingRoom == hint.isAtRest {
-            placeResting(IslandScreen.current())
+        if pill.room == pill.hint.isAtRest,
+           let notch = IslandScreen.current().first(where: { $0.id == pill.displayID })?.islandNotch {
+            place(pill, over: notch)
         }
     }
 
-    /// The island is opening, or the displays changed.
+    /// The island is opening, or the displays changed: every pill's hint ends.
     private func endHint() {
-        hintDelay?.cancel()
-        hintDelay = nil
-        hint.end()
-        showHint(at: hintEventTime())
+        for pill in pills.values {
+            pill.hintDelay?.cancel()
+            pill.hintDelay = nil
+            pill.hint.end()
+            showHint(pill, at: hintEventTime(pill))
+        }
     }
 
-    private func hintEventTime() -> TimeInterval {
-        IslandFrameDriver.eventTime(now: clock(), lastFrame: lastHintFrameTime)
+    private func hintEventTime(_ pill: RestingPill) -> TimeInterval {
+        IslandFrameDriver.eventTime(now: clock(), lastFrame: pill.lastHintFrameTime)
     }
 
-    /// Builds the chosen pet's head off the main thread and hands it to what draws it. Pet off: the
-    /// shape only (D13), and the ear's neutral dot needs no image.
+    /// Builds the chosen pet's head off the main thread at each pill's scale — its notch's height on
+    /// its display reading's backing scale, the same input `IslandEarRules.headFits` reads (Task 2) —
+    /// and hands it to that pill. Pet off: the shape only (D13), and the ear's neutral dot needs no
+    /// image.
     private func warmRestingArt() {
         guard SettingsStore.shared.petEnabled,
               let assets = PetAssetStore.shared.assets,
               let shown = pet.shown(in: assets.library),
-              let manifest = assets.library.manifests[shown.animal],
-              let notch = IslandDisplayResolver.primaryIslandScreen(IslandScreen.current())?.islandNotch
+              let manifest = assets.library.manifests[shown.animal]
         else {
-            showRestingArt(nil, tips: nil)
+            for pill in pills.values { pill.showArt(nil, tips: nil) }
             return
         }
-        let scale = IslandEarRules.headScale(earHeight: notch.height, backingScale: resting.backingScaleFactor)
-        let key = PetSpriteCache.Key(
-            animal: shown.animal, palette: shown.palette, sprite: .ear, pixelsPerBead: scale.pixelsPerBead
-        )
+        let screens = IslandScreen.current()
         let sprites = assets.sprites
-        let tips = PetEarTips.tips(of: manifest.ear, band: IslandMotion.hintDown, scale: scale)
-        Task { [weak self] in
-            await Task.detached(priority: .utility) {
-                sprites.prewarmEar(animal: key.animal, palette: key.palette, pixelsPerBead: key.pixelsPerBead)
-            }.value
-            // A newer pet's own warm-up answers for that pet, and Pet off has already cleared the art.
-            guard let self,
-                  PetEarTips.stillWanted(
-                      builtFor: shown, shownNow: self.pet.shown(in: assets.library),
-                      petOn: SettingsStore.shared.petEnabled
-                  )
-            else { return }
-            self.showRestingArt(
-                sprites.cachedImage(key).map { RestingHead(image: $0, scale: scale) }, tips: tips
+        for pill in pills.values {
+            guard let screen = screens.first(where: { $0.id == pill.displayID }), let notch = screen.islandNotch
+            else { continue }
+            let scale = IslandEarRules.headScale(earHeight: notch.height, backingScale: screen.backingScale)
+            let key = PetSpriteCache.Key(
+                animal: shown.animal, palette: shown.palette, sprite: .ear, pixelsPerBead: scale.pixelsPerBead
             )
+            let tips = PetEarTips.tips(of: manifest.ear, band: IslandMotion.hintDown, scale: scale)
+            Task { [weak self, weak pill] in
+                await Task.detached(priority: .utility) {
+                    sprites.prewarmEar(animal: key.animal, palette: key.palette, pixelsPerBead: key.pixelsPerBead)
+                }.value
+                // A newer pet's own warm-up answers for that pet, and Pet off has already cleared the art.
+                guard let self, let pill,
+                      PetEarTips.stillWanted(
+                          builtFor: shown, shownNow: self.pet.shown(in: assets.library),
+                          petOn: SettingsStore.shared.petEnabled
+                      )
+                else { return }
+                pill.showArt(sprites.cachedImage(key).map { RestingHead(image: $0, scale: scale) }, tips: tips)
+            }
         }
-    }
-
-    private func showRestingArt(_ head: RestingHead?, tips: PetEarTips?) {
-        restingHead = head
-        restingView.setTips(head?.image, tips: tips)
-        leftEarView.setHead(head?.image, scale: head?.scale)
     }
 
     // MARK: - The ears (§ 3.6)
 
-    /// The ears from the app's state as it is now.
-    private static func readEars() -> IslandEars {
+    /// The ears on every island display from the app's state as it is now.
+    private static func readEars() -> [UInt32: IslandEars] {
         let settings = SettingsStore.shared
-        return IslandEarRules.ears(
+        return IslandEarRules.earsByDisplay(
             mood: PetMoodInput(
                 sessions: AgentSessionStore.shared.sessions,
                 services: AppState.shared.snapshot.services,
@@ -799,30 +743,22 @@ final class IslandController: NSObject {
             .map { _ in () }.eraseToAnyPublisher()
     }
 
-    private func showEars(_ ears: IslandEars) {
-        switch ears.left?.mark {
-        case .head: leftEarView.content = .head
-        case .neutralDot: leftEarView.content = .dot
-        case nil: leftEarView.content = nil
+    private func showEars(_ ears: [UInt32: IslandEars]) {
+        for (id, pill) in pills {
+            pill.show(ears[id] ?? .none)
         }
-        leftEarView.label = ears.left?.label
-        switch ears.right?.mark {
-        case .number(let lines): rightEarView.content = .number(lines: lines)
-        case .moon: rightEarView.content = .moon
-        case nil: rightEarView.content = nil
-        }
-        rightEarView.label = ears.right?.label
         placeResting(IslandScreen.current())
     }
 
-    /// The ear as it is at the click, never as it was drawn (plan R15), on the display it is on.
-    private func leftEarPressed() {
-        guard let ear = earModel.ears.left, let id = restingDisplayID else { return }
+    /// The ear as it is at the click, never as it was drawn (plan R15), on the display it is on: the
+    /// island opens there (spec 2026-11-03 § Ears and hint).
+    private func leftEarPressed(on id: UInt32) {
+        guard let ear = earModel.ears[id]?.left else { return }
         earPressed(ear.action, morphs: ear.mark == .head, on: id)
     }
 
-    private func rightEarPressed() {
-        guard let ear = earModel.ears.right, let id = restingDisplayID else { return }
+    private func rightEarPressed(on id: UInt32) {
+        guard let ear = earModel.ears[id]?.right else { return }
         earPressed(ear.action, morphs: false, on: id)
     }
 
@@ -863,11 +799,12 @@ final class IslandController: NSObject {
             petOn: settings.petEnabled, earsOn: settings.earsEnabled
         ).morphEligible
         guard earOpen?.morphs == true,
+              let pill = pills[placement.screenID],
               IslandEarMorph.eligible(
-                  mark: earModel.ears.left?.mark, morphEligible: eligible,
+                  mark: earModel.ears[placement.screenID]?.left?.mark, morphEligible: eligible,
                   reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
               ),
-              let head = restingHead, let geometry = model.geometry,
+              let head = pill.head, let geometry = model.geometry,
               let target = IslandEarMorph.target(
                   contentOrigin: geometry.contentOrigin(contentSize: model.contentSize),
                   columnHeight: layout.rightColumnViewport,
@@ -875,14 +812,21 @@ final class IslandController: NSObject {
                   scale: PetHabitatRules.scale(petBeads: PetContract.size, backingScale: window.backingScaleFactor)
               )
         else { return }
-        // The ear's head as drawn, from the resting window into the island's.
-        let drawn = IslandEarRules.headRect(in: leftEarView.frame, scale: head.scale)
-        let from = IslandGeometry.local(IslandGeometry.global(drawn, in: resting.frame), in: window.frame)
+        // The ear's head as drawn, from its pill's window into the island's.
+        let drawn = IslandEarRules.headRect(in: pill.leftEarView.frame, scale: head.scale)
+        let from = IslandGeometry.local(IslandGeometry.global(drawn, in: pill.panel.frame), in: window.frame)
         earMorph.start(
             IslandEarMorph(start: now, from: from, to: target),
             image: head.image, backingScale: head.scale.backingScale
         )
-        leftEarView.hidesHead = true
+        pill.leftEarView.hidesHead = true
+        morphingPillID = pill.displayID
+    }
+
+    /// The morph is over or cut short: the head shows in its ear again.
+    private func releaseMorphHead() {
+        if let id = morphingPillID { pills[id]?.leftEarView.hidesHead = false }
+        morphingPillID = nil
     }
 
     // MARK: - Display changes
@@ -901,6 +845,12 @@ final class IslandController: NSObject {
         ] {
             workspace.addObserver(self, selector: #selector(woke(_:)), name: name, object: nil)
         }
+        // A full-screen space can hide its display's menu bar, and the pill with it (spec 2026-11-03
+        // § Hidden menu bar). Lighter than a wake: only a changed set of island displays moves anything.
+        workspace.addObserver(
+            self, selector: #selector(spaceChanged(_:)),
+            name: NSWorkspace.activeSpaceDidChangeNotification, object: nil
+        )
         // The motion's frames pause while the displays sleep and stop for good if the island's
         // window ever closes (it is normally only ordered out). Any wake signal resumes them:
         // a missed screensDidWake must not leave a pending motion frozen.
@@ -942,7 +892,7 @@ final class IslandController: NSObject {
     /// The displays went to sleep: no frames until they wake (§ 3.8).
     @objc private func displaysSlept(_ note: Notification) {
         frames.displaysSlept()
-        hintFrames.displaysSlept()
+        for pill in pills.values { pill.hintFrames.displaysSlept() }
         pet.setDisplayAwake(false)
     }
 
@@ -950,7 +900,7 @@ final class IslandController: NSObject {
     /// settles every deadline that passed meanwhile.
     @objc private func displaysWoke(_ note: Notification) {
         frames.displaysWoke()
-        hintFrames.displaysWoke()
+        for pill in pills.values { pill.hintFrames.displaysWoke() }
         pet.setDisplayAwake(true)
     }
 
@@ -989,6 +939,30 @@ final class IslandController: NSObject {
         }
     }
 
+    /// Another space (review F6): now and a second later, since the first read after a switch can be
+    /// stale as after a wake, but only the pills, and only when the set of displays that carry an
+    /// island changed — a full-screen space whose menu bar window goes away (`MenuBarWindowRules`),
+    /// or the way back. The notched Mac alone, or any switch that leaves every menu bar where it was, does
+    /// nothing: no hint cut, no ear re-read, no open island re-resolved.
+    @objc private func spaceChanged(_ note: Notification) {
+        placePillsIfTheirSetChanged()
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.placePillsIfTheirSetChanged()
+        }
+    }
+
+    /// A changed set reads the ears (a pill that comes back needs its display's) and places the
+    /// pills; a hint on a pill that stays keeps going, and an open island stays as it is.
+    private func placePillsIfTheirSetChanged() {
+        let screens = IslandScreen.current()
+        guard !RestingPillRules.changes(kept: Set(pills.keys), wanted: RestingPillRules.pills(screens)).isEmpty
+        else { return }
+        earModel.displaysChanged {
+            placeResting(screens)
+        }
+    }
+
     /// The resting pills follow the displays' notches, physical or virtual; an open island is
     /// re-resolved on its own display and closes when that display is gone (§ 3.1, Display and
     /// anchor; ruling R13; spec 2026-11-03).
@@ -1000,8 +974,7 @@ final class IslandController: NSObject {
         earModel.displaysChanged {
             placeResting(screens)
         }
-        // After the panels stand on their displays: the head is built at the scale of the display
-        // `resting` is on now, not the one it left (a lid closing onto a 1× external).
+        // After the pills stand on their displays: each head is built at its own display's scale (R9).
         warmRestingArt()
         guard transition.phase != .closed, let entry, let placement else { return }
         // The status item as it is now: it moves with the displays, and the resolver
@@ -1090,7 +1063,7 @@ final class IslandController: NSObject {
         guard transition.phase != .closed else { return }
         navigation.advance(to: now)
         if !earMorph.advance(to: now) {
-            leftEarView.hidesHead = false
+            releaseMorphHead()
         }
         updateMouseIgnoring()
         if !transition.needsFrames, !navigation.isMoving {

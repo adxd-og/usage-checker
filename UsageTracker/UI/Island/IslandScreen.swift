@@ -19,6 +19,10 @@ struct IslandScreen: Equatable, Sendable {
     /// a virtual notch takes (spec 2026-11-03). nil with no notched display attached, and on a
     /// reading not passed through `attached`.
     var referenceNotchWidth: CGFloat? = nil
+    /// Device pixels per point (`NSScreen.backingScaleFactor`): with the notch's height, whether the
+    /// pet's whole-pixel head fits an ear on this display (spec 2026-11-03 § Ears and hint). A value
+    /// built by hand is 2×, a Retina display, unless it says otherwise.
+    var backingScale: CGFloat = 2
     /// The height of this display's menu bar window (`MenuBarWindowRules`), 0 without one; set on a
     /// reading passed through `attached(_:menuBarWindows:)`, as every live one is. nil elsewhere.
     var measuredMenuBarHeight: CGFloat? = nil
@@ -63,7 +67,8 @@ extension IslandScreen {
             visibleFrame: screen.visibleFrame,
             safeAreaTop: screen.safeAreaInsets.top,
             auxiliaryLeftWidth: screen.auxiliaryTopLeftArea?.width,
-            auxiliaryRightWidth: screen.auxiliaryTopRightArea?.width
+            auxiliaryRightWidth: screen.auxiliaryTopRightArea?.width,
+            backingScale: screen.backingScaleFactor
         )
     }
 

@@ -22,6 +22,10 @@ enum RestingPillRules {
         let create: [UInt32]
         /// Displays that lost theirs or went away: their panels go, in id order.
         let drop: [UInt32]
+
+        /// The same displays carry an island as before: nothing to make, nothing to drop. A space
+        /// change does nothing then (review F6).
+        var isEmpty: Bool { create.isEmpty && drop.isEmpty }
     }
 
     /// What the panels kept so far need to become `wanted`.

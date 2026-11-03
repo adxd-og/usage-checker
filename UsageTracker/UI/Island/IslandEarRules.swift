@@ -13,7 +13,7 @@ struct IslandEars: Equatable, Sendable {
     enum LeftMark: Equatable, Sendable {
         /// The pet's 16 × 16 head.
         case head
-        /// Pet off.
+        /// Pet off, or a head that does not fit this display's ear (`IslandEarRules.headFits`).
         case neutralDot
     }
 
@@ -47,6 +47,8 @@ struct IslandEarInput: Equatable, Sendable {
     var statusItemShown: Bool
     /// The notch's height, which the ears take.
     var earHeight: CGFloat
+    /// The display's backing scale: with `earHeight`, whether the head fits (`IslandEarRules.headFits`).
+    var backingScale: CGFloat = 2
 }
 
 /// What each ear shows and does (§ 3.6, § 3.9). The left ear follows the top of the mood table's
@@ -70,16 +72,16 @@ enum IslandEarRules {
         )
     }
 
-    /// The ears on these displays: the primary island display gives the room — its notch, physical
-    /// or virtual (spec 2026-11-03) — and with no island display there are none. So the displays are
-    /// an input like any other (plan R18).
+    /// The ears on one display (spec 2026-11-03 § Ears and hint): the same marks, actions and words on
+    /// every island display, set for this display's notch, physical or virtual — the number takes
+    /// one line on a pill under `IslandEarCopy.twoLineHeight` (a 24 pt menu bar), two on a taller one
+    /// (the measured 30 pt external). None on a display without an island. So the displays are an input like
+    /// any other (plan R18).
     static func ears(
         mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
-        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+        on screen: IslandScreen, now: Date, calendar: Calendar, locale: Locale
     ) -> IslandEars {
-        guard let screen = IslandDisplayResolver.primaryIslandScreen(screens), let notch = screen.islandNotch else {
-            return .none
-        }
+        guard let notch = screen.islandNotch else { return .none }
         let presentation = IslandPresentationRules.presentation(
             notchPresent: true, screenWidth: screen.frame.width, petOn: petOn, earsOn: earsOn
         )
@@ -87,14 +89,47 @@ enum IslandEarRules {
             IslandEarInput(
                 mood: mood, mode: mode, petOn: petOn, showsEars: presentation.showsEars,
                 statusItemShown: StatusItemVisibilityRules.isShown(setting: showInMenuBar, islandDisplayAttached: true),
-                earHeight: notch.height
+                earHeight: notch.height, backingScale: screen.backingScale
             ),
             now: now, calendar: calendar, locale: locale
         )
     }
 
+    /// Every island display's ears, keyed by display id: what each resting pill draws. A display
+    /// without an island (its menu bar hidden, or under 1280 pt) has no entry; one with nothing to
+    /// say, or with the ears off, has `.none`.
+    static func earsByDisplay(
+        mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
+        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+    ) -> [UInt32: IslandEars] {
+        var byDisplay: [UInt32: IslandEars] = [:]
+        for screen in screens where screen.islandNotch != nil {
+            byDisplay[screen.id] = ears(
+                mood: mood, mode: mode, petOn: petOn, earsOn: earsOn, showInMenuBar: showInMenuBar,
+                on: screen, now: now, calendar: calendar, locale: locale
+            )
+        }
+        return byDisplay
+    }
+
+    /// The primary island display's ears (`IslandDisplayResolver.primaryIslandScreen`); none with no
+    /// island display. The one-display view of `earsByDisplay`, which § 3.6's matrix is checked through.
+    static func ears(
+        mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
+        screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
+    ) -> IslandEars {
+        guard let screen = IslandDisplayResolver.primaryIslandScreen(screens) else { return .none }
+        return ears(
+            mood: mood, mode: mode, petOn: petOn, earsOn: earsOn, showInMenuBar: showInMenuBar,
+            on: screen, now: now, calendar: calendar, locale: locale
+        )
+    }
+
     private static func left(_ input: IslandEarInput, now: Date, calendar: Calendar) -> IslandEars.Ear<IslandEars.LeftMark>? {
-        let mark: IslandEars.LeftMark = input.petOn ? .head : .neutralDot
+        // The head only where its whole pixels fit the ear (spec 2026-11-03; review F2): a 24 pt pill
+        // on a 1× display takes the dot, which never morphs (`IslandEarMorph.eligible`).
+        let mark: IslandEars.LeftMark =
+            input.petOn && headFits(earHeight: input.earHeight, backingScale: input.backingScale) ? .head : .neutralDot
         // No default: a new mood has to choose.
         switch PetMoodRules.mood(input.mood, now: now, calendar: calendar) {
         case .needsYou(let waiting):
@@ -157,6 +192,14 @@ enum IslandEarRules {
         PetScaleRules.scale(
             beads: PetContract.earSize, fitting: CGSize(width: earWidth, height: earHeight), backingScale: backingScale
         )
+    }
+
+    /// Whether the head fits an ear `earHeight` tall on a display at `backingScale` (spec 2026-11-03;
+    /// review F2): its beads at whole pixels, one pixel a bead at the least, inside the ear. A 24 pt
+    /// pill on a 1× display cannot hold the 26-bead head (26 pt); at 2× it is 13 pt.
+    static func headFits(earHeight: CGFloat, backingScale: CGFloat) -> Bool {
+        headScale(earHeight: earHeight, backingScale: backingScale).points(beads: PetContract.earSize)
+            <= min(earWidth, earHeight)
     }
 
     /// The head centred in `ear`, on the device-pixel grid.

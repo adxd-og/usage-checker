@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Island
+- Displays without a notch get the island: an external display, a MacBook with
+  its lid closed or a Mac without a notch shows a black pill in the middle of
+  its menu bar, with the ears and the hover hint, and a click opens the island
+  there. Displays under 1280 pt keep the panel; a display in a full-screen
+  space or with its menu bar set to hide has no pill. The menu bar icon follows
+  Show in menu bar only: off by default wherever a display shows the island;
+  the first launch after the update opens the island once.
 - "Last 7 days" in the cost tile counts Claude. On a subscription it was left out
   of the week and its split, while "Today" included it. A Mac with only Claude now
   shows the tile at all.
