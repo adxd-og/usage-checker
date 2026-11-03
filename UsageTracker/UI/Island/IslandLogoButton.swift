@@ -11,6 +11,8 @@ struct IslandLogoButton: View {
     let waiting: Bool
     /// The provider's place in display order, from 1: its shortcut.
     let position: Int
+    /// The circle's side in the strip it stands in (`diameter(rowHeight:)`).
+    let diameter: CGFloat
     let action: () -> Void
 
     /// A logo's circle and the glyph in it (the prototype's 26 pt buttons).
@@ -18,6 +20,13 @@ struct IslandLogoButton: View {
     nonisolated static let glyph: CGFloat = 16
     /// Between two logos.
     nonisolated static let spacing: CGFloat = 6
+
+    /// The circle in a row `rowHeight` tall (spec 2026-11-03: an external's strip is its menu bar's
+    /// 24 pt): the prototype's `size` where it fits with `IslandStripRules.rowInset` above and below,
+    /// smaller where it does not, never smaller than the glyph.
+    nonisolated static func diameter(rowHeight: CGFloat) -> CGFloat {
+        IslandStripRules.controlHeight(native: size, rowHeight: rowHeight)
+    }
 
     var body: some View {
         Button(action: action) {
@@ -34,7 +43,7 @@ struct IslandLogoButton: View {
                     }
                 }
                 .foregroundStyle(.om(OMSegmentedControl.labelToken(isSelected: selected)))
-                .frame(width: Self.size, height: Self.size)
+                .frame(width: diameter, height: diameter)
                 .contentShape(Capsule(style: .continuous))
         }
         .buttonStyle(OMSegmentButtonStyle(isSelected: selected))
