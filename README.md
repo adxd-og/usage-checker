@@ -443,7 +443,13 @@ Terminal to run and leaves it there; it holds no secret. The plan's name
 comes from Claude Code's `~/.claude.json`: Brioche reads only
 `oauthAccount.planDisplayName` and `organizationRateLimitTier` from it, keeps
 nothing else, and uses the name only when that tier is the signed-in
-credential's.
+credential's. When `brioche statusline` is Claude Code's status line
+(Settings → Integrations → Claude Code), Claude Code hands it the same
+5-hour and weekly numbers with each answer; Brioche shows those two a
+second later whenever they are newer than the endpoint's, and the
+island's Claude page says "from Claude Code" and how old they are. The
+model-scoped windows, credit pools and extra usage still come from the
+endpoint alone.
 Other providers are read the same reuse-what's-already-there way: the local
 Codex CLI's RPC server, a running Antigravity's local language server (while
 the app is closed or not answering, Antigravity's own `agy` CLI), or the local
@@ -515,7 +521,12 @@ to keep a year of them:
   5-hour and weekly limits, the tool leaves them, with the session's id and
   the time, in `~/Library/Application Support/UsageTracker/statusline/`, a
   folder only you can open, one small file per session, for Brioche to read
-- Polls at human-paced intervals (default 60s), honours server `Retry-After`
+- Polls at human-paced intervals (default 60s), honours server `Retry-After`.
+  While Claude Code's status line has fed Claude's numbers in the last 5
+  minutes and Claude's last answer was good, Claude's usage endpoint is asked
+  at most every 5 minutes (or at your interval, if that is slower); after a
+  failed answer it is asked again at the next poll, and opening the island
+  still asks at once
 - **No telemetry, no analytics.** Usage history and cost accounting stay
   on your Mac
 - Open source end to end. Audit anything above

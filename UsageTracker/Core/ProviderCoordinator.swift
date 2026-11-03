@@ -14,16 +14,17 @@ actor ProviderCoordinator {
         claudeEnabled: Bool,
         codexEnabled: Bool,
         antigravityEnabled: Bool,
-        grokEnabled: Bool
+        grokEnabled: Bool,
+        claudeHeld: ServiceSnapshot? = nil
     ) async -> UsageSnapshot {
         let now = Date()
 
         // Claude switched off is not fetched at all, the way Codex off never was (spec
-        // 2026-10-25 § Package 1): no keychain read, no usage call.
-        async let claudeSnap: ServiceSnapshot? = {
-            guard claudeEnabled else { return nil }
-            return await ClaudeOAuthProvider(betaHeader: betaHeader).fetch()
-        }()
+        // 2026-10-25 § Package 1): no keychain read, no usage call. A poll the cadence holds
+        // back shows Claude's last answer instead of asking (spec 2026-11-02 § Cadence).
+        async let claudeSnap: ServiceSnapshot? = Self.claudeSnapshot(enabled: claudeEnabled, held: claudeHeld) {
+            await ClaudeOAuthProvider(betaHeader: betaHeader).fetch()
+        }
         async let codexSnap: ServiceSnapshot? = {
             guard codexEnabled else { return nil }
             return await CodexProvider.shared.fetch()
@@ -87,5 +88,18 @@ actor ProviderCoordinator {
         if let antigravity { services.append(antigravity) }
         if let grok { services.append(grok) }
         return services
+    }
+
+    /// Claude's answer for one poll: none while Claude is off, the held answer when the
+    /// cadence held this poll's fetch back (`ClaudePollCadenceRules.heldAnswer`), a fetch
+    /// otherwise.
+    static func claudeSnapshot(
+        enabled: Bool,
+        held: ServiceSnapshot?,
+        fetch: () async -> ServiceSnapshot
+    ) async -> ServiceSnapshot? {
+        guard enabled else { return nil }
+        if let held { return held }
+        return await fetch()
     }
 }
