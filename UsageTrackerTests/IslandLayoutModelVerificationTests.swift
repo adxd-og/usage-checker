@@ -153,7 +153,7 @@ final class IslandLayoutModelVerificationTests: XCTestCase {
         let model = IslandLayoutModel()
         model.place(on: ScreenFixture.builtIn, visibleHeight: 872)
         XCTAssertEqual(model.layout.kind, .island)
-        let published = changes(of: model) { model.place(on: ScreenFixture.externalRight, visibleHeight: 1416) }
+        let published = changes(of: model) { model.place(on: ScreenFixture.externalRightMenuBarHidden, visibleHeight: 1416) }
         XCTAssertGreaterThan(published, 0)
         XCTAssertEqual(model.layout.kind, .panel)
         XCTAssertEqual(model.layout.stripHeight, 0)

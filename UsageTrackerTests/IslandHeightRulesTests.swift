@@ -66,10 +66,19 @@ final class IslandHeightRulesTests: XCTestCase {
     }
 
     func testThePanelKeepsThe3xRule() {
-        XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalRight, screenVisibleHeight: 1416), 1376)
+        XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalRightMenuBarHidden, screenVisibleHeight: 1416), 1376)
         XCTAssertEqual(IslandHeightRules.outsideRightColumn(.panel), 70, "14 + 32 + 10 + 14")
         XCTAssertEqual(IslandHeightRules.outsideRightColumn(.island), 12)
-        XCTAssertEqual(IslandHeightRules.rightColumnBudget(on: ScreenFixture.externalRight, screenVisibleHeight: 1416), 1306)
+        XCTAssertEqual(
+            IslandHeightRules.rightColumnBudget(on: ScreenFixture.externalRightMenuBarHidden, screenVisibleHeight: 1416), 1306
+        )
+    }
+
+    /// Spec 2026-11-03: an external display's island budgets as the 14-inch's does, with the menu
+    /// bar's 24 pt as its strip. Window 1440 − 8 = 1432; less 24 and 14.
+    func testOnAnExternalDisplayTheIslandBudgetsFromItsWindowLessTheMenuBarStrip() {
+        XCTAssertEqual(IslandHeightRules.budget(on: ScreenFixture.externalRight, screenVisibleHeight: 1416), 1394)
+        XCTAssertEqual(IslandHeightRules.rightColumnBudget(on: ScreenFixture.externalRight, screenVisibleHeight: 1416), 1382)
     }
 
     // MARK: - The lower row

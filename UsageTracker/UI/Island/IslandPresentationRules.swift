@@ -9,7 +9,7 @@ enum IslandPresentationRules {
         let width: CGFloat
         /// The habitat column (§ 3.3): needs the pet on and a screen 1420 pt or wider (D12).
         let showsHabitat: Bool
-        /// The ears beside the notch (§ 3.6): only where there is a notch, only when on.
+        /// The ears beside the notch (§ 3.6): only where there is a notch, physical or virtual, only when on.
         let showsEars: Bool
         /// An ear's head morphs into the habitat pet on an ear open (§ 3.6): needs both.
         let morphEligible: Bool
@@ -30,6 +30,7 @@ enum IslandPresentationRules {
         return regularWidth
     }
 
+    /// `notchPresent`: the display has an island notch, physical or virtual (`IslandScreen.islandNotch`).
     static func presentation(notchPresent: Bool, screenWidth: CGFloat, petOn: Bool, earsOn: Bool) -> Presentation {
         let habitat = petOn && screenWidth >= habitatScreenWidth
         let ears = notchPresent && earsOn

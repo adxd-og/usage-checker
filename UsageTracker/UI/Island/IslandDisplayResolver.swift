@@ -24,9 +24,9 @@ enum IslandEntry: Equatable, Sendable {
 /// reads the screens, the status item and the pointer, and applies the answer.
 enum IslandDisplayResolver {
     enum Kind: Equatable, Sendable {
-        /// Grown out of the notch, centred on it.
+        /// Grown out of the notch, physical or virtual (spec 2026-11-03), centred on it.
         case island
-        /// A plain panel under the status item, on a display without a notch.
+        /// A plain panel under the status item, on a display without an island notch.
         case panel
     }
 
@@ -39,7 +39,7 @@ enum IslandDisplayResolver {
         /// The global x the body centres on: the notch's centre, the status item's, or the
         /// visible frame's.
         let anchorMidX: CGFloat
-        /// The notch in global coordinates; nil for the panel.
+        /// The notch in global coordinates, physical or virtual; nil for the panel.
         let notch: CGRect?
         /// The body's width: the island's from `IslandPresentationRules`, the panel's as
         /// handed in (the same rule, from `IslandController`).
@@ -54,24 +54,31 @@ enum IslandDisplayResolver {
     /// Between the status item (or the menu bar) and the panel's top.
     static let panelGap: CGFloat = 6
 
-    /// The status item's click → that item's display; an ear or the notch → the notched
-    /// display; the notification route → the display under the pointer. The first and the
-    /// last fall back to the main display, then to the first one.
+    /// The status item's click → that item's display; an ear or the notch → the primary island
+    /// display; the notification route → the display under the pointer. The first and the last
+    /// fall back to the main display, then to the first one.
     static func display(for entry: IslandEntry, screens: [IslandScreen], mainScreenID: UInt32?) -> IslandScreen? {
         switch entry {
         case .statusItem(let button):
             let centre = CGPoint(x: button.midX, y: button.midY)
             return screens.first { Self.holds($0, centre) } ?? Self.mainScreen(screens, mainScreenID)
         case .notch, .ear:
-            return screens.first { $0.hasNotch }
+            return primaryIslandScreen(screens)
         case .notification(let pointer):
             return screens.first { Self.holds($0, pointer) } ?? Self.mainScreen(screens, mainScreenID)
         }
     }
 
-    /// The placement for `entry`; nil when it has no display (the notch or an ear with no
-    /// notched display attached). `statusItemFrame` is the shown status item's window frame,
-    /// nil while it is hidden.
+    /// The display the island calls home (spec 2026-11-03): the first with a camera housing, else
+    /// the first with a virtual notch, in the order the displays are listed; nil when none carries
+    /// an island. The ears sit there in P1, and the first launch after an update opens there.
+    static func primaryIslandScreen(_ screens: [IslandScreen]) -> IslandScreen? {
+        screens.first(where: \.hasNotch) ?? screens.first { $0.islandNotch != nil }
+    }
+
+    /// The placement for `entry`; nil when it has no display (the notch or an ear with no island
+    /// display attached). `statusItemFrame` is the shown status item's window frame, nil while it
+    /// is hidden.
     static func placement(
         for entry: IslandEntry, screens: [IslandScreen], mainScreenID: UInt32?,
         statusItemFrame: CGRect?, panelWidth: CGFloat, menuBarHeight: CGFloat
@@ -84,8 +91,9 @@ enum IslandDisplayResolver {
         }
     }
 
-    /// On a notched display: the island, centred on the notch, from the screen's top to
-    /// 8 pt above the Dock. Elsewhere: the panel, centred under the status item whenever the
+    /// On a display with an island notch, physical or virtual (`IslandScreen.islandNotch`, spec
+    /// 2026-11-03): the island, centred on that notch, from the screen's top to 8 pt above the
+    /// Dock. Elsewhere (under 1280 pt, menu bar hidden): the panel, centred under the status item whenever the
     /// item is shown on this display, whatever the entry; only without one there, under the
     /// menu bar at the visible frame's centre (ruling R8). Clamped inside the visible frame.
     /// `menuBarHeight` places a panel on a display whose menu bar hides.
@@ -94,7 +102,7 @@ enum IslandDisplayResolver {
         panelWidth: CGFloat, menuBarHeight: CGFloat
     ) -> Placement {
         let bottom = (screen.visibleFrame.minY + bottomMargin).rounded(.up)
-        if let notch = screen.notchRect {
+        if let notch = screen.islandNotch {
             let bodyWidth = IslandPresentationRules.width(screenWidth: screen.frame.width)
             let width = bodyWidth + 2 * sideMargin
             let x = clamp((notch.midX - width / 2).rounded(.down), screen.frame.minX, screen.frame.maxX - width)

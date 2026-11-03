@@ -58,14 +58,26 @@ final class IslandLayoutModelTests: XCTestCase {
         XCTAssertEqual(model.rightBudget, 740)
     }
 
-    func testOnAnExternalDisplayItIsThe720PanelWithThe3xBudget() {
+    func testOnADisplayWithoutAnIslandItIsThe720PanelWithThe3xBudget() {
         let model = IslandLayoutModel()
-        model.place(on: ScreenFixture.externalRight, visibleHeight: 1416)
+        model.place(on: ScreenFixture.externalRightMenuBarHidden, visibleHeight: 1416)
         XCTAssertEqual(
             model.layout,
             IslandLayout(kind: .panel, bodyWidth: 720, stripHeight: 0, notchWidth: 0, showsHabitat: true)
         )
         XCTAssertEqual(model.rightBudget, 1306)
+    }
+
+    /// Spec 2026-11-03: on an external display the island hangs from its virtual notch, with the
+    /// menu bar's height as the strip.
+    func testOnAnExternalDisplayItIsThe720IslandWithTheMenuBarAsItsStrip() {
+        let model = IslandLayoutModel()
+        model.place(on: ScreenFixture.externalRight, visibleHeight: 1416)
+        XCTAssertEqual(
+            model.layout,
+            IslandLayout(kind: .island, bodyWidth: 720, stripHeight: 24, notchWidth: 185, showsHabitat: true)
+        )
+        XCTAssertEqual(model.rightBudget, 1382)
     }
 
     func testWithThePetOffTheHabitatGoes() {

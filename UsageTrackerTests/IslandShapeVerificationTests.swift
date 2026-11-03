@@ -163,7 +163,7 @@ final class IslandShapeVerificationTests: XCTestCase {
     func testThePanelHasNoMotionAtAnyProgress() {
         let button = CGRect(x: 3800, y: 1416, width: 36, height: 24)
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.externalRight, entry: .statusItem(buttonFrame: button),
+            on: ScreenFixture.externalRightMenuBarHidden, entry: .statusItem(buttonFrame: button),
             statusItemFrame: button, panelWidth: 360, menuBarHeight: 24
         )
         let g = IslandGeometry(placement: placement, appliedFrame: placement.windowFrame)

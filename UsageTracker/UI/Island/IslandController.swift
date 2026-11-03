@@ -4,7 +4,8 @@ import QuartzCore
 import SwiftUI
 
 /// Opens and closes Omelette's window (notch-island spec 2026-10-29 § 3.1): the island grown
-/// out of the notch, or a plain panel under the status item on a display without one. It
+/// out of the notch — the camera housing, or the virtual one on a display without (spec
+/// 2026-11-03) — or a plain panel under the status item on a display with neither. It
 /// replaces 3.x's `NSPopover` and hosts the island's content (`PopoverView`, § 3.3). Every
 /// decision is a pure rule: `IslandDisplayResolver` (which display, which window),
 /// `IslandGeometry` (the shape, where a click lands), `IslandEventRules` (what an entry, a

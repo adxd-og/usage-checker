@@ -7,6 +7,7 @@ import XCTest
 /// one and raised above its baseline, notches on half points, the 1419/1420/1699/1700 width
 /// breakpoints as the window sees them, a status item on either edge, and a replacement that
 /// follows the status item as it is now.
+/// Since spec 2026-11-03 the panel's display is one without an island notch: its arrangements run on the externals with their menu bars hidden (the same numbers).
 final class IslandDisplayResolverVerificationTests: XCTestCase {
     /// The 14-inch as a second, notched display to the left of the main one and raised 200 pt:
     /// every x is negative, y does not start at 0.
@@ -145,7 +146,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
         XCTAssertEqual(place(.statusItem(buttonFrame: lost), on: screens, main: 1)?.kind, .island)
     }
 
-    private var screens: [IslandScreen] { [ScreenFixture.builtIn, ScreenFixture.externalRight] }
+    private var screens: [IslandScreen] { [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden] }
 
     // MARK: Clamping on both edges
 
@@ -160,7 +161,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
 
     func testAPanelUnderAnItemAtTheRightEdgeOfADisplayLeftOfTheMainOneIsClamped() {
         let item = CGRect(x: -35, y: 1056, width: 30, height: 24)
-        let panel = place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.externalLeft])
+        let panel = place(.statusItem(buttonFrame: item), on: [ScreenFixture.builtIn, ScreenFixture.externalLeftMenuBarHidden])
         XCTAssertEqual(panel?.screenID, 3)
         XCTAssertEqual(panel?.windowFrame.maxX, 0, "the visible frame ends at x 0")
         XCTAssertEqual(panel?.windowFrame, CGRect(x: -384, y: 8, width: 384, height: 1042))
@@ -206,10 +207,11 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
         )
     }
 
-    func testAnIslandWhoseDisplayLostItsNotchBecomesAPanelOnTheSameDisplay() throws {
+    func testAnIslandWhoseDisplayLostItsNotchAndItsMenuBarBecomesAPanelOnTheSameDisplay() throws {
         let open = try XCTUnwrap(place(.notch, on: screens, main: 1))
         let mode = IslandScreen(
-            id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: ScreenFixture.builtIn.visibleFrame,
+            // No menu bar either (spec 2026-11-03): no virtual notch, so the panel.
+            id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: CGRect(x: 0, y: 78, width: 1512, height: 904),
             safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil
         )
         let again = IslandDisplayResolver.replacement(
