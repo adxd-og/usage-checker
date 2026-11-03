@@ -1,10 +1,11 @@
 import CoreGraphics
+import Darwin
 import Foundation
 
 /// One on-screen window as the WindowServer lists it (`CGWindowListCopyWindowInfo`): the three
 /// fields that need no permission. The window's name is never read: it needs Screen Recording.
 struct MenuBarWindow: Equatable, Sendable {
-    /// `kCGWindowOwnerName`.
+    /// Its owner's process name, else `kCGWindowOwnerName` (`MenuBarWindowReader.ownerName`).
     let ownerName: String
     /// `kCGWindowLayer`.
     let layer: Int
@@ -18,8 +19,13 @@ struct MenuBarWindow: Equatable, Sendable {
 /// The visible frame cannot tell: on a secondary display it reserves nothing for the menu bar. Pure;
 /// `MenuBarWindowReader` lists the windows.
 enum MenuBarWindowRules {
-    /// The owner of the menu bar windows.
+    /// The owner of the menu bar windows as the window list names it (`kCGWindowOwnerName`) on an
+    /// English system.
     static let ownerName = "Window Server"
+    /// The same owner by its process's name, which is not localized (4.1.0 release review OQ1).
+    static let processName = "WindowServer"
+    /// Either name owns the menu bar windows, matched exactly.
+    static let ownerNames: Set<String> = [processName, ownerName]
     /// The main-menu window level (`kCGMainMenuWindowLevel`, 24), read once.
     static let mainMenuLayer = Int(CGWindowLevelForKey(.mainMenuWindow))
     /// How far a menu bar's top may sit from its display's top.
@@ -33,7 +39,7 @@ enum MenuBarWindowRules {
     static func heights(
         windows: [MenuBarWindow], screens: [IslandScreen], mainDisplayHeight: CGFloat
     ) -> [UInt32: CGFloat] {
-        let menuBars = windows.filter { $0.ownerName == ownerName && $0.layer == mainMenuLayer }
+        let menuBars = windows.filter { ownerNames.contains($0.ownerName) && $0.layer == mainMenuLayer }
         var heights: [UInt32: CGFloat] = [:]
         for screen in screens {
             let menuBar = menuBars.first { isMenuBar($0, of: screen, mainDisplayHeight: mainDisplayHeight) }
@@ -61,12 +67,37 @@ enum MenuBarWindowReader {
             return []
         }
         return list.compactMap { info in
-            guard let owner = info[kCGWindowOwnerName as String] as? String,
+            let pid = (info[kCGWindowOwnerPID as String] as? NSNumber).map { pid_t($0.int32Value) }
+            guard let owner = ownerName(
+                      processName: pid.flatMap(processName(of:)),
+                      listedName: info[kCGWindowOwnerName as String] as? String
+                  ),
                   let layer = (info[kCGWindowLayer as String] as? NSNumber)?.intValue,
                   let bounds = info[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds as CFDictionary)
             else { return nil }
             return MenuBarWindow(ownerName: owner, layer: layer, boundsCG: rect)
+        }
+    }
+
+    /// The name a window's owner goes by (4.1.0 release review OQ1): its process's name, which is not
+    /// localized, else the name the window list gives (`kCGWindowOwnerName`, which may be); nil, and
+    /// the window skipped, when neither is there. An empty name counts as none.
+    static func ownerName(processName: String?, listedName: String?) -> String? {
+        if let processName, !processName.isEmpty { return processName }
+        if let listedName, !listedName.isEmpty { return listedName }
+        return nil
+    }
+
+    /// `pid`'s process name (`pbsi_comm`), nil when it cannot be read. The short BSD info, because the
+    /// full one (`proc_name`) is refused for another user's process, and the WindowServer runs as
+    /// `_windowserver` (measured 2026-11-03: EPERM).
+    private static func processName(of pid: pid_t) -> String? {
+        var info = proc_bsdshortinfo()
+        let size = Int32(MemoryLayout<proc_bsdshortinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDT_SHORTBSDINFO, 0, &info, size) == size else { return nil }
+        return withUnsafeBytes(of: info.pbsi_comm) { bytes in
+            String(decoding: bytes.prefix { $0 != 0 }, as: UTF8.self)
         }
     }
 }

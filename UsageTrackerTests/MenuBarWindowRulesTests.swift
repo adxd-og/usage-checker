@@ -69,6 +69,58 @@ final class MenuBarWindowRulesTests: XCTestCase {
         )
     }
 
+    // MARK: - The owner's name (4.1.0 release review OQ1)
+
+    private let macBookBar = CGRect(x: 0, y: 0, width: 1512, height: 33)
+
+    /// The name of the WindowServer's process, which is not localized.
+    func testTheWindowServerNamedByItsProcessOwnsTheMenuBar() {
+        XCTAssertEqual(heights([window(macBookBar, owner: "WindowServer")]), [1: 33, 2: 0])
+    }
+
+    /// The name the window list gave on the owner's English system.
+    func testTheWindowServerNamedAsTheWindowListNamesItOwnsTheMenuBar() {
+        XCTAssertEqual(heights([window(macBookBar, owner: "Window Server")]), [1: 33, 2: 0])
+    }
+
+    func testAnotherOwnerAtTheMainMenuLevelIsNotAMenuBar() {
+        for owner in ["WindowManager", "Control Center", "SystemUIServer", "Brioche", ""] {
+            XCTAssertEqual(heights([window(macBookBar, owner: owner)]), [1: 0, 2: 0], owner)
+        }
+    }
+
+    func testTheOwnersNameIsMatchedExactly() {
+        for owner in ["windowserver", "WINDOWSERVER", "window server", "WINDOW SERVER", " WindowServer", "WindowServer "] {
+            XCTAssertEqual(heights([window(macBookBar, owner: owner)]), [1: 0, 2: 0], owner)
+        }
+    }
+
+    // MARK: - Which name the reader gives a window (4.1.0 release review OQ1)
+
+    /// The process name wins, so a window list naming the WindowServer in another language still
+    /// finds the menu bar.
+    func testTheProcessNameNamesTheOwnerWhenItCanBeRead() {
+        XCTAssertEqual(
+            MenuBarWindowReader.ownerName(processName: "WindowServer", listedName: "Window Server"), "WindowServer"
+        )
+        let owner = MenuBarWindowReader.ownerName(processName: "WindowServer", listedName: "a name in another language")
+        XCTAssertEqual(owner, "WindowServer")
+        XCTAssertEqual(heights([window(macBookBar, owner: owner ?? "")]), [1: 33, 2: 0])
+    }
+
+    /// The WindowServer's process name could not be read, or came back empty: the window list's name.
+    func testTheListedNameNamesTheOwnerWhenTheProcessNameCannotBeRead() {
+        XCTAssertEqual(MenuBarWindowReader.ownerName(processName: nil, listedName: "Window Server"), "Window Server")
+        XCTAssertEqual(MenuBarWindowReader.ownerName(processName: "", listedName: "Window Server"), "Window Server")
+    }
+
+    func testAWindowWithNeitherNameIsSkipped() {
+        XCTAssertNil(MenuBarWindowReader.ownerName(processName: nil, listedName: nil))
+        XCTAssertNil(MenuBarWindowReader.ownerName(processName: "", listedName: nil))
+        XCTAssertNil(MenuBarWindowReader.ownerName(processName: nil, listedName: ""))
+        XCTAssertNil(MenuBarWindowReader.ownerName(processName: "", listedName: ""))
+    }
+
     func testOtherWindowsListedFirstDoNotHideTheMenuBars() {
         let externalTop = CGRect(x: 1512, y: 0, width: 2560, height: 24)
         XCTAssertEqual(
