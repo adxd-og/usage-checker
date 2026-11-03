@@ -18,7 +18,7 @@ final class IslandShapeModel: ObservableObject {
     @Published var progress: Double = 0
 }
 
-/// The island window's whole content (§ 3.1, § 3.2). On a notched display: the black shape
+/// The island window's whole content (§ 3.1, § 3.2). On a display with an island (a notch, or the pill on one without): the black shape
 /// at the motion's current progress, always dark, and the island's content (`PopoverView`)
 /// on top of it, filling the body under the notch strip and masked by the shape, so
 /// nothing shows outside the

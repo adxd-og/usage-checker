@@ -28,7 +28,7 @@ final class RestingNotchPanel: NSPanel {
 /// The resting panel's view: the black shape (`RestingLayout`), the breath and the ear tips of the
 /// hover hint (D13: a tracking area over the notch, no timers of its own), the click on it, and the
 /// same press for VoiceOver, which reads it as a button (§ 3.8: the notch click is always an entry
-/// point, and on a notched Mac the status item is hidden by default).
+/// point, and while a display shows the island the status item is hidden by default).
 final class RestingNotchView: NSView {
     /// What to draw; nil before the first placing.
     var layout: RestingLayout? {

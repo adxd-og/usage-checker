@@ -189,9 +189,9 @@ final class SettingsStore: ObservableObject {
     /// Defaults key for Show in menu bar. Spelled out because the tests read it by name.
     static let showInMenuBarKey = "showInMenuBar"
 
-    /// Show in menu bar (notch-island spec 2026-10-29 § 3.7, D4): nil until the user flips
-    /// the switch, so the default can follow the displays — off while a notched display is
-    /// attached. A plain `@Published` over an explicit read and write of the key, for the
+    /// Show in menu bar (notch-island spec 2026-10-29 § 3.7, D4; spec 2026-11-03 § Status
+    /// item): nil until the user flips the switch, so the default can follow the displays —
+    /// off while a display shows the island (a notch, or the pill on a display without one). A plain `@Published` over an explicit read and write of the key, for the
     /// reason `showsRemaining` gives: the status item hides and shows the moment it moves.
     @Published var showInMenuBar: Bool? = Defaults.showInMenuBar {
         didSet {

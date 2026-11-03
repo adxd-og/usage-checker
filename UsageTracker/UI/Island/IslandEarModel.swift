@@ -23,7 +23,7 @@ final class IslandEarModel {
         onChange?(next)
     }
 
-    /// The displays changed (a lid opened, a notched display came or went): the ears are read again,
+    /// The displays changed (a lid opened, a display with an island, notch or pill, came or went): the ears are read again,
     /// with no change of state to signal it, before the window is placed.
     func displaysChanged(place: () -> Void) {
         refresh()
