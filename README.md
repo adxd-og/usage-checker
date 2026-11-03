@@ -131,16 +131,21 @@ Next: [Island](#island).
 ## Island
 
 Click the notch. Brioche opens as an island that grows out of it, with every
-provider in a two-column grid. Click a tile for that provider's page. On a Mac
-or display without a notch it is a panel under the menu bar icon.
+provider in a two-column grid. Click a tile for that provider's page. A display
+without a notch (an external one, a MacBook with the lid closed) has a black
+pill in the middle of its menu bar that opens the same island there. One
+narrower than 1280 pt, or whose menu bar hides, has no pill: open Brioche from
+the notch or pill on another display, or from the menu bar icon (Show in menu
+bar, below), which opens it as a panel under the icon.
 
-- **Open and close**: a click on the notch opens it. A click on the notch strip
+- **Open and close**: a click on the notch, or on the pill, opens it. A click on the notch strip
   of the open island, a click outside it, or Esc at All closes it. Hovering the
   notch nudges it down a little and never opens it
 - **Menu bar icon**: Settings → General → **Show in menu bar**. Off by default
-  on a Mac with a notched display, so the icon is not there until you turn it
-  on; click the notch instead. With no notched display attached (lid closed,
-  an external display only) the icon is always shown
+  while a display shows the island, so the icon is not there until you turn it
+  on; click the island at the top of the screen instead. With no display
+  showing it (every menu bar hidden, or only displays under 1280 pt) the icon
+  is always shown
 - **Navigation**: a provider's page has **‹ All** and the provider logos beside
   the notch. Esc, ‹ All, ⌘0 or a two-finger swipe right go back. **⌘0** is All
   and **⌘1–⌘9** are the providers in display order. With one provider on, its
@@ -567,8 +572,11 @@ Next: [Install](#install).
    reappear after something resets the item's access list (a reinstall, or a
    differently signed build); Settings → Advanced → **Request keychain access
    now** brings it back on demand
-4. Click the notch to open Brioche. On a Mac or display without a notch, click
-   the menu bar icon instead
+4. Click the notch, or the black pill at the top of a display without one, to
+   open Brioche. A display narrower than 1280 pt has no pill: use the notch or
+   pill on another display, or turn on Settings → General → **Show in menu
+   bar** and click the icon. With no display showing the island the icon is
+   always there
 5. That's the last manual install. Updates arrive automatically via Sparkle
    (signed & notarized), or on demand via Settings → General → **Check now**
 
