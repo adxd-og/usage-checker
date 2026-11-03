@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dropping the event. Codex turns with long histories arrive too.
 
 ### Claude
+- Claude's 5-hour and weekly numbers also come from Claude Code itself: when
+  `brioche statusline` is your status line, each answer leaves Claude's limits
+  in `~/Library/Application Support/UsageTracker/statusline/` and the island
+  shows them a second later, marked "from Claude Code" with their age, when
+  they are newer than the usage endpoint's. While they keep coming, the
+  endpoint is asked at most every 5 minutes; opening the island still asks.
+  `status.json`, MCP `get_usage` and history say which source each window had.
 - Plans carry Anthropic's new names: Max 20x is "Claude Ultra", Max 5x is
   "Claude Max".
 - The plan line says what Claude Code calls the plan (`~/.claude.json`), so the
