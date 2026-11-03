@@ -73,8 +73,9 @@ enum IslandEarRules {
     }
 
     /// The ears on one display (spec 2026-11-03 § Ears and hint): the same marks, actions and words on
-    /// every island display, set for this display's notch, physical or virtual — a 24 pt pill keeps
-    /// the number on one line. None on a display without an island. So the displays are an input like
+    /// every island display, set for this display's notch, physical or virtual — the number takes
+    /// one line on a pill under `IslandEarCopy.twoLineHeight` (a 24 pt menu bar), two on a taller one
+    /// (the measured 30 pt external). None on a display without an island. So the displays are an input like
     /// any other (plan R18).
     static func ears(
         mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,

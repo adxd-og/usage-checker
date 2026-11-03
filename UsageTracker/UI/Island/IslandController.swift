@@ -941,8 +941,8 @@ final class IslandController: NSObject {
 
     /// Another space (review F6): now and a second later, since the first read after a switch can be
     /// stale as after a wake, but only the pills, and only when the set of displays that carry an
-    /// island changed — a full-screen space whose visible frame takes its menu bar away, or the way
-    /// back. The notched Mac alone, or any switch that leaves every menu bar where it was, does
+    /// island changed — a full-screen space whose menu bar window goes away (`MenuBarWindowRules`),
+    /// or the way back. The notched Mac alone, or any switch that leaves every menu bar where it was, does
     /// nothing: no hint cut, no ear re-read, no open island re-resolved.
     @objc private func spaceChanged(_ note: Notification) {
         placePillsIfTheirSetChanged()
