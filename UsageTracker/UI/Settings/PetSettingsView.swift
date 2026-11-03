@@ -9,18 +9,18 @@ enum PetSettingsCopy {
     static let onboardingTitle = "Pick your pet"
     static let onboardingCaption = "It lives beside your limits. Change it any time in Settings › \(SettingsTab.pet.rawValue)."
 
-    static func earsCaption(notchedDisplayAttached: Bool) -> String {
-        notchedDisplayAttached
+    static func earsCaption(islandDisplayAttached: Bool) -> String {
+        islandDisplayAttached
             ? "With the island closed: a waiting agent, a signed-out Claude, a limit at 90 %, keep awake."
-            : "Only on a display with a notch."
+            : "Only while a display shows the island."
     }
 }
 
 /// Settings › Pet (§ 3.7): on or off, the ears on or off, the animal and palette.
 struct PetSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
-    /// Whether a display with a notch is attached: the ears' caption follows it.
-    @State private var notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+    /// Whether a display shows the island (spec 2026-11-03): the ears' caption follows it.
+    @State private var islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
 
     var body: some View {
         SettingsPage(tab: .pet) {
@@ -32,7 +32,7 @@ struct PetSettingsView: View {
                 )
                 SettingsSwitchRow(
                     title: PetSettingsCopy.earsTitle,
-                    caption: PetSettingsCopy.earsCaption(notchedDisplayAttached: notchedDisplayAttached),
+                    caption: PetSettingsCopy.earsCaption(islandDisplayAttached: islandDisplayAttached),
                     isOn: $settings.earsEnabled
                 )
             }
@@ -42,7 +42,7 @@ struct PetSettingsView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            notchedDisplayAttached = StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+            islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
         }
     }
 }

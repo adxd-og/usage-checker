@@ -42,7 +42,7 @@ struct IslandEarInput: Equatable, Sendable {
     var mood: PetMoodInput
     var mode: PercentDisplay.Mode
     var petOn: Bool
-    /// `IslandPresentationRules.Presentation.showsEars`: a notch and the ears on.
+    /// `IslandPresentationRules.Presentation.showsEars`: a notch, physical or virtual, and the ears on.
     var showsEars: Bool
     var statusItemShown: Bool
     /// The notch's height, which the ears take.
@@ -70,13 +70,16 @@ enum IslandEarRules {
         )
     }
 
-    /// The ears on these displays: the notched one gives the room, and with no notched display there
-    /// are none. So the displays are an input like any other (plan R18).
+    /// The ears on these displays: the primary island display gives the room — its notch, physical
+    /// or virtual (spec 2026-11-03) — and with no island display there are none. So the displays are
+    /// an input like any other (plan R18).
     static func ears(
         mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
         screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale
     ) -> IslandEars {
-        guard let screen = screens.first(where: \.hasNotch), let notch = screen.notchRect else { return .none }
+        guard let screen = IslandDisplayResolver.primaryIslandScreen(screens), let notch = screen.islandNotch else {
+            return .none
+        }
         let presentation = IslandPresentationRules.presentation(
             notchPresent: true, screenWidth: screen.frame.width, petOn: petOn, earsOn: earsOn
         )

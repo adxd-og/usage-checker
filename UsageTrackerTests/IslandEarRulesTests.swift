@@ -182,11 +182,13 @@ final class IslandEarRulesTests: XCTestCase {
     }
 
     /// A lid opening or a notched display arriving changes nothing but the displays (Codex's plan
-    /// review 4).
+    /// review 4). An external whose menu bar hides carries no island, so no ears (spec 2026-11-03).
     func testAnEarShowsOnceANotchedDisplayArrivesWithNothingElseChanged() {
         let state = input(sessions: [waiting("a")])
-        XCTAssertEqual(ears(state, onDisplays: [ScreenFixture.externalRight]), IslandEars.none)
-        XCTAssertEqual(ears(state, onDisplays: [ScreenFixture.externalRight, ScreenFixture.builtIn]).left?.mark, .head)
+        XCTAssertEqual(ears(state, onDisplays: [ScreenFixture.externalRightMenuBarHidden]), IslandEars.none)
+        XCTAssertEqual(
+            ears(state, onDisplays: [ScreenFixture.externalRightMenuBarHidden, ScreenFixture.builtIn]).left?.mark, .head
+        )
         XCTAssertEqual(ears(state, onDisplays: [ScreenFixture.builtIn], earsOn: false), IslandEars.none)
     }
 
@@ -211,5 +213,23 @@ final class IslandEarRulesTests: XCTestCase {
         XCTAssertEqual(IslandEarRules.headScale(earHeight: 22, backingScale: 2).points(beads: PetContract.earSize), 13)
         let rect = IslandEarRules.headRect(in: CGRect(x: 10.5, y: 0, width: 34, height: 32), scale: retina)
         XCTAssertEqual(rect, CGRect(x: 14.5, y: 3, width: 26, height: 26))
+    }
+
+    // MARK: - On a display without a notch (spec 2026-11-03 § Virtual notch)
+
+    /// The external's pill is 24 pt: too short for "8%" over "left", so the number alone.
+    func testAnExternalDisplayAloneGetsTheEarsAtItsMenuBarsHeight() {
+        let shown = ears(input(services: [claude(week: 92)], mode: .remaining), onDisplays: [ScreenFixture.externalRight])
+        XCTAssertEqual(shown.left?.mark, .head)
+        XCTAssertEqual(shown.right?.mark, .number(lines: ["8%"]))
+    }
+
+    /// With the MacBook attached the ears stay beside its notch, whichever display is listed first.
+    func testWithTheMacBookAttachedTheEarsKeepItsNotchsHeight() {
+        let shown = ears(
+            input(services: [claude(week: 92)], mode: .remaining),
+            onDisplays: IslandScreen.attached([ScreenFixture.externalRight, ScreenFixture.builtIn])
+        )
+        XCTAssertEqual(shown.right?.mark, .number(lines: ["8%", "left"]))
     }
 }

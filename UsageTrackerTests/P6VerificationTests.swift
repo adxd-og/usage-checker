@@ -139,7 +139,8 @@ final class P6VerificationEarMatrixTests: XCTestCase {
             mode: mode, petOn: petOn, earsOn: earsOn, showInMenuBar: item,
             screens: screens(display), now: now, calendar: utc, locale: locale
         )
-        let notched = display == .builtIn || display == .externalAndBuiltIn || display == .narrowNotched
+        // Spec 2026-11-03: the external alone carries the island on its virtual notch.
+        let notched = display != .none
 
         // An ear is never there without a notch, nor with the ears off.
         guard notched, earsOn else {
@@ -175,7 +176,8 @@ final class P6VerificationEarMatrixTests: XCTestCase {
         // Right ear: the alert's number in the asked mode, else ☾, else nothing (§ 3.6).
         if let alert {
             let number = PercentDisplay.percentText(alert.used, mode: mode)
-            let expected: [String] = mode == .remaining ? [number, "left"] : [number]
+            // The external's pill is 24 pt, under the two-line height (spec 2026-11-03).
+            let expected: [String] = mode == .remaining && display != .externalOnly ? [number, "left"] : [number]
             XCTAssertEqual(ears.right?.mark, .number(lines: expected), context)
             XCTAssertEqual(ears.right?.action, .open(subject: alert.id, reveal: nil), context)
             XCTAssertTrue(ears.right?.label.contains(spokenNumber(alert.used, mode)) == true, context)

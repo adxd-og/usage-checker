@@ -27,6 +27,11 @@ enum StatusItemVisibilityRules {
         screens.contains { $0.hasNotch }
     }
 
+    /// Some display carries an island notch, physical or virtual (`IslandScreen.islandNotch`).
+    static func islandDisplayAttached(_ screens: [IslandScreen]) -> Bool {
+        screens.contains { $0.islandNotch != nil }
+    }
+
     /// What a launch does about a status item that went away with an update.
     enum FirstLaunchAfterUpdate: Equatable, Sendable {
         /// The island opens, so the app is not simply gone, and the marker is stored.

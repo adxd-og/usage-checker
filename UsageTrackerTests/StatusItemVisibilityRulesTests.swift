@@ -81,4 +81,15 @@ final class StatusItemVisibilityRulesTests: XCTestCase {
     func testTheOpenLeavesTheKeyboardWithTheAppInFront() {
         XCTAssertFalse(IslandEntry.ear(displayID: 1).becomesKey, "the launch opens as an ear does, not as a click")
     }
+
+    /// Spec 2026-11-03: a display carries the island when it has a notch, physical or virtual.
+    func testAnIslandDisplayIsAttachedWhenAnyScreenCarriesAnIsland() {
+        XCTAssertTrue(StatusItemVisibilityRules.islandDisplayAttached([ScreenFixture.externalRight, ScreenFixture.builtIn]))
+        XCTAssertTrue(StatusItemVisibilityRules.islandDisplayAttached([ScreenFixture.externalRight, ScreenFixture.externalLeft]))
+        XCTAssertTrue(StatusItemVisibilityRules.islandDisplayAttached([ScreenFixture.wide1280]))
+        XCTAssertFalse(
+            StatusItemVisibilityRules.islandDisplayAttached([ScreenFixture.externalRightMenuBarHidden, ScreenFixture.narrow1279])
+        )
+        XCTAssertFalse(StatusItemVisibilityRules.islandDisplayAttached([]))
+    }
 }
