@@ -33,12 +33,15 @@ final class IslandController: NSObject {
     /// What the island tells its pet (§ 3.5): its phase, the display, the lock, Reduce Motion, the
     /// opens and closes for the jumps; it holds the app's one pet runtime.
     private let pet: IslandPetModel
-    /// The notch-sized panel at rest over the notch (D13), and its view.
+    /// The notch-sized panel at rest over the primary island display's notch, physical or virtual (D13; spec 2026-11-03), with the ears and the hint, and its view.
     private let resting: RestingNotchPanel
     private let restingView: RestingNotchView
     /// The display `resting` covers; nil while it is ordered out. A click on it, or on an ear, opens
     /// the island there (spec 2026-11-03 § Opening).
     private var restingDisplayID: UInt32?
+    /// A bare pill on every other island display (spec 2026-11-03 § Resting pill), keyed by display
+    /// id: its click opens the island there. The ears and the hint stay on `resting` until P2.
+    private var pills: [UInt32: RestingPill] = [:]
     /// The hover hint (D13): its value, its frames while the spring moves, and the one wait a
     /// pointer's arrival arms.
     private var hint = NotchHint()
@@ -480,7 +483,7 @@ final class IslandController: NSObject {
             )
             return .island(geometry.region(of: point, contentSize: model.contentSize, progress: shapeModel.progress))
         }
-        if target === resting { return .restingNotch }
+        if target === resting || pills.values.contains(where: { $0.panel === target }) { return .restingNotch }
         if target === statusItemWindow() { return .statusItem }
         if isChildOfIsland(target) { return .childOfIsland }
         return .otherWindow
@@ -564,12 +567,19 @@ final class IslandController: NSObject {
         }
     }
 
-    // MARK: - The resting notch
+    // MARK: - The resting pills
 
-    /// Over the notched display's notch, under the island while it is open; ordered out
-    /// while no notched display is attached.
+    /// `resting`, with the ears and the hint, over the primary island display's notch, physical or
+    /// virtual; a bare pill over every other island display's (spec 2026-11-03 § Resting pill). All
+    /// under the island while it is open; none where no display carries an island.
     private func placeResting(_ screens: [IslandScreen]) {
-        guard let screen = screens.first(where: \.hasNotch), let notch = screen.notchRect else {
+        let primary = IslandDisplayResolver.primaryIslandScreen(screens)
+        placePrimaryResting(on: primary)
+        placePills(RestingPillRules.pills(screens).filter { $0.displayID != primary?.id })
+    }
+
+    private func placePrimaryResting(on screen: IslandScreen?) {
+        guard let screen, let notch = screen.islandNotch else {
             restingDisplayID = nil
             resting.orderOut(nil)
             return
@@ -585,10 +595,43 @@ final class IslandController: NSObject {
         let layout = RestingLayout(notch: notch, left: left, right: right, appliedFrame: resting.frame)
         restingView.layout = layout
         placeEars()
+        orderResting(resting)
+    }
+
+    /// The bare pills: made for a display that gained an island, dropped for one that lost it or
+    /// went away, placed over each notch (`RestingPillRules`).
+    private func placePills(_ wanted: [RestingPillRules.Pill]) {
+        let changes = RestingPillRules.changes(kept: Set(pills.keys), wanted: wanted)
+        for id in changes.drop {
+            guard let pill = pills.removeValue(forKey: id) else { continue }
+            pill.panel.orderOut(nil)
+            pill.panel.close()
+        }
+        for id in changes.create {
+            let pill = RestingPill(displayID: id)
+            pill.notchView.onPress = { [weak self] in
+                self?.handle(.notch(displayID: id))
+            }
+            pills[id] = pill
+        }
+        for wanted in wanted {
+            guard let pill = pills[wanted.displayID] else { continue }
+            pill.panel.setFrame(
+                RestingLayout.frame(notch: wanted.notch, left: false, right: false, hintRoom: false), display: false
+            )
+            pill.notchView.layout = RestingLayout(
+                notch: wanted.notch, left: false, right: false, appliedFrame: pill.panel.frame
+            )
+            orderResting(pill.panel)
+        }
+    }
+
+    /// Under the island while it is open, in front otherwise.
+    private func orderResting(_ panel: NSPanel) {
         if transition.phase != .closed {
-            resting.order(.below, relativeTo: window.windowNumber)
+            panel.order(.below, relativeTo: window.windowNumber)
         } else {
-            resting.orderFrontRegardless()
+            panel.orderFrontRegardless()
         }
     }
 
@@ -671,7 +714,7 @@ final class IslandController: NSObject {
               let assets = PetAssetStore.shared.assets,
               let shown = pet.shown(in: assets.library),
               let manifest = assets.library.manifests[shown.animal],
-              let notch = IslandScreen.current().lazy.compactMap(\.notchRect).first
+              let notch = IslandDisplayResolver.primaryIslandScreen(IslandScreen.current())?.islandNotch
         else {
             showRestingArt(nil, tips: nil)
             return
@@ -946,17 +989,20 @@ final class IslandController: NSObject {
         }
     }
 
-    /// The resting notch follows the notch; an open island is re-resolved on its own display
-    /// and closes when that display is gone (§ 3.1, Display and anchor; ruling R13).
+    /// The resting pills follow the displays' notches, physical or virtual; an open island is
+    /// re-resolved on its own display and closes when that display is gone (§ 3.1, Display and
+    /// anchor; ruling R13; spec 2026-11-03).
     private func replace() {
         endHint()
-        warmRestingArt()
         let screens = IslandScreen.current()
-        // A lid open or a notched display arriving changes no other state, so nothing else would
+        // A lid open or a display gaining an island changes no other state, so nothing else would
         // read the ears (plan R18).
         earModel.displaysChanged {
             placeResting(screens)
         }
+        // After the panels stand on their displays: the head is built at the scale of the display
+        // `resting` is on now, not the one it left (a lid closing onto a 1× external).
+        warmRestingArt()
         guard transition.phase != .closed, let entry, let placement else { return }
         // The status item as it is now: it moves with the displays, and the resolver
         // prefers it over the frame a status-item entry was clicked on.
