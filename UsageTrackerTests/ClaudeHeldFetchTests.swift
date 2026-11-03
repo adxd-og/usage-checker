@@ -3,7 +3,8 @@ import XCTest
 
 /// A poll the cadence holds back shows Claude's last answer instead of asking (spec
 /// 2026-11-02 Claude limits from the status line, § Design › Cadence): only while Claude
-/// is on, with its Retry-After spent; the last fetch moves only when a poll asked; a held
+/// is on and only a good answer (session ruling 2026-11-03), with its Retry-After spent;
+/// the last fetch moves only when a poll asked; a held
 /// poll leaves the popover's floor where the last asking poll put it (session ruling 4);
 /// the coordinator stands the held answer in for Claude's fetch and asks nothing.
 final class ClaudeHeldFetchTests: XCTestCase {
@@ -11,10 +12,13 @@ final class ClaudeHeldFetchTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_788_693_600)
     private func ago(_ seconds: TimeInterval) -> Date { now.addingTimeInterval(-seconds) }
 
-    private func claude(retryAfter: TimeInterval? = nil, at date: Date) -> ServiceSnapshot {
+    private func claude(
+        state: ServiceState = .ok, retryAfter: TimeInterval? = nil, at date: Date
+    ) -> ServiceSnapshot {
         var snapshot = Fixture.snapshot(
             id: "claude", displayName: "Claude", plan: "Max 20x",
             buckets: [Fixture.bucket(id: "five_hour", label: "Current session", percent: 20, kind: .session)],
+            state: state,
             at: date
         )
         snapshot.retryAfter = retryAfter
@@ -57,6 +61,24 @@ final class ClaudeHeldFetchTests: XCTestCase {
             held(ClaudePollCadenceRules.LastFetch(snapshot: claude(at: ago(300)), at: ago(300))),
             "its five minutes are up"
         )
+    }
+
+    /// Session ruling 2026-11-03, replacing plan R3's "a failed answer is held too": only a
+    /// good answer stands in for a fetch. A failure, a sign-out or a rate limit is asked
+    /// again at the next tick — `refreshNow`'s Retry-After gate still spaces the asks — so
+    /// its chip and the windows only the endpoint has do not freeze for five minutes.
+    func testOnlyAGoodAnswerIsHeldAFailedOneIsAskedAgainAtTheNextTick() {
+        for state in [ServiceState.error, .notSignedIn, .notRunning] {
+            let failed = claude(state: state, retryAfter: 60, at: ago(60))
+
+            XCTAssertNil(
+                held(ClaudePollCadenceRules.LastFetch(snapshot: failed, at: ago(60))),
+                "\(state): asked again"
+            )
+        }
+
+        let good = claude(at: ago(60))
+        XCTAssertEqual(held(ClaudePollCadenceRules.LastFetch(snapshot: good, at: ago(60))), good, "a good answer is held")
     }
 
     func testClaudeOffHoldsNothing() {

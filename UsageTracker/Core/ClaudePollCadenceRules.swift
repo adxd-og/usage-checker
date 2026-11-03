@@ -7,8 +7,8 @@ import Foundation
 /// With a reading applied in the last five minutes (`StatusLineMergeRules.Result.applied`,
 /// at a poll or between polls), a tick asks the endpoint only once
 /// `max(refreshIntervalSeconds, 300)` seconds have passed since the poll that last asked —
-/// up to `tickTolerance` early — and shows the last answer in between; without one, every
-/// tick asks, as before. Anything a person asked for — the popover opening, a Refresh
+/// up to `tickTolerance` early — and shows the last answer in between when it was a good
+/// one; without one, every tick asks, as before. Anything a person asked for — the popover opening, a Refresh
 /// button, a setting, a sign-in coming back — always asks. The endpoint is never switched
 /// off: the model-scoped windows, the credit pools and extra usage exist only there. Only
 /// Claude is held; every other provider polls as it did.
@@ -62,10 +62,14 @@ enum ClaudePollCadenceRules {
         let at: Date
     }
 
-    /// What this poll shows for Claude without asking: the last answer, while Claude is on
-    /// and the cadence holds this poll's fetch back. Its Retry-After is spent: the backoff
-    /// it asked for was applied when it arrived, and carried it would back every provider
-    /// off again on every poll. nil when this poll asks.
+    /// What this poll shows for Claude without asking: the last answer, while Claude is on,
+    /// that answer was good, and the cadence holds this poll's fetch back. A failed,
+    /// signed-out or rate-limited answer is never held (session ruling 2026-11-03): held, it
+    /// would keep its chip and freeze the windows only the endpoint has for up to five
+    /// minutes, so the next tick asks again and `AppState.refreshNow`'s Retry-After gate
+    /// alone spaces the asks. Its Retry-After is spent: the backoff it asked for was applied
+    /// when it arrived, and carried it would back every provider off again on every poll.
+    /// nil when this poll asks.
     static func heldAnswer(
         last: LastFetch?,
         claudeEnabled: Bool,
@@ -76,6 +80,7 @@ enum ClaudePollCadenceRules {
     ) -> ServiceSnapshot? {
         guard claudeEnabled,
               let last,
+              last.snapshot.state == .ok,
               !shouldFetch(
                   trigger: trigger,
                   lastFetchAt: last.at,
