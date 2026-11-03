@@ -84,9 +84,10 @@ final class IslandController: NSObject {
     /// The status item's window, so a click there is left to the item's own toggle (one
     /// action, one dismissal). Set by `StatusBarController`.
     var statusItemWindow: @MainActor () -> NSWindow? = { nil }
-    /// Has the status item read its visibility again, after a click on a pill left behind by its
-    /// display's island placed the pills again: a setup whose last pill went gets the item back at
-    /// once (spec 2026-11-03, review round 2). Set by `StatusBarController`.
+    /// Has the status item read its visibility again, after a re-place point changed the set of pills
+    /// (a space change, a click on a pill left behind): a setup whose last pill went gets the item back
+    /// at once, and loses it when a pill comes back (spec 2026-11-03, review round 2; 4.1.0 release
+    /// review F1). Set by `StatusBarController`.
     var updateStatusItemVisibility: @MainActor () -> Void = {}
 
     override init() {
@@ -197,11 +198,10 @@ final class IslandController: NSObject {
         let target = IslandDisplayResolver.display(for: entry, screens: screens, mainScreenID: CGMainDisplayID())
         // A pill left behind by its display's island (review F4): it still opens, as the panel there,
         // and the pills catch up — a turn later, never from inside the pill's own click, whose window
-        // may be the one that goes — and the status item with them.
+        // may be the one that goes — and the status item with them (`placePills`).
         if IslandDisplayResolver.clickedPillIsStale(entry, screens: screens) {
             Task { @MainActor [weak self] in
                 self?.placePills(on: IslandScreen.current())
-                self?.updateStatusItemVisibility()
             }
         }
         switch pet.entryVerdict(entry, isOpen: isOpen, openScreenID: placement?.screenID, entryScreenID: target?.id) {
@@ -529,18 +529,22 @@ final class IslandController: NSObject {
     /// A re-place point (launch, a display change, wake or unlock, a space change that moved the set,
     /// a click on a pill left behind) with its reading of the displays: kept as the reading the pills
     /// stand on, the ears read on it, the pills made, dropped and laid over it. Only here does the set
-    /// of pills change.
+    /// of pills change, and a changed set has the status item read its visibility again (4.1.0 release
+    /// review F1): the last pill going (a full-screen space on a lone notchless display) forces the
+    /// item on, and a pill coming back hides it again.
     private func placePills(on screens: [IslandScreen]) {
         placedScreens = screens
+        var setChanged = false
         earModel.displaysChanged {
-            placeResting(screens)
+            setChanged = !placeResting(screens).isEmpty
         }
+        if setChanged { updateStatusItemVisibility() }
     }
 
     /// A pill over every island display's notch, physical or virtual, with that display's ears,
     /// under the island while it is open (spec 2026-11-03 § Resting pill, § Ears and hint); made for
     /// a display that gains an island, dropped for one that loses it or goes away. `placePills`'s.
-    private func placeResting(_ screens: [IslandScreen]) {
+    private func placeResting(_ screens: [IslandScreen]) -> RestingPillRules.Changes {
         let wanted = RestingPillRules.pills(screens)
         let changes = RestingPillRules.changes(kept: Set(pills.keys), wanted: wanted)
         for id in changes.drop {
@@ -558,6 +562,7 @@ final class IslandController: NSObject {
         }
         // A new pill's head and tips, at its own display's scale, once it stands on that display.
         if !changes.create.isEmpty { warmRestingArt() }
+        return changes
     }
 
     /// The pills there are, each over its notch in the reading it was placed from, with its ears as
@@ -983,8 +988,8 @@ final class IslandController: NSObject {
     }
 
     /// A changed set reads the ears (a pill that comes back needs its display's) and places the
-    /// pills; a hint on a pill that stays keeps going, and an open island stays as it is. An unchanged
-    /// set keeps the reading the pills stand on.
+    /// pills, and the status item follows; a hint on a pill that stays keeps going, and an open island
+    /// stays as it is. An unchanged set keeps the reading the pills stand on.
     private func placePillsIfTheirSetChanged() {
         let screens = IslandScreen.current()
         guard !RestingPillRules.changes(kept: Set(pills.keys), wanted: RestingPillRules.pills(screens)).isEmpty
