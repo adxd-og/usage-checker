@@ -27,7 +27,7 @@ final class StatusItemFirstLaunchVerificationTests: XCTestCase {
                             runs += 1
                             XCTAssertEqual(
                                 StatusItemVisibilityRules.firstLaunchAfterUpdate(
-                                    alreadyMarked: marked, hasSeenOnboarding: seen, setting: value, notchedDisplayAttached: notch
+                                    alreadyMarked: marked, hasSeenOnboarding: seen, setting: value, islandDisplayAttached: notch
                                 ),
                                 expected(marked: marked, seen: seen, stored: stored, notch: notch),
                                 "marked \(marked), tour seen \(seen), setting \(String(describing: value)), notch \(notch)"
@@ -47,7 +47,7 @@ final class StatusItemFirstLaunchVerificationTests: XCTestCase {
                 for setting: Bool? in [nil, true, false] {
                     for notch in [false, true]
                     where StatusItemVisibilityRules.firstLaunchAfterUpdate(
-                        alreadyMarked: marked, hasSeenOnboarding: seen, setting: setting, notchedDisplayAttached: notch
+                        alreadyMarked: marked, hasSeenOnboarding: seen, setting: setting, islandDisplayAttached: notch
                     ) == .openIsland {
                         opening.append("\(marked) \(seen) \(String(describing: setting)) \(notch)")
                     }
@@ -65,7 +65,7 @@ final class StatusItemFirstLaunchVerificationTests: XCTestCase {
                 for notch in [false, true] {
                     XCTAssertEqual(
                         StatusItemVisibilityRules.firstLaunchAfterUpdate(
-                            alreadyMarked: true, hasSeenOnboarding: seen, setting: setting, notchedDisplayAttached: notch
+                            alreadyMarked: true, hasSeenOnboarding: seen, setting: setting, islandDisplayAttached: notch
                         ),
                         .nothing
                     )

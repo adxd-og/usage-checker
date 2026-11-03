@@ -51,7 +51,7 @@ final class StatusBarController: NSObject {
             .sink { [weak self] setting in
                 self?.updateVisibility(setting: setting)
             }
-        // A notched display attached or gone (clamshell, an external display) moves the answer.
+        // A display gaining or losing the island (a lid, an external display, a menu bar that hides) moves the answer.
         NotificationCenter.default.addObserver(
             self, selector: #selector(screensChanged(_:)),
             name: NSApplication.didChangeScreenParametersNotification, object: nil
@@ -77,7 +77,7 @@ final class StatusBarController: NSObject {
     }
 
     /// Read now and a second later, since the first read of the screens after these can be stale
-    /// (`IslandController.woke`, P0 run 1). A stale "notched display attached" would leave no item
+    /// (`IslandController.woke`, P0 run 1). A stale "island display attached" would leave no item
     /// and no notch to open the island from.
     @objc private func woke(_ note: Notification) {
         updateVisibility(setting: SettingsStore.shared.showInMenuBar)
@@ -90,7 +90,7 @@ final class StatusBarController: NSObject {
     private func updateVisibility(setting: Bool?) {
         let shown = StatusItemVisibilityRules.isShown(
             setting: setting,
-            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+            islandDisplayAttached: StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
         )
         if shown, statusItem == nil {
             let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -123,7 +123,7 @@ final class StatusBarController: NSObject {
     }
 
     /// The item opens the island on its own display (a panel under it when that display has
-    /// no notch) and closes it when it is open (§ 3.1).
+    /// no island, spec 2026-11-03) and closes it when it is open (§ 3.1).
     @objc private func toggleIsland() {
         guard let frame = statusItem?.button?.window?.frame else { return }
         island.handle(.statusItem(buttonFrame: frame))

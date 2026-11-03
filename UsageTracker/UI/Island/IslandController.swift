@@ -272,7 +272,7 @@ final class IslandController: NSObject {
             alreadyMarked: settings.hasOpenedIslandAfterUpdate,
             hasSeenOnboarding: settings.hasSeenOnboarding,
             setting: settings.showInMenuBar,
-            notchedDisplayAttached: StatusItemVisibilityRules.notchedDisplayAttached(IslandScreen.current())
+            islandDisplayAttached: StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
         )
         guard verdict != .nothing else { return }
         settings.hasOpenedIslandAfterUpdate = true

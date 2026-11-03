@@ -86,7 +86,7 @@ enum IslandEarRules {
         return ears(
             IslandEarInput(
                 mood: mood, mode: mode, petOn: petOn, showsEars: presentation.showsEars,
-                statusItemShown: StatusItemVisibilityRules.isShown(setting: showInMenuBar, notchedDisplayAttached: true),
+                statusItemShown: StatusItemVisibilityRules.isShown(setting: showInMenuBar, islandDisplayAttached: true),
                 earHeight: notch.height
             ),
             now: now, calendar: calendar, locale: locale
