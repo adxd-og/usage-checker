@@ -15,6 +15,10 @@ struct IslandScreen: Equatable, Sendable {
     /// side of the notch; nil when the display has none.
     let auxiliaryLeftWidth: CGFloat?
     let auxiliaryRightWidth: CGFloat?
+    /// The camera housing's width on the notched display read with this one (`attached`): the width
+    /// a virtual notch takes (spec 2026-11-03). nil with no notched display attached, and on a
+    /// reading not passed through `attached`.
+    var referenceNotchWidth: CGFloat? = nil
 
     /// The camera housing, from this reading: as tall as the top safe area, as wide as the
     /// two auxiliary areas leave. Only their widths are used, so the answer does not depend
@@ -36,6 +40,13 @@ struct IslandScreen: Equatable, Sendable {
     /// 2026-11-03 § Virtual notch). 0 while the menu bar is hidden there (auto-hide, or a display
     /// without a menu bar of its own).
     var menuBarHeight: CGFloat { max(frame.maxY - visibleFrame.maxY, 0) }
+
+    /// Where the island hangs (spec 2026-11-03 § Virtual notch): the camera housing on a notched
+    /// display, else the virtual notch from `VirtualNotchRules`; nil on a display with neither,
+    /// where the island is the panel. `hasNotch` still says whether there is a camera housing.
+    var islandNotch: CGRect? {
+        notchRect ?? VirtualNotchRules.rect(screen: self, referenceNotchWidth: referenceNotchWidth)
+    }
 }
 
 extension IslandScreen {
@@ -52,9 +63,21 @@ extension IslandScreen {
         )
     }
 
-    /// Every attached display, read now.
+    /// Every attached display, read now, as one reading (`attached`).
     @MainActor
     static func current() -> [IslandScreen] {
-        NSScreen.screens.map(IslandScreen.init)
+        attached(NSScreen.screens.map(IslandScreen.init))
+    }
+
+    /// `screens` as one reading: each display carries the width of the first camera housing among
+    /// them, so a virtual notch matches the physical one (spec 2026-11-03 § Virtual notch). The
+    /// order and every other value are kept.
+    static func attached(_ screens: [IslandScreen]) -> [IslandScreen] {
+        let width = screens.lazy.compactMap(\.notchRect).first?.width
+        return screens.map { screen in
+            var screen = screen
+            screen.referenceNotchWidth = width
+            return screen
+        }
     }
 }

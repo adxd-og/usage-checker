@@ -61,4 +61,41 @@ final class IslandScreenTests: XCTestCase {
         XCTAssertEqual(ScreenFixture.externalRight.menuBarHeight, 24)
         XCTAssertEqual(ScreenFixture.externalRightMenuBarHidden.menuBarHeight, 0)
     }
+
+    // MARK: - The island's notch (spec 2026-11-03 § Virtual notch)
+
+    func testANotchedDisplaysIslandNotchIsItsCameraHousing() {
+        XCTAssertEqual(ScreenFixture.builtIn.islandNotch, ScreenFixture.builtIn.notchRect)
+        XCTAssertEqual(ScreenFixture.narrowNotched.islandNotch, CGRect(x: 580, y: 844, width: 192, height: 34))
+    }
+
+    func testADisplayWithoutANotchGetsAVirtualOneAndStillHasNoNotch() {
+        XCTAssertEqual(ScreenFixture.externalRight.islandNotch, CGRect(x: 2699.5, y: 1416, width: 185, height: 24))
+        XCTAssertNil(ScreenFixture.externalRight.notchRect)
+        XCTAssertFalse(ScreenFixture.externalRight.hasNotch, "hasNotch is the camera housing")
+    }
+
+    func testDisplaysReadTogetherTakeTheNotchedDisplaysWidth() {
+        let screens = IslandScreen.attached([ScreenFixture.narrowNotched, ScreenFixture.externalRight])
+        XCTAssertEqual(screens.map(\.id), [4, 2], "the order is kept")
+        XCTAssertEqual(screens.map(\.referenceNotchWidth), [192, 192])
+        XCTAssertEqual(screens[1].islandNotch, CGRect(x: 2696, y: 1416, width: 192, height: 24))
+        XCTAssertEqual(screens[0].islandNotch, ScreenFixture.narrowNotched.notchRect, "the notched display keeps its own")
+    }
+
+    /// The lid closed, or a Mac without a notch: nothing to match, so 185.
+    func testWithNoNotchedDisplayAttachedThePillIs185Wide() {
+        let screens = IslandScreen.attached([ScreenFixture.externalRight, ScreenFixture.externalLeft])
+        XCTAssertEqual(screens.map(\.referenceNotchWidth), [nil, nil])
+        XCTAssertEqual(screens.compactMap(\.islandNotch).map(\.width), [185, 185])
+    }
+
+    func testNoIslandNotchOnANarrowDisplayOrUnderAHiddenMenuBar() {
+        let screens = IslandScreen.attached(
+            [ScreenFixture.builtIn, ScreenFixture.narrow1279, ScreenFixture.externalLeftMenuBarHidden]
+        )
+        XCTAssertNotNil(screens[0].islandNotch)
+        XCTAssertNil(screens[1].islandNotch)
+        XCTAssertNil(screens[2].islandNotch)
+    }
 }
