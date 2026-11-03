@@ -29,7 +29,8 @@ final class StatusBarController: NSObject {
         observeKeepAwakeForTooltip()
         // A click on the item is its own toggle's, never also an outside click.
         island.statusItemWindow = { [weak self] in self?.statusItem?.button?.window }
-        // A click on a pill its display had left behind places the pills again; the item follows.
+        // Whenever the island's pills change their set (a space whose menu bar goes or comes back, a
+        // click on a pill its display had left behind), the item follows.
         island.updateStatusItemVisibility = { [weak self] in
             self?.updateVisibility(setting: SettingsStore.shared.showInMenuBar)
         }
