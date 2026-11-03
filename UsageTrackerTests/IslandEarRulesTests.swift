@@ -18,14 +18,15 @@ final class IslandEarRulesTests: XCTestCase {
     private func input(
         sessions: [AgentSession] = [], services: [ServiceSnapshot] = [], keepAwake: KeepAwakeState = .idle,
         mode: PercentDisplay.Mode = .used, pet: Bool = true, ears: Bool = true, itemShown: Bool = false,
-        earHeight: CGFloat = 32
+        earHeight: CGFloat = 32, backingScale: CGFloat = 2
     ) -> IslandEarInput {
         IslandEarInput(
             mood: PetMoodInput(
                 sessions: sessions, services: services, enabledIDs: ["claude", "codex"],
                 claudeBinaryFound: true, keepAwake: keepAwake
             ),
-            mode: mode, petOn: pet, showsEars: ears, statusItemShown: itemShown, earHeight: earHeight
+            mode: mode, petOn: pet, showsEars: ears, statusItemShown: itemShown, earHeight: earHeight,
+            backingScale: backingScale
         )
     }
 
@@ -294,5 +295,44 @@ final class IslandEarRulesTests: XCTestCase {
         XCTAssertEqual(ears(state, onDisplays: both), earsByDisplay(state, onDisplays: both)[1])
         let external = [ScreenFixture.externalRight]
         XCTAssertEqual(ears(state, onDisplays: external), earsByDisplay(state, onDisplays: external)[2])
+    }
+
+    // MARK: - The head where it fits (spec 2026-11-03 § Ears and hint; review F2)
+
+    /// 26 beads at one pixel each are 26 pt on a 1× display; at 2× one pixel a bead is 13 pt.
+    func testTheHeadFitsAnEarOnlyWhereItsWholePixelsDo() {
+        let cases: [(height: CGFloat, backing: CGFloat, fits: Bool)] = [
+            (24, 1, false), (25, 1, false), (26, 1, true),
+            (24, 2, true), (25, 2, true), (26, 2, true),
+        ]
+        for item in cases {
+            XCTAssertEqual(
+                IslandEarRules.headFits(earHeight: item.height, backingScale: item.backing), item.fits,
+                "\(item.height) pt at \(item.backing)×"
+            )
+        }
+    }
+
+    /// The dot stands in for the head and still does what the ear says; a dot never morphs.
+    func testWhereTheHeadDoesNotFitTheLeftEarShowsTheDotAndStillDoesWhatItSays() {
+        let session = waiting("a")
+        let small = ears(input(sessions: [session], earHeight: 24, backingScale: 1))
+        XCTAssertEqual(small.left?.mark, .neutralDot)
+        XCTAssertEqual(small.left?.action, .jump(sessionID: session.id))
+        XCTAssertFalse(IslandEarMorph.eligible(mark: small.left?.mark, morphEligible: true, reduceMotion: false))
+        XCTAssertEqual(ears(input(sessions: [session], earHeight: 24, backingScale: 2)).left?.mark, .head)
+        XCTAssertEqual(ears(input(sessions: [session], earHeight: 26, backingScale: 1)).left?.mark, .head)
+        XCTAssertEqual(ears(input(sessions: [session], pet: false, earHeight: 32, backingScale: 2)).left?.mark, .neutralDot)
+    }
+
+    /// A MacBook beside a 1× external: the head beside the MacBook's notch, the dot beside the pill.
+    func testOnA1xExternalThePillGetsTheDotAndTheMacBookTheHead() {
+        var external = ScreenFixture.externalRight
+        external.backingScale = 1
+        let byDisplay = earsByDisplay(
+            input(sessions: [waiting("a")]), onDisplays: IslandScreen.attached([ScreenFixture.builtIn, external])
+        )
+        XCTAssertEqual(byDisplay[1]?.left?.mark, .head)
+        XCTAssertEqual(byDisplay[2]?.left?.mark, .neutralDot)
     }
 }

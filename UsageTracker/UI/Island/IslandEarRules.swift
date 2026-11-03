@@ -13,7 +13,7 @@ struct IslandEars: Equatable, Sendable {
     enum LeftMark: Equatable, Sendable {
         /// The pet's 16 × 16 head.
         case head
-        /// Pet off.
+        /// Pet off, or a head that does not fit this display's ear (`IslandEarRules.headFits`).
         case neutralDot
     }
 
@@ -47,6 +47,8 @@ struct IslandEarInput: Equatable, Sendable {
     var statusItemShown: Bool
     /// The notch's height, which the ears take.
     var earHeight: CGFloat
+    /// The display's backing scale: with `earHeight`, whether the head fits (`IslandEarRules.headFits`).
+    var backingScale: CGFloat = 2
 }
 
 /// What each ear shows and does (§ 3.6, § 3.9). The left ear follows the top of the mood table's
@@ -86,7 +88,7 @@ enum IslandEarRules {
             IslandEarInput(
                 mood: mood, mode: mode, petOn: petOn, showsEars: presentation.showsEars,
                 statusItemShown: StatusItemVisibilityRules.isShown(setting: showInMenuBar, islandDisplayAttached: true),
-                earHeight: notch.height
+                earHeight: notch.height, backingScale: screen.backingScale
             ),
             now: now, calendar: calendar, locale: locale
         )
@@ -123,7 +125,10 @@ enum IslandEarRules {
     }
 
     private static func left(_ input: IslandEarInput, now: Date, calendar: Calendar) -> IslandEars.Ear<IslandEars.LeftMark>? {
-        let mark: IslandEars.LeftMark = input.petOn ? .head : .neutralDot
+        // The head only where its whole pixels fit the ear (spec 2026-11-03; review F2): a 24 pt pill
+        // on a 1× display takes the dot, which never morphs (`IslandEarMorph.eligible`).
+        let mark: IslandEars.LeftMark =
+            input.petOn && headFits(earHeight: input.earHeight, backingScale: input.backingScale) ? .head : .neutralDot
         // No default: a new mood has to choose.
         switch PetMoodRules.mood(input.mood, now: now, calendar: calendar) {
         case .needsYou(let waiting):
@@ -186,6 +191,14 @@ enum IslandEarRules {
         PetScaleRules.scale(
             beads: PetContract.earSize, fitting: CGSize(width: earWidth, height: earHeight), backingScale: backingScale
         )
+    }
+
+    /// Whether the head fits an ear `earHeight` tall on a display at `backingScale` (spec 2026-11-03;
+    /// review F2): its beads at whole pixels, one pixel a bead at the least, inside the ear. A 24 pt
+    /// pill on a 1× display cannot hold the 26-bead head (26 pt); at 2× it is 13 pt.
+    static func headFits(earHeight: CGFloat, backingScale: CGFloat) -> Bool {
+        headScale(earHeight: earHeight, backingScale: backingScale).points(beads: PetContract.earSize)
+            <= min(earWidth, earHeight)
     }
 
     /// The head centred in `ear`, on the device-pixel grid.
