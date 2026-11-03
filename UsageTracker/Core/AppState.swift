@@ -427,6 +427,9 @@ final class AppState: ObservableObject {
         // Only when it moved: every assignment redraws whatever observes the app.
         let polledMoved = polledIDs != polled
         if polledMoved { polledIDs = polled }
+        // A held answer counts only while Claude is still polled: switched off after
+        // `startRefresh` decided, this poll forgets Claude's last fetch instead of keeping it.
+        let held = polled.contains(ClaudeOAuthProvider.serviceID) ? claudeHeld : nil
 
         // Cheap daily no-op: keeps CLI cost rates current from models.dev.
         await ModelsDevPricing.refreshIfStale()
@@ -445,12 +448,12 @@ final class AppState: ObservableObject {
             // While Claude Code's status line feeds Claude's two windows, a held poll shows
             // Claude's last answer instead of asking (spec 2026-11-02 Claude limits from the
             // status line, § Cadence). The other providers poll as before.
-            claudeHeld: claudeHeld
+            claudeHeld: held
         )
         // Claude's answer as the provider gave it, before anything below dresses it, dated by
         // the poll's start: what the interval is measured from.
         lastClaudeFetch = ClaudePollCadenceRules.lastFetch(
-            after: next.services, held: claudeHeld, previous: lastClaudeFetch, at: startedAt
+            after: next.services, held: held, previous: lastClaudeFetch, at: startedAt
         )
         // Before retention: a Codex account that answered without the windows it had a
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
