@@ -523,8 +523,10 @@ to keep a year of them:
   folder only you can open, one small file per session, for Brioche to read
 - Polls at human-paced intervals (default 60s), honours server `Retry-After`.
   While Claude Code's status line has fed Claude's numbers in the last 5
-  minutes, Claude's usage endpoint is asked at most every 5 minutes (or at
-  your interval, if that is slower); opening the island still asks at once
+  minutes and Claude's last answer was good, Claude's usage endpoint is asked
+  at most every 5 minutes (or at your interval, if that is slower); after a
+  failed answer it is asked again at the next poll, and opening the island
+  still asks at once
 - **No telemetry, no analytics.** Usage history and cost accounting stay
   on your Mac
 - Open source end to end. Audit anything above
