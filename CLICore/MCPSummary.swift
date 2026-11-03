@@ -39,6 +39,7 @@ enum MCPSummary {
                 return "\(window.label.lowercased()) \(figures)"
             }
             let percent = "\(window.label.lowercased()) \(Int(window.percent.rounded()))%"
+                + (sourceWords(window, now: now, calendar: calendar, locale: locale).map { " \($0)" } ?? "")
             guard let at = window.resetsAt,
                   let reset = ResetCopy.both(resetsAt: at, now: now, calendar: calendar, locale: locale)
             else { return percent }
@@ -65,6 +66,22 @@ enum MCPSummary {
         return "\(head): \(clauses.joined(separator: "; "))."
     }
 
+    /// What the paragraph says after a window's percent about where it came from: "from
+    /// Claude Code at 11:19" when Claude Code's status line fed it (spec 2026-11-02
+    /// § Source tag), its time in `ResetCopy`'s spelling; "from Claude Code" when the file
+    /// gave no time; nothing for the provider's own fetch, an absent key, or a source this
+    /// build does not know.
+    static func sourceWords(
+        _ window: StatusSnapshot.Window, now: Date,
+        calendar: Calendar = .current, locale: Locale = .current
+    ) -> String? {
+        guard let words = window.source.flatMap(ReadingSource.init(rawValue:))?.words else { return nil }
+        guard let asOf = window.asOf,
+              let at = ResetCopy.absolute(resetsAt: asOf, now: now, calendar: calendar, locale: locale)
+        else { return words }
+        return "\(words) at \(at)"
+    }
+
     /// The one sentence that answers "should I start this now?". Driven by the fullest
     /// window of the providers reporting now, because that is the one that will stop the
     /// work. A last-known window gets no verdict: "wait for the reset" on a number that
@@ -79,7 +96,9 @@ enum MCPSummary {
         let percent = Int(worst.window.percent.rounded())
         let reading = "\(worst.service.name)'s \(worst.window.label.lowercased()) window"
         if worst.service.retained {
-            let seen = worst.service.retainedAt
+            // A window Claude Code's status line fed is as old as its reading, not as the
+            // provider's last good fetch.
+            let seen = (worst.window.asOf ?? worst.service.retainedAt)
                 .flatMap { ResetCopy.absolute(resetsAt: $0, now: now, calendar: calendar, locale: locale) }
                 .map { " at \($0)" } ?? ""
             return "Nothing is reporting live: \(reading) was \(percent)% used when last seen\(seen), "

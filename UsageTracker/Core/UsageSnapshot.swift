@@ -31,6 +31,25 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     /// pool spent. Optional with a nil default for the same reason as `windowLength`:
     /// a `last-known.json` written by 3.0.1 has no such key and still decodes.
     var credit: CreditPool? = nil
+    /// Where the numbers came from (spec 2026-11-02 Claude limits from the status line,
+    /// § Source tag): `.statusLine` on Claude's session and weekly windows when Claude
+    /// Code's status line fed them (`StatusLineMergeRules`), nil — the provider's own
+    /// fetch, `.oauth` in effect — everywhere else. Optional with a nil default for the
+    /// reason `windowLength` is: a `last-known.json` written before it has no such key
+    /// and still decodes, and a nil one writes no key at all. A value this build does not
+    /// know decodes as nil (the extension below).
+    var source: ReadingSource? = nil
+    /// When these numbers were new, where the source says so: the `asOf` of the
+    /// status-line reading that fed the window. nil on the provider's own windows, which
+    /// the service's `fetchedAt` dates. Every surface that says "from Claude Code" dates
+    /// the window by it, never by `fetchedAt` or `retainedAt`.
+    var asOf: Date? = nil
+
+    /// Spelled out for the decoder in the extension below. Encoding stays synthesized: an
+    /// optional that is nil writes no key.
+    enum CodingKeys: String, CodingKey {
+        case id, label, utilization, resetsAt, kind, windowLength, credit, source, asOf
+    }
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
 
@@ -72,6 +91,29 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
         let remaining = resetsAt.timeIntervalSince(now)
         guard remaining > 0, remaining <= duration else { return nil }
         return 1 - remaining / duration
+    }
+}
+
+/// Reading a bucket a later build wrote (session ruling 2026-11-02): a `source` this build
+/// does not know — or not a string at all — is no source, never a failed file;
+/// `LastKnownStore` would otherwise lose every provider's last-known numbers. Every other
+/// key decodes as the synthesized decoder did. In an extension so the memberwise
+/// initializer every provider and test uses survives (the `StatusSnapshot` pattern).
+extension UsageBucket {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let spelled = (try? c.decodeIfPresent(String.self, forKey: .source)) ?? nil
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            label: try c.decode(String.self, forKey: .label),
+            utilization: try c.decode(Double.self, forKey: .utilization),
+            resetsAt: try c.decode(Date.self, forKey: .resetsAt),
+            kind: try c.decode(BucketKind.self, forKey: .kind),
+            windowLength: try c.decodeIfPresent(TimeInterval.self, forKey: .windowLength),
+            credit: try c.decodeIfPresent(CreditPool.self, forKey: .credit),
+            source: spelled.flatMap(ReadingSource.init(rawValue:)),
+            asOf: try c.decodeIfPresent(Date.self, forKey: .asOf)
+        )
     }
 }
 

@@ -67,9 +67,11 @@ enum StatusLineDrop {
 
         let formatVersion: Int
         let sessionID: String
-        /// With `totalAPIDurationMs`, what tells a reading Claude Code just received from
-        /// the same one re-sent on its timer. Absent when the payload had none.
+        /// Carried, never compared: it moves at submit, before the API answers. Absent
+        /// when the payload had none.
         let promptID: String?
+        /// What tells a reading Claude Code just received from the same one re-sent on its
+        /// timer (`StatusLineFreshnessRules`).
         let totalAPIDurationMs: Double?
         let fiveHour: StatusLineInput.RateLimits.Window?
         let sevenDay: StatusLineInput.RateLimits.Window?

@@ -223,7 +223,11 @@ actor StatusFileWriter {
                 // A credit pool's dollars, so the terminal and the MCP paragraph can say
                 // what the popover's row says. nil, and so absent, on every window.
                 usedDollars: bucket.credit?.usedDollars,
-                limitDollars: bucket.credit?.limitDollars
+                limitDollars: bucket.credit?.limitDollars,
+                // "statusLine" and the reading's time where Claude Code's status line fed
+                // the window; absent for the provider's own fetch.
+                source: bucket.source?.rawValue,
+                asOf: bucket.asOf
             )
         }
         if let extra = service.extraUsage, extra.isEnabled {

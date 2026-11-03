@@ -86,6 +86,8 @@ final class AppState: ObservableObject {
     /// value it started under, and its result is applied only while that value is still
     /// the newest (`appliesGather(started:latest:)`).
     private var statusGatherGeneration = 0
+    /// The re-merge a burst of status-line folder events folds into (`statusLineChanged`).
+    private var statusLineRemerge: Task<Void, Never>?
 
     private init() {}
 
@@ -102,6 +104,17 @@ final class AppState: ObservableObject {
         removeLegacyClaudeTokenCopy()
         refreshNow()
         startTimer()
+        // Claude Code's status line leaves Claude's limits in a folder (spec 2026-11-02 Claude
+        // limits from the status line, § Design › App). Reading it as it changes dates each
+        // reading by the file its API time grew in, and puts it on screen a second later;
+        // every poll reads it too.
+        Task {
+            await StatusLineReadingStore.shared.startWatching {
+                // The store's executor, not the main actor: hop explicitly before touching
+                // the app's state.
+                Task { @MainActor in AppState.shared.statusLineChanged() }
+            }
+        }
         // Keep awake (spec 2026-10-26 § Behaviour, Visible): what the helper says, once
         // at launch, so a mode armed before a relaunch shows at once. No XPC when the
         // helper was never registered.
@@ -408,10 +421,25 @@ final class AppState: ObservableObject {
         // poll ago becomes a failure, so the step below keeps its old numbers, dimmed.
         next = CodexProvider.flaggingMissingWindows(in: next, previous: snapshot, stored: lastKnown)
         next = await Self.applyPayAsYouGo(to: next)
+        // Claude Code's status line, read at every poll as well as on the folder's own
+        // events (spec 2026-11-02 Claude limits from the status line, § Design › App).
+        let statusLineNow = Date()
+        let statusLine = await StatusLineReadingStore.shared.load(now: statusLineNow)
         // Per service, never the whole array: a failed provider keeps its last good
         // reading beside its state chip, and a provider this poll no longer returned
-        // (switched off) is gone. From here on `next` is what the app shows.
-        next = Self.mergingPoll(previous: snapshot, next: next, stored: lastKnown)
+        // (switched off) is gone. Then Claude's session and weekly windows from the status
+        // line, where its reading is newer. From here on `next` is what the app shows.
+        let shown = Self.shownAfterPoll(
+            previous: snapshot,
+            next: next,
+            stored: lastKnown,
+            statusLine: statusLine,
+            defaultConfigDir: StatusLineMergeRules.defaultConfigDir(
+                home: FileManager.default.homeDirectoryForCurrentUser
+            ),
+            now: statusLineNow
+        )
+        next = shown.snapshot
         snapshot = next
         // The Sign in button follows what Claude just said (spec 2026-10-25 § Package 2).
         ClaudeSignInModel.shared.pollLanded(claude: next.services.first { $0.id == ClaudeOAuthProvider.serviceID })
@@ -539,6 +567,42 @@ final class AppState: ObservableObject {
         )
         // The writer's own throttle may swallow this one; it schedules a trailing
         // write when it does, so the last state always reaches disk.
+        publishStatusFile(costs: lastCosts, sessions: lastSessions, shares: lastShares)
+    }
+
+    /// Claude Code's status line changed between polls (spec 2026-11-02 Claude limits from
+    /// the status line, § Design › App; session ruling 2026-11-02). A second after the last
+    /// folder event of a burst, the newest reading goes into the snapshot on screen, so
+    /// Claude's two windows follow Claude Code's answers rather than the poll — during a
+    /// Retry-After backoff too, since nothing is fetched. On the main actor: the store's
+    /// listener hops here explicitly.
+    func statusLineChanged() {
+        statusLineRemerge?.cancel()
+        statusLineRemerge = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(AppState.statusLineRemergeDelay * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            let sessions = await StatusLineReadingStore.shared.sessions
+            self?.applyStatusLine(sessions)
+        }
+    }
+
+    /// The re-merge itself: the snapshot, the widget and `status.json`. `LastKnownStore`,
+    /// history and the notifications wait for the next poll, which carries the same numbers.
+    private func applyStatusLine(_ sessions: [StatusLineFreshnessRules.Session]) {
+        let now = Date()
+        guard let fed = Self.statusLineRemerged(
+            snapshot,
+            sessions: sessions,
+            defaultConfigDir: StatusLineMergeRules.defaultConfigDir(
+                home: FileManager.default.homeDirectoryForCurrentUser
+            ),
+            now: now
+        ) else { return }
+        snapshot = fed.snapshot
+        WidgetBridge.publish(
+            snapshot.services, at: snapshot.fetchedAt, mode: SettingsStore.shared.percentMode,
+            polled: polledIDs
+        )
         publishStatusFile(costs: lastCosts, sessions: lastSessions, shares: lastShares)
     }
 
@@ -756,6 +820,47 @@ final class AppState: ObservableObject {
             isStale: allFailed,
             lastError: merged.lastError
         )
+    }
+
+    /// What the app shows after a poll: `mergingPoll`'s retention first, then Claude's
+    /// session and weekly windows from Claude Code's status line where its reading is newer
+    /// (`StatusLineMergeRules`, spec 2026-11-02 § Design › App). In that order: a failed
+    /// Claude keeps its last-known numbers, dimmed, and the status line then freshens the
+    /// two it knows; the next poll's retention carries the windows it fed, tag and all.
+    nonisolated static func shownAfterPoll(
+        previous: UsageSnapshot,
+        next: UsageSnapshot,
+        stored: [String: LastKnownService],
+        statusLine: [StatusLineFreshnessRules.Session],
+        defaultConfigDir: String,
+        now: Date
+    ) -> StatusLineMergeRules.Result {
+        StatusLineMergeRules.merge(
+            mergingPoll(previous: previous, next: next, stored: stored),
+            sessions: statusLine,
+            defaultConfigDir: defaultConfigDir,
+            now: now
+        )
+    }
+
+    /// How long a burst of status-line folder events is folded into one re-merge: Claude
+    /// Code renames each drop over the last, and one answer can rewrite it more than once.
+    nonisolated static let statusLineRemergeDelay: TimeInterval = 1
+
+    /// What to show when Claude Code's status line changed between polls (session ruling
+    /// 2026-11-02): the snapshot on screen with the newest reading merged in
+    /// (`StatusLineMergeRules`), or nil when that changes nothing. No fetch and no
+    /// retention — the snapshot on screen already is retention's output, and the next poll
+    /// does both — so it runs as well while a Retry-After backoff holds every poll.
+    nonisolated static func statusLineRemerged(
+        _ shown: UsageSnapshot,
+        sessions: [StatusLineFreshnessRules.Session],
+        defaultConfigDir: String,
+        now: Date
+    ) -> StatusLineMergeRules.Result? {
+        let fed = StatusLineMergeRules.merge(shown, sessions: sessions, defaultConfigDir: defaultConfigDir, now: now)
+        guard fed.applied, fed.snapshot != shown else { return nil }
+        return fed
     }
 
     private static func strippingBuckets(_ s: ServiceSnapshot) -> ServiceSnapshot {

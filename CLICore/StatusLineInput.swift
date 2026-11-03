@@ -80,12 +80,13 @@ struct StatusLineInput: Equatable, Sendable {
     /// once `StatusLineDrop` has checked it can be one.
     let sessionID: String?
 
-    /// `prompt_id` — changes with every prompt the user sends.
+    /// `prompt_id` — changes with every prompt the user sends, before any response, so
+    /// it is carried but never dates a reading.
     let promptID: String?
 
-    /// `cost.total_api_duration_ms` — grows with every API response. With `promptID`,
-    /// how the app tells a reading Claude Code just received from the same reading
-    /// re-sent on its timer: the payload has no "last updated" field.
+    /// `cost.total_api_duration_ms` — grows with every API response, and only then: how
+    /// the app tells a reading Claude Code just received from the same reading re-sent on
+    /// its timer (`StatusLineFreshnessRules`). The payload has no "last updated" field.
     let totalAPIDurationMs: Double?
 
     /// `version` — the Claude Code that wrote the payload.

@@ -102,6 +102,17 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         /// as before, and an added key is not a new `currentVersion`.
         var usedDollars: Double?
         var limitDollars: Double?
+        /// Where the window's numbers came from, as `ReadingSource.rawValue`: "statusLine"
+        /// when Claude Code's status line fed Claude's session or weekly window. Absent for
+        /// the provider's own fetch and in every file written before it: optional, so the
+        /// synthesized decoder reads those files as before, and an added key is not a new
+        /// `currentVersion`. A string, not the enum, so a source a later build adds never
+        /// fails a file this one reads.
+        var source: String?
+        /// When those numbers were new: the status-line reading's time (`UsageBucket.asOf`).
+        /// Absent wherever `source` is, and the service's `retainedAt` or the file's
+        /// `updatedAt` dates the window as before.
+        var asOf: Date?
 
         /// Bonus quota pools. Running one dry costs nothing, so they never lead a
         /// headline — the same rule as `UsageBucket.isPromotional`.

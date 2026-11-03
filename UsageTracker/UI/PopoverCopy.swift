@@ -24,14 +24,21 @@ enum PopoverCopy {
 
     /// The header's second line. A provider tab names the provider and its plan first
     /// ("Claude Max 20x · Updated 7s ago"); All says only when it updated. The age is
-    /// `UpdatedCopy`'s, so it reads as the dashboard sidebar's footnote does.
+    /// `UpdatedCopy`'s, so it reads as the dashboard sidebar's footnote does. A provider
+    /// whose windows Claude Code's status line fed says so, and is as old as that reading
+    /// — not the poll, not a retained OAuth reading hours back: "… Updated 2m ago from
+    /// Claude Code" (spec 2026-11-02 Claude limits from the status line, § Source tag).
     static func metaLine(service: ServiceSnapshot?, fetchedAt: Date, now: Date) -> String {
-        let updated = UpdatedCopy.text(fetchedAt: fetchedAt, now: now)
-        guard let service else { return updated }
+        guard let service else { return UpdatedCopy.text(fetchedAt: fetchedAt, now: now) }
         let name = [service.displayName, planLine(plan: service.plan, displayName: service.displayName)]
             .compactMap { $0 }
             .joined(separator: " ")
-        return "\(name) · \(updated)"
+        let fed = service.buckets.filter { $0.source?.words != nil }
+        guard let words = fed.first?.source?.words else {
+            return "\(name) · \(UpdatedCopy.text(fetchedAt: fetchedAt, now: now))"
+        }
+        let readAt = fed.compactMap(\.asOf).max() ?? fetchedAt
+        return "\(name) · \(UpdatedCopy.text(fetchedAt: readAt, now: now)) \(words)"
     }
 
     /// The fold under a provider page's weekly limits: how many untouched windows it hides,
