@@ -13,8 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its menu bar, with the ears and the hover hint, and a click opens the island
   there. Displays under 1280 pt keep the panel; a display in a full-screen
   space or with its menu bar set to hide has no pill. The menu bar icon follows
-  Show in menu bar only: off by default wherever a display shows the island;
-  the first launch after the update opens the island once.
+  Show in menu bar, off by default, while a display shows the island, and is
+  forced on while none does (a full-screen app on the only notchless display
+  included); the first launch after the update opens the island once.
 - "Last 7 days" in the cost tile counts Claude. On a subscription it was left out
   of the week and its split, while "Today" included it. A Mac with only Claude now
   shows the tile at all.
