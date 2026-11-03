@@ -61,17 +61,62 @@ final class IslandDisplayResolverTests: XCTestCase {
         XCTAssertEqual(panel?.windowFrame, CGRect(x: -1920, y: 8, width: 384, height: 1042))
     }
 
-    func testTheNotchAndAnEarOpenOnTheNotchedDisplayWhereverItIsListed() {
-        let reversed = [ScreenFixture.externalRight, ScreenFixture.builtIn]
-        XCTAssertEqual(IslandDisplayResolver.display(for: .notch, screens: reversed, mainScreenID: 2)?.id, 1)
-        XCTAssertEqual(IslandDisplayResolver.display(for: .ear, screens: reversed, mainScreenID: 2)?.id, 1)
-        XCTAssertEqual(place(.notch, on: reversed, main: 2)?.kind, .island)
+    func testTheNotchAndAnEarOpenOnTheDisplayTheyWereClickedOn() {
+        let two = [ScreenFixture.builtIn, ScreenFixture.narrowNotched]
+        XCTAssertEqual(IslandDisplayResolver.display(for: .notch(displayID: 4), screens: two, mainScreenID: 1)?.id, 4)
+        XCTAssertEqual(IslandDisplayResolver.display(for: .ear(displayID: 1), screens: two, mainScreenID: 4)?.id, 1)
+        XCTAssertEqual(place(.notch(displayID: 4), on: two, main: 1)?.kind, .island)
     }
 
-    func testWithNoIslandDisplayTheNotchAndAnEarOpenNothing() {
+    /// Review F4: a pill drawn before its display's menu bar started hiding still opens Brioche, as
+    /// the panel on that display, hanging under where the menu bar shows.
+    func testAPillOrEarOnADisplayThatLostItsIslandOpensThePanelThere() {
         let bare = [ScreenFixture.externalRightMenuBarHidden, ScreenFixture.narrow1279]
-        XCTAssertNil(place(.notch, on: bare, main: 2))
-        XCTAssertNil(place(.ear, on: bare, main: 2))
+        XCTAssertEqual(
+            place(.notch(displayID: 2), on: bare, main: 2),
+            IslandDisplayResolver.Placement(
+                kind: .panel, screenID: 2,
+                windowFrame: CGRect(x: 2600, y: 8, width: 384, height: 1402),
+                anchorMidX: 2792, notch: nil, bodyWidth: 360
+            )
+        )
+        XCTAssertEqual(
+            place(.ear(displayID: 13), on: bare, main: 2),
+            IslandDisplayResolver.Placement(
+                kind: .panel, screenID: 13,
+                windowFrame: CGRect(x: 1959, y: 8, width: 384, height: 762),
+                anchorMidX: 2151.5, notch: nil, bodyWidth: 360
+            )
+        )
+    }
+
+    func testAClickOnADisplayThatWentAwayOpensNothing() {
+        XCTAssertNil(place(.notch(displayID: 99), main: 1))
+        XCTAssertNil(place(.ear(displayID: 99), main: 1))
+    }
+
+    /// Only a notch or an ear whose display is gone or has no island any more came from a pill the
+    /// displays have left behind: those ask for the pills to be placed again.
+    func testOnlyAClickFromAPillLeftBehindIsStale() {
+        let hidden = [ScreenFixture.builtIn, ScreenFixture.externalRightMenuBarHidden]
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 2), screens: hidden))
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.ear(displayID: 2), screens: hidden))
+        XCTAssertTrue(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 99), screens: hidden), "gone")
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 1), screens: hidden))
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notch(displayID: 2), screens: screens), "the pill is current")
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.statusItem(buttonFrame: .zero), screens: hidden))
+        XCTAssertFalse(IslandDisplayResolver.clickedPillIsStale(.notification(pointer: .zero), screens: hidden))
+    }
+
+    /// Spec 2026-11-03 § Opening: the external's pill or ear opens the island on the external, not
+    /// on the MacBook's notch.
+    func testAClickOnAnExternalDisplaysPillOrEarOpensTheIslandThere() {
+        for entry in [IslandEntry.notch(displayID: 2), .ear(displayID: 2)] {
+            let island = place(entry)
+            XCTAssertEqual(island?.screenID, 2, "\(entry)")
+            XCTAssertEqual(island?.kind, .island, "\(entry)")
+            XCTAssertEqual(island?.notch, CGRect(x: 2699.5, y: 1416, width: 185, height: 24), "\(entry)")
+        }
     }
 
     func testANotificationOpensOnTheDisplayUnderThePointer() {
@@ -147,7 +192,7 @@ final class IslandDisplayResolverTests: XCTestCase {
     }
 
     func testAnOpenIslandIsReplacedOnItsOwnDisplay() {
-        let open = place(.notch)!
+        let open = place(.notch(displayID: 1))!
         let dockHidden = IslandScreen(
             id: 1,
             frame: CGRect(x: 0, y: 0, width: 1512, height: 982),
@@ -155,7 +200,7 @@ final class IslandDisplayResolverTests: XCTestCase {
             safeAreaTop: 32, auxiliaryLeftWidth: 663.5, auxiliaryRightWidth: 663.5
         )
         let again = IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [ScreenFixture.externalRight, dockHidden],
+            for: open, entry: .notch(displayID: 1), screens: [ScreenFixture.externalRight, dockHidden],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         )
         XCTAssertEqual(again?.screenID, 1)
@@ -163,9 +208,9 @@ final class IslandDisplayResolverTests: XCTestCase {
     }
 
     func testAVanishedDisplayClosesTheIsland() {
-        let open = place(.notch)!
+        let open = place(.notch(displayID: 1))!
         XCTAssertNil(IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [ScreenFixture.externalRight],
+            for: open, entry: .notch(displayID: 1), screens: [ScreenFixture.externalRight],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         ))
     }
@@ -179,9 +224,9 @@ final class IslandDisplayResolverTests: XCTestCase {
 
     func testOnlyAnEarOpensWithoutKey() {
         XCTAssertTrue(IslandEntry.statusItem(buttonFrame: .zero).becomesKey)
-        XCTAssertTrue(IslandEntry.notch.becomesKey)
+        XCTAssertTrue(IslandEntry.notch(displayID: 1).becomesKey)
         XCTAssertTrue(IslandEntry.notification(pointer: .zero).becomesKey)
-        XCTAssertFalse(IslandEntry.ear.becomesKey)
+        XCTAssertFalse(IslandEntry.ear(displayID: 1).becomesKey)
     }
 
     // MARK: - Displays without a notch (spec 2026-11-03 § Virtual notch, Opening)

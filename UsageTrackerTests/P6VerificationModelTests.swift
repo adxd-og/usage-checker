@@ -36,7 +36,7 @@ final class P6VerificationJumpTicketTests: XCTestCase {
                 case .closed: model.islandClosed()
                 case .newerEarJump: _ = start(model, log)
                 case .rowJump: _ = model.jumpStarted()
-                case .earStays: _ = model.entryVerdict(.ear, isOpen: true, openScreenID: 1, entryScreenID: 1)
+                case .earStays: _ = model.entryVerdict(.ear(displayID: 1), isOpen: true, openScreenID: 1, entryScreenID: 1)
                 case .openedThenClosed:
                     model.islandOpened()
                     model.islandClosed()
@@ -104,7 +104,7 @@ final class P6VerificationJumpTicketTests: XCTestCase {
         for item in cases {
             let (model, log) = make()
             let answer = start(model, log)
-            XCTAssertEqual(model.entryVerdict(.ear, isOpen: item.isOpen, openScreenID: item.open, entryScreenID: item.entry), item.verdict)
+            XCTAssertEqual(model.entryVerdict(.ear(displayID: item.entry ?? 1), isOpen: item.isOpen, openScreenID: item.open, entryScreenID: item.entry), item.verdict)
             answer(false)
             XCTAssertEqual(log.fallbacks, item.voids ? 0 : 1, "\(item)")
         }

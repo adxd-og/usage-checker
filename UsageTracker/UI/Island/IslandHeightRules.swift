@@ -47,7 +47,7 @@ enum IslandHeightRules {
             return PopoverHeightRules.budget(screenVisibleHeight: screenVisibleHeight)
         }
         let window = IslandDisplayResolver.placement(
-            on: screen, entry: .notch, statusItemFrame: nil, panelWidth: 0, menuBarHeight: 0
+            on: screen, entry: .notch(displayID: screen.id), statusItemFrame: nil, panelWidth: 0, menuBarHeight: 0
         ).windowFrame
         return window.height - notch.height - IslandGeometry.islandBottomPadding
     }

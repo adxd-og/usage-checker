@@ -67,7 +67,7 @@ final class IslandPetModelEarJumpTests: XCTestCase {
     func testAnEarOpenThatStaysVoidsAnOlderJumpsLateFailure() {
         let (model, log) = make()
         let answer = start(model, log)
-        XCTAssertEqual(model.entryVerdict(.ear, isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
+        XCTAssertEqual(model.entryVerdict(.ear(displayID: 1), isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
         answer(false)
         XCTAssertEqual(log.fallbacks, 0)
     }
@@ -75,7 +75,7 @@ final class IslandPetModelEarJumpTests: XCTestCase {
     func testAnEarOpenThatStaysVoidsAnOlderJumpsLanding() {
         let (model, log) = make()
         let answer = start(model, log)
-        XCTAssertEqual(model.entryVerdict(.ear, isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
+        XCTAssertEqual(model.entryVerdict(.ear(displayID: 1), isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
         answer(true)
         XCTAssertEqual(log.closes, 0, "it opened on the user's newer word")
     }

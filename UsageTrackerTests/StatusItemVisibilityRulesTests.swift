@@ -79,6 +79,6 @@ final class StatusItemVisibilityRulesTests: XCTestCase {
     }
 
     func testTheOpenLeavesTheKeyboardWithTheAppInFront() {
-        XCTAssertFalse(IslandEntry.ear.becomesKey, "the launch opens as an ear does, not as a click")
+        XCTAssertFalse(IslandEntry.ear(displayID: 1).becomesKey, "the launch opens as an ear does, not as a click")
     }
 }

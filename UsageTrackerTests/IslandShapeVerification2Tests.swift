@@ -10,7 +10,7 @@ final class IslandShapeVerification2Tests: XCTestCase {
     private let content = CGSize(width: 360, height: 700)
 
     private let placement = IslandDisplayResolver.placement(
-        on: ScreenFixture.builtIn, entry: .notch, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
+        on: ScreenFixture.builtIn, entry: .notch(displayID: 1), statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
     )
 
     private func island() -> IslandGeometry {

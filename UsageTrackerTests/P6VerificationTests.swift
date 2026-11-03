@@ -432,15 +432,15 @@ final class P6VerificationNavigationTests: XCTestCase {
     }
 
     func testTheEntryVerdictOfEveryEntryOnEveryIsland() {
-        let entries: [IslandEntry] = [.statusItem(buttonFrame: .zero), .notch, .ear, .notification(pointer: .zero)]
+        let entries: [IslandEntry] = [.statusItem(buttonFrame: .zero), .notch(displayID: 1), .ear(displayID: 1), .notification(pointer: .zero)]
         for entry in entries {
             XCTAssertEqual(IslandEventRules.entry(entry, isOpen: false, openScreenID: nil, entryScreenID: 1), .open, "\(entry) from closed")
             XCTAssertEqual(IslandEventRules.entry(entry, isOpen: false, openScreenID: 1, entryScreenID: 2), .open, "\(entry) from closed, stale ids")
         }
-        XCTAssertEqual(IslandEventRules.entry(.ear, isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
-        XCTAssertEqual(IslandEventRules.entry(.ear, isOpen: true, openScreenID: 1, entryScreenID: 2), .open, "R5: the island moves to the ear")
+        XCTAssertEqual(IslandEventRules.entry(.ear(displayID: 1), isOpen: true, openScreenID: 1, entryScreenID: 1), .stay)
+        XCTAssertEqual(IslandEventRules.entry(.ear(displayID: 2), isOpen: true, openScreenID: 1, entryScreenID: 2), .open, "R5: the island moves to the ear")
         XCTAssertEqual(IslandEventRules.entry(.statusItem(buttonFrame: .zero), isOpen: true, openScreenID: 1, entryScreenID: 2), .close)
-        XCTAssertEqual(IslandEventRules.entry(.notch, isOpen: true, openScreenID: 1, entryScreenID: 1), .close)
-        XCTAssertEqual(IslandEventRules.entry(.notch, isOpen: true, openScreenID: 1, entryScreenID: 2), .open)
+        XCTAssertEqual(IslandEventRules.entry(.notch(displayID: 1), isOpen: true, openScreenID: 1, entryScreenID: 1), .close)
+        XCTAssertEqual(IslandEventRules.entry(.notch(displayID: 2), isOpen: true, openScreenID: 1, entryScreenID: 2), .open)
     }
 }

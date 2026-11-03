@@ -44,7 +44,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
 
     func testTheIslandOnANotchedDisplayLeftOfTheMainOneHangsFromItsOwnTopOnItsNotch() {
         XCTAssertEqual(
-            place(.notch, on: [ScreenFixture.externalRight, notchedLeftRaised], main: 2),
+            place(.notch(displayID: 7), on: [ScreenFixture.externalRight, notchedLeftRaised], main: 2),
             IslandDisplayResolver.Placement(
                 kind: .island, screenID: 7,
                 // 8 pt above the Dock (278 + 8), up to the display's own top edge (200 + 982).
@@ -81,7 +81,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
         let notch = quarter.notchRect!
         XCTAssertEqual(notch.minX, 663.25)
         XCTAssertEqual(notch.width, 185.25)
-        let placement = place(.notch, on: [quarter], main: 5)!
+        let placement = place(.notch(displayID: 5), on: [quarter], main: 5)!
         XCTAssertEqual(placement.anchorMidX, notch.midX, "the anchor is the notch's centre, not a rounded one")
         XCTAssertEqual(placement.windowFrame.minX, placement.windowFrame.minX.rounded(), "window origins are whole points")
         XCTAssertEqual(placement.windowFrame.width, 664)
@@ -100,7 +100,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
             visibleFrame: CGRect(x: 0, y: 78.4, width: 1512, height: 872.6),
             safeAreaTop: 32, auxiliaryLeftWidth: 663.5, auxiliaryRightWidth: 663.5
         )
-        let frame = place(.notch, on: [fractional], main: 11)!.windowFrame
+        let frame = place(.notch(displayID: 11), on: [fractional], main: 11)!.windowFrame
         // Bottom: 78.4 + 8 = 86.4 rounds up so the window never reaches into the margin; top rounds down.
         XCTAssertEqual(frame.minY, 87)
         XCTAssertEqual(frame.maxY, 982)
@@ -122,7 +122,7 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
             (1419, 560 + 24), (1420, 640 + 24), (1699, 640 + 24), (1700, 720 + 24),
         ]
         for pair in widths {
-            let placement = place(.notch, on: [notched(width: pair.screen)], main: 9)
+            let placement = place(.notch(displayID: 9), on: [notched(width: pair.screen)], main: 9)
             XCTAssertEqual(placement?.windowFrame.width, pair.window, "screen \(pair.screen)")
             XCTAssertEqual(
                 placement?.bodyWidth, pair.window - 24, "the body is the window less the two side margins at \(pair.screen)"
@@ -198,24 +198,24 @@ final class IslandDisplayResolverVerificationTests: XCTestCase {
     }
 
     func testAnIslandReplacedWithoutAChangeIsTheSamePlacement() throws {
-        let open = try XCTUnwrap(place(.notch, on: screens, main: 1))
+        let open = try XCTUnwrap(place(.notch(displayID: 1), on: screens, main: 1))
         XCTAssertEqual(
             IslandDisplayResolver.replacement(
-                for: open, entry: .notch, screens: screens, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
+                for: open, entry: .notch(displayID: 1), screens: screens, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
             ),
             open
         )
     }
 
     func testAnIslandWhoseDisplayLostItsNotchAndItsMenuBarBecomesAPanelOnTheSameDisplay() throws {
-        let open = try XCTUnwrap(place(.notch, on: screens, main: 1))
+        let open = try XCTUnwrap(place(.notch(displayID: 1), on: screens, main: 1))
         let mode = IslandScreen(
             // No menu bar either (spec 2026-11-03): no virtual notch, so the panel.
             id: 1, frame: ScreenFixture.builtIn.frame, visibleFrame: CGRect(x: 0, y: 78, width: 1512, height: 904),
             safeAreaTop: 0, auxiliaryLeftWidth: nil, auxiliaryRightWidth: nil
         )
         let again = IslandDisplayResolver.replacement(
-            for: open, entry: .notch, screens: [mode, ScreenFixture.externalRight],
+            for: open, entry: .notch(displayID: 1), screens: [mode, ScreenFixture.externalRight],
             statusItemFrame: nil, panelWidth: 360, menuBarHeight: 24
         )
         XCTAssertEqual(again?.screenID, 1)

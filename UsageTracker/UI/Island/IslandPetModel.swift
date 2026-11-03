@@ -226,7 +226,7 @@ final class IslandPetModel: ObservableObject {
         _ entry: IslandEntry, isOpen: Bool, openScreenID: UInt32?, entryScreenID: UInt32?
     ) -> IslandEventRules.EntryVerdict {
         let verdict = IslandEventRules.entry(entry, isOpen: isOpen, openScreenID: openScreenID, entryScreenID: entryScreenID)
-        if entry == .ear, verdict == .stay { latestJump = nil }
+        if case .ear = entry, verdict == .stay { latestJump = nil }
         return verdict
     }
 }

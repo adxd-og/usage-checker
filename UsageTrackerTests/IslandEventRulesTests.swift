@@ -43,7 +43,7 @@ final class IslandEventRulesTests: XCTestCase {
     }
 
     func testEveryEntryOpensAClosedIsland() {
-        let entries: [IslandEntry] = [.statusItem(buttonFrame: .zero), .notch, .ear, .notification(pointer: .zero)]
+        let entries: [IslandEntry] = [.statusItem(buttonFrame: .zero), .notch(displayID: 1), .ear(displayID: 1), .notification(pointer: .zero)]
         for e in entries {
             XCTAssertEqual(entry(e, open: false, at: nil), .open, "\(e)")
         }
@@ -55,8 +55,8 @@ final class IslandEventRulesTests: XCTestCase {
     }
 
     func testTheNotchClosesTheIslandOnItsDisplayAndMovesOneOpenElsewhere() {
-        XCTAssertEqual(entry(.notch, at: 1, to: 1), .close)
-        XCTAssertEqual(entry(.notch, at: 2, to: 1), .open)
+        XCTAssertEqual(entry(.notch(displayID: 1), at: 1, to: 1), .close)
+        XCTAssertEqual(entry(.notch(displayID: 1), at: 2, to: 1), .open)
     }
 
     func testANotificationKeepsTheIslandOpenOnItsDisplayAndMovesOneOpenElsewhere() {
@@ -65,12 +65,12 @@ final class IslandEventRulesTests: XCTestCase {
     }
 
     func testAnEarKeepsAnOpenIslandOpen() {
-        XCTAssertEqual(entry(.ear), .stay)
+        XCTAssertEqual(entry(.ear(displayID: 1)), .stay)
     }
 
     /// Plan ruling R5, the ledger's open item: the real ears act as the notch does.
     func testAnEarMovesAnIslandOpenOnAnotherDisplay() {
-        XCTAssertEqual(entry(.ear, at: 2, to: 1), .open)
+        XCTAssertEqual(entry(.ear(displayID: 1), at: 2, to: 1), .open)
     }
 
     func testAnotherWindowBecomingKeyClosesTheIsland() {

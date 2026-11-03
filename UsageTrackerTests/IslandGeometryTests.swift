@@ -10,7 +10,7 @@ final class IslandGeometryTests: XCTestCase {
 
     private func island(applied: CGRect? = nil) -> IslandGeometry {
         let placement = IslandDisplayResolver.placement(
-            on: ScreenFixture.builtIn, entry: .notch, statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
+            on: ScreenFixture.builtIn, entry: .notch(displayID: 1), statusItemFrame: nil, panelWidth: 360, menuBarHeight: 32
         )
         return IslandGeometry(placement: placement, appliedFrame: applied ?? placement.windowFrame)
     }
