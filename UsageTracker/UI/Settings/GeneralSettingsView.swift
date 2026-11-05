@@ -5,6 +5,9 @@ enum GeneralSettingsCopy {
     static let startupHeader = "Startup"
     static let launchAtLoginTitle = "Launch at login"
     static let menuBarIconHeader = "Menu bar icon"
+    /// Spec 2026-11-03 § P4.
+    static let virtualNotchTitle = "Island on displays without a notch"
+    static let virtualNotchCaption = "A black pill in the middle of the menu bar opens Brioche. Off: the menu bar icon opens it there, as before 4.1; with a notched display attached, turn on Show in menu bar."
     static let showInMenuBarTitle = "Show in menu bar"
     static let refreshHeader = "Refresh"
     static let refreshTitle = "Update every"
@@ -45,7 +48,8 @@ struct GeneralSettingsView: View {
     /// Whether a display shows the island, a notch or a virtual one: Show in menu bar's value,
     /// whether it moves, and its caption follow it (notch-island spec 2026-10-29 § 3.7; spec
     /// 2026-11-03 § Status item). Read for the first frame, so a Mac with no island display never
-    /// flashes the switch as off and movable, and again whenever the displays change.
+    /// flashes the switch as off and movable, and again whenever the displays change or Island on
+    /// displays without a notch is flipped (§ P4).
     @State private var islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
 
     /// The bundle's version and build, read once.
@@ -69,6 +73,8 @@ struct GeneralSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
             readDisplays()
         }
+        // After the value has landed: the reading reads the store.
+        .onChange(of: settings.virtualNotchEnabled) { _, _ in readDisplays() }
     }
 
     private func readDisplays() {
@@ -90,10 +96,16 @@ struct GeneralSettingsView: View {
         }
     }
 
-    /// Show in menu bar (§ 3.7, D4; spec 2026-11-03): off by default while a display shows the island, on and
-    /// held while none is (ruling R15). `StatusBarController` adds or removes the item at once.
+    /// Island on displays without a notch (spec 2026-11-03 § P4), then Show in menu bar (§ 3.7, D4; spec
+    /// 2026-11-03): off by default while a display shows the island, on and held while none is (ruling
+    /// R15). `IslandController` re-places the pills and `StatusBarController` adds or removes the item at once.
     private var menuBarIcon: some View {
         SettingsSection(header: GeneralSettingsCopy.menuBarIconHeader) {
+            SettingsSwitchRow(
+                title: GeneralSettingsCopy.virtualNotchTitle,
+                caption: GeneralSettingsCopy.virtualNotchCaption,
+                isOn: $settings.virtualNotchEnabled
+            )
             SettingsSwitchRow(
                 title: GeneralSettingsCopy.showInMenuBarTitle,
                 caption: StatusItemVisibilityRules.caption(islandDisplayAttached: islandDisplayAttached),

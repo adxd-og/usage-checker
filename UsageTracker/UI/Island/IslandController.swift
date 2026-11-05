@@ -40,6 +40,8 @@ final class IslandController: NSObject {
     /// The pill whose left ear's head is riding the morph into the island; nil otherwise.
     private var morphingPillID: UInt32?
     private var restingArtObservers = Set<AnyCancellable>()
+    /// Island on displays without a notch, flipped (spec 2026-11-03 § P4): a re-place point.
+    private var virtualNotchObserver: AnyCancellable?
     /// The displays as the last re-place point read them (`placePills`): the reading the pills stand
     /// on. The ears, a pill's hint and its head read this, never the window list, so between re-place
     /// points the set of pills does not change (4.1.0 release review F2, F3).
@@ -181,6 +183,10 @@ final class IslandController: NSObject {
             name: NSWindow.didBecomeKeyNotification, object: nil
         )
         observeDisplays()
+        // A re-place point of its own, never an ear update (4.1.0 release review F2, F3): only here
+        // and at the display re-place points does the set of pills change.
+        virtualNotchObserver = Self.virtualNotchSwitchSignal(SettingsStore.shared.$virtualNotchEnabled)
+            .sink { [weak self] in self?.virtualNotchSwitched() }
     }
 
     deinit {
@@ -527,11 +533,12 @@ final class IslandController: NSObject {
     // MARK: - The resting pills
 
     /// A re-place point (launch, a display change, wake or unlock, a space change that moved the set,
-    /// a click on a pill left behind) with its reading of the displays: kept as the reading the pills
-    /// stand on, the ears read on it, the pills made, dropped and laid over it. Only here does the set
-    /// of pills change, and a changed set has the status item read its visibility again (4.1.0 release
-    /// review F1): the last pill going (a full-screen space on a lone notchless display) forces the
-    /// item on, and a pill coming back hides it again.
+    /// a click on a pill left behind, Island on displays without a notch flipped) with its reading of
+    /// the displays: kept as the reading the pills stand on, the ears read on it, the pills made,
+    /// dropped and laid over it. Only here does the set of pills change, and a changed set has the
+    /// status item read its visibility again (4.1.0 release review F1): the last pill going (a
+    /// full-screen space on a lone notchless display) forces the item on, and a pill coming back hides
+    /// it again.
     private func placePills(on screens: [IslandScreen]) {
         placedScreens = screens
         var setChanged = false
@@ -995,6 +1002,28 @@ final class IslandController: NSObject {
         guard !RestingPillRules.changes(kept: Set(pills.keys), wanted: RestingPillRules.pills(screens)).isEmpty
         else { return }
         placePills(on: screens)
+    }
+
+    /// Island on displays without a notch was flipped (spec 2026-11-03 § P4): re-placed as a display
+    /// change is (`replace`), on a reading that carries the new value — pills made or dropped, the ears
+    /// read on it, an open island re-resolved on its display, the panel there once its virtual notch is
+    /// gone — and the status item reads its visibility again, whether or not the set of pills moved.
+    private func virtualNotchSwitched() {
+        replace()
+        updateStatusItemVisibility()
+    }
+
+    /// When the switch's flip re-places: each change of `setting` once, never the value sent at
+    /// subscription (the launch has placed on it) nor a write of the same value; a turn of the main
+    /// queue later, since `@Published` sends before the value lands and the reading reads the store.
+    static func virtualNotchSwitchSignal<P: Publisher>(_ setting: P) -> AnyPublisher<Void, Never>
+    where P.Output == Bool, P.Failure == Never {
+        setting
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .map { _ in () }
+            .eraseToAnyPublisher()
     }
 
     /// The resting pills follow the displays' notches, physical or virtual; an open island is

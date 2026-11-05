@@ -96,8 +96,8 @@ enum IslandEarRules {
     }
 
     /// Every island display's ears, keyed by display id: what each resting pill draws. A display
-    /// without an island (its menu bar hidden, or under 1280 pt) has no entry; one with nothing to
-    /// say, or with the ears off, has `.none`.
+    /// without an island (its menu bar hidden, under 1280 pt, or Island on displays without a notch
+    /// off) has no entry; one with nothing to say, or with the ears off, has `.none`.
     static func earsByDisplay(
         mood: PetMoodInput, mode: PercentDisplay.Mode, petOn: Bool, earsOn: Bool, showInMenuBar: Bool?,
         screens: [IslandScreen], now: Date, calendar: Calendar, locale: Locale

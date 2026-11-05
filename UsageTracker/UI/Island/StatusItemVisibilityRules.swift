@@ -3,8 +3,9 @@ import Foundation
 /// Whether the status item is in the menu bar (notch-island spec 2026-10-29 § 3.7, § 3.9, D4; spec
 /// 2026-11-03 § Status item): Show in menu bar, off by default while a display shows the island — a
 /// notch, or the pill on a display without one — and shown regardless while none does (every menu
-/// bar hidden, or only displays under 1280 pt), since the island has no other way in there. While it
-/// is hidden, ☾ moves to the right ear (§ 3.6). Pure.
+/// bar hidden, only displays under 1280 pt, or no camera housing with Island on displays without a
+/// notch off, § P4), since the island has no other way in there. While it is hidden, ☾ moves to the
+/// right ear (§ 3.6). Pure.
 enum StatusItemVisibilityRules {
     /// `setting` is nil until the user flips the switch.
     static func isShown(setting: Bool?, islandDisplayAttached: Bool) -> Bool {

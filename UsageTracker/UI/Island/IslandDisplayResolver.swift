@@ -106,7 +106,7 @@ enum IslandDisplayResolver {
 
     /// On a display with an island notch, physical or virtual (`IslandScreen.islandNotch`, spec
     /// 2026-11-03): the island, centred on that notch, from the screen's top to 8 pt above the
-    /// Dock. Elsewhere (under 1280 pt, menu bar hidden): the panel, centred under the status item whenever the
+    /// Dock. Elsewhere (under 1280 pt, menu bar hidden, Island on displays without a notch off): the panel, centred under the status item whenever the
     /// item is shown on this display, whatever the entry; only without one there, under the
     /// menu bar at the visible frame's centre (ruling R8). Clamped inside the visible frame.
     /// `menuBarHeight` places a panel on a display whose menu bar hides.
