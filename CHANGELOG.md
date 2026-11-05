@@ -5,6 +5,15 @@ All notable changes to Brioche (formerly Omelette, before that Usage Checker) wi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Island
+- Settings → General → **Island on displays without a notch** turns the pill
+  off: a display without a notch is back to the menu bar icon and the panel
+  under it, as before 4.1. The icon is forced on only while no display has a
+  notch; with a MacBook's notch on screen, Show in menu bar decides. On by
+  default.
+
 ## [4.1.0] — 2026-11-03
 
 ### Island
