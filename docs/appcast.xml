@@ -6,6 +6,26 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Brioche v4.2.0</title>
+      <pubDate>Thu, 05 Nov 2026 13:47:10 +0200</pubDate>
+      <sparkle:version>59</sparkle:version>
+      <sparkle:shortVersionString>4.2.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Island</h3>
+<ul>
+<li>Settings → General → <b>Island on displays without a notch</b> turns the pill off: a display without a notch is back to the menu bar icon and the panel under it, as before 4.1. The icon is forced on only while no display has a notch; with a MacBook's notch on screen, Show in menu bar decides. On by default.</li>
+<li>A second click on the menu bar icon closes the island again; it reopened it.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v4.2.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v4.2.0/Brioche.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="n5ihEOzljkIrM5HMES7BuwvrfrdCNZkQjyl+JMJakJYGCzK6568uvcKvyrU9iLG/pZezwy+hzWpWeiwcaryQDg=="
+        length="25691281"/>
+    </item>
+    <item>
       <title>Brioche v4.1.0</title>
       <pubDate>Tue, 03 Nov 2026 21:28:28 +0200</pubDate>
       <sparkle:version>58</sparkle:version>
