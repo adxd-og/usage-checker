@@ -48,4 +48,13 @@ final class GeneralSettingsCopyTests: XCTestCase {
         XCTAssertEqual(GeneralSettingsCopy.menuBarIconHeader, "Menu bar icon")
         XCTAssertEqual(GeneralSettingsCopy.showInMenuBarTitle, "Show in menu bar")
     }
+
+    /// Spec 2026-11-03 § P4: the switch above Show in menu bar that turns the virtual notch off.
+    func testTheVirtualNotchSwitchSaysWhatItDoesAndWhatOffBringsBack() {
+        XCTAssertEqual(GeneralSettingsCopy.virtualNotchTitle, "Island on displays without a notch")
+        XCTAssertEqual(
+            GeneralSettingsCopy.virtualNotchCaption,
+            "A black pill in the middle of the menu bar opens Brioche. Off: the menu bar icon opens it there, as before 4.1; with a notched display attached, turn on Show in menu bar."
+        )
+    }
 }

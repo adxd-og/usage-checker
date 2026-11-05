@@ -26,6 +26,10 @@ struct IslandScreen: Equatable, Sendable {
     /// The height of this display's menu bar window (`MenuBarWindowRules`), 0 without one; set on a
     /// reading passed through `attached(_:menuBarWindows:)`, as every live one is. nil elsewhere.
     var measuredMenuBarHeight: CGFloat? = nil
+    /// Whether a display without a camera housing may take a virtual notch: Settings › General ›
+    /// Island on displays without a notch (spec 2026-11-03 § P4), set on every live reading
+    /// (`current()`). A reading built by hand allows it.
+    var virtualNotchAllowed: Bool = true
 
     /// The camera housing, from this reading: as tall as the top safe area, as wide as the
     /// two auxiliary areas leave. Only their widths are used, so the answer does not depend
@@ -50,10 +54,13 @@ struct IslandScreen: Equatable, Sendable {
     var menuBarHeight: CGFloat { measuredMenuBarHeight ?? max(frame.maxY - visibleFrame.maxY, 0) }
 
     /// Where the island hangs (spec 2026-11-03 § Virtual notch): the camera housing on a notched
-    /// display, else the virtual notch from `VirtualNotchRules`; nil on a display with neither,
-    /// where the island is the panel. `hasNotch` still says whether there is a camera housing.
+    /// display, else the virtual notch from `VirtualNotchRules` while it is allowed (§ P4); nil on a
+    /// display with neither, where the island is the panel. `hasNotch` still says whether there is a
+    /// camera housing.
     var islandNotch: CGRect? {
-        notchRect ?? VirtualNotchRules.rect(screen: self, referenceNotchWidth: referenceNotchWidth)
+        if let notchRect { return notchRect }
+        guard virtualNotchAllowed else { return nil }
+        return VirtualNotchRules.rect(screen: self, referenceNotchWidth: referenceNotchWidth)
     }
 }
 
@@ -72,24 +79,31 @@ extension IslandScreen {
         )
     }
 
-    /// Every attached display, read now, with the menu bar windows on screen now, as one reading
-    /// (`attached(_:menuBarWindows:)`).
+    /// Every attached display, read now, with the menu bar windows on screen now and Island on
+    /// displays without a notch as it is now, as one reading (`attached(_:menuBarWindows:virtualNotchAllowed:)`).
     @MainActor
     static func current() -> [IslandScreen] {
-        attached(NSScreen.screens.map(IslandScreen.init), menuBarWindows: MenuBarWindowReader.onScreen())
+        attached(
+            NSScreen.screens.map(IslandScreen.init), menuBarWindows: MenuBarWindowReader.onScreen(),
+            virtualNotchAllowed: SettingsStore.shared.virtualNotchEnabled
+        )
     }
 
     /// `screens` as one reading (`attached`), each display's menu bar height measured from
-    /// `menuBarWindows` (`MenuBarWindowRules`), 0 for a display without a menu bar window. The first
-    /// of `screens` is the main display, as in `NSScreen.screens`: its height relates the windows'
-    /// CG bounds to the displays' AppKit frames.
-    static func attached(_ screens: [IslandScreen], menuBarWindows: [MenuBarWindow]) -> [IslandScreen] {
+    /// `menuBarWindows` (`MenuBarWindowRules`), 0 for a display without a menu bar window, and each
+    /// carrying `virtualNotchAllowed` (spec 2026-11-03 § P4: one reading, one answer). The first of
+    /// `screens` is the main display, as in `NSScreen.screens`: its height relates the windows' CG
+    /// bounds to the displays' AppKit frames.
+    static func attached(
+        _ screens: [IslandScreen], menuBarWindows: [MenuBarWindow], virtualNotchAllowed: Bool = true
+    ) -> [IslandScreen] {
         let heights = MenuBarWindowRules.heights(
             windows: menuBarWindows, screens: screens, mainDisplayHeight: screens.first?.frame.height ?? 0
         )
         return attached(screens).map { screen in
             var screen = screen
             screen.measuredMenuBarHeight = heights[screen.id] ?? 0
+            screen.virtualNotchAllowed = virtualNotchAllowed
             return screen
         }
     }

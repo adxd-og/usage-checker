@@ -61,6 +61,7 @@ final class SettingsStoreTests: XCTestCase {
         s.keepAwakeFloorEnabled = !SettingsStore.Defaults.keepAwakeFloorEnabled
         s.keepAwakeDurationMinutes = 1_470
         s.showInMenuBar = true
+        s.virtualNotchEnabled = !SettingsStore.Defaults.virtualNotchEnabled
         s.petEnabled = !SettingsStore.Defaults.petEnabled
         s.earsEnabled = !SettingsStore.Defaults.earsEnabled
         s.petChoice = PetChoice(animal: "raccoon", palette: "brown")
@@ -117,6 +118,8 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.keepAwakeDurationMinutes, SettingsStore.Defaults.keepAwakeDurationMinutes, message)
         XCTAssertNil(s.showInMenuBar, message)
         XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey), message)
+        XCTAssertEqual(s.virtualNotchEnabled, SettingsStore.Defaults.virtualNotchEnabled, message)
+        XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.virtualNotchEnabledKey), message)
         XCTAssertEqual(s.petEnabled, SettingsStore.Defaults.petEnabled, message)
         XCTAssertEqual(s.earsEnabled, SettingsStore.Defaults.earsEnabled, message)
         XCTAssertEqual(s.petChoice, SettingsStore.Defaults.petChoice, message)

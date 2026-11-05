@@ -77,6 +77,8 @@ final class SettingsStore: ObservableObject {
         /// Show in menu bar: nothing stored, so the default follows the displays
         /// (notch-island spec 2026-10-29 § 3.7, `StatusItemVisibilityRules`).
         static let showInMenuBar: Bool? = nil
+        /// Island on displays without a notch (spec 2026-11-03 § P4): on, 4.1's virtual notch.
+        static let virtualNotchEnabled = true
         /// Settings › Pet (notch-island spec 2026-10-29 § 3.7): on, on, the cat in ginger.
         static let petEnabled = true
         static let earsEnabled = true
@@ -204,6 +206,20 @@ final class SettingsStore: ObservableObject {
         }
     }
 
+    /// Defaults key for Island on displays without a notch. Spelled out because the tests read it by name.
+    static let virtualNotchEnabledKey = "virtualNotchEnabled"
+
+    /// Island on displays without a notch (spec 2026-11-03 § P4): on, a display without a camera
+    /// housing gets the virtual notch; off, 4.0's menu bar icon and its panel there. Every reading of
+    /// the displays carries it (`IslandScreen.current()`). A plain `@Published` over an explicit key for
+    /// the reason `showsRemaining` gives: the pills, the ears and the status item follow at once.
+    @Published var virtualNotchEnabled: Bool = Defaults.virtualNotchEnabled {
+        didSet {
+            guard oldValue != virtualNotchEnabled else { return }
+            UserDefaults.standard.set(virtualNotchEnabled, forKey: Self.virtualNotchEnabledKey)
+        }
+    }
+
     /// Defaults keys for Settings › Pet. Spelled out because the tests read them by name.
     static let petEnabledKey = "petEnabled"
     static let earsEnabledKey = "earsEnabled"
@@ -289,6 +305,8 @@ final class SettingsStore: ObservableObject {
         // The `didSet` above skips an unchanged nil, and the key can hold a value this object
         // never saw (a restored domain, another copy of the app): remove it either way.
         UserDefaults.standard.removeObject(forKey: Self.showInMenuBarKey)
+        virtualNotchEnabled = Defaults.virtualNotchEnabled
+        UserDefaults.standard.removeObject(forKey: Self.virtualNotchEnabledKey)
         petEnabled = Defaults.petEnabled
         earsEnabled = Defaults.earsEnabled
         petChoice = Defaults.petChoice
@@ -345,6 +363,8 @@ final class SettingsStore: ObservableObject {
         // is wanted here: reading the stored value must not write it back.
         showsRemaining = UserDefaults.standard.bool(forKey: Self.showsRemainingKey)
         showInMenuBar = UserDefaults.standard.object(forKey: Self.showInMenuBarKey) as? Bool
+        virtualNotchEnabled = UserDefaults.standard.object(forKey: Self.virtualNotchEnabledKey) as? Bool
+            ?? Defaults.virtualNotchEnabled
         petEnabled = UserDefaults.standard.object(forKey: Self.petEnabledKey) as? Bool ?? Defaults.petEnabled
         earsEnabled = UserDefaults.standard.object(forKey: Self.earsEnabledKey) as? Bool ?? Defaults.earsEnabled
         petChoice = Self.storedPetChoice(
