@@ -146,6 +146,10 @@ bar, below), which opens it as a panel under the icon.
   on; click the island at the top of the screen instead. With no display
   showing it (every menu bar hidden, or only displays under 1280 pt) the icon
   is always shown
+- **No pill**: Settings → General → **Island on displays without a notch**, on
+  by default. Off, a display without a notch has no pill: the menu bar icon
+  opens the panel there, as before 4.1. With a MacBook's notch on screen, turn
+  on Show in menu bar to get the icon
 - **Navigation**: a provider's page has **‹ All** and the provider logos beside
   the notch. Esc, ‹ All, ⌘0 or a two-finger swipe right go back. **⌘0** is All
   and **⌘1–⌘9** are the providers in display order. With one provider on, its
@@ -407,7 +411,7 @@ Next: [Settings](#settings).
 
 A sidebar window with seven tabs.
 
-- **General**: launch at login, Show in menu bar, refresh interval, the keep-awake battery
+- **General**: launch at login, Island on displays without a notch, Show in menu bar, refresh interval, the keep-awake battery
   floor, automatic updates and Check now, the version and the GitHub link
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
