@@ -1204,7 +1204,9 @@ final class IslandController: NSObject {
         // A click in another app or on the desktop is outside. The local and the global
         // monitor see different streams, so the island needs both (§ 3.1, Dismissal).
         if let monitor = NSEvent.addGlobalMonitorForEvents(matching: clicks, handler: { [weak self] _ in
-            self?.close()
+            guard let self else { return }
+            let frame = self.statusItemWindow()?.frame
+            if IslandEventRules.globalClick(at: NSEvent.mouseLocation, statusItemFrame: frame) != .pass { self.close() }
         }) {
             monitors.append(monitor)
         }

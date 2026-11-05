@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   under it, as before 4.1. The icon is forced on only while no display has a
   notch; with a MacBook's notch on screen, Show in menu bar decides. On by
   default.
+- A second click on the menu bar icon closes the island again; it reopened it.
 
 ## [4.1.0] — 2026-11-03
 
