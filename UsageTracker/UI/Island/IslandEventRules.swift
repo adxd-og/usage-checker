@@ -49,6 +49,14 @@ enum IslandEventRules {
         }
     }
 
+    /// A mouse-down sent to another app (the global monitor) closes the island, except on the status
+    /// item: its click reaches the global monitor first (measured 2026-11-05, macOS 27), and its own
+    /// action toggles, so closing here let that action reopen the island. One action, one dismissal.
+    static func globalClick(at point: CGPoint, statusItemFrame: CGRect?) -> ClickVerdict {
+        if let statusItemFrame, statusItemFrame.contains(point) { return .pass }
+        return .close
+    }
+
     enum EntryVerdict: Equatable, Sendable {
         case open
         case close

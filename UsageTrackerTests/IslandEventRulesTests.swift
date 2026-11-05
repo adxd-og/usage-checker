@@ -30,6 +30,21 @@ final class IslandEventRulesTests: XCTestCase {
         XCTAssertEqual(IslandEventRules.localClick(.restingNotch), .pass)
     }
 
+    /// Measured 2026-11-05 (macOS 27): a click on the status item reaches the global monitor before
+    /// the local one and the item's action, so closing there let the action reopen the island.
+    func testAClickOnTheStatusItemThatReachesTheGlobalMonitorIsLeftToItsToggle() {
+        let item = CGRect(x: 948, y: 949, width: 134, height: 33)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1000, y: 960), statusItemFrame: item), .pass)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 948, y: 949), statusItemFrame: item), .pass)
+    }
+
+    func testAClickInAnotherAppClosesTheIsland() {
+        let item = CGRect(x: 948, y: 949, width: 134, height: 33)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 400, y: 500), statusItemFrame: item), .close)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1082, y: 960), statusItemFrame: item), .close, "just right of the item")
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1000, y: 960), statusItemFrame: nil), .close, "no item shown")
+    }
+
     func testAClickInTheIslandsChildWindowCountsAsInside() {
         XCTAssertEqual(IslandEventRules.localClick(.childOfIsland), .pass)
     }
