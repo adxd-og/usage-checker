@@ -35,7 +35,15 @@ final class IslandEventRulesTests: XCTestCase {
     func testAClickOnTheStatusItemThatReachesTheGlobalMonitorIsLeftToItsToggle() {
         let item = CGRect(x: 948, y: 949, width: 134, height: 33)
         XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1000, y: 960), statusItemFrame: item), .pass)
-        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 948, y: 949), statusItemFrame: item), .pass)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 948, y: 960), statusItemFrame: item), .pass, "its left edge")
+    }
+
+    /// The pointer pushed against the top of the screen sits at the item window's maxY (release
+    /// 4.2.0 review): that click is the item's too; the row under the menu bar is not.
+    func testThePointerOnTheTopEdgeStillClicksTheStatusItem() {
+        let item = CGRect(x: 948, y: 949, width: 134, height: 33)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1000, y: 982), statusItemFrame: item), .pass)
+        XCTAssertEqual(IslandEventRules.globalClick(at: CGPoint(x: 1000, y: 949), statusItemFrame: item), .close, "the row under the menu bar")
     }
 
     func testAClickInAnotherAppClosesTheIsland() {
