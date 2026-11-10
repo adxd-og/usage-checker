@@ -421,4 +421,39 @@ final class StatusLineInputTests: XCTestCase {
         XCTAssertNil(input(#"{"total_api_duration_ms":18250}"#).totalAPIDurationMs, "inside cost, nowhere else")
         XCTAssertEqual(input(#"{"model":{"display_name":"Opus"},"session_id":42,"cost":"x"}"#).model, "Opus")
     }
+
+    // Spec 2026-11-10 hook input hardening § Design › Status line strings.
+
+    func testControlCharactersNeverReachTheModelName() {
+        // ESC, BEL, a C1 CSI and DEL, written as JSON escapes: what a hostile or
+        // broken `display_name` would carry into the terminal.
+        let parsed = input(#"{"model":{"display_name":"\u001b[31mFa\u0007ble\u009b2J\u007f"}}"#)
+        XCTAssertEqual(parsed.model, "[31mFable2J")
+        // Dropped first, trimmed second: the space the BEL was hiding goes too.
+        XCTAssertEqual(input(#"{"model":{"display_name":"\u0007 Fable \u001b"}}"#).model, "Fable")
+    }
+
+    func testANameOfOnlyControlCharactersIsNoName() {
+        XCTAssertNil(input(#"{"model":{"display_name":"\u001b\u0007\u0000"}}"#).model)
+        XCTAssertNil(input(#"{"model":{"display_name":" \u001b \t"}}"#).model)
+    }
+
+    func testALineBreakInsideANameCannotSplitTheLine() {
+        let parsed = input(#"{"model":{"display_name":"Fable\n5.2\r\n\tbeta"},"context_window":{"used_percentage":42}}"#)
+        XCTAssertEqual(parsed.model, "Fable5.2beta")
+        let line = StatusLineText.render(
+            snapshot: nil, now: Date(timeIntervalSince1970: 1_800_000_000), input: parsed, colour: false
+        )
+        XCTAssertEqual(line, "Fable5.2beta [####------] 42%")
+        XCTAssertFalse(line.unicodeScalars.contains { $0.properties.generalCategory == .control })
+    }
+
+    func testTheSessionIDIsStillCheckedAndNeverCleaned() {
+        // The id names a file (`StatusLineDrop.fileName`): cleaning it here would turn
+        // an id the drop refuses into one it accepts, and give two sessions one file.
+        let parsed = input(#"{"session_id":"0f3a\u001b5c1e","version":"2.5.0","model":{"display_name":"Fa\u001bble"}}"#)
+        XCTAssertEqual(parsed.model, "Fable")
+        XCTAssertEqual(parsed.sessionID, "0f3a\u{1B}5c1e")
+        XCTAssertNil(parsed.sessionID.flatMap(StatusLineDrop.fileName(sessionID:)))
+    }
 }
