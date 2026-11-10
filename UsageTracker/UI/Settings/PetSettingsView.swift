@@ -19,8 +19,9 @@ enum PetSettingsCopy {
 /// Settings › Pet (§ 3.7): on or off, the ears on or off, the animal and palette.
 struct PetSettingsView: View {
     @ObservedObject private var settings = SettingsStore.shared
-    /// Whether a display shows the island (spec 2026-11-03): the ears' caption follows it.
-    @State private var islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
+    /// Whether a display shows the island (spec 2026-11-03): the ears' caption follows it, a flip of
+    /// Island on displays without a notch included (spec 2026-11-10 § A, B1).
+    @ObservedObject private var presence = IslandDisplayPresence.shared
 
     var body: some View {
         SettingsPage(tab: .pet) {
@@ -32,7 +33,7 @@ struct PetSettingsView: View {
                 )
                 SettingsSwitchRow(
                     title: PetSettingsCopy.earsTitle,
-                    caption: PetSettingsCopy.earsCaption(islandDisplayAttached: islandDisplayAttached),
+                    caption: PetSettingsCopy.earsCaption(islandDisplayAttached: presence.islandDisplayAttached),
                     isOn: $settings.earsEnabled
                 )
             }
@@ -40,9 +41,6 @@ struct PetSettingsView: View {
                 PetPickerView(dimmed: !settings.petEnabled)
                     .padding(SettingsRowRules.verticalPadding)
             }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
         }
     }
 }

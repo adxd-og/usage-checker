@@ -47,10 +47,10 @@ struct GeneralSettingsView: View {
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     /// Whether a display shows the island, a notch or a virtual one: Show in menu bar's value,
     /// whether it moves, and its caption follow it (notch-island spec 2026-10-29 § 3.7; spec
-    /// 2026-11-03 § Status item). Read for the first frame, so a Mac with no island display never
-    /// flashes the switch as off and movable, and again whenever the displays change or Island on
-    /// displays without a notch is flipped (§ P4).
-    @State private var islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
+    /// 2026-11-03 § Status item). The island keeps the answer current at each of its re-place points
+    /// (a display change, wake, a flip of Island on displays without a notch, § P4); the view lists
+    /// no windows itself (spec 2026-11-10 § A).
+    @ObservedObject private var presence = IslandDisplayPresence.shared
 
     /// The bundle's version and build, read once.
     private static let versionTitle: String = {
@@ -69,17 +69,9 @@ struct GeneralSettingsView: View {
             keepAwake
             updates
         }
-        .onAppear { readDisplays() }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
-            readDisplays()
-        }
-        // After the value has landed: the reading reads the store.
-        .onChange(of: settings.virtualNotchEnabled) { _, _ in readDisplays() }
     }
 
-    private func readDisplays() {
-        islandDisplayAttached = StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
-    }
+    private var islandDisplayAttached: Bool { presence.islandDisplayAttached }
 
     private var startup: some View {
         SettingsSection(header: GeneralSettingsCopy.startupHeader) {
