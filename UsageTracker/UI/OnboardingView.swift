@@ -6,8 +6,12 @@ enum OnboardingPage: Int, CaseIterable {
     case welcome, permissions, agents, pet, ready
 }
 
-/// The tour's words that depend on the displays (spec 2026-11-03 § Status item).
+/// The tour's words: the welcome, and the tip that depends on the displays (spec 2026-11-03
+/// § Status item).
 enum OnboardingCopy {
+    /// The first page's promise, every provider named (spec 2026-11-10 § Surfaces).
+    static let welcome = "Brioche watches your AI usage limits in real time, from the notch or the menu bar — Claude, Codex, Grok, Antigravity, Mistral — so you never get surprised by hitting a limit mid-task."
+
     /// After "Click" on the last page: the island wherever a display shows it — a notch or a pill —
     /// else the menu bar icon, which is always shown then.
     static func openTip(islandDisplayAttached: Bool) -> String {
@@ -128,7 +132,7 @@ struct OnboardingView: View {
             }
             Text("Welcome to Brioche")
                 .font(OMFont.screenTitle)
-            Text("Brioche watches your AI usage limits in real time, from the notch or the menu bar — Claude, Codex, Grok, Antigravity — so you never get surprised by hitting a limit mid-task.")
+            Text(OnboardingCopy.welcome)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 10)

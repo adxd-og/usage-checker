@@ -19,4 +19,12 @@ final class OnboardingCopyTests: XCTestCase {
     func testWithNoDisplayShowingTheIslandTheTourPointsAtTheMenuBarIcon() {
         XCTAssertEqual(OnboardingCopy.openTip(islandDisplayAttached: false), "the menu bar icon to open Brioche")
     }
+
+    /// Spec 2026-11-10 Mistral provider § Surfaces: the first page names every provider.
+    func testTheWelcomeNamesEveryProviderMistralIncluded() {
+        XCTAssertEqual(
+            OnboardingCopy.welcome,
+            "Brioche watches your AI usage limits in real time, from the notch or the menu bar — Claude, Codex, Grok, Antigravity, Mistral — so you never get surprised by hitting a limit mid-task."
+        )
+    }
 }
