@@ -15,6 +15,13 @@ enum AppEnvironment {
 struct UsageTrackerApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
+    /// No HTTP cache before anything of ours can make a request (spec 2026-11-11 no URL
+    /// cache § Where it runs): this runs ahead of the delegate's launch work, and the
+    /// delegate's own stored properties start empty. `apply()` does nothing under tests.
+    init() {
+        NetworkCachePolicy.apply()
+    }
+
     var body: some Scene {
         Window("Brioche", id: "dashboard") {
             if !AppEnvironment.isRunningTests {
