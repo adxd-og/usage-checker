@@ -126,14 +126,17 @@ enum KeychainNoUI {
     /// is what keeps the delegated read prompt-proof — `security` inherits none of this
     /// process's no-UI state, so an untrusted `security` would raise from a background
     /// poll exactly the panel this file exists to prevent.
-    static func aclTrusts(path: String, service: String) -> Bool {
+    static func aclTrusts(path: String, service: String, account: String? = nil) -> Bool {
         guard let acl = aclFns else { return false }
-        let query: [String: Any] = [
+        var query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecMatchLimit as String: kSecMatchLimitOne,
             kSecReturnRef as String: true,
         ]
+        // The item `security -a` will read: a service can keep one item per account, and the
+        // first one found need not be it.
+        if let account { query[kSecAttrAccount as String] = account }
         var ref: AnyObject?
         guard SecItemCopyMatching(query as CFDictionary, &ref) == errSecSuccess,
               let item = ref,
