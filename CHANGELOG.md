@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to the usual paths. The status line drops control characters from the model
   name Claude Code sends.
 
+### Privacy
+- Network answers are no longer cached on disk. macOS's URL cache could keep an
+  answer together with its request's `Authorization` header (Claude's sign-in
+  token, Grok's) in `~/Library/Caches/com.usagetracker.app/Cache.db`; the cache
+  is switched off and the old file is removed at launch.
+
 ## [4.2.0] — 2026-11-05
 
 ### Island
