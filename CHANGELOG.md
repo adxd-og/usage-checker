@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Settings → Pet: the ears' caption follows **Island on displays without a
   notch** at once; it kept the old wording until the tab was reopened.
 
+### Agents
+- A click on a session in tmux runs the reported tmux only when it is an
+  executable called `tmux` and the pane is a pane id; anything else falls back
+  to the usual paths. The status line drops control characters from the model
+  name Claude Code sends.
+
 ## [4.2.0] — 2026-11-05
 
 ### Island
