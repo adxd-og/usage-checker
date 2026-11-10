@@ -46,26 +46,35 @@ enum SessionActivator {
         let binary: String
     }
 
-    /// Where tmux is when the helper could not read the server's own path — the server
-    /// had already gone, or the event came from an older helper. Homebrew first: that
+    /// Where tmux is when the reported path is no use: the helper could not read the
+    /// server's own path (the server had already gone, or the event came from an older
+    /// helper), or `isTmuxBinary` did not accept what was reported. Homebrew first: that
     /// is where a tmux on this machine normally lives, and a GUI app's `PATH` has never
     /// heard of `/opt/homebrew/bin`.
     static let tmuxBinaryFallbacks = ["/opt/homebrew/bin/tmux", "/usr/local/bin/tmux", "/usr/bin/tmux"]
 
-    /// A tmux session: the helper found both the socket and the pane. A reported
-    /// binary is taken as it stands — tmux was running when it was reported, and if it
-    /// has been uninstalled since, the call simply fails and the click falls back to
-    /// the Finder. Only the guesses are checked against the disk, and if none of them
-    /// is there this is no target at all: running a binary we could not find is not a
-    /// jump.
+    /// What a reported tmux binary has to be before a click runs it: an absolute path
+    /// to something called exactly `tmux` that is an executable file on this disk. The
+    /// helper reports `proc_pidpath` of the tmux server, which is all of that; an
+    /// envelope that names anything else is not believed (spec 2026-11-10 hook input
+    /// hardening § Design › Tmux address).
+    static func isTmuxBinary(_ path: String, exists: (String) -> Bool) -> Bool {
+        path.hasPrefix("/") && path.hasSuffix("/tmux") && exists(path)
+    }
+
+    /// A tmux session: the helper found both the socket and the pane. The pane has to
+    /// be a pane id — it goes onto a command line — and a reported binary is used only
+    /// when `isTmuxBinary` accepts it. Otherwise the guesses are tried, and if none of
+    /// them is on the disk this is no target at all: running a binary we could not
+    /// find is not a jump.
     static func tmuxTarget(
         for host: AgentHostInfo,
         binaryExists: (String) -> Bool = { FileManager.default.isExecutableFile(atPath: $0) }
     ) -> TmuxTarget? {
         guard let socketPath = host.tmuxSocket, !socketPath.isEmpty,
-              let pane = host.tmuxPane, !pane.isEmpty
+              let pane = host.tmuxPane, TmuxAddress.isPaneID(pane)
         else { return nil }
-        if let binary = host.tmuxBinary, !binary.isEmpty {
+        if let binary = host.tmuxBinary, isTmuxBinary(binary, exists: binaryExists) {
             return TmuxTarget(socketPath: socketPath, pane: pane, binary: binary)
         }
         guard let binary = tmuxBinaryFallbacks.first(where: binaryExists) else { return nil }

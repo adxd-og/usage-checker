@@ -16,7 +16,8 @@ import Foundation
 /// looking at one would be worse than a session spent looking at nothing.
 struct StatusLineInput: Equatable, Sendable {
     /// `model.display_name` — "Fable", "Opus 4.5". Never the id: it is what Claude
-    /// Code itself prints, and an id in a status bar is noise.
+    /// Code itself prints, and an id in a status bar is noise. Without its control
+    /// characters (`printable`): it is the one string of the input that is printed.
     let model: String?
 
     /// `context_window.used_percentage`, clamped to 0…100. **Used**, always: this is
@@ -134,7 +135,7 @@ struct StatusLineInput: Equatable, Sendable {
 
     private static func name(_ value: Any?) -> String? {
         guard let model = value as? [String: Any] else { return nil }
-        return text(model["display_name"])
+        return printable(model["display_name"])
     }
 
     private static func percent(_ value: Any?) -> Double? {
@@ -188,6 +189,19 @@ struct StatusLineInput: Equatable, Sendable {
         guard let text = value as? String else { return nil }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// A string on its way to a terminal: its control characters dropped, then
+    /// trimmed as `text` trims. Every scalar of category `Cc` goes (C0, DEL, C1) — an
+    /// escape would repaint the user's terminal and a line break would make the one
+    /// line two. Only the model name comes through here: the session id is a file
+    /// name that `StatusLineDrop` checks and never cleans (spec 2026-11-10 hook input
+    /// hardening § Design › Status line strings).
+    private static func printable(_ value: Any?) -> String? {
+        guard let raw = value as? String else { return nil }
+        return text(String(String.UnicodeScalarView(
+            raw.unicodeScalars.filter { $0.properties.generalCategory != .control }
+        )))
     }
 
     /// A finite number, written as a JSON number or as a numeric string.

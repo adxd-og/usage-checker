@@ -24,7 +24,7 @@ final class TmuxJumpTests: XCTestCase {
 
     func testAReportedAddressIsATmuxTarget() {
         XCTAssertEqual(
-            SessionActivator.tmuxTarget(for: tmuxHost(), binaryExists: exists([])),
+            SessionActivator.tmuxTarget(for: tmuxHost(), binaryExists: exists(["/opt/homebrew/bin/tmux"])),
             SessionActivator.TmuxTarget(socketPath: "/private/tmp/tmux-501/default",
                                         pane: "%3", binary: "/opt/homebrew/bin/tmux")
         )
@@ -66,6 +66,81 @@ final class TmuxJumpTests: XCTestCase {
         XCTAssertNil(SessionActivator.tmuxTarget(for: .none, binaryExists: exists([])))
     }
 
+    // Spec 2026-11-10 hook input hardening § Design › Tmux address.
+
+    func testAReportedBinaryIsUsedOnlyWhenItIsOnDisk() {
+        XCTAssertEqual(
+            SessionActivator.tmuxTarget(for: tmuxHost(), binaryExists: exists(["/opt/homebrew/bin/tmux"]))?.binary,
+            "/opt/homebrew/bin/tmux"
+        )
+        // Uninstalled since the event: the guesses are tried.
+        XCTAssertEqual(
+            SessionActivator.tmuxTarget(for: tmuxHost(binary: "/opt/local/bin/tmux"),
+                                        binaryExists: exists(["/usr/bin/tmux"]))?.binary,
+            "/usr/bin/tmux"
+        )
+        XCTAssertNil(SessionActivator.tmuxTarget(for: tmuxHost(), binaryExists: exists([])))
+    }
+
+    func testATmuxOutsideTheGuessesIsStillUsed() {
+        // nix and MacPorts: the reported path is the only way the app learns of them.
+        for path in ["/nix/store/3b9f-tmux-3.5a/bin/tmux", "/opt/local/bin/tmux",
+                     "/opt/homebrew/Cellar/tmux/3.5a/bin/tmux"] {
+            XCTAssertEqual(
+                SessionActivator.tmuxTarget(for: tmuxHost(binary: path),
+                                            binaryExists: exists([path, "/usr/bin/tmux"]))?.binary,
+                path
+            )
+        }
+    }
+
+    func testAReportedBinaryThatIsNotCalledTmuxIsNeverRun() {
+        for path in ["/tmp/x/run.sh", "/bin/sh", "/usr/bin/tmuxinator", "/opt/homebrew/bin/tmux2",
+                     "/opt/homebrew/bin/tmux/", "/opt/homebrew/bin/.tmux-wrapped",
+                     "/tmp/x/notmux", "/tmp/x/-tmux", "/tmp/x/.tmux"] {
+            // On disk and executable, and still not what the click runs.
+            XCTAssertEqual(
+                SessionActivator.tmuxTarget(for: tmuxHost(binary: path),
+                                            binaryExists: exists([path, "/usr/bin/tmux"]))?.binary,
+                "/usr/bin/tmux", path
+            )
+            XCTAssertNil(SessionActivator.tmuxTarget(for: tmuxHost(binary: path), binaryExists: exists([path])), path)
+        }
+    }
+
+    func testTheBinaryRuleItself() {
+        let onDisk = exists(["/opt/homebrew/bin/tmux", "/tmp/x/notmux", "tmux"])
+        XCTAssertTrue(SessionActivator.isTmuxBinary("/opt/homebrew/bin/tmux", exists: onDisk))
+        XCTAssertFalse(SessionActivator.isTmuxBinary("/tmp/x/notmux", exists: onDisk), "the name is tmux, not something ending in it")
+        XCTAssertFalse(SessionActivator.isTmuxBinary("tmux", exists: onDisk), "absolute")
+        XCTAssertFalse(SessionActivator.isTmuxBinary("/usr/bin/tmux", exists: onDisk), "on this disk")
+        XCTAssertFalse(SessionActivator.isTmuxBinary("", exists: { _ in true }))
+        XCTAssertFalse(SessionActivator.isTmuxBinary("/tmux/", exists: { _ in true }))
+        XCTAssertTrue(SessionActivator.isTmuxBinary("/tmux", exists: { _ in true }))
+    }
+
+    func testAReportedBinaryMustBeAnAbsolutePath() {
+        for path in ["tmux", "./tmux", "bin/tmux", "~/bin/tmux"] {
+            XCTAssertNil(SessionActivator.tmuxTarget(for: tmuxHost(binary: path), binaryExists: exists([path])), path)
+        }
+    }
+
+    func testAPaneThatIsNotAPaneIDIsNoTarget() {
+        let onDisk = exists(["/opt/homebrew/bin/tmux"])
+        for pane in ["3", "%", "%3 -x", "%3;kill-server", "-t", "%٣", "%3\n", " %3"] {
+            XCTAssertNil(SessionActivator.tmuxTarget(for: tmuxHost(pane: pane), binaryExists: onDisk), pane)
+        }
+        XCTAssertEqual(SessionActivator.tmuxTarget(for: tmuxHost(pane: "%120"), binaryExists: onDisk)?.pane, "%120")
+    }
+
+    func testAMalformedPaneRoutesToWhateverIsLeft() {
+        var host = tmuxHost(pane: "%3;kill-server")
+        let onDisk = exists(["/opt/homebrew/bin/tmux"])
+        XCTAssertEqual(SessionActivator.route(for: host, tmuxBinaryExists: onDisk), .finder)
+        host.pid = 4242
+        XCTAssertEqual(SessionActivator.route(for: host, tmuxBinaryExists: onDisk), .process(pid: 4242))
+    }
+
     // MARK: - SessionActivator.route
 
     func testCmuxWinsOverTmux() {
@@ -80,7 +155,7 @@ final class TmuxJumpTests: XCTestCase {
         host.cmuxSocket = "/tmp/cmux.sock"
 
         XCTAssertEqual(
-            SessionActivator.route(for: host, tmuxBinaryExists: exists([])),
+            SessionActivator.route(for: host, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])),
             .cmux(SessionActivator.CmuxTarget(workspace: "ws-7", surface: "sf-3", socketPath: "/tmp/cmux.sock"))
         )
     }
@@ -94,7 +169,7 @@ final class TmuxJumpTests: XCTestCase {
         host.bundleID = "com.apple.Terminal"
 
         XCTAssertEqual(
-            SessionActivator.route(for: host, tmuxBinaryExists: exists([])),
+            SessionActivator.route(for: host, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])),
             .tmux(SessionActivator.TmuxTarget(socketPath: "/private/tmp/tmux-501/default",
                                               pane: "%3", binary: "/opt/homebrew/bin/tmux"))
         )
@@ -103,10 +178,10 @@ final class TmuxJumpTests: XCTestCase {
     func testAnUnusableTmuxAddressFallsBackToWhateverIsLeft() {
         var withPID = tmuxHost(pane: "")
         withPID.pid = 4242
-        XCTAssertEqual(SessionActivator.route(for: withPID, tmuxBinaryExists: exists([])), .process(pid: 4242))
+        XCTAssertEqual(SessionActivator.route(for: withPID, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])), .process(pid: 4242))
 
         let withoutPID = tmuxHost(pane: "")
-        XCTAssertEqual(SessionActivator.route(for: withoutPID, tmuxBinaryExists: exists([])), .finder)
+        XCTAssertEqual(SessionActivator.route(for: withoutPID, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])), .finder)
     }
 
     func testAPlainTerminalRoutesToItsProcessAndNothingRoutesToTheFinder() {
