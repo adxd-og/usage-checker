@@ -534,13 +534,17 @@ final class IslandController: NSObject {
 
     /// A re-place point (launch, a display change, wake or unlock, a space change that moved the set,
     /// a click on a pill left behind, Island on displays without a notch flipped) with its reading of
-    /// the displays: kept as the reading the pills stand on, the ears read on it, the pills made,
+    /// the displays: kept as the reading the pills stand on, handed to `IslandDisplayPresence` for the
+    /// views that word themselves on it (spec 2026-11-10 § A), the ears read on it, the pills made,
     /// dropped and laid over it. Only here does the set of pills change, and a changed set has the
     /// status item read its visibility again (4.1.0 release review F1): the last pill going (a
     /// full-screen space on a lone notchless display) forces the item on, and a pill coming back hides
     /// it again.
     private func placePills(on screens: [IslandScreen]) {
         placedScreens = screens
+        // Every placement, before anything below can return: Settings and onboarding have no other
+        // source for whether a display shows the island.
+        IslandDisplayPresence.shared.placed(on: screens)
         var setChanged = false
         earModel.displaysChanged {
             setChanged = !placeResting(screens).isEmpty

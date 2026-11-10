@@ -19,6 +19,8 @@ enum OnboardingCopy {
 
 struct OnboardingView: View {
     @StateObject private var settings = SettingsStore.shared
+    /// Whether a display shows the island, for the last page's Click tip (spec 2026-11-10 § A).
+    @ObservedObject private var presence = IslandDisplayPresence.shared
     @State private var page: Int
     @State private var notificationStatus: UNAuthorizationStatus = .notDetermined
     /// Background polling never prompts, so the keychain dialog has to be asked for
@@ -410,9 +412,7 @@ struct OnboardingView: View {
             Text("You're all set!")
                 .font(OMFont.screenTitle)
             card {
-                tip("Click", OnboardingCopy.openTip(
-                    islandDisplayAttached: StatusItemVisibilityRules.islandDisplayAttached(IslandScreen.current())
-                ))
+                tip("Click", OnboardingCopy.openTip(islandDisplayAttached: presence.islandDisplayAttached))
                 tip("From the island", "open Dashboard or Settings; ⌘R refreshes")
                 tip("Updates", "install themselves — signed and notarized")
             }
