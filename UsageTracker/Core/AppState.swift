@@ -376,6 +376,7 @@ final class AppState: ObservableObject {
     /// the timer or a wake may hold.
     func refreshNow(userInitiated: Bool = true, trigger: ClaudePollCadenceRules.Trigger? = nil) {
         if inflight != nil {
+            // Only a user request pends: `ClaudePollCadenceRules.pendingRerunTrigger` rests on it.
             if userInitiated { pendingUserRefresh = true }
             return
         }
@@ -385,7 +386,7 @@ final class AppState: ObservableObject {
             if now < nextAllowedRefresh { return }
             if now.timeIntervalSince(lastRefreshAt) < 0.5 { return }
         }
-        startRefresh(at: now, trigger: trigger ?? (userInitiated ? .asked : .tick))
+        startRefresh(at: now, trigger: ClaudePollCadenceRules.trigger(explicit: trigger, userInitiated: userInitiated))
     }
 
     private func startRefresh(at now: Date, trigger: ClaudePollCadenceRules.Trigger) {
@@ -410,8 +411,7 @@ final class AppState: ObservableObject {
                 self.inflight = nil
                 if self.pendingUserRefresh {
                     self.pendingUserRefresh = false
-                    // Only a user request is ever pending, and a user request asks.
-                    self.startRefresh(at: Date(), trigger: .asked)
+                    self.startRefresh(at: Date(), trigger: ClaudePollCadenceRules.pendingRerunTrigger)
                 }
             }
         }
@@ -427,9 +427,7 @@ final class AppState: ObservableObject {
         // Only when it moved: every assignment redraws whatever observes the app.
         let polledMoved = polledIDs != polled
         if polledMoved { polledIDs = polled }
-        // A held answer counts only while Claude is still polled: switched off after
-        // `startRefresh` decided, this poll forgets Claude's last fetch instead of keeping it.
-        let held = polled.contains(ClaudeOAuthProvider.serviceID) ? claudeHeld : nil
+        let held = ClaudePollCadenceRules.honouredHeld(claudeHeld, polled: polled)
 
         // Cheap daily no-op: keeps CLI cost rates current from models.dev.
         await ModelsDevPricing.refreshIfStale()
