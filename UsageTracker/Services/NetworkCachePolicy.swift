@@ -16,6 +16,15 @@ enum NetworkCachePolicy {
         URLCache(memoryCapacity: 0, diskCapacity: 0, directory: nil)
     }
 
+    /// For requests of ours that carry a credential (`HTTPClient`): a default session with
+    /// no cache at all, so they do not depend on `apply()` having run first. Cookies,
+    /// credential storage and timeouts are the default ones, as before.
+    static let uncachedSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.urlCache = nil
+        return URLSession(configuration: configuration)
+    }()
+
     /// Removes the cache an earlier version left in `<cachesDirectory>/<bundleID>/` and
     /// returns the names it removed. Files, not rows: a deleted row's bytes stay in the
     /// database's free pages. Nothing there is the normal case. An empty bundle id removes

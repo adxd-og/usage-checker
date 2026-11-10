@@ -85,4 +85,21 @@ final class NetworkCachePolicyTests: XCTestCase {
         NetworkCachePolicy.apply(bundleID: "com.example.brioche-tests-no-such-app")
         XCTAssertTrue(URLCache.shared === before)
     }
+
+    func testTheCredentialedSessionHasNoCacheAndTheSharedCookieAndCredentialStores() {
+        let configuration = NetworkCachePolicy.uncachedSession.configuration
+        XCTAssertNil(configuration.urlCache)
+        // A default configuration, not an ephemeral one: the stores are the shared ones, as
+        // they were while these requests went through `URLSession.shared`.
+        XCTAssertTrue(configuration.httpCookieStorage === HTTPCookieStorage.shared)
+        XCTAssertTrue(configuration.urlCredentialStorage === URLCredentialStorage.shared)
+    }
+
+    func testClaudesAndTheAdminAPIsRequestsGoThroughTheSessionWithoutACache() {
+        XCTAssertTrue(HTTPClient().session === NetworkCachePolicy.uncachedSession)
+        XCTAssertNil(HTTPClient().session.configuration.urlCache)
+        // A caller's own session is still taken as given (the provider tests pass one).
+        let own = URLSession(configuration: .ephemeral)
+        XCTAssertTrue(HTTPClient(session: own).session === own)
+    }
 }
