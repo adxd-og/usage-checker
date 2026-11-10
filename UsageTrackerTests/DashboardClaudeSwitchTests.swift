@@ -20,12 +20,12 @@ final class DashboardClaudeSwitchTests: XCTestCase {
 
     func testClaudeSwitchedOffIsSwitchedOffLikeTheOthers() {
         XCTAssertEqual(
-            DashboardState.switchedOff(polled: ["anthropic-admin", "codex", "antigravity", "grok"]),
+            DashboardState.switchedOff(polled: ["anthropic-admin", "codex", "antigravity", "grok", "mistral"]),
             ["claude"]
         )
         XCTAssertEqual(
             DashboardState.switchedOff(polled: ["anthropic-admin"]),
-            ["claude", "codex", "antigravity", "grok"]
+            ["claude", "codex", "antigravity", "grok", "mistral"]
         )
     }
 
@@ -35,7 +35,7 @@ final class DashboardClaudeSwitchTests: XCTestCase {
 
     func testAnAdminOrganisationWithoutAKeyIsSwitchedOff() {
         XCTAssertEqual(
-            DashboardState.switchedOff(polled: ["claude", "codex", "antigravity", "grok"]), ["anthropic-admin"],
+            DashboardState.switchedOff(polled: ["claude", "codex", "antigravity", "grok", "mistral"]), ["anthropic-admin"],
             "the key is what counts as on (spec: the admin key is something on), so no key is off"
         )
         XCTAssertEqual(DashboardState.switchedOff(polled: []), ProviderCoordinator.serviceIDs)

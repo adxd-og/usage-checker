@@ -19,14 +19,16 @@ enum ProvidersSettingsCopy {
     static let codexID = "codex"
     static let antigravityID = "antigravity"
     static let grokID = "grok"
+    static let mistralID = "mistral"
     static let adminID = "anthropic-admin"
 
-    /// The mockup's four rows, in its order.
+    /// The mockup's four rows in its order, then Mistral (spec 2026-11-10 § Surfaces).
     static let listed: [Provider] = [
         Provider(id: claudeID, name: "Claude", source: "Claude Code sign-in", sfFallback: "sparkles", hasSwitch: true),
         Provider(id: codexID, name: "Codex", source: "Local Codex CLI, needs codex login", sfFallback: "terminal", hasSwitch: true),
         Provider(id: antigravityID, name: "Antigravity", source: "Running Antigravity app, agy CLI or IDE", sfFallback: "circle.hexagongrid", hasSwitch: true),
         Provider(id: grokID, name: "Grok", source: "Local Grok CLI, grok.com fallback", sfFallback: "bolt", hasSwitch: true),
+        Provider(id: mistralID, name: "Mistral", source: "API key from the vibe CLI", sfFallback: "cat", hasSwitch: true),
     ]
 
     static let adminSource = "Admin API key, in Advanced"
@@ -43,7 +45,7 @@ enum ProvidersSettingsCopy {
     static let trailingSpacing: CGFloat = 14
     static let verticalPadding: CGFloat = 12
 
-    /// The four listed providers, then any other service the last poll returned (the
+    /// The listed providers, then any other service the last poll returned (the
     /// Admin API organisation, which 2.x's Account tab listed too), without a switch.
     static func rows(services: [ServiceSnapshot]) -> [Provider] {
         let listedIDs = Set(listed.map(\.id))
@@ -183,6 +185,7 @@ struct ProvidersSettingsView: View {
         .onChange(of: settings.codexProviderEnabled) { _, _ in AppState.shared.refreshNow() }
         .onChange(of: settings.antigravityProviderEnabled) { _, _ in AppState.shared.refreshNow() }
         .onChange(of: settings.grokProviderEnabled) { _, _ in AppState.shared.refreshNow() }
+        .onChange(of: settings.mistralProviderEnabled) { _, _ in AppState.shared.refreshNow() }
     }
 
     private func row(_ provider: ProvidersSettingsCopy.Provider, service: ServiceSnapshot?, now: Date) -> some View {
@@ -247,6 +250,7 @@ struct ProvidersSettingsView: View {
         case ProvidersSettingsCopy.codexID: return $settings.codexProviderEnabled
         case ProvidersSettingsCopy.antigravityID: return $settings.antigravityProviderEnabled
         case ProvidersSettingsCopy.grokID: return $settings.grokProviderEnabled
+        case ProvidersSettingsCopy.mistralID: return $settings.mistralProviderEnabled
         default: return nil
         }
     }

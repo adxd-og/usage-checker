@@ -119,6 +119,6 @@ final class GeminiRemovalCopyAndSettingsVerificationTests: XCTestCase {
         ]
         let rows = ProvidersSettingsCopy.rows(services: services)
         XCTAssertFalse(rows.map(\.id).contains("gemini"))
-        XCTAssertEqual(Set(rows.map(\.id)), ["claude", "codex", "antigravity", "grok", "anthropic-admin"])
+        XCTAssertEqual(Set(rows.map(\.id)), ["claude", "codex", "antigravity", "grok", "mistral", "anthropic-admin"])
     }
 }

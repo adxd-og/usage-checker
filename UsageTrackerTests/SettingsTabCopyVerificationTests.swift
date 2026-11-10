@@ -90,8 +90,8 @@ final class SettingsTabCopyVerificationTests: XCTestCase {
     /// after them, without a switch.
     func testTheFourListedRowsComeFirstInOrderThenAnyOtherService() {
         let rows = ProvidersSettingsCopy.rows(services: [Fixture.snapshot(id: "anthropic-admin", displayName: "Admin API")])
-        XCTAssertEqual(rows.map(\.id), ["claude", "codex", "antigravity", "grok", "anthropic-admin"])
-        XCTAssertEqual(rows.map(\.hasSwitch), [true, true, true, true, false])
+        XCTAssertEqual(rows.map(\.id), ["claude", "codex", "antigravity", "grok", "mistral", "anthropic-admin"])
+        XCTAssertEqual(rows.map(\.hasSwitch), [true, true, true, true, true, false])
     }
 
     /// D8: "'Forget last known' shows on a retained provider only." A live provider

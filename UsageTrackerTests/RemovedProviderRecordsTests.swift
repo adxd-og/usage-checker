@@ -124,12 +124,13 @@ final class RemovedProviderRecordsTests: XCTestCase {
     }
 
     func testTheCoordinatorNamesEveryProviderItPollsAndSettingsListsTheSame() {
-        XCTAssertEqual(ProviderCoordinator.serviceIDs, ["claude", "anthropic-admin", "codex", "antigravity", "grok"])
+        XCTAssertEqual(ProviderCoordinator.serviceIDs, ["claude", "anthropic-admin", "codex", "antigravity", "grok", "mistral"])
         XCTAssertTrue(ProviderCoordinator.serviceIDs.isSuperset(of: [
             ClaudeOAuthProvider.serviceID,
             CodexProvider.serviceID,
             AntigravityProvider.shared.serviceID,
             GrokProvider.shared.serviceID,
+            MistralProvider.serviceID,
         ]))
         XCTAssertEqual(
             ProviderCoordinator.serviceIDs,
