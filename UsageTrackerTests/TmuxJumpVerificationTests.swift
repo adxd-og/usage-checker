@@ -210,13 +210,13 @@ final class TmuxJumpVerificationTests: XCTestCase {
         host.tmuxBinary = "/opt/homebrew/bin/tmux"
 
         XCTAssertEqual(
-            SessionActivator.route(for: host, tmuxBinaryExists: exists([])),
+            SessionActivator.route(for: host, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])),
             .cmux(SessionActivator.CmuxTarget(workspace: "ws-1", surface: "sf-1", socketPath: "/tmp/cmux-ladder.sock"))
         )
 
         host.cmuxWorkspace = nil
         XCTAssertEqual(
-            SessionActivator.route(for: host, tmuxBinaryExists: exists([])),
+            SessionActivator.route(for: host, tmuxBinaryExists: exists(["/opt/homebrew/bin/tmux"])),
             .tmux(SessionActivator.TmuxTarget(socketPath: "/private/tmp/tmux-501/default", pane: "%5", binary: "/opt/homebrew/bin/tmux"))
         )
 
@@ -229,14 +229,15 @@ final class TmuxJumpVerificationTests: XCTestCase {
 
     // MARK: tmuxTarget
 
-    func testTmuxTargetUsesTheReportedBinaryEvenWhenItIsNotOnDisk() {
-        // "A reported binary is taken as it stands" — the disk is never consulted
-        // when the helper already told us where tmux runs from.
+    func testTmuxTargetDoesNotUseAReportedBinaryThatIsNotOnDisk() {
+        // "A reported binary is used only when `isTmuxBinary` accepts it": an absolute
+        // path to something called exactly `tmux` that is an executable file on this disk.
         let host = AgentHostInfo(pid: nil, bundleID: nil, tty: "/dev/ttys031",
                                   tmuxSocket: "/private/tmp/tmux-9/default", tmuxPane: "%2",
                                   tmuxBinary: "/usr/local/Cellar/tmux/3.7/bin/tmux")
+        XCTAssertNil(SessionActivator.tmuxTarget(for: host, binaryExists: exists([])))
         XCTAssertEqual(
-            SessionActivator.tmuxTarget(for: host, binaryExists: exists([])),
+            SessionActivator.tmuxTarget(for: host, binaryExists: exists(["/usr/local/Cellar/tmux/3.7/bin/tmux"])),
             SessionActivator.TmuxTarget(socketPath: "/private/tmp/tmux-9/default", pane: "%2",
                                         binary: "/usr/local/Cellar/tmux/3.7/bin/tmux")
         )
