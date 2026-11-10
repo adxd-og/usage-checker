@@ -85,4 +85,40 @@ final class ClaudePollCadenceRulesTests: XCTestCase {
         XCTAssertTrue(shouldFetch(lastFetch: -60, applied: 30), "a fetch dated in the future")
         XCTAssertTrue(shouldFetch(lastFetch: 60, applied: -60), "a reading applied in the future")
     }
+
+    // MARK: Why a poll runs, and the held answer it honours (spec 2026-11-10 small backlog § B)
+
+    func testTheCallersOwnTriggerStandsWhateverAskedForThePoll() {
+        XCTAssertEqual(ClaudePollCadenceRules.trigger(explicit: .tick, userInitiated: true), .tick)
+        XCTAssertEqual(ClaudePollCadenceRules.trigger(explicit: .asked, userInitiated: false), .asked)
+    }
+
+    func testWithoutATriggerAUserRequestAsks() {
+        XCTAssertEqual(ClaudePollCadenceRules.trigger(explicit: nil, userInitiated: true), .asked)
+    }
+
+    func testWithoutATriggerAnythingElseIsATick() {
+        XCTAssertEqual(ClaudePollCadenceRules.trigger(explicit: nil, userInitiated: false), .tick)
+    }
+
+    func testThePollRunAfterOneInFlightAsks() {
+        XCTAssertEqual(ClaudePollCadenceRules.pendingRerunTrigger, .asked)
+    }
+
+    func testAHeldAnswerIsHonouredWhileClaudeIsPolled() {
+        let held = Fixture.snapshot(id: ClaudeOAuthProvider.serviceID, at: now)
+        XCTAssertEqual(
+            ClaudePollCadenceRules.honouredHeld(held, polled: ["claude", "codex"]),
+            held
+        )
+    }
+
+    func testClaudeSwitchedOffAfterTheDecisionForgetsTheHeldAnswer() {
+        let held = Fixture.snapshot(id: ClaudeOAuthProvider.serviceID, at: now)
+        XCTAssertNil(ClaudePollCadenceRules.honouredHeld(held, polled: ["codex"]))
+    }
+
+    func testWithNoHeldAnswerThereIsNothingToHonour() {
+        XCTAssertNil(ClaudePollCadenceRules.honouredHeld(nil, polled: ["claude"]))
+    }
 }

@@ -22,6 +22,22 @@ enum ClaudePollCadenceRules {
         case asked
     }
 
+    /// Why a poll `refreshNow` starts runs: the caller's word where it gave one; otherwise a user
+    /// request asks and anything else is a tick.
+    static func trigger(explicit: Trigger?, userInitiated: Bool) -> Trigger {
+        explicit ?? (userInitiated ? .asked : .tick)
+    }
+
+    /// The poll run after one in flight, because a refresh was asked for meanwhile: only a user
+    /// request is ever pending, and a user request asks.
+    static let pendingRerunTrigger: Trigger = .asked
+
+    /// The held answer a poll honours: only while Claude is still polled. Switched off after
+    /// `startRefresh` decided, the poll forgets Claude's last fetch instead of keeping it.
+    static func honouredHeld(_ held: ServiceSnapshot?, polled: Set<String>) -> ServiceSnapshot? {
+        polled.contains(ClaudeOAuthProvider.serviceID) ? held : nil
+    }
+
     /// A status-line reading applied this recently keeps Claude's fetch slow.
     static let readingHold: TimeInterval = 300
     /// The slowest Claude's endpoint is asked while the status line feeds it, unless the
