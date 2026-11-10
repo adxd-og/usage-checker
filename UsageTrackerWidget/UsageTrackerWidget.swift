@@ -9,6 +9,7 @@ enum ProviderChoice: String, AppEnum {
     case codex
     case antigravity
     case grok
+    case mistral
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Provider"
     static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
@@ -16,6 +17,7 @@ enum ProviderChoice: String, AppEnum {
         .codex: "Codex (OpenAI)",
         .antigravity: "Antigravity",
         .grok: "Grok",
+        .mistral: "Mistral",
     ]
 
     var fallbackName: String {
@@ -24,6 +26,7 @@ enum ProviderChoice: String, AppEnum {
         case .codex: return "Codex"
         case .antigravity: return "Antigravity"
         case .grok: return "Grok"
+        case .mistral: return "Mistral"
         }
     }
 
@@ -33,6 +36,7 @@ enum ProviderChoice: String, AppEnum {
         case .codex: return "chevron.left.forwardslash.chevron.right"
         case .antigravity: return "circle.grid.cross"
         case .grok: return "x.circle"
+        case .mistral: return "cat"
         }
     }
 }
