@@ -1158,7 +1158,7 @@ private struct ProviderDetail: View {
                 )
             }
             if !weeklyRows.shown.isEmpty {
-                OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
+                OMSectionHeader(title: PopoverCopy.limitsHeader(for: weeklyRows.shown), trailing: weeklyReset)
                 ForEach(weeklyRows.shown) { bucket in
                     // The ring's tooltip and spoken line carry over: "when exactly?"
                     // for the pointer, the full reset date for VoiceOver.
