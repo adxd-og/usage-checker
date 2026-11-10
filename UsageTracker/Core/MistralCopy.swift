@@ -7,6 +7,17 @@ enum MistralCopy {
     static let vibeLabel = "Vibe"
     static let apiLabel = "API"
 
+    // MARK: - The states' messages (spec § States)
+
+    /// No key in vibe's keychain item or `~/.vibe/.env`; an OIDC-only sign-in too.
+    static let notSignedInMessage = "Not signed in: no Mistral API key in vibe's keychain item or ~/.vibe/.env."
+    /// Billing answered 401.
+    static let signedOutMessage = "Signed out: Mistral did not accept the API key vibe keeps."
+    /// `/budget` answered 403: the plan is known, the usage is not.
+    static let noUsageAccessMessage = "No usage access: this API key may not see its organisation's usage."
+    /// `/budget` answered 429.
+    static let rateLimitedMessage = "Rate limited by Mistral's billing API"
+
     /// The plan chip from billing's `plan_name`: vibe's names for the chat plans
     /// (`vibe/setup/auth/whoami.py`), which billing shares; an unknown name capitalised; nil
     /// when billing said nothing.
