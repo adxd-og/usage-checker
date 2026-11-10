@@ -49,7 +49,10 @@ enum HTTPClientError: LocalizedError, Sendable {
 struct HTTPClient: Sendable {
     let session: URLSession
 
-    init(session: URLSession = .shared) {
+    /// The default session has no URL cache: these requests carry Claude's OAuth token or an
+    /// Admin API key, and a cached answer is stored with its request's headers (spec
+    /// 2026-11-11 no URL cache § Credentialed session).
+    init(session: URLSession = NetworkCachePolicy.uncachedSession) {
         self.session = session
     }
 
