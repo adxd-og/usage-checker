@@ -6,6 +6,44 @@
     <description>Omelette release feed</description>
     <language>en</language>
     <item>
+      <title>Brioche v4.3.0</title>
+      <pubDate>Wed, 11 Nov 2026 12:40:33 +0200</pubDate>
+      <sparkle:version>60</sparkle:version>
+      <sparkle:shortVersionString>4.3.0</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>26.0</sparkle:minimumSystemVersion>
+      <description><![CDATA[
+<h3>Providers</h3>
+<ul>
+<li>Mistral: the plan's Vibe and API allowances from Mistral's billing API, as a percent, as dollars of the monthly allowance and with their reset date, read with the API key the <code>vibe</code> CLI keeps. On by default where <code>~/.vibe</code> exists: Brioche then reads vibe's key and asks <code>api.mistral.ai</code>, at most once a minute. Settings → Providers turns it off.</li>
+<li>Mistral: when rate limited, Brioche waits as long as Mistral asks, between one and five minutes, and the other providers keep refreshing. <code>~/.vibe/.env</code> is read only as a regular file of up to 64 KB; otherwise the key comes from the keychain.</li>
+<li>A provider's page heads windows longer than a week <b>Monthly limits</b> (Mistral's allowances, Codex's monthly window on the free plan); it said Weekly limits.</li>
+<li>Mistral: today's and the week's cost and tokens from the <code>vibe</code> CLI's session logs, at models.dev list prices: always an API equivalent, never added to Mistral's monthly allowance.</li>
+<li>Mistral: the daily history and the chats in History and Insights; <code>brioche status</code> and the status line carry its cost, <code>brioche status --json</code> its chats.</li>
+<li>MCP <code>get_sessions</code> takes <code>provider: "mistral"</code>.</li>
+<li>The All providers widget lists five providers. With five on, each shows one window instead of two; an Admin API organisation beside all five is left out.</li>
+<li>Brioche reads <code>~/.vibe/logs/session/unified</code> and keeps what it has counted, with each session's title and folder, in <code>vibe-usage-ledger-v1.json</code> in its Application Support folder.</li>
+</ul>
+<h3>Settings</h3>
+<ul>
+<li>Settings → Pet: the ears' caption follows **Island on displays without a notch** at once; it kept the old wording until the tab was reopened.</li>
+</ul>
+<h3>Agents</h3>
+<ul>
+<li>A click on a session in tmux runs the reported tmux only when it is an executable called <code>tmux</code> and the pane is a pane id; anything else falls back to the usual paths. The status line drops control characters from the model name Claude Code sends.</li>
+</ul>
+<h3>Privacy</h3>
+<ul>
+<li>Network answers are no longer cached on disk. macOS's URL cache could keep an answer together with its request's <code>Authorization</code> header (Claude's sign-in token, Grok's) in <code>~/Library/Caches/com.usagetracker.app/Cache.db</code>; the cache is switched off and the old file is removed at launch.</li>
+</ul>
+<p><a href="https://github.com/adxd-og/usage-checker/releases/tag/v4.3.0">Full release on GitHub</a></p>
+      ]]></description>
+      <enclosure
+        url="https://github.com/adxd-og/usage-checker/releases/download/v4.3.0/Brioche.dmg"
+        type="application/octet-stream"
+        sparkle:edSignature="KJuqc8tVb2OnEjdEJwjqSBN/agQDiwYUEEaGT0PGMUm5da8yG5711uiYNy0rDqVW3qenR+mgyfSqwlrK7kLeBg=="
+        length="25905887"/>
+    </item>
+    <item>
       <title>Brioche v4.2.0</title>
       <pubDate>Thu, 05 Nov 2026 13:47:10 +0200</pubDate>
       <sparkle:version>59</sparkle:version>
