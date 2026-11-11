@@ -114,10 +114,10 @@ enum WidgetBridge {
                         kind: BucketKind.other.rawValue
                     ))
                 }
-                // Windowless pay-as-you-go: local CLI spend is all there is to show.
+                // Windowless: local CLI spend is all there is to show.
                 let spendLabel: String? = {
                     guard buckets.isEmpty, let cost = service.weekCost, cost > 0 else { return nil }
-                    return String(format: "$%.2f last 7 days", cost)
+                    return WidgetBridge.spendLine(cost: cost, serviceID: service.id)
                 }()
                 return WidgetService(
                     id: service.id,
@@ -133,5 +133,14 @@ enum WidgetBridge {
             }
             // A signed-out provider would just clutter the widget.
             .filter(\.hasContent)
+    }
+
+    /// "$12.00 last 7 days" for a windowless provider's local spend; "≈$3.90 last 7 days" for
+    /// one whose local dollars are an API-list-price equivalent whatever windows it reports
+    /// (`CostCopy.alwaysAPIEquivalent`). The status line's mark: the widget has no room for the
+    /// sentence, and its headline drops " last 7 days" and keeps the mark.
+    nonisolated static func spendLine(cost: Double, serviceID: String) -> String {
+        let amount = String(format: "$%.2f last 7 days", cost)
+        return CostCopy.alwaysAPIEquivalent.contains(serviceID) ? StatusLineText.apiEquivalentMarker + amount : amount
     }
 }

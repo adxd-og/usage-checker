@@ -108,7 +108,10 @@ actor StatusFileWriter {
     /// it shows nothing but dollars, or the only "window" is the weekly budget Omelette
     /// invents for it (`AppState.applyPayAsYouGo`). Its dollars are close to the real
     /// bill, so they are *not* an API-equivalent figure — every other account's are.
+    /// Never for a provider in `CostCopy.alwaysAPIEquivalent`, whose local dollars are no
+    /// bill whatever windows it shows.
     nonisolated static func isPayAsYouGo(_ service: ServiceSnapshot) -> Bool {
+        if CostCopy.alwaysAPIEquivalent.contains(service.id) { return false }
         let reported = service.buckets.filter { $0.id != AppState.payAsYouGoBudgetBucketID }
         return reported.isEmpty && (service.weekCost ?? 0) > 0
     }

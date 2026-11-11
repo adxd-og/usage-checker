@@ -10,7 +10,7 @@ struct ModelPrice: Sendable, Codable, Equatable {
 
 enum ModelPricing {
     // Prices per claude.com/pricing, kept in step with the models.dev rates the app
-    // caches (`models-dev-pricing-v3.json`) — this table is the offline answer, and an
+    // caches (`models-dev-pricing-v4.json`) — this table is the offline answer, and an
     // offline answer that differs from the online one is a second set of books. Opus
     // 4.5+ is $5/$25; the old $15/$75 tier only applies to the deprecated Opus 4 / 4.1.
     // The 5.1 models read cache at a quarter of what the 5 models did.

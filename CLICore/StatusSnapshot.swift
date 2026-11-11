@@ -65,8 +65,8 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         var plan: String?
         var windows: [Window]
         /// Only for providers that write a local per-turn cost log (Claude Code, the
-        /// Codex CLI, the Grok CLI). Absent for the others rather than zero — "no log"
-        /// and "spent nothing today" are different answers.
+        /// Codex CLI, the Grok CLI, Mistral's vibe). Absent for the others rather than
+        /// zero — "no log" and "spent nothing today" are different answers.
         var todayCost: Double?
         var weekCost: Double?
         var todayTokens: Int?

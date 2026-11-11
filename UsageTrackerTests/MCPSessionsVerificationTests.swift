@@ -88,14 +88,14 @@ final class MCPSessionsVerificationTests: XCTestCase {
 
     // MARK: - The schema, read structurally rather than as one exact string
 
-    func testTheSessionsToolSchemaBoundsAreExactlyOneToFifteenAndTwoProviders() throws {
+    func testTheSessionsToolSchemaBoundsAreExactlyOneToFifteenAndThreeProviders() throws {
         let def = try XCTUnwrap(MCPServer.toolDefinitions.first { ($0["name"] as? String) == "get_sessions" })
         let schema = try XCTUnwrap(def["inputSchema"] as? [String: Any])
         XCTAssertEqual(schema["additionalProperties"] as? Bool, false)
         let properties = try XCTUnwrap(schema["properties"] as? [String: Any])
 
         let provider = try XCTUnwrap(properties["provider"] as? [String: Any])
-        XCTAssertEqual(provider["enum"] as? [String], ["claude", "codex"])
+        XCTAssertEqual(provider["enum"] as? [String], ["claude", "codex", "mistral"])
 
         let limit = try XCTUnwrap(properties["limit"] as? [String: Any])
         XCTAssertEqual(limit["minimum"] as? Int, 1)

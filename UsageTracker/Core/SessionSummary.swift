@@ -1,14 +1,16 @@
 import Foundation
 
 /// One chat as the cost logs see it: the main thread plus every sub-agent it
-/// launched, with the tokens split by kind and by day. Built by the Claude and
-/// Codex aggregators (`CostLogAggregating.sessions(from:to:)`), shown in History's
+/// launched, with the tokens split by kind and by day. Built by the Claude, Codex
+/// and vibe aggregators (`CostLogAggregating.sessions(from:to:)`), shown in History's
 /// Sessions mode, published to `status.json` and the `get_sessions` MCP tool.
-/// Spec: docs/superpowers/specs/2026-09-10-sessions-history-design.md § 1.
+/// Spec: docs/superpowers/specs/2026-09-10-sessions-history-design.md § 1; vibe's:
+/// docs/superpowers/specs/2026-11-10-mistral-provider.md § Local usage (P2).
 struct SessionSummary: Codable, Equatable, Sendable, Identifiable {
-    /// Provider-local session id (Claude `sessionId`, Codex `session_id`).
+    /// Provider-local session id (Claude `sessionId`, Codex `session_id`, vibe's session
+    /// directory name).
     let id: String
-    /// "claude" or "codex". Grok has no session log.
+    /// "claude", "codex" or "mistral". Grok has no session log.
     let providerID: String
     /// Claude's `ai-title` or the first human prompt; Codex's `thread_name` or the
     /// first user prompt. nil when neither exists — the UI falls back to project + date.

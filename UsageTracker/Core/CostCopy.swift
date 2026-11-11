@@ -34,11 +34,21 @@ enum CostCopy {
         apiEquivalentCaption(isPayAsYouGo: service.map(isPayAsYouGo) ?? false)
     }
 
+    /// Providers whose dollars from a local log are an API-list-price equivalent whatever
+    /// windows they report: the one place that says so. Mistral's vibe spends the plan's
+    /// allowance, so its local dollars are never what Mistral bills; with no window to show
+    /// (no key, a 403, a 404, no `_budget`, a Free plan) the rule below would publish them as
+    /// the bill (spec 2026-11-10 Mistral provider § Local usage (P2), Dollars). Both
+    /// pay-as-you-go rules (this one and `StatusFileWriter.isPayAsYouGo`) and the widget's
+    /// spend line (`WidgetBridge.spendLine`) ask here first.
+    static let alwaysAPIEquivalent: Set<String> = [MistralProvider.serviceID]
+
     /// Pay-as-you-go: the provider reports no rate-limit window of its own. That is
     /// exactly the shape `AppState.applyPayAsYouGo` keys off (Enterprise API billing
     /// returns no windows), and the only windows such an account can have are the
-    /// synthetic ones above.
+    /// synthetic ones above. Never for a provider in `alwaysAPIEquivalent`.
     static func isPayAsYouGo(_ service: ServiceSnapshot) -> Bool {
+        if alwaysAPIEquivalent.contains(service.id) { return false }
         // No window at all says "pay-as-you-go" only from a provider that is answering:
         // a signed-out or failing subscription has no windows either, and calling its
         // local dollars a bill would drop the API-equivalent caption exactly when the

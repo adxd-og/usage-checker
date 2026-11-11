@@ -26,6 +26,14 @@ enum MistralCopy {
     static let signedOutHelp = "Mistral did not accept the API key vibe keeps. Sign in to vibe again with a current API key, then refresh."
     static let noUsageAccessHelp = "Mistral shows this API key its plan but not its usage. Usually your organisation has not given you the see_org_inference_usage permission; an admin of the organisation can grant it."
 
+    // MARK: - The local log (spec § Local usage (P2))
+
+    /// The Overview's CLI card: "Vibe CLI · today".
+    static let logShortName = "Vibe CLI"
+    /// History's source: "API-equivalent cost from the vibe CLI's session logs, not your
+    /// subscription bill".
+    static let logLongName = "the vibe CLI's session logs"
+
     /// The plan chip from billing's `plan_name`: vibe's names for the chat plans
     /// (`vibe/setup/auth/whoami.py`), which billing shares; an unknown name capitalised; nil
     /// when billing said nothing.
