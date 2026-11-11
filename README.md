@@ -114,7 +114,7 @@ never catches you mid-task.
 | **Codex (OpenAI)** | session and weekly limits from the local Codex CLI; local dollar cost accounting from its session logs, now including compaction calls and sessions moved to `~/.codex/archived_sessions` |
 | **Antigravity** | Antigravity's model-pool quotas, the path for personal Google accounts; per-model limits such as Gemini 4 Argon get their own row; while the app is closed or not answering, read through the `agy` CLI |
 | **Grok (xAI)** | billing-period credit usage from the local Grok CLI, falling back to grok.com web billing when the CLI is unavailable |
-| **Mistral** | the plan's Vibe and API allowances from Mistral's billing API: percent used, dollars of the monthly allowance (Mistral's own count) and the reset date, read with the API key the `vibe` CLI keeps |
+| **Mistral** | the plan's Vibe and API allowances from Mistral's billing API: percent used, dollars of the monthly allowance (Mistral's own count) and the reset date, read with the API key the `vibe` CLI keeps; local dollar cost (always API-equivalent, never added to the allowance), tokens and chats from the `vibe` CLI's session logs in `~/.vibe/logs` |
 
 - Costs come from local logs at models.dev list prices, never invented
   numbers. They are always API-equivalent, never your subscription bill
@@ -282,7 +282,7 @@ Mac.
 |---|---|---|
 | `get_usage` | none | every provider's windows, resets and costs |
 | `get_agents` | none | which sessions are working or waiting on you |
-| `get_sessions` | `provider` (`claude` or `codex`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count, and each chat's share of the current limit windows (`sessionShare`, `weekShare`) or of the budget or spend limit (`budgetShare`) |
+| `get_sessions` | `provider` (`claude`, `codex` or `mistral`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count, and each chat's share of the current limit windows (`sessionShare`, `weekShare`) or of the budget or spend limit (`budgetShare`) |
 
 - One-click install for Claude Code (adds `brioche` to `~/.claude.json`)
   and Codex (adds an `[mcp_servers.brioche]` table to
@@ -478,6 +478,10 @@ to keep a year of them:
   "cleanupPeriodDays": 365
 }
 ```
+
+vibe drops the early steps of a long session from its log. Brioche keeps what it
+has already counted from `~/.vibe/logs` in `vibe-usage-ledger-v1.json` in its
+Application Support folder, so those days keep their tokens.
 
 - Uses only your own credentials, obtained by the tools themselves. Sign in
   runs Claude Code's own sign-in in Terminal; Brioche never sees a password
