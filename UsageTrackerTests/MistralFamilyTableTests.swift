@@ -78,4 +78,25 @@ final class MistralFamilyTableTests: XCTestCase {
         await offline.refreshIfStale(now: t0.addingTimeInterval(3_600))
         XCTAssertEqual(MistralModelPricing.current, answer.mistral, "the copy on disk prices vibe's sessions offline")
     }
+
+    /// A day later models.dev answers, and the answer has no `mistral` family: vibe's sessions
+    /// keep the rates on disk instead of losing their dollars until the family is back.
+    func testAnAnswerWithoutTheFamilyKeepsTheOneOnDisk() async throws {
+        ModelsDevPricing.writeCache(
+            ModelsDevPricing.Cache(fetchedAt: t0, prices: ["gpt-5.6": gpt56], mistral: family), to: cacheURL
+        )
+        let later = t0.addingTimeInterval(ModelsDevPricing.maxCacheAge + 60)
+        let without = ModelsDevRefresher(cacheURL: cacheURL, fetchTable: { [gpt56] in
+            ModelsDevPricing.Table(prices: ["gpt-5.6": gpt56, "gpt-5.7": gpt56], mistral: [:])
+        })
+        await without.refreshIfStale(now: later)
+        XCTAssertEqual(MistralModelPricing.current, family)
+        let written = try XCTUnwrap(ModelsDevPricing.readCache(at: cacheURL))
+        XCTAssertEqual(written.mistral, family, "and the cache it writes still carries the family")
+        XCTAssertEqual(written.prices.count, 2, "the other families take the new answer")
+        XCTAssertEqual(written.fetchedAt, later)
+
+        XCTAssertEqual(ModelsDevPricing.familyToKeep(fetched: [:], cached: nil), [:])
+        XCTAssertEqual(ModelsDevPricing.familyToKeep(fetched: family, cached: [:]), family)
+    }
 }

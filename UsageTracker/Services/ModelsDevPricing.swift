@@ -211,6 +211,16 @@ enum ModelsDevPricing {
         guard let data = try? encoder.encode(cache) else { return }
         try? data.write(to: url, options: [.atomic])
     }
+
+    /// The Mistral family to load and to cache after a fetch: the answer's, or, when the
+    /// answer carries none, the one already on disk. models.dev answering without the family
+    /// (renamed, dropped, a partial file) must not unprice every vibe session until the next
+    /// answer that has it; a failed fetch already keeps the old table.
+    static func familyToKeep(
+        fetched: [String: MistralModelPricing.Model], cached: [String: MistralModelPricing.Model]?
+    ) -> [String: MistralModelPricing.Model] {
+        fetched.isEmpty ? (cached ?? [:]) : fetched
+    }
 }
 
 /// The models.dev check and its schedule. One shared instance serves the app's poll;
@@ -255,7 +265,8 @@ actor ModelsDevRefresher {
     }
 
     private func check(now: Date) async -> ModelsDevPricing.Outcome {
-        if let cache = ModelsDevPricing.readCache(at: cacheURL) {
+        let cached = ModelsDevPricing.readCache(at: cacheURL)
+        if let cache = cached {
             ModelPricing.updateDynamic(cache.prices)
             MistralModelPricing.update(cache.mistral ?? [:])
             if now.timeIntervalSince(cache.fetchedAt) < ModelsDevPricing.maxCacheAge {
@@ -265,12 +276,13 @@ actor ModelsDevRefresher {
         }
         do {
             let table = try await fetch()
+            let mistral = ModelsDevPricing.familyToKeep(fetched: table.mistral, cached: cached?.mistral)
             ModelPricing.updateDynamic(table.prices)
-            MistralModelPricing.update(table.mistral)
+            MistralModelPricing.update(mistral)
             ModelsDevPricing.writeCache(
-                ModelsDevPricing.Cache(fetchedAt: now, prices: table.prices, mistral: table.mistral), to: cacheURL
+                ModelsDevPricing.Cache(fetchedAt: now, prices: table.prices, mistral: mistral), to: cacheURL
             )
-            NSLog("[UT] models.dev pricing: %d models fetched, %d Mistral", table.prices.count, table.mistral.count)
+            NSLog("[UT] models.dev pricing: %d models fetched, %d Mistral", table.prices.count, mistral.count)
             return .fetched
         } catch {
             // Keep whatever we had (disk copy or the hardcoded table); try again soon.
