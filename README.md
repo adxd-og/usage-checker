@@ -480,8 +480,9 @@ to keep a year of them:
 ```
 
 vibe drops the early steps of a long session from its log. Brioche keeps what it
-has already counted from `~/.vibe/logs` in `vibe-usage-ledger-v1.json` in its
-Application Support folder, so those days keep their tokens.
+has already counted from `~/.vibe/logs`, with each session's title and folder,
+in `vibe-usage-ledger-v1.json` in its Application Support folder, so those days
+keep their tokens.
 
 - Uses only your own credentials, obtained by the tools themselves. Sign in
   runs Claude Code's own sign-in in Terminal; Brioche never sees a password
