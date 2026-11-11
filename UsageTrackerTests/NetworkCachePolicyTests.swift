@@ -76,6 +76,29 @@ final class NetworkCachePolicyTests: XCTestCase {
         XCTAssertTrue(exists("Cache.db"))
     }
 
+    /// A bundle id names one folder inside Caches only as a single path component. The Caches
+    /// folder sits one level down here, so its parent and a sibling are this test's own folders.
+    func testABundleIDThatIsNotOnePathComponentPurgesNothing() throws {
+        let inner = caches.appendingPathComponent("Caches", isDirectory: true)
+        let sentinels = [
+            "Caches/Cache.db", "Cache.db", "x/Cache.db",
+            "Caches/a/Cache.db", "Caches/a/b/Cache.db", "Caches/abs/Cache.db",
+        ]
+        for path in sentinels { try make(path) }
+
+        for id in ["..", ".", "../x", "a/b", "/abs", "a/../..", "a\u{0}b", "\u{0}"] {
+            XCTAssertEqual(NetworkCachePolicy.purge(cachesDirectory: inner, bundleID: id), [], id.debugDescription)
+            for path in sentinels {
+                XCTAssertTrue(exists(path), "\(id.debugDescription) removed \(path)")
+            }
+        }
+
+        try make("Caches/\(bundleID)/Cache.db")
+        XCTAssertEqual(NetworkCachePolicy.purge(cachesDirectory: inner, bundleID: bundleID), ["Cache.db"])
+        XCTAssertFalse(exists("Caches/\(bundleID)/Cache.db"))
+        for path in sentinels { XCTAssertTrue(exists(path), path) }
+    }
+
     func testUnderTestsApplyChangesNothing() {
         // The test host has the app's bundle id: an `apply()` that ran here would swap the
         // process-wide cache under every other test and delete the user's files. The bundle
