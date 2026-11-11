@@ -332,6 +332,71 @@ actor VibeUsageAggregator: CostLogAggregating {
         .sorted { $0.totalCost == $1.totalCost ? $0.slug < $1.slug : $0.totalCost > $1.totalCost }
     }
 
+    // MARK: - Chats
+
+    /// Every vibe session with a step on a day of `[start, end]`, newest first (spec § Sessions).
+    /// Spelled `async`, as `CodexUsageAggregator`'s is: a synchronous method would only overload
+    /// the protocol's default, and a call through `CostLogAggregating` would answer `[]`.
+    func sessions(from start: Date, to end: Date) async -> [SessionSummary] {
+        ledger.sessions
+            .compactMap { id, session in
+                Self.summary(id: id, session: session, from: start, to: end, calendar: calendar)
+            }
+            .sorted { $0.lastAt == $1.lastAt ? $0.id < $1.id : $0.lastAt > $1.lastAt }
+    }
+
+    /// One session as History, `status.json` and `get_sessions` list it: its days inside the
+    /// range, re-summed, as Codex's chats are clipped; its span its own (`firstAt` its first step,
+    /// `lastAt` its newest point, a repeat included); one model row for the whole chat, never
+    /// clipped. No sub-agents and no origin: a vibe child session is a directory of its own. nil
+    /// when no step falls on a day of the range, which a session with no total never has.
+    nonisolated static func summary(
+        id: String, session: VibeLedger.Session, from start: Date, to end: Date, calendar: Calendar
+    ) -> SessionSummary? {
+        guard let firstAt = session.steps.map(\.at).min(),
+              let lastStepAt = session.steps.map(\.at).max()
+        else { return nil }
+        let lower = calendar.startOfDay(for: start)
+        let upper = calendar.startOfDay(for: end)
+        let rate = Self.price(for: session.meta)
+        var byDay: [Date: SessionDaySummary] = [:]
+        var wholeTokens = TokenBreakdown.zero
+        var wholeTurns = 0
+        for step in session.steps {
+            let stepTokens = Self.tokens(of: step, price: rate)
+            wholeTokens += stepTokens
+            wholeTurns = TokenBreakdown.saturating(wholeTurns, step.turns)
+            let day = calendar.startOfDay(for: step.at)
+            guard day >= lower, day <= upper else { continue }
+            let earlier = byDay[day]
+            byDay[day] = SessionDaySummary(
+                day: day,
+                turns: TokenBreakdown.saturating(earlier?.turns ?? 0, step.turns),
+                tokens: (earlier?.tokens ?? .zero) + stepTokens
+            )
+        }
+        guard !byDay.isEmpty else { return nil }
+        let days = byDay.values.sorted { $0.day < $1.day }
+        let chatTokens = days.reduce(TokenBreakdown.zero) { $0 + $1.tokens }
+        return SessionSummary(
+            id: id,
+            providerID: MistralProvider.serviceID,
+            title: SessionTitle.clean(session.meta.title),
+            projectSlug: Self.projectSlug(session.meta.workingDirectory),
+            origin: nil,
+            firstAt: firstAt,
+            lastAt: max(lastStepAt, session.lastPointAt ?? lastStepAt),
+            turns: days.reduce(0) { TokenBreakdown.saturating($0, $1.turns) },
+            tokens: chatTokens,
+            mainTokens: chatTokens,
+            agents: [],
+            days: days,
+            models: [SessionModelSummary(
+                model: Self.model(of: session.meta), effort: nil, turns: wholeTurns, tokens: wholeTokens
+            )]
+        )
+    }
+
     // MARK: - Pricing and naming (pure)
 
     /// Spec § Token shape: fresh input (vibe's input less its cached part), cached, output, each
