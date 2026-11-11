@@ -71,10 +71,108 @@ final class MistralCredentialReaderTests: XCTestCase {
         XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=a\n\nMISTRAL_API_KEY=b\n"), "b")
     }
 
+    // MARK: - The file as python-dotenv 1.2.2 reads it (vibe's reader)
+
+    // Every expectation below is `dotenv_values(stream=io.StringIO(text))["MISTRAL_API_KEY"]` from
+    // vibe's own interpreter, measured 2026-11-11; nil is a key python-dotenv left absent or None.
+
+    func testBlanksOrACommentAfterTheClosingQuoteKeepTheQuotedKey() {
+        let accepted = [
+            "MISTRAL_API_KEY=\"env-key\"  # c\n", "MISTRAL_API_KEY=\"env-key\"   \n",
+            "MISTRAL_API_KEY='env-key'\t#c\n", "MISTRAL_API_KEY=\"env-key\"#c\"def\n",
+            "MISTRAL_API_KEY=\"env-key\" \r\nOTHER=1\r\n", "MISTRAL_API_KEY=\"env-key\"\rOTHER=1",
+            "MISTRAL_API_KEY=\"env-key\"", "export MISTRAL_API_KEY=\"env-key\" # c\n",
+            "MISTRAL_API_KEY=\t'env-key'\n", "MISTRAL_API_KEY=\"env-key\"\u{00A0}# c\n",
+            "MISTRAL_API_KEY=\"env-key\"\u{1C}\n",
+        ]
+        for text in accepted {
+            XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: text), "env-key", text.debugDescription)
+        }
+    }
+
+    func testAStatementPythonDotenvRejectsLeavesAnEarlierKeyStanding() {
+        let texts = [
+            "MISTRAL_API_KEY=env-key\nMISTRAL_API_KEY=\"abc\n",
+            "MISTRAL_API_KEY=env-key\nMISTRAL_API_KEY=\"abc\"def\n",
+            "MISTRAL_API_KEY=env-key\nMISTRAL_API_KEY=\"\"junk\n",
+            "MISTRAL_API_KEY=env-key # c\nMISTRAL_API_KEY=\"xyz\" x # c\n",
+        ]
+        for text in texts {
+            XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: text), "env-key", text.debugDescription)
+        }
+    }
+
+    func testAGoodLineAfterARejectedStatementIsTheKeyWhenTheRejectedOneEndsOnItsOwnLine() {
+        let texts = [
+            "MISTRAL_API_KEY=\"abc\nMISTRAL_API_KEY=env-key\n",
+            "MISTRAL_API_KEY=\"abc\"def\nMISTRAL_API_KEY=env-key\n",
+            "MISTRAL_API_KEY='abc\nMISTRAL_API_KEY=\"env-key\"\n",
+            "'MISTRAL_API_KEY=abc\nMISTRAL_API_KEY=env-key\n",
+        ]
+        for text in texts {
+            XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: text), "env-key", text.debugDescription)
+        }
+    }
+
+    /// A quote left open runs to the next quote of its kind, lines included, so the line that
+    /// closes it is no assignment of its own: vibe then has no key from the file.
+    func testAnOpenQuoteSwallowsTheLinesUpToTheNextQuoteOfItsKind() throws {
+        let texts = [
+            "MISTRAL_API_KEY=\"abc\nMISTRAL_API_KEY=\"env-key\"\n",
+            "MISTRAL_API_KEY='abc\nMISTRAL_API_KEY='env-key'\n",
+            "OTHER=\"x\nMISTRAL_API_KEY=env-key\n\"\n",
+        ]
+        for text in texts {
+            XCTAssertNil(MistralCredentialReader.key(fromEnvFile: text), text.debugDescription)
+            XCTAssertEqual(try reader(keychain: "kc-key", env: text).read(), "kc-key", text.debugDescription)
+        }
+    }
+
+    func testAQuotedValueKeepsItsEscapesAsPythonDotenvDecodesThem() {
+        let cases: [(String, String)] = [
+            ("MISTRAL_API_KEY=\"ab\\\"c\"\n", "ab\"c"),
+            ("MISTRAL_API_KEY='ab\\'c'\n", "ab'c"),
+            ("MISTRAL_API_KEY=\"a\\\"b\" # c\n", "a\"b"),
+            ("MISTRAL_API_KEY='a\\\\b'\n", "a\\b"),
+            ("MISTRAL_API_KEY=\"a\\qb\"\n", "a\\qb"),
+            ("MISTRAL_API_KEY='a\\nb'\n", "a\\nb"),
+            // An escaped quote the text never closes after is taken back as a backslash and the close.
+            ("MISTRAL_API_KEY='abc\\'\n", "abc\\"),
+            ("MISTRAL_API_KEY=\"abc\\\"\n", "abc\\"),
+        ]
+        for (text, key) in cases {
+            XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: text), key, text.debugDescription)
+        }
+    }
+
+    func testAQuotedNameAndQuotesInsideAnUnquotedValueAreReadAsPythonDotenvReadsThem() {
+        XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: "'MISTRAL_API_KEY'=env-key\n"), "env-key")
+        XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=env\"key\"\n"), "env\"key\"")
+        XCTAssertEqual(MistralCredentialReader.key(fromEnvFile: "=abc\nMISTRAL_API_KEY=env-key\n"), "env-key")
+    }
+
+    /// python-dotenv assigns None to a name with no `=`, and the last assignment wins.
+    func testTheNameAloneAfterAKeyLeavesNoKey() throws {
+        XCTAssertNil(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=env-key\nMISTRAL_API_KEY\n"))
+        XCTAssertNil(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY foo\n"))
+        XCTAssertEqual(try reader(keychain: "kc-key", env: "MISTRAL_API_KEY=env-key\nMISTRAL_API_KEY\n").read(), "kc-key")
+    }
+
     /// An OIDC-only sign-in leaves exactly this: no item, no line.
     func testNoKeyAnywhereIsNoKey() throws {
         XCTAssertNil(try reader(keychain: nil, env: nil).read())
         XCTAssertNil(try reader(keychain: "  \n", env: "MISTRAL_API_KEY=\n").read(), "blank is no key")
+    }
+
+    /// python-dotenv reads a quoted value across lines; a key never has a line break or any
+    /// other control character in it, and this string goes into a request header.
+    func testAValueWithAControlCharacterInsideIsNoKeyFromItsSource() throws {
+        XCTAssertNil(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=\"ab\nc\"\n"))
+        XCTAssertNil(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=\"ab\\nc\"\n"), "the escape decodes to a line break")
+        XCTAssertNil(MistralCredentialReader.key(fromEnvFile: "MISTRAL_API_KEY=ab\u{1B}c\n"))
+        XCTAssertEqual(try reader(keychain: "kc-key", env: "MISTRAL_API_KEY=\"ab\nc\"\n").read(), "kc-key")
+        XCTAssertNil(MistralCredentialReader.key(fromSecurityOutput: Data("kc\u{07}key\n".utf8)))
+        XCTAssertNil(try reader(keychain: "kc\r\nX-Other: 1", env: nil).read())
     }
 
     /// Whether the injected keychain closure ran; a class so the `@Sendable` closure can set it.
