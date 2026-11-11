@@ -126,15 +126,17 @@ final class MistralProviderVerification2Tests: XCTestCase {
             ("a key above 5000 lines of lone single quotes", "MISTRAL_API_KEY=abc\n" + (0..<5000).map { "B\($0)='\($0)\n" }.joined(), "abc"),
             ("3000 lines each opening a double quote", String(repeating: "MISTRAL_API_KEY=\"a\n", count: 3000), nil),
             ("3001 lines each opening a double quote", String(repeating: "MISTRAL_API_KEY=\"a\n", count: 3001), nil),
-            ("a long run of comments after the value", "MISTRAL_API_KEY=abc" + String(repeating: " #", count: 50_000) + "\n", "abc"),
+            // 60 020 bytes: under the 64 KB the reader opens a file up to (4.3.0 release ruling).
+            ("a long run of comments after the value", "MISTRAL_API_KEY=abc" + String(repeating: " #", count: 30_000) + "\n", "abc"),
         ])
     }
 
     func testVeryLongValuesAreKeptWhole() throws {
-        let plain = String(repeating: "x", count: 100_000)
+        // 60 000, not 100 000: the reader opens a file of at most 64 KB (4.3.0 release ruling).
+        let plain = String(repeating: "x", count: 60_000)
         let escaped = String(repeating: "x\"", count: 20_000)
         try assertCorpus([
-            ("100000 plain characters", "MISTRAL_API_KEY=" + plain + "\n", plain),
+            ("60000 plain characters", "MISTRAL_API_KEY=" + plain + "\n", plain),
             ("20000 escaped quotes in double quotes", "MISTRAL_API_KEY=\"" + String(repeating: "x\\\"", count: 20_000) + "\"\n", escaped),
             ("20000 escaped quotes never closed fall back to the last", "MISTRAL_API_KEY=\"" + String(repeating: "x\\\"", count: 20_000) + "\n",
              String(repeating: "x\"", count: 19_999) + "x\\"),
