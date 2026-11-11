@@ -8,7 +8,7 @@ import XCTest
 /// on a hand-built `CLITurn`; and (2) commit bea2cc5 ("Pricing: bring the offline table
 /// up to the current models.dev rates") — the static fallback table has to still match
 /// the models.dev numbers this machine has actually cached
-/// (`~/Library/Application Support/UsageTracker/models-dev-pricing-v3.json`), read
+/// (`~/Library/Application Support/UsageTracker/` + `ModelsDevPricing.cacheFileName`), read
 /// fresh here rather than trusted from a comment. Written without reading
 /// `JSONLAggregatorTests`, `JSONLAggregatorVerificationTests` or `ModelPricingTableTests`.
 final class StoredCostAndPricingTableVerificationTests: XCTestCase {
@@ -116,14 +116,14 @@ final class StoredCostAndPricingTableVerificationTests: XCTestCase {
     /// The same location `ModelsDevPricing.cacheURL` writes to — read-only here.
     private func readDiskCache() throws -> DiskCache? {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let url = appSupport.appendingPathComponent("UsageTracker/models-dev-pricing-v3.json")
+        let url = appSupport.appendingPathComponent("UsageTracker/\(ModelsDevPricing.cacheFileName)")
         guard let data = try? Data(contentsOf: url) else { return nil }
         return try JSONDecoder().decode(DiskCache.self, from: data)
     }
 
     func testTheStaticFallbackTableMatchesTheModelsDevSnapshotCachedOnThisMachine() throws {
         guard let cache = try readDiskCache() else {
-            throw XCTSkip("no models-dev-pricing-v3.json cached on this machine to compare against")
+            throw XCTSkip("no \(ModelsDevPricing.cacheFileName) cached on this machine to compare against")
         }
         // Every row the spec calls out by name. A row this machine's cache doesn't
         // carry (e.g. a fictional "Mythos" line models.dev has never priced) is

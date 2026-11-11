@@ -4,8 +4,8 @@ import XCTest
 /// The static table is what prices a turn whenever models.dev is not there: a first
 /// launch offline, a failed fetch, a machine whose cache never landed. Every rate here
 /// is checked against the models.dev figures cached on this machine
-/// (`~/Library/Application Support/UsageTracker/models-dev-pricing-v3.json`, read
-/// 2026-09-06), because an offline answer that differs from the online one is not a
+/// (`~/Library/Application Support/UsageTracker/models-dev-pricing-v3.json` as it was
+/// named then, read 2026-09-06), because an offline answer that differs from the online one is not a
 /// fallback, it is a second set of books.
 final class ModelPricingTableTests: XCTestCase {
     override func setUpWithError() throws {
