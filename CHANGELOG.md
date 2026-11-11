@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A provider's page heads windows longer than a week **Monthly limits**
   (Mistral's allowances, Codex's monthly window on the free plan); it said
   Weekly limits.
+- Mistral: today's and the week's cost and tokens, the daily history and the
+  chats from the `vibe` CLI's session logs, at models.dev list prices (always
+  an API equivalent, never added to Mistral's monthly allowance); in History,
+  Insights, `brioche status`, the status line and MCP `get_sessions`, which
+  takes `provider: "mistral"`.
 
 ### Settings
 - Settings → Pet: the ears' caption follows **Island on displays without a
