@@ -14,8 +14,8 @@ import Foundation
 /// "spent nothing today" are different answers and the file keeps them apart.
 enum StatusCosts {
     /// What one poll gathers from the cost logs: the dollars every provider's file entry
-    /// carries, and — for the two providers whose logs identify a chat — the last seven
-    /// days of chats and each chat's limit shares. Gathered together because all of it
+    /// carries, and — for the providers whose logs identify a chat — the last seven days
+    /// of chats and, for Claude and Codex, each chat's limit shares. Gathered together because all of it
     /// comes off the same actors and the same incremental `refresh()`; a second pass
     /// would re-enter every aggregator for numbers it has already computed.
     struct Gathered: Sendable {
@@ -40,11 +40,14 @@ enum StatusCosts {
     /// `StatusFileWriter.build` drops any whose window has gone by then. The turns are
     /// already in memory and the rule is linear in turns and readings, and it runs in a
     /// task the poll does not wait for.
+    /// `vibe` is the one log here a test can point elsewhere (Mistral's, spec 2026-11-10
+    /// Mistral provider § Local usage (P2)); the app passes nothing and gets `.shared`.
     static func gather(
         serviceIDs: Set<String>,
         services: [ServiceSnapshot] = [],
         weeklyBudgetUSD: Double = 0,
-        now: Date = Date()
+        now: Date = Date(),
+        vibe: VibeUsageAggregator = .shared
     ) async -> Gathered {
         var out = Gathered()
         let start = now.addingTimeInterval(-sessionWindow)
@@ -63,6 +66,14 @@ enum StatusCosts {
         if serviceIDs.contains("grok") {
             await GrokUsageAggregator.shared.refresh()
             out.costs["grok"] = entry(await GrokUsageAggregator.shared.breakdown())
+        }
+        // Mistral's vibe keeps a store per chat: costed and listed. Read as of `now`, the
+        // moment the rest of this write is cut at; within 20 s of the provider's poll it
+        // shares that read.
+        if serviceIDs.contains("mistral") {
+            await vibe.refresh(now: now)
+            out.costs["mistral"] = entry(await vibe.breakdown(now: now))
+            out.sessions["mistral"] = await vibe.sessions(from: start, to: now)
         }
         // After the refreshes above, so the turns the shares split are the ones just
         // ingested. Only the providers this gather read.
