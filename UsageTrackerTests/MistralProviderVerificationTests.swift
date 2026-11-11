@@ -449,7 +449,8 @@ final class MistralProviderVerificationTests: XCTestCase {
         XCTAssertEqual(help(noAccess)?.message, MistralCopy.noUsageAccessHelp)
 
         let limited = await shown(after: Answer(status: 429, body: "{}", headers: ["Retry-After": "90"]))
-        XCTAssertEqual(limited.retryAfter, 90)
+        // Mistral holds its own 429 (4.3.0 review, finding 1): no retryAfter reaches the app-wide backoff.
+        XCTAssertNil(limited.retryAfter)
     }
 
     private func help(_ service: ServiceSnapshot) -> ProviderStateHelp? {

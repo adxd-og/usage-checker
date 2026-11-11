@@ -3,8 +3,9 @@ import XCTest
 
 /// Spec 2026-11-10 Mistral provider § Credential: the key vibe uses, in vibe's own order — a
 /// `MISTRAL_API_KEY=` line in `~/.vibe/.env` first (CRLF and quotes tolerated), then its keychain
-/// item (`ai.mistral.vibe` / `MISTRAL_API_KEY`, through `/usr/bin/security`). The keychain read
-/// and the file are injected: no test touches the real keychain or home.
+/// item (`ai.mistral.vibe` / `MISTRAL_API_KEY`, through `/usr/bin/security`). Only a regular file
+/// of at most 64 KB, its symlinks followed, is opened. The keychain read and the file are
+/// injected: no test touches the real keychain or home.
 final class MistralCredentialReaderTests: XCTestCase {
     private var directory: URL!
 
@@ -181,6 +182,79 @@ final class MistralCredentialReaderTests: XCTestCase {
         private var asked = false
         func set() { lock.lock(); asked = true; lock.unlock() }
         var value: Bool { lock.lock(); defer { lock.unlock() }; return asked }
+    }
+
+    // MARK: - What is opened: a regular file of at most 64 KB (4.3.0 review, finding 5)
+
+    /// A file of `size` bytes: the key's line, then one comment line that pads it out.
+    private func paddedEnvFile(size: Int, at url: URL) throws {
+        let line = "MISTRAL_API_KEY=env-key\n"
+        let padding = size - line.utf8.count - 2
+        try Data((line + "#" + String(repeating: "x", count: padding) + "\n").utf8).write(to: url)
+    }
+
+    func testAKeyInAFileOfExactlyTheCapIsRead() throws {
+        XCTAssertEqual(MistralCredentialReader.maxEnvFileBytes, 64 * 1024)
+        let url = directory.appendingPathComponent(".env")
+        try paddedEnvFile(size: MistralCredentialReader.maxEnvFileBytes, at: url)
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int, 64 * 1024)
+        XCTAssertEqual(MistralCredentialReader(keychain: { "kc-key" }, envFileURL: url).read(), "env-key")
+    }
+
+    func testAFileOneByteOverTheCapFallsToTheKeychain() throws {
+        let url = directory.appendingPathComponent(".env")
+        try paddedEnvFile(size: MistralCredentialReader.maxEnvFileBytes + 1, at: url)
+        XCTAssertEqual(MistralCredentialReader(keychain: { "kc-key" }, envFileURL: url).read(), "kc-key")
+    }
+
+    func testADirectoryOrASymlinkToOneFallsToTheKeychain() throws {
+        let folder = directory.appendingPathComponent("folder")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        XCTAssertEqual(MistralCredentialReader(keychain: { "kc-key" }, envFileURL: folder).read(), "kc-key")
+
+        let link = directory.appendingPathComponent(".env")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: folder)
+        XCTAssertEqual(MistralCredentialReader(keychain: { "kc-key" }, envFileURL: link).read(), "kc-key")
+    }
+
+    func testASymlinkToASmallRegularFileIsRead() throws {
+        let real = directory.appendingPathComponent("vibe.env")
+        try "MISTRAL_API_KEY=env-key\n".write(to: real, atomically: true, encoding: .utf8)
+        let link = directory.appendingPathComponent(".env")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+        XCTAssertEqual(MistralCredentialReader(keychain: { "kc-key" }, envFileURL: link).read(), "env-key")
+    }
+
+    /// A FIFO is no file to read, and an open of one may wait for a writer, the poll with it. The
+    /// read runs on a thread of its own, so a read that blocks fails this test in two seconds
+    /// instead of hanging the suite; the test then opens the FIFO for writing, which lets a
+    /// blocked open finish.
+    func testAFIFOAtThePathFallsToTheKeychainWithoutBlocking() throws {
+        let url = directory.appendingPathComponent(".env")
+        guard mkfifo(url.path, 0o600) == 0 else { return XCTFail("mkfifo failed: errno \(errno)") }
+        let reader = MistralCredentialReader(keychain: { "kc-key" }, envFileURL: url)
+        let answer = ReadAnswer()
+        let finished = DispatchSemaphore(value: 0)
+        let thread = Thread {
+            answer.set(reader.read())
+            finished.signal()
+        }
+        thread.qualityOfService = .userInteractive
+        thread.start()
+        guard finished.wait(timeout: .now() + 2) == .success else {
+            let writer = open(url.path, O_WRONLY | O_NONBLOCK)
+            if writer >= 0 { close(writer) }
+            return XCTFail("read() blocked on a FIFO")
+        }
+        XCTAssertEqual(answer.value, "kc-key")
+    }
+
+    /// What `read()` returned on another thread.
+    private final class ReadAnswer: @unchecked Sendable {
+        private let lock = NSLock()
+        private var key: String?
+        func set(_ key: String?) { lock.lock(); self.key = key; lock.unlock() }
+        var value: String? { lock.lock(); defer { lock.unlock() }; return key }
     }
 
     func testTheSecurityToolsAnswerLosesItsNewline() {

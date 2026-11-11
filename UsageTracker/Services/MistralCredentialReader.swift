@@ -14,6 +14,10 @@ struct MistralCredentialReader: Sendable {
 
     static let envKey = "MISTRAL_API_KEY"
 
+    /// The largest `~/.vibe/.env` opened: vibe's holds a line or two. The parser rescans the rest
+    /// of the text for every quote left open, so the cap bounds its time too.
+    static let maxEnvFileBytes = 64 * 1024
+
     static let live = MistralCredentialReader(
         keychain: { MistralKeychain.readViaSecurityTool() },
         envFileURL: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".vibe/.env")
@@ -24,14 +28,26 @@ struct MistralCredentialReader: Sendable {
     /// bytes with `String(decoding:)`: `String(contentsOf:)` and `String(data:encoding:)` drop
     /// a leading byte order mark, which python-dotenv keeps — vibe then sees no
     /// `MISTRAL_API_KEY` on that line, and neither may we. Bytes that are not UTF-8 are no
-    /// file at all, as before.
+    /// file at all, as before. Only a regular file of at most `maxEnvFileBytes` is opened
+    /// (`isSmallRegularFile`); anything else is no key from the file.
     func read() -> String? {
-        if let data = try? Data(contentsOf: envFileURL),
+        if Self.isSmallRegularFile(envFileURL),
+           let data = try? Data(contentsOf: envFileURL),
            String(data: data, encoding: .utf8) != nil,
            let key = Self.key(fromEnvFile: String(decoding: data, as: UTF8.self)) {
             return key
         }
         return keychain().flatMap(Self.cleaned)
+    }
+
+    /// Whether `url`, its symlinks followed (`stat`, which opens nothing), is a regular file of
+    /// at most `maxEnvFileBytes`. Asked before the file is opened, so nothing but a regular file
+    /// ever is: on this macOS `Data(contentsOf:)` already refuses a FIFO and a device at once,
+    /// and the rule does not lean on that. A directory, a socket or a missing path: no.
+    static func isSmallRegularFile(_ url: URL) -> Bool {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return false }
+        return info.st_mode & S_IFMT == S_IFREG && info.st_size <= off_t(maxEnvFileBytes)
     }
 
     /// `security -w`'s stdout: the secret and a newline.

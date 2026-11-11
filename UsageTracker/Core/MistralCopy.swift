@@ -36,9 +36,11 @@ enum MistralCopy {
 
     /// The plan chip from billing's `plan_name`: vibe's names for the chat plans
     /// (`vibe/setup/auth/whoami.py`), which billing shares; an unknown name capitalised; nil
-    /// when billing said nothing.
+    /// when billing said nothing, control characters aside.
     static func planName(_ raw: String?) -> String? {
-        guard let raw = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
+        guard let raw = raw.map(withoutControlCharacters)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty
+        else { return nil }
         switch raw.uppercased() {
         case "FREE": return "Free"
         case "INDIVIDUAL": return "Pro"
@@ -46,5 +48,12 @@ enum MistralCopy {
         case "TEAM": return "Team"
         default: return raw.replacingOccurrences(of: "_", with: " ").lowercased().capitalized
         }
+    }
+
+    /// `text` without a scalar of general category `Cc` (C0, DEL, C1), as the status line
+    /// cleans the model name (`StatusLineInput.printable`). Billing's strings reach the island
+    /// and `brioche status`, which prints them raw: an escape would repaint the terminal.
+    static func withoutControlCharacters(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.filter { $0.properties.generalCategory != .control }))
     }
 }

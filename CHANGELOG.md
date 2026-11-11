@@ -13,15 +13,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with the API key the `vibe` CLI keeps. On by default where `~/.vibe` exists:
   Brioche then reads vibe's key and asks `api.mistral.ai`, at most once a
   minute. Settings → Providers turns it off.
+- Mistral: when rate limited, Brioche waits as long as Mistral asks, between
+  one and five minutes, and the other providers keep refreshing. `~/.vibe/.env`
+  is read only as a regular file of up to 64 KB; otherwise the key comes from
+  the keychain.
 - A provider's page heads windows longer than a week **Monthly limits**
   (Mistral's allowances, Codex's monthly window on the free plan); it said
   Weekly limits.
 - Mistral: today's and the week's cost and tokens from the `vibe` CLI's session
   logs, at models.dev list prices: always an API equivalent, never added to
   Mistral's monthly allowance.
-- Mistral: the daily history and the chats, in History, Insights,
-  `brioche status` and the status line.
+- Mistral: the daily history and the chats in History and Insights;
+  `brioche status` and the status line carry its cost, `brioche status --json`
+  its chats.
 - MCP `get_sessions` takes `provider: "mistral"`.
+- The All providers widget lists five providers. With five on, each shows one
+  window instead of two; an Admin API organisation beside all five is left out.
 - Brioche reads `~/.vibe/logs/session/unified` and keeps what it has counted,
   with each session's title and folder, in `vibe-usage-ledger-v1.json` in its
   Application Support folder.

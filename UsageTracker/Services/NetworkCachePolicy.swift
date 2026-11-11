@@ -27,19 +27,27 @@ enum NetworkCachePolicy {
 
     /// Removes the cache an earlier version left in `<cachesDirectory>/<bundleID>/` and
     /// returns the names it removed. Files, not rows: a deleted row's bytes stay in the
-    /// database's free pages. Nothing there is the normal case. An empty bundle id removes
-    /// nothing: its folder would be the Caches folder itself, whose `Cache.db` is not ours.
+    /// database's free pages. Nothing there is the normal case. A bundle id that is not one
+    /// path component removes nothing (`isOnePathComponent`).
     @discardableResult
     static func purge(
         cachesDirectory: URL, bundleID: String, fileManager: FileManager = .default
     ) -> [String] {
-        guard !bundleID.isEmpty else { return [] }
+        guard isOnePathComponent(bundleID) else { return [] }
         let folder = cachesDirectory.appendingPathComponent(bundleID, isDirectory: true)
         return cacheItems.filter { name in
             let url = folder.appendingPathComponent(name)
             guard fileManager.fileExists(atPath: url.path) else { return false }
             return (try? fileManager.removeItem(at: url)) != nil
         }
+    }
+
+    /// Whether `bundleID` names one folder inside Caches. Empty or `.` is the Caches folder
+    /// itself, `..` its parent, a `/` another folder, and a NUL ends the path early where the
+    /// file system reads it: none of those `Cache.db` files is ours.
+    static func isOnePathComponent(_ bundleID: String) -> Bool {
+        !bundleID.isEmpty && bundleID != "." && bundleID != ".."
+            && !bundleID.contains("/") && !bundleID.contains("\0")
     }
 
     /// At launch, before the first request: no shared cache from here on, and the old one
