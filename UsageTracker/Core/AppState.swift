@@ -179,6 +179,7 @@ final class AppState: ObservableObject {
             codexEnabled: settings.codexProviderEnabled,
             antigravityEnabled: settings.antigravityProviderEnabled,
             grokEnabled: settings.grokProviderEnabled,
+            mistralEnabled: settings.mistralProviderEnabled,
             hasAdminKey: !adminKey.isEmpty
         )
     }
@@ -195,7 +196,8 @@ final class AppState: ObservableObject {
             claudeEnabled: settings.claudeProviderEnabled,
             codexEnabled: settings.codexProviderEnabled,
             antigravityEnabled: settings.antigravityProviderEnabled,
-            grokEnabled: settings.grokProviderEnabled
+            grokEnabled: settings.grokProviderEnabled,
+            mistralEnabled: settings.mistralProviderEnabled
         )
     }
 
@@ -205,7 +207,8 @@ final class AppState: ObservableObject {
         claudeEnabled: Bool,
         codexEnabled: Bool,
         antigravityEnabled: Bool,
-        grokEnabled: Bool
+        grokEnabled: Bool,
+        mistralEnabled: Bool = false
     ) -> Set<String>? {
         guard let polledIDs else { return nil }
         return polledServiceIDs(
@@ -213,6 +216,7 @@ final class AppState: ObservableObject {
             codexEnabled: codexEnabled,
             antigravityEnabled: antigravityEnabled,
             grokEnabled: grokEnabled,
+            mistralEnabled: mistralEnabled,
             hasAdminKey: polledIDs.contains(adminServiceID)
         )
     }
@@ -230,6 +234,9 @@ final class AppState: ObservableObject {
         codexEnabled: Bool,
         antigravityEnabled: Bool,
         grokEnabled: Bool,
+        // Defaulted so the tests written before Mistral compile unchanged; the app's three
+        // callers above always pass it.
+        mistralEnabled: Bool = false,
         hasAdminKey: Bool
     ) -> Set<String> {
         var ids: Set<String> = []
@@ -237,6 +244,7 @@ final class AppState: ObservableObject {
         if codexEnabled { ids.insert("codex") }
         if antigravityEnabled { ids.insert("antigravity") }
         if grokEnabled { ids.insert("grok") }
+        if mistralEnabled { ids.insert(MistralProvider.serviceID) }
         if hasAdminKey { ids.insert(adminServiceID) }
         return ids
     }
@@ -443,6 +451,7 @@ final class AppState: ObservableObject {
             codexEnabled: polled.contains("codex"),
             antigravityEnabled: polled.contains("antigravity"),
             grokEnabled: polled.contains("grok"),
+            mistralEnabled: polled.contains(MistralProvider.serviceID),
             // While Claude Code's status line feeds Claude's two windows, a held poll shows
             // Claude's last answer instead of asking (spec 2026-11-02 Claude limits from the
             // status line, § Cadence). The other providers poll as before.

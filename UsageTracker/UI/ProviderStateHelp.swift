@@ -51,6 +51,14 @@ struct ProviderStateHelp: Equatable, Sendable {
             return ProviderStateHelp(
                 message: grokMessage, command: grokCommand, linkTitle: grokLinkTitle, linkURL: grokLinkURL
             )
+        case ("mistral", .notSignedIn):
+            // No key anywhere, or a key Mistral refused (spec 2026-11-10 § States).
+            return ProviderStateHelp(
+                message: service.signedOutReason == .expired ? MistralCopy.signedOutHelp : MistralCopy.notSignedInHelp,
+                command: MistralCopy.command
+            )
+        case ("mistral", .error) where service.stateMessage == MistralCopy.noUsageAccessMessage:
+            return ProviderStateHelp(message: MistralCopy.noUsageAccessHelp)
         default:
             return nil
         }

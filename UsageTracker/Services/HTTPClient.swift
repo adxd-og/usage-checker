@@ -142,7 +142,8 @@ struct HTTPClient: Sendable {
     }
 
     /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds from now.
-    private static func retryAfterSeconds(_ resp: HTTPURLResponse) -> TimeInterval? {
+    /// Internal: Mistral's billing fetch reads its 429 the same way (`MistralBillingFetcher`).
+    static func retryAfterSeconds(_ resp: HTTPURLResponse) -> TimeInterval? {
         guard let raw = resp.value(forHTTPHeaderField: "Retry-After")?
             .trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
         if let secs = TimeInterval(raw) { return max(0, secs) }

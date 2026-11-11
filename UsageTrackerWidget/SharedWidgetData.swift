@@ -257,4 +257,42 @@ enum WidgetEntryRules {
         if snapshot.isNothingOn { return .message(NothingOnCopy.widget) }
         return snapshot.services.isEmpty ? .message(nothingReportingMessage) : .snapshot(snapshot)
     }
+
+    /// How many providers the All providers widget lists: the four of 4.x and Mistral (plan
+    /// R14 of spec 2026-11-10 Mistral provider).
+    static let allProvidersLimit = 5
+
+    /// The Admin API organisation's service, the one that waits when more than
+    /// `allProvidersLimit` are listed. The widget cannot see the app's provider types; a test
+    /// pins this to `AnthropicAdminProvider`'s `serviceID`.
+    static let adminOrganisationServiceID = "anthropic-admin"
+
+    /// The providers the All providers widget lists, in the app's order. With more than
+    /// `allProvidersLimit`, the Admin API organisation is left out first and only then the list
+    /// is cut to the limit, so the organisation beside all five leaves Mistral listed. At the
+    /// limit or below, every provider is listed, the organisation included.
+    static func allProvidersShown(_ snapshot: WidgetSnapshot) -> [WidgetService] {
+        var services = snapshot.services
+        if services.count > allProvidersLimit {
+            services.removeAll { $0.id == adminOrganisationServiceID }
+        }
+        return Array(services.prefix(allProvidersLimit))
+    }
+
+    /// Window rows per provider there: two while four or fewer are listed, one at five, so five
+    /// fit the large widget's height.
+    static func windowRowsPerProvider(shown: Int) -> Int {
+        shown > 4 ? 1 : 2
+    }
+
+    /// A provider's rows there: its session window first when it has one, then its fullest other
+    /// windows, `limit` in all. The worst windows tell the story; details live in the app.
+    static func windowRows(of service: WidgetService, limit: Int) -> [WidgetBucket] {
+        var rows: [WidgetBucket] = []
+        if let session = service.sessionBuckets.first { rows.append(session) }
+        rows.append(contentsOf: service.nonSessionBuckets
+            .sorted { $0.percent > $1.percent }
+            .prefix(max(0, limit - rows.count)))
+        return Array(rows.prefix(limit))
+    }
 }

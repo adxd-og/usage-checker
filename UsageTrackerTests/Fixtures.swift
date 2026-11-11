@@ -14,7 +14,8 @@ enum Fixture {
         windowLength: TimeInterval? = nil,
         credit: CreditPool? = nil,
         source: ReadingSource? = nil,
-        asOf: Date? = nil
+        asOf: Date? = nil,
+        allowance: CreditPool? = nil
     ) -> UsageBucket {
         UsageBucket(
             id: id,
@@ -25,7 +26,8 @@ enum Fixture {
             windowLength: windowLength,
             credit: credit,
             source: source,
-            asOf: asOf
+            asOf: asOf,
+            allowance: allowance
         )
     }
 

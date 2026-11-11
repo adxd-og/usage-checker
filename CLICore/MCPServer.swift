@@ -65,7 +65,7 @@ enum MCPServer {
             [
                 "name": "get_usage",
                 "title": "AI usage right now",
-                "description": "Every provider Brioche tracks (Claude, Codex, Antigravity, Grok, and Anthropic Enterprise when an Admin API key is set): each rate-limit window's percent used and when it resets, today's and this week's cost, and whether those dollars are an API-list-price equivalent of local CLI usage rather than the subscription bill. Read from the app's last snapshot; updatedAt says how old it is, and a provider that is closed or signed out keeps its last-known numbers, marked retained, with its state. Returns an error result when there is no snapshot to read. Use it before starting long or expensive work; it does not start a refresh.",
+                "description": "Every provider Brioche tracks (Claude, Codex, Antigravity, Grok, Mistral, and Anthropic Enterprise when an Admin API key is set): each rate-limit window's percent used and when it resets, today's and this week's cost, and whether those dollars are an API-list-price equivalent of local CLI usage rather than the subscription bill. Read from the app's last snapshot; updatedAt says how old it is, and a provider that is closed or signed out keeps its last-known numbers, marked retained, with its state. Returns an error result when there is no snapshot to read. Use it before starting long or expensive work; it does not start a refresh.",
                 "inputSchema": emptyInputSchema,
             ],
             [

@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Providers
+- Mistral: the plan's Vibe and API allowances from Mistral's billing API, as a
+  percent, as dollars of the monthly allowance and with their reset date, read
+  with the API key the `vibe` CLI keeps. On by default where `~/.vibe` exists:
+  Brioche then reads vibe's key and asks `api.mistral.ai`, at most once a
+  minute. Settings → Providers turns it off.
+- A provider's page heads windows longer than a week **Monthly limits**
+  (Mistral's allowances, Codex's monthly window on the free plan); it said
+  Weekly limits.
+
 ### Settings
 - Settings → Pet: the ears' caption follows **Island on displays without a
   notch** at once; it kept the old wording until the tab was reopened.

@@ -229,15 +229,23 @@ enum ClaudeKeychainReader {
         return ClaudeCredentials(claudeAiOauth: oauth)
     }
 
-    /// Runs `security find-generic-password -w` and returns its stdout.
+    /// The arguments `security` reads one generic password's secret with: the item by its
+    /// service, and by its account too where a service keeps one item per account (vibe keeps
+    /// Mistral's key under `MISTRAL_API_KEY`, spec 2026-11-10 § Credential).
+    static func securityArguments(service: String, account: String? = nil) -> [String] {
+        ["find-generic-password", "-s", service] + (account.map { ["-a", $0] } ?? []) + ["-w"]
+    }
+
+    /// Runs `security find-generic-password -w` and returns its stdout. Internal, not private:
+    /// Mistral's key is read the same way (`MistralKeychain`), after the same two preflights.
     ///
     /// The timeout is the backstop for the preflight above: if the tool ever does end up
     /// facing a panel, it would sit there until the user answered, holding a poll open.
     /// Killing it takes the request down with it.
-    private static func runSecurityTool(service: String, timeout: TimeInterval = 5) -> Data? {
+    static func runSecurityTool(service: String, account: String? = nil, timeout: TimeInterval = 5) -> Data? {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: securityToolPath)
-        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        process.arguments = securityArguments(service: service, account: account)
         let output = Pipe()
         process.standardOutput = output
         process.standardError = FileHandle.nullDevice

@@ -22,6 +22,18 @@ enum PopoverCopy {
         label.hasSuffix(" only") ? String(label.dropLast(" only".count)) : label
     }
 
+    /// The header over a provider tab's limit rows, by how long the rows run (spec 2026-11-10
+    /// Mistral provider § Windows: a window runs the calendar month before its reset). "Monthly
+    /// limits" when every row is longer than a week (`LimitsRules.longestWeek`): Mistral's
+    /// allowances, Codex's monthly window on the free plan. "Weekly limits" when none is; a row
+    /// of no known length counts as a week, as it always did. "Limits" over a mix. No rows:
+    /// "Weekly limits", and the header is not drawn.
+    nonisolated static func limitsHeader(for rows: [UsageBucket]) -> String {
+        let longer = rows.filter { ($0.windowDuration ?? 0) > LimitsRules.longestWeek }.count
+        if longer == 0 { return "Weekly limits" }
+        return longer == rows.count ? "Monthly limits" : "Limits"
+    }
+
     /// The header's second line. A provider tab names the provider and its plan first
     /// ("Claude Max 20x · Updated 7s ago"); All says only when it updated. The age is
     /// `UpdatedCopy`'s, so it reads as the dashboard sidebar's footnote does. A provider

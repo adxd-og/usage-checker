@@ -38,14 +38,19 @@ final class ProvidersSettingsCopyTests: XCTestCase {
 
     // MARK: Rows
 
-    func testTheFourProvidersAreListedInTheMockupsOrder() {
-        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.id), ["claude", "codex", "antigravity", "grok"])
-        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.name), ["Claude", "Codex", "Antigravity", "Grok"])
+    /// The mockup's four in its order, then Mistral (spec 2026-11-10 § Surfaces).
+    func testTheProvidersAreListedInTheMockupsOrderThenMistral() {
+        XCTAssertEqual(
+            ProvidersSettingsCopy.rows(services: []).map(\.id), ["claude", "codex", "antigravity", "grok", "mistral"]
+        )
+        XCTAssertEqual(
+            ProvidersSettingsCopy.rows(services: []).map(\.name), ["Claude", "Codex", "Antigravity", "Grok", "Mistral"]
+        )
     }
 
-    /// Spec 2026-10-25 § Package 1: Claude has the switch the other three have.
+    /// Spec 2026-10-25 § Package 1: Claude has the switch the others have.
     func testEveryListedProviderHasASwitchClaudeIncluded() {
-        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.hasSwitch), [true, true, true, true])
+        XCTAssertEqual(ProvidersSettingsCopy.rows(services: []).map(\.hasSwitch), [true, true, true, true, true])
     }
 
     func testClaudeSwitchedOffIsOffWhateverItLastSaid() {
@@ -60,6 +65,7 @@ final class ProvidersSettingsCopyTests: XCTestCase {
             "Local Codex CLI, needs codex login",
             "Running Antigravity app, agy CLI or IDE",
             "Local Grok CLI, grok.com fallback",
+            "API key from the vibe CLI",
         ])
     }
 
@@ -68,13 +74,14 @@ final class ProvidersSettingsCopyTests: XCTestCase {
         XCTAssertEqual(ProvidersSettingsCopy.codexID, CodexProvider.serviceID)
         XCTAssertEqual(ProvidersSettingsCopy.antigravityID, "antigravity")
         XCTAssertEqual(ProvidersSettingsCopy.grokID, "grok")
+        XCTAssertEqual(ProvidersSettingsCopy.mistralID, MistralProvider.serviceID)
         XCTAssertEqual(ProvidersSettingsCopy.adminID, "anthropic-admin")
     }
 
     func testAnAdminAPIOrganisationIsListedAfterThemWithoutASwitch() {
         let admin = Fixture.snapshot(id: "anthropic-admin", displayName: "Anthropic Enterprise", icon: "building.2")
         let rows = ProvidersSettingsCopy.rows(services: [admin])
-        XCTAssertEqual(rows.map(\.id), ["claude", "codex", "antigravity", "grok", "anthropic-admin"])
+        XCTAssertEqual(rows.map(\.id), ["claude", "codex", "antigravity", "grok", "mistral", "anthropic-admin"])
         XCTAssertEqual(rows.last, ProvidersSettingsCopy.Provider(
             id: "anthropic-admin", name: "Anthropic Enterprise", source: "Admin API key, in Advanced",
             sfFallback: "building.2", hasSwitch: false

@@ -91,6 +91,7 @@ final class SettingsStore: ObservableObject {
         static var codexProviderEnabled: Bool { CodexProvider.isCodexInstalled }
         static var antigravityProviderEnabled: Bool { AntigravityProvider.isAntigravityInstalled }
         static var grokProviderEnabled: Bool { GrokProvider.isGrokInstalled }
+        static var mistralProviderEnabled: Bool { MistralProvider.isVibeInstalled }
     }
 
     @AppStorage("refreshIntervalSeconds") var refreshIntervalSeconds: Int = Defaults.refreshIntervalSeconds
@@ -108,6 +109,8 @@ final class SettingsStore: ObservableObject {
     @AppStorage("antigravityProviderEnabled") var antigravityProviderEnabled: Bool = Defaults.antigravityProviderEnabled
     // Defaults to on once the Grok CLI has been signed into on this machine.
     @AppStorage("grokProviderEnabled") var grokProviderEnabled: Bool = Defaults.grokProviderEnabled
+    // Defaults to on where vibe has a home, ~/.vibe (spec 2026-11-10 Mistral provider § States).
+    @AppStorage("mistralProviderEnabled") var mistralProviderEnabled: Bool = Defaults.mistralProviderEnabled
     // Pay-as-you-go accounts: weekly $ budget the local CLI spend is measured
     // against (0 = no budget set). Only used when the account has no rate windows.
     @AppStorage("claudeWeeklyBudgetUSD") var claudeWeeklyBudgetUSD: Double = Defaults.claudeWeeklyBudgetUSD
@@ -276,6 +279,7 @@ final class SettingsStore: ObservableObject {
         codexProviderEnabled = Defaults.codexProviderEnabled
         antigravityProviderEnabled = Defaults.antigravityProviderEnabled
         grokProviderEnabled = Defaults.grokProviderEnabled
+        mistralProviderEnabled = Defaults.mistralProviderEnabled
         claudeWeeklyBudgetUSD = Defaults.claudeWeeklyBudgetUSD
         notificationsEnabled = Defaults.notificationsEnabled
         threshold80 = Defaults.threshold80

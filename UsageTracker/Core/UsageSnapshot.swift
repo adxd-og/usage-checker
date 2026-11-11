@@ -44,11 +44,17 @@ struct UsageBucket: Equatable, Sendable, Identifiable, Codable {
     /// the service's `fetchedAt` dates. Every surface that says "from Claude Code" dates
     /// the window by it, never by `fetchedAt` or `retainedAt`.
     var asOf: Date? = nil
+    /// The dollar allowance this window is counted in, as the provider counts it (spec
+    /// 2026-11-10 Mistral provider § Windows: Vibe, "$17.88 of $300"). The same two figures
+    /// as `credit`, but the window stays a limit: `isCreditPool` reads `credit` alone, so it
+    /// still drives the headline, the alerts, the widget and the history. Optional with a nil
+    /// default for the reason `windowLength` is: an older `last-known.json` has no such key.
+    var allowance: CreditPool? = nil
 
     /// Spelled out for the decoder in the extension below. Encoding stays synthesized: an
     /// optional that is nil writes no key.
     enum CodingKeys: String, CodingKey {
-        case id, label, utilization, resetsAt, kind, windowLength, credit, source, asOf
+        case id, label, utilization, resetsAt, kind, windowLength, credit, source, asOf, allowance
     }
 
     var clampedPercent: Double { max(0, min(100, utilization)) }
@@ -112,7 +118,8 @@ extension UsageBucket {
             windowLength: try c.decodeIfPresent(TimeInterval.self, forKey: .windowLength),
             credit: try c.decodeIfPresent(CreditPool.self, forKey: .credit),
             source: spelled.flatMap(ReadingSource.init(rawValue:)),
-            asOf: try c.decodeIfPresent(Date.self, forKey: .asOf)
+            asOf: try c.decodeIfPresent(Date.self, forKey: .asOf),
+            allowance: try c.decodeIfPresent(CreditPool.self, forKey: .allowance)
         )
     }
 }

@@ -104,7 +104,7 @@ serves the feed at the `SUFeedURL`.
 Plain SwiftUI + AppKit, with a command-line tool, two helpers and a widget:
 
 - `Core/` — models, `AppState` (ObservableObject), provider coordinator, `HistoryStore` (JSON-on-disk), `Analytics` (burn-rate), `ProjectName` decoder
-- `Providers/` — Claude OAuth, optional Anthropic Admin, and Codex, Antigravity and Grok through CodexBarCore
+- `Providers/` — Claude OAuth, optional Anthropic Admin, Mistral's billing API with the key vibe keeps, and Codex, Antigravity and Grok through CodexBarCore
 - `Services/` — keychain reader, HTTP client (429 backoff + microsecond ISO date parsing), Claude sign-in renewal through Claude Code, log aggregators for Claude, Codex and Grok, notifications, Sparkle updater wrapper, widget bridge
 - `UI/` — `StatusBarController` (NSStatusItem + tooltip ticker), `PopoverView`, `SettingsView`, `OnboardingView`, `FloatingWindow`, Liquid Glass helpers
 - `UI/Island/` — the notch island: window, motion, navigation, ears

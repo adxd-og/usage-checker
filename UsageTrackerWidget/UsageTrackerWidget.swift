@@ -9,6 +9,7 @@ enum ProviderChoice: String, AppEnum {
     case codex
     case antigravity
     case grok
+    case mistral
 
     static let typeDisplayRepresentation: TypeDisplayRepresentation = "Provider"
     static let caseDisplayRepresentations: [ProviderChoice: DisplayRepresentation] = [
@@ -16,6 +17,7 @@ enum ProviderChoice: String, AppEnum {
         .codex: "Codex (OpenAI)",
         .antigravity: "Antigravity",
         .grok: "Grok",
+        .mistral: "Mistral",
     ]
 
     var fallbackName: String {
@@ -24,6 +26,7 @@ enum ProviderChoice: String, AppEnum {
         case .codex: return "Codex"
         case .antigravity: return "Antigravity"
         case .grok: return "Grok"
+        case .mistral: return "Mistral"
         }
     }
 
@@ -33,6 +36,7 @@ enum ProviderChoice: String, AppEnum {
         case .codex: return "chevron.left.forwardslash.chevron.right"
         case .antigravity: return "circle.grid.cross"
         case .grok: return "x.circle"
+        case .mistral: return "cat"
         }
     }
 }
@@ -328,12 +332,13 @@ struct AllProvidersWidgetView: View {
     }
 
     private func rows(_ snapshot: WidgetSnapshot) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(snapshot.services.prefix(4)) { service in
+        let shown = WidgetEntryRules.allProvidersShown(snapshot)
+        let windows = WidgetEntryRules.windowRowsPerProvider(shown: shown.count)
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(shown) { service in
                 VStack(alignment: .leading, spacing: 6) {
                     ServiceHeader(service: service, updatedAt: nil)
-                    // The worst two windows tell the story; details live in the app.
-                    ForEach(topBuckets(of: service)) { bucket in
+                    ForEach(WidgetEntryRules.windowRows(of: service, limit: windows)) { bucket in
                         WidgetBucketRow(bucket: bucket, mode: snapshot.mode, compact: true)
                     }
                     if service.buckets.isEmpty, let spend = service.spendLabel {
@@ -341,7 +346,7 @@ struct AllProvidersWidgetView: View {
                     }
                 }
                 .opacity(service.isRetained ? 0.55 : 1)
-                if service.id != snapshot.services.prefix(4).last?.id {
+                if service.id != shown.last?.id {
                     Divider()
                 }
             }
@@ -351,15 +356,6 @@ struct AllProvidersWidgetView: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(16)
-    }
-
-    private func topBuckets(of service: WidgetService) -> [WidgetBucket] {
-        var rows: [WidgetBucket] = []
-        if let session = service.sessionBuckets.first { rows.append(session) }
-        rows.append(contentsOf: service.nonSessionBuckets
-            .sorted { $0.percent > $1.percent }
-            .prefix(2 - rows.count))
-        return rows
     }
 }
 

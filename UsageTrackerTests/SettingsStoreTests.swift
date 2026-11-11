@@ -33,6 +33,7 @@ final class SettingsStoreTests: XCTestCase {
         s.codexProviderEnabled = !SettingsStore.Defaults.codexProviderEnabled
         s.antigravityProviderEnabled = !SettingsStore.Defaults.antigravityProviderEnabled
         s.grokProviderEnabled = !SettingsStore.Defaults.grokProviderEnabled
+        s.mistralProviderEnabled = !SettingsStore.Defaults.mistralProviderEnabled
         s.claudeWeeklyBudgetUSD = 250
         s.notificationsEnabled = !SettingsStore.Defaults.notificationsEnabled
         s.threshold80 = 55
@@ -89,6 +90,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.codexProviderEnabled, SettingsStore.Defaults.codexProviderEnabled, message)
         XCTAssertEqual(s.antigravityProviderEnabled, SettingsStore.Defaults.antigravityProviderEnabled, message)
         XCTAssertEqual(s.grokProviderEnabled, SettingsStore.Defaults.grokProviderEnabled, message)
+        XCTAssertEqual(s.mistralProviderEnabled, SettingsStore.Defaults.mistralProviderEnabled, message)
         XCTAssertEqual(s.claudeWeeklyBudgetUSD, SettingsStore.Defaults.claudeWeeklyBudgetUSD, message)
         XCTAssertEqual(s.notificationsEnabled, SettingsStore.Defaults.notificationsEnabled, message)
         XCTAssertEqual(s.threshold80, SettingsStore.Defaults.threshold80, message)

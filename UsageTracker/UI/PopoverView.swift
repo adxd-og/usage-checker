@@ -1123,6 +1123,14 @@ private struct ProviderDetail: View {
             if !sessionRows.isEmpty || !weeklyRows.shown.isEmpty || weeklyRows.showsToggle {
                 limitsGroup
             }
+            // A window counted in dollars says how many (spec 2026-11-10 Mistral provider
+            // § Windows): the provider's own count, dimmed with the rest when retained.
+            if let allowance = AllowanceCopy.caption(for: service) {
+                Text(allowance)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.om(.secondary))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if PopoverView.showsSpendGroup(service: service, hasHero: hero != nil) {
                 spendGroup
             }
@@ -1150,7 +1158,7 @@ private struct ProviderDetail: View {
                 )
             }
             if !weeklyRows.shown.isEmpty {
-                OMSectionHeader(title: "Weekly limits", trailing: weeklyReset)
+                OMSectionHeader(title: PopoverCopy.limitsHeader(for: weeklyRows.shown), trailing: weeklyReset)
                 ForEach(weeklyRows.shown) { bucket in
                     // The ring's tooltip and spoken line carry over: "when exactly?"
                     // for the pointer, the full reset date for VoiceOver.
