@@ -24,7 +24,7 @@ enum MistralCopy {
     static let command = "vibe"
     static let notSignedInHelp = "Brioche reads the Mistral API key the vibe CLI keeps in your keychain or in ~/.vibe/.env, and found none. Start vibe and sign in with an API key, then refresh. Signing in through the browser alone leaves no key to read."
     static let signedOutHelp = "Mistral did not accept the API key vibe keeps. Sign in to vibe again with a current API key, then refresh."
-    static let noUsageAccessHelp = "Mistral shows this API key its plan but not its usage: your organisation has not given you the see_org_inference_usage permission. An admin of the organisation can grant it."
+    static let noUsageAccessHelp = "Mistral shows this API key its plan but not its usage. Usually your organisation has not given you the see_org_inference_usage permission; an admin of the organisation can grant it."
 
     /// The plan chip from billing's `plan_name`: vibe's names for the chat plans
     /// (`vibe/setup/auth/whoami.py`), which billing shares; an unknown name capitalised; nil

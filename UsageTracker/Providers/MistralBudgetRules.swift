@@ -5,7 +5,8 @@ import Foundation
 struct MistralBudgetEntry: Equatable, Sendable {
     /// `vibe_budget`, `api_budget`, or any other top-level key ending in `_budget`.
     let key: String
-    /// 0–100, fractional, as Mistral counts it; past 100 once pay-as-you-go spends beyond it.
+    /// 0–100, fractional, as Mistral counts it; it may go past 100 once pay-as-you-go spends
+    /// beyond the allowance (not verified, spec § Facts).
     let usagePercentage: Double
     /// The allowance, in `currency`; nil when the entry gives none or not as a number.
     var initialBudget: Double? = nil
