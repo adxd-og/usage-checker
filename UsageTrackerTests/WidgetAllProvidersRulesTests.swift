@@ -1,20 +1,41 @@
 import XCTest
 @testable import Omelette
 
-/// Spec 2026-11-10 Mistral provider § Surfaces, the widget with a fifth provider. The All
-/// providers widget lists up to five providers. Up to four listed, each shows its session and
-/// its fullest other window; at five, each shows its one most telling window, so the large
-/// widget's height holds them.
+/// Spec 2026-11-10 Mistral provider § Surfaces: the widget gains Mistral. The limit of five
+/// providers and the one window row each at five are the plan's decision (plan R14), not the
+/// spec's words. Past five listed, the Admin API organisation waits first. Up to four listed,
+/// each shows its session and its fullest other window; at five, each shows its one most
+/// telling window, so the large widget's height holds them.
 final class WidgetAllProvidersRulesTests: XCTestCase {
     private func service(_ id: String, buckets: [WidgetBucket] = []) -> WidgetService {
         WidgetService(id: id, name: id.capitalized, icon: "circle", plan: nil, buckets: buckets)
     }
 
+    private func shown(_ ids: [String]) -> [String] {
+        let snapshot = WidgetSnapshot(services: ids.map { service($0) }, updatedAt: Date(timeIntervalSince1970: 0))
+        return WidgetEntryRules.allProvidersShown(snapshot).map(\.id)
+    }
+
     func testFiveProvidersAllFitTheLargeWidgetAndASixthDoesNot() {
         let ids = ["claude", "anthropic-admin", "codex", "antigravity", "grok", "mistral"]
-        let six = WidgetSnapshot(services: ids.map { service($0) }, updatedAt: Date(timeIntervalSince1970: 0))
-        XCTAssertEqual(WidgetEntryRules.allProvidersShown(six).map(\.id), Array(ids.prefix(5)))
+        XCTAssertEqual(shown(ids), ["claude", "codex", "antigravity", "grok", "mistral"])
         XCTAssertEqual(WidgetEntryRules.allProvidersLimit, 5)
+    }
+
+    func testFiveWithTheAdminOrganisationAmongThemAreAllListed() {
+        let ids = ["claude", "anthropic-admin", "codex", "antigravity", "grok"]
+        XCTAssertEqual(shown(ids), ids)
+    }
+
+    func testSixWithoutAnAdminOrganisationListTheFirstFive() {
+        let ids = ["claude", "codex", "antigravity", "grok", "mistral", "extra"]
+        XCTAssertEqual(shown(ids), Array(ids.prefix(5)))
+    }
+
+    /// The widget target cannot see the app's provider types, so the rule names the id itself.
+    func testTheWidgetsAdminOrganisationIsTheAdminProvidersService() {
+        let admin = AnthropicAdminProvider(adminKey: "", fetchCostReport: { _, _ in Data() })
+        XCTAssertEqual(WidgetEntryRules.adminOrganisationServiceID, admin.serviceID)
     }
 
     func testFourOrFewerKeepTwoWindowsAndFiveGetOne() {

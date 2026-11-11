@@ -258,13 +258,25 @@ enum WidgetEntryRules {
         return snapshot.services.isEmpty ? .message(nothingReportingMessage) : .snapshot(snapshot)
     }
 
-    /// How many providers the All providers widget lists: the four of 4.x and Mistral (spec
-    /// 2026-11-10 § Surfaces). A sixth, the Admin API organisation beside all five, waits.
+    /// How many providers the All providers widget lists: the four of 4.x and Mistral (plan
+    /// R14 of spec 2026-11-10 Mistral provider).
     static let allProvidersLimit = 5
 
-    /// The providers the All providers widget lists, in the app's order.
+    /// The Admin API organisation's service, the one that waits when more than
+    /// `allProvidersLimit` are listed. The widget cannot see the app's provider types; a test
+    /// pins this to `AnthropicAdminProvider`'s `serviceID`.
+    static let adminOrganisationServiceID = "anthropic-admin"
+
+    /// The providers the All providers widget lists, in the app's order. With more than
+    /// `allProvidersLimit`, the Admin API organisation is left out first and only then the list
+    /// is cut to the limit, so the organisation beside all five leaves Mistral listed. At the
+    /// limit or below, every provider is listed, the organisation included.
     static func allProvidersShown(_ snapshot: WidgetSnapshot) -> [WidgetService] {
-        Array(snapshot.services.prefix(allProvidersLimit))
+        var services = snapshot.services
+        if services.count > allProvidersLimit {
+            services.removeAll { $0.id == adminOrganisationServiceID }
+        }
+        return Array(services.prefix(allProvidersLimit))
     }
 
     /// Window rows per provider there: two while four or fewer are listed, one at five, so five
