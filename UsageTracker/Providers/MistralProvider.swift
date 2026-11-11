@@ -16,8 +16,12 @@ actor MistralProvider: UsageProvider {
     static let icon = "cat"
 
     /// Two billing calls per fetch: rapid re-polls (the island opening, a switch flipped) get
-    /// the last answer, as Grok's do for 45 s. Every answer is kept, a failure too.
+    /// the last answer, as Grok's do for 45 s. Every answer is kept, a failure too; a 429 for
+    /// its Retry-After (`hold(for:)`).
     static let minFetchInterval: TimeInterval = 60
+
+    /// The longest a 429 is kept, whatever its Retry-After asks.
+    static let maxRateLimitHold: TimeInterval = 300
 
     /// The local log's last seven days of dollars as of a moment: `VibeUsageAggregator` for
     /// `shared`; nothing for a provider a test builds, which then reads no log at all.
@@ -26,7 +30,7 @@ actor MistralProvider: UsageProvider {
     private let credentials: MistralCredentialReader
     private let fetcher: MistralBillingFetcher
     private let weekCost: WeekCost
-    private var cached: (snapshot: ServiceSnapshot, at: Date)?
+    private var cached: (snapshot: ServiceSnapshot, at: Date, hold: TimeInterval)?
 
     init(
         credentials: MistralCredentialReader = .live,
@@ -54,32 +58,45 @@ actor MistralProvider: UsageProvider {
     }
 
     func fetch(now: Date) async -> ServiceSnapshot {
-        if let cached, now.timeIntervalSince(cached.at) < Self.minFetchInterval {
+        if let cached, now.timeIntervalSince(cached.at) < cached.hold {
             return cached.snapshot
         }
-        let snapshot = await fetchFresh(now: now)
-        cached = (snapshot, now)
+        let (snapshot, hold) = await fetchFresh(now: now)
+        cached = (snapshot, now, hold)
         return snapshot
     }
 
-    private func fetchFresh(now: Date) async -> ServiceSnapshot {
+    private func fetchFresh(now: Date) async -> (snapshot: ServiceSnapshot, hold: TimeInterval) {
         // Local spend from ~/.vibe/logs, folded into this poll as Grok's is, and read before
         // the key: a signed-out vibe's spend is still real (spec § Local usage (P2), Dollars).
         let week = await weekCost(now)
-        guard let key = credentials.read() else { return Self.snapshot(result: nil, now: now, weekCost: week) }
-        let snapshot = Self.snapshot(result: await fetcher.fetch(apiKey: key), now: now, weekCost: week)
+        guard let key = credentials.read() else {
+            return (Self.snapshot(result: nil, now: now, weekCost: week), Self.hold(for: nil))
+        }
+        let result = await fetcher.fetch(apiKey: key)
+        let snapshot = Self.snapshot(result: result, now: now, weekCost: week)
         // The state, a count and the local dollars, never the key or a body.
         NSLog(
             "[UT] Mistral fetch: %@, %d window(s), local 7d $%.2f",
             snapshot.state.rawValue, snapshot.buckets.count, week
         )
-        return snapshot
+        return (snapshot, Self.hold(for: result))
+    }
+
+    /// How long an answer is kept before billing is asked again. A 429 is held for its
+    /// Retry-After, at least the ordinary minute and at most `maxRateLimitHold`, here and not
+    /// through the app's backoff: that backoff is global and would hold every provider's poll
+    /// (4.3.0 review, finding 1). Every other answer: the ordinary minute.
+    nonisolated static func hold(for result: Result<MistralBilling, MistralBillingError>?) -> TimeInterval {
+        guard case .failure(.rateLimited(let retryAfter))? = result else { return minFetchInterval }
+        return max(minFetchInterval, min(retryAfter ?? minFetchInterval, maxRateLimitHold))
     }
 
     /// The answer as the app shows it (spec § States). `result` nil: no key anywhere. Failed
     /// states carry no windows; retention brings the last-known ones back, dimmed. `weekCost`,
     /// the local log's last seven days, rides every answer, a failed one too; it is always an
-    /// API-list-price equivalent (`CostCopy.alwaysAPIEquivalent`).
+    /// API-list-price equivalent (`CostCopy.alwaysAPIEquivalent`). No answer carries a
+    /// `retryAfter`: `fetch` holds a 429 itself (`hold(for:)`).
     nonisolated static func snapshot(
         result: Result<MistralBilling, MistralBillingError>?, now: Date, weekCost: Double = 0
     ) -> ServiceSnapshot {
@@ -100,11 +117,8 @@ actor MistralProvider: UsageProvider {
             }
         case .failure(.unauthorized):
             return make(state: .notSignedIn, message: MistralCopy.signedOutMessage, reason: .expired, weekCost: week, now: now)
-        case .failure(.rateLimited(let retryAfter)):
-            return make(
-                state: .error, message: MistralCopy.rateLimitedMessage, retryAfter: retryAfter ?? 60,
-                weekCost: week, now: now
-            )
+        case .failure(.rateLimited):
+            return make(state: .error, message: MistralCopy.rateLimitedMessage, weekCost: week, now: now)
         case .failure(.badStatus(let code)):
             return make(
                 state: .error, message: HTTPClientError.badStatus(code, body: "").localizedDescription,
@@ -126,7 +140,6 @@ actor MistralProvider: UsageProvider {
         state: ServiceState = .ok,
         message: String? = nil,
         reason: SignedOutReason? = nil,
-        retryAfter: TimeInterval? = nil,
         weekCost: Double? = nil,
         now: Date
     ) -> ServiceSnapshot {
@@ -142,7 +155,6 @@ actor MistralProvider: UsageProvider {
             state: state,
             stateMessage: message,
             fetchedAt: now,
-            retryAfter: retryAfter,
             signedOutReason: reason
         )
     }

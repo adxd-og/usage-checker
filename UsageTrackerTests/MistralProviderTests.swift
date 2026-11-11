@@ -5,9 +5,10 @@ import XCTest
 /// Spec 2026-11-10 Mistral provider § Fetch, § States and Decisions 3. The provider reads vibe's
 /// key, asks billing, and shows each answer as the States table says: Not signed in without a
 /// key (nothing asked), Signed out on a 401 with the last numbers kept by retention, the plan
-/// with no windows on a 403 (No usage access) or a 404, an error otherwise, and a 429's
-/// Retry-After for the backoff. It keeps an answer 60 s, and the key reaches neither the
-/// snapshot nor `status.json`, which stays version 2.
+/// with no windows on a 403 (No usage access) or a 404, an error otherwise. It keeps an answer
+/// 60 s and a 429 for its Retry-After, one to five minutes, itself: the snapshot carries no
+/// `retryAfter`, since the app's backoff would hold every provider's poll (4.3.0 review,
+/// finding 1). The key reaches neither the snapshot nor `status.json`, which stays version 2.
 final class MistralProviderTests: XCTestCase {
     private typealias Answer = MistralFixture.Answer
     private let now = MistralFixture.now
@@ -89,13 +90,79 @@ final class MistralProviderTests: XCTestCase {
         }
     }
 
-    func testA429HonoursRetryAfterThroughTheBackoff() async {
+    func testA429IsPublishedWithoutARetryAfterSoNoOtherProviderWaits() async {
         let stated = await provider(budget: Answer(status: 429, body: "{}", headers: ["Retry-After": "30"])).fetch(now: now)
         XCTAssertEqual(stated.state, .error)
         XCTAssertEqual(stated.stateMessage, MistralCopy.rateLimitedMessage)
-        XCTAssertEqual(stated.retryAfter, 30)
+        XCTAssertNil(stated.retryAfter, "the app's backoff is global: Mistral holds its own 429")
         let unstated = await provider(budget: Answer(status: 429, body: "{}")).fetch(now: now)
-        XCTAssertEqual(unstated.retryAfter, 60, "no header: a minute, as Claude's")
+        XCTAssertEqual(unstated.state, .error)
+        XCTAssertEqual(unstated.stateMessage, MistralCopy.rateLimitedMessage)
+        XCTAssertNil(unstated.retryAfter)
+    }
+
+    /// Retry-After held between a minute (the cache's ordinary length) and five minutes.
+    func testA429IsHeldForItsRetryAfterBetweenAMinuteAndFiveWithoutAskingAgain() async {
+        let cases: [(header: String?, hold: TimeInterval)] = [(nil, 60), ("30", 60), ("90", 90), ("3600", 300)]
+        for (header, hold) in cases {
+            let name = header ?? "no header"
+            let requests = MistralFixture.Requests()
+            let headers = header.map { ["Retry-After": $0] } ?? [:]
+            let mistral = provider(budget: Answer(status: 429, body: "{}", headers: headers), requests: requests)
+            let first = await mistral.fetch(now: now)
+            let held = await mistral.fetch(now: now.addingTimeInterval(hold - 1))
+            var seen = await requests.seen.count
+            XCTAssertEqual(seen, 2, "one poll is two calls; inside the hold nothing more is asked: \(name)")
+            XCTAssertEqual(held, first, name)
+            XCTAssertNil(held.retryAfter, name)
+            _ = await mistral.fetch(now: now.addingTimeInterval(hold))
+            seen = await requests.seen.count
+            XCTAssertEqual(seen, 4, "the hold over, billing is asked again: \(name)")
+        }
+    }
+
+    func testA200AfterTheHoldReplacesTheRateLimitedAnswer() async {
+        let budget = BudgetAnswer(Answer(status: 429, body: "{}", headers: ["Retry-After": "90"]))
+        let mistral = provider(budget: budget)
+        let limited = await mistral.fetch(now: now)
+        XCTAssertEqual(limited.state, .error)
+
+        await budget.set(Answer(status: 200, body: MistralFixture.budgetBody))
+        let held = await mistral.fetch(now: now.addingTimeInterval(89))
+        XCTAssertEqual(held.state, .error, "inside the hold the 429 stands, whatever billing would say now")
+        let fresh = await mistral.fetch(now: now.addingTimeInterval(90))
+        XCTAssertEqual(fresh.state, .ok)
+        XCTAssertEqual(fresh.buckets.map(\.id), ["mistral_vibe", "mistral_api"])
+        XCTAssertEqual(fresh.fetchedAt, now.addingTimeInterval(90))
+        XCTAssertNil(fresh.retryAfter)
+
+        // A good answer is kept the ordinary minute, not the 429's hold.
+        await budget.set(Answer(status: 429, body: "{}", headers: ["Retry-After": "300"]))
+        let kept = await mistral.fetch(now: now.addingTimeInterval(149))
+        XCTAssertEqual(kept.state, .ok)
+        let next = await mistral.fetch(now: now.addingTimeInterval(150))
+        XCTAssertEqual(next.state, .error)
+    }
+
+    /// `/budget` answers whatever this holds when the request comes: a test changes it between polls.
+    private actor BudgetAnswer {
+        private(set) var answer: Answer?
+        init(_ answer: Answer?) { self.answer = answer }
+        func set(_ answer: Answer?) { self.answer = answer }
+    }
+
+    private func provider(budget: BudgetAnswer) -> MistralProvider {
+        MistralProvider(
+            credentials: MistralCredentialReader(
+                keychain: { MistralFixture.key },
+                envFileURL: FileManager.default.temporaryDirectory
+                    .appendingPathComponent("MistralProviderTests-\(UUID().uuidString)/.env")
+            ),
+            fetcher: MistralBillingFetcher(transport: { request in
+                let answer = await budget.answer
+                return try await MistralFixture.transport(budget: answer)(request)
+            })
+        )
     }
 
     func testAServerOrNetworkFailureIsAnErrorWhoseLastNumbersStayDimmed() async {
