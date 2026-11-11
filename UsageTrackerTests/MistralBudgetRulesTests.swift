@@ -113,6 +113,42 @@ final class MistralBudgetRulesTests: XCTestCase {
         XCTAssertEqual(buckets[3].resetsAt, .distantFuture)
     }
 
+    // MARK: - What billing says is made safe to show (4.3.0 review)
+
+    /// A server-chosen key becomes a label `brioche status` prints raw: ESC, BEL and the C1 CSI go.
+    func testAKeyCarryingControlCharactersGivesALabelAndAnIDWithoutThem() {
+        let key = "te\u{1B}am\u{07}_se\u{9B}ats_budget"
+        XCTAssertEqual(MistralBudgetRules.label(forKey: key), "Team Seats")
+        XCTAssertEqual(MistralBudgetRules.bucketID(forKey: key), "mistral_team_seats")
+        let buckets = MistralBudgetRules.buckets(from: [MistralBudgetEntry(key: key, usagePercentage: 12)])
+        XCTAssertEqual(buckets.map(\.id), ["mistral_team_seats"])
+        XCTAssertEqual(buckets.map(\.label), ["Team Seats"])
+    }
+
+    func testAKeyThatIsOnlyControlsBeforeBudgetIsNoWindow() {
+        let key = "\u{1B}\u{07}\u{9B}_budget"
+        XCTAssertNil(MistralBudgetRules.name(forKey: key))
+        XCTAssertTrue(MistralBudgetRules.buckets(from: [MistralBudgetEntry(key: key, usagePercentage: 5)]).isEmpty)
+        XCTAssertFalse(MistralBudgetRules.label(forKey: key).unicodeScalars.contains { $0.properties.generalCategory == .control })
+        XCTAssertFalse(MistralBudgetRules.bucketID(forKey: key).unicodeScalars.contains { $0.properties.generalCategory == .control })
+    }
+
+    func testFiguresTooLargeForDollarsGiveAFullWindowWithNoAllowanceAndNothingNonFinite() throws {
+        let huge = MistralBudgetEntry(
+            key: "vibe_budget", usagePercentage: 1e308, initialBudget: 1e308, currency: "USD", resetAt: reset
+        )
+        let bucket = MistralBudgetRules.bucket(from: huge)
+        XCTAssertEqual(bucket.utilization, 100)
+        XCTAssertNil(bucket.allowance, "1e308 × 1e308 is no figure to show")
+        XCTAssertTrue(bucket.utilization.isFinite)
+        XCTAssertTrue(bucket.resetsAt.timeIntervalSince1970.isFinite)
+        XCTAssertTrue(try XCTUnwrap(bucket.windowLength).isFinite)
+        XCTAssertNil(bucket.credit)
+
+        let endless = MistralBudgetEntry(key: "vibe_budget", usagePercentage: 5, initialBudget: .infinity, currency: "USD")
+        XCTAssertNil(MistralBudgetRules.allowance(endless), "an allowance that is no number")
+    }
+
     func testAKeyThatIsNoBudgetOrNamesNothingIsNoWindow() {
         XCTAssertEqual(MistralBudgetRules.name(forKey: "vibe_budget"), "vibe")
         XCTAssertNil(MistralBudgetRules.name(forKey: "_budget"))

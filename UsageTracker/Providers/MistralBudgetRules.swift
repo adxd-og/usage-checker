@@ -23,15 +23,17 @@ enum MistralBudgetRules {
     static let vibeKey = "vibe_budget"
     static let apiKey = "api_budget"
 
-    /// "vibe_budget" → "vibe"; nil for a key that is no budget or names nothing.
+    /// "vibe_budget" → "vibe"; nil for a key that is no budget or names nothing. The key is the
+    /// server's choice and its name becomes a label and an id: its control characters go, and
+    /// a name of nothing else names nothing.
     static func name(forKey key: String) -> String? {
         guard key.hasSuffix(keySuffix) else { return nil }
-        let name = String(key.dropLast(keySuffix.count))
+        let name = MistralCopy.withoutControlCharacters(String(key.dropLast(keySuffix.count)))
         return name.isEmpty ? nil : name
     }
 
     static func bucketID(forKey key: String) -> String {
-        "mistral_" + (name(forKey: key) ?? key)
+        "mistral_" + (name(forKey: key) ?? MistralCopy.withoutControlCharacters(key))
     }
 
     /// "Vibe", "API", any other name capitalised word by word ("team_seats" → "Team Seats").
@@ -39,7 +41,9 @@ enum MistralBudgetRules {
         switch key {
         case vibeKey: return MistralCopy.vibeLabel
         case apiKey: return MistralCopy.apiLabel
-        default: return (name(forKey: key) ?? key).replacingOccurrences(of: "_", with: " ").lowercased().capitalized
+        default:
+            return (name(forKey: key) ?? MistralCopy.withoutControlCharacters(key))
+                .replacingOccurrences(of: "_", with: " ").lowercased().capitalized
         }
     }
 
@@ -67,10 +71,15 @@ enum MistralBudgetRules {
 
     /// "$17.88 of $300": Mistral's own count, used = initial_budget × usage_percentage / 100.
     /// nil without a positive allowance, or in a currency other than US dollars: no `$` in
-    /// front of another currency's figure.
+    /// front of another currency's figure. nil too when the allowance or the used dollars are
+    /// no finite number (1e308 × 1e308): the window then shows without dollars.
     static func allowance(_ entry: MistralBudgetEntry) -> CreditPool? {
-        guard let budget = entry.initialBudget, budget > 0, entry.currency?.uppercased() == "USD" else { return nil }
-        return CreditPool(usedDollars: budget * max(0, entry.usagePercentage) / 100, limitDollars: budget)
+        guard let budget = entry.initialBudget, budget.isFinite, budget > 0,
+              entry.currency?.uppercased() == "USD"
+        else { return nil }
+        let used = budget * max(0, entry.usagePercentage) / 100
+        guard used.isFinite else { return nil }
+        return CreditPool(usedDollars: used, limitDollars: budget)
     }
 
     static func bucket(from entry: MistralBudgetEntry) -> UsageBucket {
