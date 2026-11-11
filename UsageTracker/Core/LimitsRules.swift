@@ -168,7 +168,8 @@ extension LimitsRules {
     }
 
     /// The page for the selected provider and window kind:
-    /// 1. a provider whose log names no chat gets the empty state (§ The tab);
+    /// 1. a provider the tab does not measure (`DashboardState.measuresLimitShares`) gets
+    ///    the empty state (§ The tab);
     /// 2. an account with no mode has nothing to measure (`LimitShareRules.mode`);
     /// 3. a subscription needs its window of `kind` open now, unless a past window is
     ///    picked;
@@ -191,7 +192,7 @@ extension LimitsRules {
         now: Date,
         calendar: Calendar
     ) -> LimitsPage {
-        guard DashboardState.hasSessionLog(for: serviceID) else { return .unsupported }
+        guard DashboardState.measuresLimitShares(for: serviceID) else { return .unsupported }
         guard let service, let mode = LimitShareRules.mode(of: service, weeklyBudgetUSD: weeklyBudgetUSD)
         else { return .nothingToMeasure }
         if mode == .subscription, period == .current {
@@ -209,9 +210,9 @@ extension LimitsRules {
     }
 
     /// Whether the tab asks `DashboardState.refreshLimitShare(kind:)` for `key`: once the
-    /// provider's cost log is in, and only for a provider whose log names a chat.
+    /// provider's cost log is in, and only for a provider the tab measures.
     nonisolated static func loads(_ key: LimitsLoadKey) -> Bool {
-        key.ingestedAt != nil && DashboardState.hasSessionLog(for: key.query.serviceID)
+        key.ingestedAt != nil && DashboardState.measuresLimitShares(for: key.query.serviceID)
     }
 }
 
@@ -227,7 +228,7 @@ extension LimitsRules {
     /// provider the tab cannot measure, nor for an account with no window (pay as you go,
     /// a spend limit).
     nonisolated static func switchKinds(serviceID: String, service: ServiceSnapshot?) -> [BucketKind] {
-        guard DashboardState.hasSessionLog(for: serviceID), let service else { return [] }
+        guard DashboardState.measuresLimitShares(for: serviceID), let service else { return [] }
         return LimitShareRules.windowKinds(of: service)
     }
 

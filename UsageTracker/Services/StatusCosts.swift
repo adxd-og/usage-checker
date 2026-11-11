@@ -76,9 +76,10 @@ enum StatusCosts {
         return out
     }
 
-    /// Where each provider whose log names a chat reads its turns and its percent
+    /// Where each provider the Limits tab measures reads its turns and its percent
     /// readings: its cost log's actor, and `HistoryStore`'s. Claude and Codex, the
-    /// providers `DashboardState.hasSessionLog` names.
+    /// providers `DashboardState.measuresLimitShares` names; Mistral's log names its
+    /// chats too, but no share is cut for its monthly allowance.
     static var shareSources: [String: PublishedShareRules.Sources] {
         shareSources(readings: { await HistoryStore.shared.records(since: $0, service: $1) })
     }

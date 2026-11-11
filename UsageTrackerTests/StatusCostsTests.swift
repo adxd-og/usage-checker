@@ -51,13 +51,13 @@ final class StatusCostsTests: XCTestCase {
 
     // MARK: - Limit shares (spec 2026-10-16 § Published data)
 
-    func testOnlyProvidersWithAChatLogHaveShareSources() {
-        // Grok's log names no chat and Antigravity keeps no token log: neither can
-        // split a window by chat.
-        let withChatLog = Set(["claude", "codex", "grok", "antigravity"].filter {
-            DashboardState.hasSessionLog(for: $0)
+    func testOnlyProvidersTheLimitsTabMeasuresHaveShareSources() {
+        // Grok's log names no chat, Antigravity keeps no token log, and Mistral's chats are
+        // not measured against its monthly allowance: none of them splits a window by chat.
+        let measured = Set(["claude", "codex", "grok", "antigravity", "mistral"].filter {
+            DashboardState.measuresLimitShares(for: $0)
         })
-        XCTAssertEqual(Set(StatusCosts.shareSources.keys), withChatLog)
+        XCTAssertEqual(Set(StatusCosts.shareSources.keys), measured)
     }
 
     func testEachProviderSplitsItsChatsByItsOwnPercentHistory() async {

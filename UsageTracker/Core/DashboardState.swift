@@ -164,9 +164,9 @@ final class DashboardState: ObservableObject {
     var costSource: CostSource { Self.costSource(for: selectedService) }
 
     /// Every provider either writes a local per-turn cost log or has a specific reason
-    /// it can't be costed. Claude Code, the Codex CLI and the Grok CLI all write one;
-    /// Antigravity keeps no per-turn token log at all, and saying so is more use than
-    /// telling its users to switch to Claude.
+    /// it can't be costed. Claude Code, the Codex CLI, the Grok CLI and Mistral's vibe
+    /// all write one; Antigravity keeps no per-turn token log at all, and saying so is
+    /// more use than telling its users to switch to Claude.
     nonisolated static func costSource(for serviceID: String) -> CostSource {
         switch serviceID {
         case "claude":
@@ -175,6 +175,8 @@ final class DashboardState: ObservableObject {
             return .log(shortName: "Grok CLI", longName: "the Grok CLI's session logs")
         case "codex":
             return .log(shortName: "Codex CLI", longName: "the Codex CLI's session logs")
+        case "mistral":
+            return .log(shortName: MistralCopy.logShortName, longName: MistralCopy.logLongName)
         case "antigravity":
             return .unavailable(reason: "Antigravity doesn't keep a local token log, so costs can't be computed. Quota over time is charted instead.")
         default:
@@ -188,17 +190,28 @@ final class DashboardState: ObservableObject {
         case "claude": return JSONLAggregator.shared
         case "codex": return CodexUsageAggregator.shared
         case "grok": return GrokUsageAggregator.shared
+        case "mistral": return VibeUsageAggregator.shared
         default: return nil
         }
     }
 
     /// Whether this provider's log identifies a chat, which is a narrower question than
-    /// whether it can be costed. Claude Code writes a `sessionId` on every record and
-    /// Codex a `session_meta`; the Grok CLI writes per-turn costs and nothing that says
-    /// which conversation they belonged to, so its `sessions(from:to:)` keeps the
-    /// protocol's default and answers `[]` forever. History asks this, not
-    /// `costSource.hasBreakdown`, before offering the Sessions mode.
+    /// whether it can be costed. Claude Code writes a `sessionId` on every record,
+    /// Codex a `session_meta`, and vibe keeps a directory per session; the Grok CLI
+    /// writes per-turn costs and nothing that says which conversation they belonged
+    /// to, so its `sessions(from:to:)` keeps the protocol's default and answers `[]`
+    /// forever. History asks this, not `costSource.hasBreakdown`, before offering the
+    /// Sessions mode.
     nonisolated static func hasSessionLog(for serviceID: String) -> Bool {
+        serviceID == "claude" || serviceID == "codex" || serviceID == "mistral"
+    }
+
+    /// Whether the Limits tab measures this provider's chats against its windows: Claude
+    /// and Codex, whose turns carry their chat and whose session and weekly windows the
+    /// share rule cuts. Narrower than `hasSessionLog`: Mistral's vibe log names its chats
+    /// (History lists them), but the tab was never built for a monthly allowance (spec
+    /// 2026-11-10 Mistral provider § Local usage (P2) does not extend it).
+    nonisolated static func measuresLimitShares(for serviceID: String) -> Bool {
         serviceID == "claude" || serviceID == "codex"
     }
 
@@ -219,6 +232,7 @@ final class DashboardState: ObservableObject {
         switch serviceID {
         case "codex": return "codex"
         case "grok": return "grok"
+        case "mistral": return MistralCopy.command
         default: return "claude"
         }
     }
@@ -625,7 +639,7 @@ final class DashboardState: ObservableObject {
 
         let now = Date()
         let weeklyBudget = SettingsStore.shared.claudeWeeklyBudgetUSD
-        guard Self.hasSessionLog(for: pass.service),
+        guard Self.measuresLimitShares(for: pass.service),
               let aggregator = Self.costAggregator(for: pass.service),
               let service = AppState.shared.snapshot.services.first(where: { $0.id == pass.service })
         else {
