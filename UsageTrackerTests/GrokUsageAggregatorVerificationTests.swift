@@ -12,8 +12,14 @@ import XCTest
 /// share-based cost split.
 final class GrokUsageAggregatorVerificationTests: XCTestCase {
     private var root: URL!
-    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
-    private lazy var now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the
+    /// run, and at least an hour into the local day: a "today" turn is stamped a second before
+    /// it, in whole seconds, and a test that ran in the first second after local midnight would
+    /// file it under yesterday.
+    private lazy var now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
     private let projectDir = "%2Ftmp%2FGrokVerify%2Fproject"
 
     override func setUpWithError() throws {
@@ -121,7 +127,7 @@ final class GrokUsageAggregatorVerificationTests: XCTestCase {
         XCTAssertNil(usage.breakdown.cost, "window level")
         XCTAssertNil(usage.models.first?.breakdown.cost, "per-model within the window")
 
-        let breakdown = await aggregator.breakdown()
+        let breakdown = await aggregator.breakdown(now: now)
         XCTAssertNil(breakdown.todayTokenBreakdown.cost, "today level")
         XCTAssertNil(breakdown.byModelToday.first?.breakdown.cost, "per-model today")
         let day = try XCTUnwrap(breakdown.daily.first)
