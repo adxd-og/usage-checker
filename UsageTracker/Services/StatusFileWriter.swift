@@ -125,6 +125,9 @@ actor StatusFileWriter {
     /// `PublishedShareRules.current(_:for:weeklyBudgetUSD:now:calendar:)` keeps a share
     /// only next to the window it was cut for. It needs `weeklyBudgetUSD` because the
     /// budget decides whether a pay-as-you-go account publishes a share at all.
+    ///
+    /// `resources` holds the figures each agent session shows, by session id, as the file last
+    /// took them from `AgentResourceMonitor.bySession` (`agentSessions(_:resources:)`).
     nonisolated static func build(
         services: [ServiceSnapshot],
         costs: [String: CostEntry],
@@ -132,6 +135,7 @@ actor StatusFileWriter {
         shares: [String: PublishedShares] = [:],
         weeklyBudgetUSD: Double = 0,
         agents: AgentSummary,
+        resources: [String: AgentResourceRules.Figures] = [:],
         now: Date,
         calendar: Calendar = .current,
         locale: Locale = .current,
@@ -171,10 +175,28 @@ actor StatusFileWriter {
                 )
             },
             agents: StatusSnapshot.Agents(
-                needsYou: agents.needsYou, working: agents.working, sessions: agents.sessions
+                needsYou: agents.needsYou, working: agents.working,
+                sessions: agentSessions(agents, resources: resources)
             ),
             showsRemaining: mode == .remaining
         )
+    }
+
+    /// The listed sessions with their figures (spec 2026-11-19 agent resources § Wire format), by
+    /// session id as the monitor decided them (`AgentResourceRules.bySession`): `cpuPercent` per
+    /// core to one decimal, absent before the second reading; `memoryBytes`. Both absent for a
+    /// session with no tty or no reading, for an older session on a shared tty, and for a session
+    /// whose tty a newer tab reuses.
+    nonisolated static func agentSessions(
+        _ agents: AgentSummary, resources: [String: AgentResourceRules.Figures]
+    ) -> [StatusSnapshot.Session] {
+        agents.sessions.map { session in
+            guard let figures = resources[session.id] else { return session }
+            var measured = session
+            measured.cpuPercent = figures.cpuPercent.map(AgentResourceRules.wirePercent)
+            measured.memoryBytes = figures.memoryBytes
+            return measured
+        }
     }
 
     /// The chats the file carries for one provider: `SessionListRule.pick` — the same

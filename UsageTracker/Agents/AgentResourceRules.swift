@@ -198,3 +198,31 @@ extension AgentResourceRules {
         return watched ? watchedInterval : unwatchedInterval
     }
 }
+
+// MARK: - Wire format (spec § Wire format, § Sampling)
+
+extension AgentResourceRules {
+    /// `cpuPercent` as `status.json` carries it: per core, to one decimal. A negative or
+    /// non-finite figure is 0.
+    static func wirePercent(_ percent: Double) -> Double {
+        guard percent.isFinite else { return 0 }
+        return (max(0, percent) * 10).rounded() / 10
+    }
+
+    /// The file takes new figures at most this often: the 5 s readings feed the views only.
+    static let fileInterval: TimeInterval = 30
+
+    /// Whether `next` (figures by session id) goes into `status.json` now, after the file took
+    /// `last` at `lastAt` (§ Sampling, review question 1): when 30 s have passed, when nothing
+    /// was taken yet or the clock went back, and at once when a session gained or lost its
+    /// figures — its first reading, its end, a newer session or a newer tab taking its tty — so
+    /// the file never shows one tree on two sessions for half a minute.
+    static func publishesToFile(
+        _ next: [String: Figures], over last: [String: Figures], lastAt: Date?, now: Date
+    ) -> Bool {
+        if Set(next.keys) != Set(last.keys) { return true }
+        guard let lastAt else { return true }
+        let span = now.timeIntervalSince(lastAt)
+        return span >= fileInterval || span < 0
+    }
+}

@@ -31,7 +31,9 @@ final class AgentResourceMonitor: ObservableObject {
     private let sleep: @Sendable (TimeInterval) async -> Void
     private var ttys: Set<String> = []
     /// The live list as the store last sent it: `bySession` is decided over the whole of it.
-    private var sessions: [AgentSession] = []
+    /// Stored before `bySession` is recomputed, so a write issued for a change of `bySession`
+    /// reads the new list here while the store's own property still holds the old one.
+    private(set) var sessions: [AgentSession] = []
     /// The view instances that hold each surface open, by the token each view owns.
     private var watchers: [Watcher: Set<UUID>] = [:]
     /// The one loop that samples, nil while there is none. Only `restart()` writes it, and it
