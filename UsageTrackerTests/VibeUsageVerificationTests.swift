@@ -635,8 +635,12 @@ final class VibeUsageVerificationTests: XCTestCase {
 
     func testHistoryReachesTheChatsThroughTheProtocolNotThroughItsEmptyDefault() async throws {
         try VibeFixture.write(VibeFixture.whole(), under: root)
-        let vibe: any CostLogAggregating = VibeUsageAggregator(rootURL: root, ledgerURL: nil, calendar: utc)
-        await vibe.refresh()
+        // Read as of the class's fixed date: the protocol's `refresh()` reads the real clock,
+        // which drops the fixture's 2026 steps as a year old from November 2027. What this test
+        // is about, the history calls, still goes through the protocol.
+        let concrete = VibeUsageAggregator(rootURL: root, ledgerURL: nil, calendar: utc)
+        await concrete.refresh(now: now)
+        let vibe: any CostLogAggregating = concrete
         let chats = await vibe.sessions(from: date(ms(2026, 11, 5)), to: date(ms(2026, 11, 7)))
         XCTAssertEqual(chats.map(\.id), [VibeFixture.whole().id], "an overload that is not the protocol's requirement would answer []")
         XCTAssertEqual(chats.first?.providerID, "mistral")
