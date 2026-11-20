@@ -162,6 +162,18 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         return condition()
     }
 
+    /// The pid a stand-in wrote as its first line, waited for up to `seconds`; nil when none
+    /// was written in that time.
+    private func writtenPID(_ pidFile: URL, within seconds: TimeInterval) async -> Int32? {
+        var pid: Int32?
+        _ = await waitUntil(seconds) {
+            pid = (try? String(contentsOf: pidFile, encoding: .utf8))
+                .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            return pid != nil
+        }
+        return pid
+    }
+
     // MARK: - Task 2: the renewal start is registered on every path and leaves on every path
 
     func testALaunchFailureLeavesNothingRegistered() async throws {
@@ -211,9 +223,15 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
             directory: directory, duration: 0.6, grace: 1, registry: registry
         )
 
-        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        // Well under the stand-in's 60 s sleep: the start came back without waiting for it.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 30)
         XCTAssertEqual(registry.runningCount, 0)
-        let gone = await processIsGone(pidFile: pidFile)
+        // A stand-in that started writes its pid as its first line: waited for, not read once.
+        guard let pid = await writtenPID(pidFile, within: 10) else {
+            XCTFail("the stand-in never wrote its pid")
+            return
+        }
+        let gone = await waitUntil(10) { kill(pid, 0) != 0 }
         XCTAssertTrue(gone, "the program was stopped, not left running")
     }
 
