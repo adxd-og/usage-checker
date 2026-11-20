@@ -14,7 +14,8 @@ enum MistralModelPricing {
         /// models.dev lists none (a speech model).
         var price: ModelPrice?
         /// models.dev's display name ("Mistral Medium 3.5"): what vibe's aliases are matched
-        /// against when they are no key.
+        /// against when they are no key, and, once cleaned (`usableName`), the name the model is
+        /// shown under (`displayName(activeModel:modelName:)`).
         var name: String?
     }
 
@@ -88,6 +89,71 @@ extension MistralModelPricing {
               matches.allSatisfy({ $0.price == first })
         else { return nil }
         return first
+    }
+
+    /// models.dev's name for a vibe session's model (spec 2026-11-19 Mistral model names § Rule),
+    /// looked up in the order its price is (`price(activeModel:modelName:)`): `active_model`, then
+    /// `model_name`, as exact keys; then a display name that reads as the id, as models.dev spells
+    /// it; then the shorter line. A row without a usable name (`usableName`) is passed over and the
+    /// lookup goes on. nil when no row names the model, an empty table included: the row then reads
+    /// as `ModelPricing.displayName` names it.
+    static func displayName(activeModel: String?, modelName: String?) -> String? {
+        let ids = [activeModel, modelName].compactMap { $0 }.filter { !$0.isEmpty }
+        guard !ids.isEmpty else { return nil }
+        let models = current
+        for id in ids {
+            if let name = models[ModelPricing.normalize(id)]?.name.flatMap(usableName) { return name }
+        }
+        for id in ids {
+            if let name = nameReadAs(id, in: models) { return name }
+        }
+        for id in ids {
+            if let name = lineName(id, in: models) { return name }
+        }
+        return nil
+    }
+
+    /// The display name that reads as `id` (`nameKey`), as models.dev spells it: the first usable
+    /// one by row id. Unlike `namePrice`, rows sharing the name at two rates still give it: which
+    /// one ran is unknown, but it has that name either way.
+    static func nameReadAs(_ id: String, in models: [String: Model]) -> String? {
+        let wanted = nameKey(id)
+        guard !wanted.isEmpty else { return nil }
+        return models
+            .filter { $0.value.name.map(nameKey) == wanted }
+            .sorted { $0.key < $1.key }
+            .lazy
+            .compactMap { $0.value.name.flatMap(usableName) }
+            .first
+    }
+
+    /// `linePrice`'s walk, for a name: the id less one `-` or `.` part at a time, three times at
+    /// most; the first of those rows with a usable name.
+    static func lineName(_ id: String, in models: [String: Model]) -> String? {
+        var candidate = ModelPricing.normalize(id)
+        for _ in 0..<3 {
+            if let dash = candidate.lastIndex(of: "-") {
+                candidate = String(candidate[..<dash])
+            } else if let dot = candidate.lastIndex(of: ".") {
+                candidate = String(candidate[..<dot])
+            } else {
+                return nil
+            }
+            if let name = models[candidate]?.name.flatMap(usableName) { return name }
+        }
+        return nil
+    }
+
+    /// The longest name shown, in characters, once cleaned (spec § Untrusted names).
+    static let longestName = 64
+
+    /// A name from models.dev as the app may show it: a server's string, so without control
+    /// characters (`MistralCopy.withoutControlCharacters`: `brioche status` prints names raw) and
+    /// trimmed. nil when nothing is left or more than `longestName` characters are.
+    static func usableName(_ raw: String) -> String? {
+        let name = MistralCopy.withoutControlCharacters(raw).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= longestName else { return nil }
+        return name
     }
 
     /// `ModelPricing.dynamicLookup`'s suffix rule over this family only: the id less one `-` or
