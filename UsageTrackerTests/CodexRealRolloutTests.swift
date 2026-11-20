@@ -204,7 +204,7 @@ final class CodexRealRolloutTests: XCTestCase {
     func testTheDashboardTotalsAndTheSessionTotalsAreTheSameDollars() async throws {
         let aggregator = await loaded()
         let sessions = await aggregator.sessions(from: at(3 * 24 * 3600), to: now)
-        let breakdown = await aggregator.breakdown()
+        let breakdown = await aggregator.breakdown(now: now)
 
         XCTAssertEqual(breakdown.todayTurns, 7)
         XCTAssertEqual(breakdown.todayTokens, 369_622)
@@ -224,12 +224,12 @@ final class CodexRealRolloutTests: XCTestCase {
         // computed under an older one. The two instances below are that relaunch.
         let first = await loaded()
         let firstSessions = await first.sessions(from: at(3 * 24 * 3600), to: now)
-        let firstBreakdown = await first.breakdown()
+        let firstBreakdown = await first.breakdown(now: now)
 
         let second = tree.aggregator()
         await second.refresh()
         let secondSessions = await second.sessions(from: at(3 * 24 * 3600), to: now)
-        let secondBreakdown = await second.breakdown()
+        let secondBreakdown = await second.breakdown(now: now)
 
         XCTAssertEqual(firstSessions, secondSessions, "a relaunch reads the same chats")
         XCTAssertEqual(firstBreakdown.todayCost, secondBreakdown.todayCost, accuracy: 1e-12)
@@ -240,7 +240,7 @@ final class CodexRealRolloutTests: XCTestCase {
         await first.refresh()
         let repolled = await first.sessions(from: at(3 * 24 * 3600), to: now)
         XCTAssertEqual(repolled, firstSessions)
-        let repolledBreakdown = await first.breakdown()
+        let repolledBreakdown = await first.breakdown(now: now)
         XCTAssertEqual(repolledBreakdown.todayTurns, firstBreakdown.todayTurns)
     }
 }

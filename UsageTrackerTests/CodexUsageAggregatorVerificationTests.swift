@@ -21,9 +21,14 @@ import XCTest
 final class CodexUsageAggregatorVerificationTests: XCTestCase {
     private var root: URL!
     /// Taken when a test first asks, not when XCTest builds every test case at the start of the
-    /// run: by the time this class runs in the full suite that gap passed the 30 s margin the
-    /// week and month boundary tests allow.
-    private lazy var now = Date()
+    /// run, and at least an hour into the local day: "today" fixtures sit up to two minutes
+    /// before it, and a test that ran just after local midnight would file them under
+    /// yesterday. Every breakdown here is asked as of this `now`, so the week and month edges
+    /// are measured from the instant the fixtures were stamped from.
+    private lazy var now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
 
     private let alphaCwd = "/tmp/Codex Verify/alpha app"
     private let betaCwd = "/tmp/Codex Verify/beta"
@@ -342,7 +347,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: 1, input: 700, cached: 100, output: 40, reasoning: 5),
         ])
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.todayCost, 0)
         XCTAssertEqual(breakdown.todayTokenBreakdown.input, 600)
         XCTAssertEqual(breakdown.todayTokenBreakdown.cacheRead, 100)
@@ -369,7 +374,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: 45, input: 500, cached: 0, output: 50, reasoning: 0),
         ], named: "rollout-unpriced.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.daily.count, 1)
         let day = breakdown.daily[0]
         // Only the priced turn's dollars: 600×1.25/M + 400×0.125/M + 100×10/M.
@@ -474,7 +479,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: secondsAgoAfter, input: 1_200, cached: 0, output: 120, reasoning: 0),
         ])
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.daily.count, 2, "one turn either side of local midnight is two calendar days")
         XCTAssertEqual(breakdown.daily[0].tokens.total, 550)
         XCTAssertEqual(breakdown.daily[1].tokens.total, 770)
@@ -499,7 +504,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: 26 * 3600, input: 2_000, cached: 500, output: 200, reasoning: 0),
         ], named: "rollout-yesterday.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         let today = breakdown.todayTokenBreakdown
         XCTAssertEqual(today.input, 800 + 500, "the 26h-old turn must not be counted as today")
         XCTAssertEqual(today.output, 80 + 30)
@@ -510,10 +515,8 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
     }
 
     func testWeekCostIsInclusiveAtExactlySevenDaysAndExclusiveBeyond() async throws {
-        // A 30s margin either side of the exact 7×24h tick: wide enough to absorb the
-        // real wall-clock gap between this test's frozen `now` (captured at instance
-        // creation) and the moment `breakdown()` calls its own `Date()` — which grows
-        // under load in the full suite — while still meaningfully pinning the cutoff
+        // A 30s margin either side of the exact 7×24h tick, measured from the `now` the
+        // fixtures are stamped from and the breakdown is asked as of: it pins the cutoff
         // to "around 7 days", not some other boundary entirely.
         try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 7 * 24 * 3600 + 100),
@@ -526,7 +529,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: 7 * 24 * 3600 + 30, input: 2_000, cached: 0, output: 50, reasoning: 0),
         ], named: "rollout-outside-week.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         // Inside: 1000×1.25/M + 100×10/M = 0.00225. Outside: 2000×1.25/M + 50×10/M = 0.003.
         XCTAssertEqual(breakdown.weekCost, 0.00225, accuracy: 1e-9, "the turn just past 7 days must be excluded")
         XCTAssertEqual(breakdown.monthCost, 0.00225 + 0.003, accuracy: 1e-9, "both are well inside 30 days")
@@ -545,7 +548,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: 30 * 24 * 3600 + 30, input: 1_000, cached: 0, output: 40, reasoning: 0),
         ], named: "rollout-outside-month.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         // Inside: 1000×1.25/M + 80×10/M = 0.00205. The turn just past 30 days is excluded.
         XCTAssertEqual(breakdown.monthCost, 0.00205, accuracy: 1e-9)
     }
@@ -578,7 +581,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
             tokenCount(secondsAgo: old, input: 1_500, cached: 300, output: 90, reasoning: 20),
         ], day: "2026/07/27", named: "rollout-past-recent-window.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.daily.count, 1)
         let day = breakdown.daily[0]
         XCTAssertEqual(day.totalTokens, day.tokens.total)
@@ -632,7 +635,7 @@ final class CodexUsageAggregatorVerificationTests: XCTestCase {
 
         let fresh = CodexUsageAggregator(rootURL: root)
         let costs = await fresh.costs(now: now)
-        let breakdown = await fresh.breakdown()
+        let breakdown = await fresh.breakdown(now: now)
         XCTAssertEqual(costs.today, breakdown.todayCost, accuracy: 1e-9)
         XCTAssertEqual(costs.week, breakdown.weekCost, accuracy: 1e-9)
         // today: 1000×1.25/M + 100×10/M = 0.00225. week adds the 3-day-old turn: 500×1.25/M + 50×10/M = 0.001125.
