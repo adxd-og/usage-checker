@@ -136,9 +136,7 @@ enum KeepAwakeDaemon {
 
         // 4b. Thermal changes (thermal guard spec 2026-11-19, § Daemon). The tick reads the
         // level too, so a notification that never comes delays an end by a minute at most.
-        let thermal = NotificationCenter.default.addObserver(
-            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil
-        ) { _ in
+        let thermal = KeepAwakeThermalObserver(center: .default) {
             Task { _ = await service.thermalChanged(now: Date()) }
         }
 
