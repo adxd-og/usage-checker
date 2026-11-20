@@ -392,10 +392,16 @@ island's block always says.
   again replaces the deadline. The menu bar tooltip's first line says until when
 - **Ends by itself**: at the deadline, even when Brioche is not running; on
   battery below 25 % (Settings → General → Keep awake → **End below 25 % on
-  battery**, on by default); and at a restart, after which nothing resumes.
-  The block says when and why it ended until you dismiss it or apply again
+  battery**, on by default); when the Mac overheats with the lid closed,
+  within a minute of the lid closing when macOS rates its thermal state
+  critical and within two at serious (**End when the Mac overheats with the
+  lid closed**, on by default; macOS gives a level, not degrees); and at a
+  restart, after which nothing resumes. The block says when and why it ended
+  until you dismiss it or apply again, and "The Mac is running hot" under the
+  countdown while it is that hot
 - **Sleep at the end**: when the mode ends at the deadline, at the battery
-  floor, on Cancel or Reset, or through a helper restart while it was on, and
+  floor, for heat, on Cancel or Reset, or through a helper restart while it
+  was on, and
   the lid is closed with no external display keeping the Mac awake, the Mac
   goes to sleep. A helper switched off in Login Items only clears the flag
 - **One-time approval**: the first Apply installs a helper,
@@ -405,7 +411,7 @@ island's block always says.
   in System Settings → General → Login Items & Extensions, then press Apply again. macOS may ask for your password there
 - **Reset**: Settings → Advanced → **Reset keep awake** asks first, then ends
   the mode, clears the flag, removes the helper from Login Items and puts the
-  floor switch and the last duration back. It asks for an administrator
+  battery and heat switches and the last duration back. It asks for an administrator
   password only when the helper cannot clear the flag; the line under it shows
   what `pmset -g` reports
 - **Before deleting Brioche, press Reset keep awake.** An app deleted while
@@ -419,7 +425,7 @@ Next: [Settings](#settings).
 A sidebar window with seven tabs.
 
 - **General**: launch at login, Island on displays without a notch, Show in menu bar, refresh interval, the keep-awake battery
-  floor, automatic updates and Check now, the version and the GitHub link
+  and heat switches, automatic updates and Check now, the version and the GitHub link
 - **Menu bar**: the percentage mode, a "Count down remaining instead of
   used" switch that turns every ring, bar and percent around, which
   providers show in the menu bar, agents in the menu bar
