@@ -218,9 +218,11 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         let long = try script("#!/bin/sh\necho $$ > '\(pidFile.path)'\nexec /bin/sleep 60\n")
         let started = Date()
 
+        // Two seconds, not a fraction of one: the run comes back only after it stopped the
+        // stand-in, and one stopped before its first line never writes the pid this test needs.
         try await ClaudePTYStart.run(
             binary: long.path, arguments: [], environment: ["PATH": "/usr/bin:/bin"],
-            directory: directory, duration: 0.6, grace: 1, registry: registry
+            directory: directory, duration: 2, grace: 1, registry: registry
         )
 
         // Well under the stand-in's 60 s sleep: the start came back without waiting for it.
