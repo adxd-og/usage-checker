@@ -66,11 +66,17 @@ enum AgentProcessTable {
     }
 
     /// `/dev/ttys003` for a controlling terminal; nil for none (`NODEV`, -1) or a device
-    /// `devname` cannot name. Each device is named once per table.
+    /// that has no name. Each device is named once per table.
+    ///
+    /// `devname_r` into a buffer of this call's own, not `devname`: that one answers from one
+    /// buffer the whole process shares, and `HostProcessWalk` calls it from a detached task on a
+    /// tmux jump while the sampler reads here. A name read while the other thread rewrote it
+    /// would put a process under another tab's tty for a sample.
     private static func ttyPath(_ device: dev_t, names: inout [dev_t: String]) -> String? {
         guard device != -1, device != 0 else { return nil }
         if let known = names[device] { return known }
-        guard let name = devname(device, mode_t(S_IFCHR)) else { return nil }
+        var buffer = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+        guard let name = devname_r(device, mode_t(S_IFCHR), &buffer, Int32(buffer.count)) else { return nil }
         let path = "/dev/" + String(cString: name)
         names[device] = path
         return path
