@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Providers
+- Mistral: a model models.dev lists is named as it names it ("Mistral Large 4",
+  "GLM-5.3") in the Overview and History; it was spelled from the id ("Mistral
+  Large 4 0 3"). A model it does not list keeps the id's spelling.
+
 ### Dashboard
 - Limits: a provider without limit analytics says the tab is available for
   Claude and Codex only; it said analytics needs a chat-level cost log, which
