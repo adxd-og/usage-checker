@@ -235,7 +235,7 @@ final class CLIProcessVerificationTests: XCTestCase {
 
     /// Closing stdin immediately (no input at all) must end the `mcp` loop promptly —
     /// `readLine` returns nil on EOF, and the loop must not spin or wait on anything else.
-    func testMCPWithNoInputAtAllExitsAtOnce() throws {
+    func testMCPWithNoInputAtAllExitsWithoutWaiting() throws {
         try publish(sample())
 
         let run = try runCLI(["mcp"], stdin: Data())

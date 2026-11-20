@@ -157,7 +157,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
         XCTAssertEqual(box.events.first?.cwd, "/Users/me/Desktop/Orion Gate")
     }
 
-    func testEveryClaudeEventRoundTripsInOrder() throws {
+    func testEveryClaudeEventRoundTrips() throws {
         try startServer()
         let cases: [(payload: String, kind: AgentEvent.Kind)] = [
             (AgentFixture.sessionStart, .sessionStart),
@@ -506,7 +506,7 @@ final class OmeletteHookEndToEndTests: XCTestCase {
             (AgentFixture.codexHookStop, .stop),
         ]
 
-        // One event at a time, for the reason `testEveryClaudeEventRoundTripsInOrder` gives.
+        // One event at a time, for the reason `testEveryClaudeEventRoundTrips` gives.
         for (index, entry) in cases.enumerated() {
             XCTAssertEqual(try runHelper(stdin: entry.payload, arguments: ["--codex-hook"]).status, 0)
             XCTAssertTrue(waitForEvents(index + 1), "event \(index + 1) arrived")

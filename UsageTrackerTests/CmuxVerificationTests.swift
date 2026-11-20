@@ -92,7 +92,7 @@ final class CmuxVerificationTests: XCTestCase {
         XCTAssertLessThan(elapsed, 4, "a refused connection must not wait out the timeout: \(elapsed)s")
     }
 
-    func testALoopbackListenerThatNeverReadsStillSeesTheWriteSucceedQuickly() throws {
+    func testALoopbackListenerThatNeverReadsStillSeesTheWriteSucceedWithoutWaitingOutTheTimeout() throws {
         // "The listener that never reads" from the spec's attack list: a small
         // newline-delimited payload fits in the kernel's socket send buffer, so
         // `send` must complete well before the timeout even though nothing on

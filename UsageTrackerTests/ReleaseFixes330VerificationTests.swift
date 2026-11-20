@@ -304,7 +304,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
     /// The quit can land anywhere around the start, in particular between the registration and the
     /// program's launch, where `terminateAll()` finds nothing running to signal and only the
     /// `didStart` call after `run()` stops the program. Many starts, each quit at a different
-    /// instant a few milliseconds in: every one must come back at once, none left to its duration.
+    /// instant a few milliseconds in: every one must come back well before its duration, none left to it.
     func testAQuitAtAnyInstantAroundTheLaunchNeverLeavesTheProgramRunning() async throws {
         let folder = directory!
         let slowest = await withTaskGroup(of: TimeInterval.self, returning: TimeInterval.self) { group in
