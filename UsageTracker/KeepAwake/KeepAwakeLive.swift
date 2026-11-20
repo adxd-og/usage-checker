@@ -90,6 +90,8 @@ enum KeepAwakeXPCTransport {
                 proxy.disarm(withReply: reply)
             case .setFloor(let enabled):
                 proxy.setFloor(enabled: enabled, withReply: reply)
+            case .setThermalGuard(let enabled):
+                proxy.setThermalGuard(enabled: enabled, withReply: reply)
             case .state:
                 proxy.state(withReply: reply)
             }

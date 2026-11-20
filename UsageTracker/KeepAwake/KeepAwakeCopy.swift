@@ -109,6 +109,7 @@ enum KeepAwakeCopy {
         case .cancelled: return "cancelled"
         case .restarted: return "the Mac or the helper restarted"
         case .stopped: return "the helper was stopped"
+        case .overheated: return "the Mac was overheating"
         }
     }
 
@@ -190,5 +191,32 @@ extension KeepAwakeCopy {
     /// deadline, § Behaviour, Visible); nil otherwise.
     static func menuBarMarker(_ state: KeepAwakeState, now: Date) -> String? {
         KeepAwakeRules.isActive(state, now: now) ? Self.menuBarGlyph : nil
+    }
+}
+
+extension KeepAwakeCopy {
+    /// Spec 2026-11-19 (thermal guard), § What the user sees: under the countdown while the Mac
+    /// is hot, lid open or closed.
+    static let runningHotLine = "The Mac is running hot"
+
+    /// The line under "Awake until …" while armed and the level is serious or critical; nil
+    /// otherwise. It keeps its own threshold: if the spike moves the guard's
+    /// (`KeepAwakeRules.heatEndsWhenHeld`), this line still warns at serious, the level Apple
+    /// says runs the fans at full speed.
+    static func heatLine(_ status: Status, level: KeepAwakeThermalLevel) -> String? {
+        guard case .armed = status, level >= .serious else { return nil }
+        return runningHotLine
+    }
+
+    /// Spec 2026-11-19, § Accepted risks: a mode armed before the app updated runs on the
+    /// previous helper, which has no guard.
+    static let guardPendingText = "The heat guard starts with the next Apply."
+
+    /// That line under the countdown while armed, the helper's replies carry no guard
+    /// (`helperGuard` nil, `KeepAwakeModel.helperThermalGuard`) and the setting is on; nil
+    /// otherwise. A helper that carries the guard needs no line: the model holds it to the setting.
+    static func guardPendingLine(_ status: Status, helperGuard: Bool?, settingOn: Bool) -> String? {
+        guard case .armed = status, helperGuard == nil, settingOn else { return nil }
+        return guardPendingText
     }
 }

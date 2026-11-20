@@ -75,3 +75,41 @@ extension KeepAwakeRules {
         effectiveState(state, now: now).isArmed
     }
 }
+
+extension KeepAwakeRules {
+    /// The thermal guard (spec 2026-11-19, § Rule): with the lid closed and the guard on, this
+    /// level ends an armed mode at the first reading that sees it. The helper reads on its minute
+    /// tick and on a thermal change, not when the lid closes, so that is within a minute of the
+    /// lid closing (spec § Plan decisions accepted by the session, item 2). The name is the
+    /// spec's ("at once"). The owner's spike may move the level; nothing else changes then.
+    static let heatEndsAtOnce: KeepAwakeThermalLevel = .critical
+    /// This level ends it once it has held for `heatHoldInterval`.
+    static let heatEndsWhenHeld: KeepAwakeThermalLevel = .serious
+    /// "Two readings in a row, a minute apart": how long `heatEndsWhenHeld` must hold.
+    static let heatHoldInterval: TimeInterval = 60
+
+    /// Where the hot run this reading belongs to began: `previous` while the run goes on, `now`
+    /// when this reading starts it (or when `previous` lies after `now`: a clock set back starts
+    /// the run again rather than stretching it), nil when this reading breaks it — cooler than
+    /// `heatEndsWhenHeld`, the lid open, or the guard off. Heat with the lid open counts nothing:
+    /// an open Mac under load is ordinary use. Readings come from the minute tick and from the
+    /// change notification, so the minute is counted from the run's first reading, not from the
+    /// reading before.
+    static func hotSince(level: KeepAwakeThermalLevel, previous: Date?, now: Date, lidClosed: Bool, guardEnabled: Bool) -> Date? {
+        guard lidClosed, guardEnabled, level >= heatEndsWhenHeld else { return nil }
+        guard let previous, previous <= now else { return now }
+        return previous
+    }
+
+    /// Whether this reading ends the mode for heat: with the lid closed and the guard on,
+    /// `heatEndsAtOnce` at this reading, and `heatEndsWhenHeld` once the run that began at
+    /// `hotSince` has lasted `heatHoldInterval` (so within two minutes of the lid closing). One
+    /// hot reading that cools within the minute ends nothing: the run it began is gone
+    /// (`hotSince`).
+    static func endsForHeat(level: KeepAwakeThermalLevel, hotSince: Date?, now: Date, lidClosed: Bool, guardEnabled: Bool) -> Bool {
+        guard lidClosed, guardEnabled else { return false }
+        if level >= heatEndsAtOnce { return true }
+        guard level >= heatEndsWhenHeld, let hotSince else { return false }
+        return now.timeIntervalSince(hotSince) >= heatHoldInterval
+    }
+}

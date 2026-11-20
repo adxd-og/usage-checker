@@ -18,6 +18,8 @@ enum GeneralSettingsCopy {
     static let githubTitle = AppVersion.githubLabel
     static let keepAwakeHeader = "Keep awake"
     static let keepAwakeFloorTitle = "End below \(KeepAwakeRules.batteryFloorPercent) % on battery"
+    /// Spec 2026-11-19 (thermal guard), § Settings.
+    static let keepAwakeThermalTitle = "End when the Mac overheats with the lid closed"
     static let keepAwakeFooter = "Keep awake with the lid closed ends on time even when Brioche is not running, and never resumes after a restart."
 
     /// "Brioche 2.7.1 (38)": the version label the popover used, plus the build a bug
@@ -135,8 +137,10 @@ struct GeneralSettingsView: View {
         }
     }
 
-    /// Spec 2026-10-26 § UI. The switch is a preference read at every Apply, and an armed
-    /// helper hears a change at once (§ Behaviour, floor switch while armed).
+    /// Spec 2026-10-26 § UI and spec 2026-11-19 (thermal guard) § Settings. Both switches are
+    /// preferences, and an armed helper hears a change at once (§ Behaviour, floor switch while
+    /// armed; the guard's only when the helper knows it, `KeepAwakeModel.thermalGuardChanged`,
+    /// which sends the setting as it reads when the call goes out).
     private var keepAwake: some View {
         SettingsSection(header: GeneralSettingsCopy.keepAwakeHeader, footer: GeneralSettingsCopy.keepAwakeFooter) {
             SettingsSwitchRow(
@@ -146,6 +150,16 @@ struct GeneralSettingsView: View {
                     set: { newValue in
                         settings.keepAwakeFloorEnabled = newValue
                         Task { await KeepAwakeModel.shared.floorChanged(newValue) }
+                    }
+                )
+            )
+            SettingsSwitchRow(
+                title: GeneralSettingsCopy.keepAwakeThermalTitle,
+                isOn: Binding(
+                    get: { settings.keepAwakeThermalGuardEnabled },
+                    set: { newValue in
+                        settings.keepAwakeThermalGuardEnabled = newValue
+                        Task { await KeepAwakeModel.shared.thermalGuardChanged() }
                     }
                 )
             )

@@ -79,7 +79,7 @@ final class KeepAwakeVerificationServiceTests: XCTestCase {
         _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.lid = closedLid }
         let reply = await service.disarm(now: t0 + 60)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
         XCTAssertEqual(stateFile.load(), .ended(at: t0 + 60, reason: .cancelled))
     }
@@ -114,7 +114,7 @@ final class KeepAwakeVerificationServiceTests: XCTestCase {
         XCTAssertEqual(stillOn.state, .armed(deadline: t0 + 7_200, floorEnabled: false))
         fake.with { $0.calls = []; $0.lid = closedLid }
         let reply = await service.setFloor(enabled: true, now: t0 + 120)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .batteryFloor), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .batteryFloor), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
         XCTAssertEqual(fake.with { $0.flag }, .cleared)
     }
@@ -134,7 +134,7 @@ final class KeepAwakeVerificationServiceTests: XCTestCase {
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertEqual(stateFile.load(), .armed(deadline: t0 + 7_200, floorEnabled: true))
         let tick = await service.tick(now: t0 + 120)
-        XCTAssertEqual(tick, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
+        XCTAssertEqual(tick, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil, thermal: .nominal, thermalGuard: true))
     }
 
     /// The worst arm: the flag really went on, the read-back did not say so, and the rollback's

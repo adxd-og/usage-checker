@@ -69,3 +69,50 @@ extension KeepAwakeReadings {
         )
     }
 }
+
+/// The Mac's thermal state as `ProcessInfo.thermalState` reports it (thermal guard spec
+/// 2026-11-19, Facts): a level, the system's own verdict over its sensors, power and fans,
+/// never a temperature. Ordered from cool to hot. The helper reads it for the guard and the app
+/// for the card's line; neither needs root, a private framework or a prompt.
+enum KeepAwakeThermalLevel: String, Codable, Equatable, Sendable, CaseIterable, Comparable {
+    case nominal
+    case fair
+    /// Apple: fans at maximum speed, performance impacted.
+    case serious
+    /// Apple: the system needs to cool down at once.
+    case critical
+
+    private var rank: Int {
+        switch self {
+        case .nominal: return 0
+        case .fair: return 1
+        case .serious: return 2
+        case .critical: return 3
+        }
+    }
+
+    static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.rank < rhs.rank
+    }
+}
+
+extension KeepAwakeReadings {
+    /// `ProcessInfo.ThermalState` as a level. A state a later macOS adds reads as `critical` when
+    /// its raw value is above critical's (a hotter level), and as `nominal` otherwise.
+    static func thermal(from state: ProcessInfo.ThermalState) -> KeepAwakeThermalLevel {
+        switch state {
+        case .nominal: return .nominal
+        case .fair: return .fair
+        case .serious: return .serious
+        case .critical: return .critical
+        @unknown default:
+            return state.rawValue > ProcessInfo.ThermalState.critical.rawValue ? .critical : .nominal
+        }
+    }
+
+    /// The level as `info` reports it now: the one reading the helper's guard and the app's card
+    /// both take.
+    static func liveThermal(_ info: ProcessInfo = .processInfo) -> KeepAwakeThermalLevel {
+        thermal(from: info.thermalState)
+    }
+}

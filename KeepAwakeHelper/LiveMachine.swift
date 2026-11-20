@@ -3,8 +3,9 @@ import IOKit
 import IOKit.ps
 
 /// The machine the service drives, for real: pmset as root, IOKit for the battery and the lid,
-/// and two wall-clock timers (the tick and the idle exit). Covered by the owner's check, not by
-/// unit tests; the service it feeds is tested against a fake.
+/// `ProcessInfo` for the thermal level, and two wall-clock timers (the tick and the idle exit).
+/// Covered by the owner's check, not by unit tests; the service it feeds is tested against a
+/// fake.
 enum LiveMachine {
     static func make(scheduler: WallClockScheduler, exitScheduler: WallClockScheduler) -> KeepAwakeMachine {
         KeepAwakeMachine(
@@ -18,6 +19,7 @@ enum LiveMachine {
             sleepNow: { KeepAwakeCommand.run(KeepAwakeCommand.pmset, ["sleepnow"], timeout: 10) },
             lid: { LiveMachine.lid() },
             power: { LiveMachine.power() },
+            thermal: { KeepAwakeReadings.liveThermal() },
             schedule: { scheduler.schedule($0) },
             scheduleExit: { exitScheduler.schedule($0) },
             // Never returns: the idle exit and the stop path decide and exit in one step on

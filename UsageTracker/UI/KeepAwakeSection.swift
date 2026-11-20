@@ -25,6 +25,8 @@ struct KeepAwakeSection: View {
     /// Ends up to this moment are dismissed (plan D3). Persisted, because the helper keeps
     /// reporting an end across restarts; the helper is never told.
     @AppStorage(KeepAwakeSection.dismissedEndKey) private var dismissedEndAt: Double = 0
+    /// The heat switch, read here so the "heat guard starts" line follows it at once.
+    @AppStorage(SettingsStore.keepAwakeThermalGuardKey) private var thermalGuardSetting: Bool = SettingsStore.Defaults.keepAwakeThermalGuardEnabled
     /// The status block's and the controls' own heights, as last laid out.
     @State private var topHeight: CGFloat = 0
     @State private var controlsHeight: CGFloat = 0
@@ -108,7 +110,16 @@ struct KeepAwakeSection: View {
         }
         .task {
             (daysText, hoursText, minutesText) = Self.seedText
+            model.readThermal()
             await model.refresh()
+        }
+        // The "running hot" line follows macOS's thermal level while the card is on screen; the
+        // notification comes on any thread, so it hops to the main queue first.
+        .onReceive(
+            NotificationCenter.default.publisher(for: ProcessInfo.thermalStateDidChangeNotification)
+                .receive(on: DispatchQueue.main)
+        ) { _ in
+            model.readThermal()
         }
         // Every keystroke lands in the state first and is then rewritten through
         // `KeepAwakeCopy.fieldText`; writing the state (not a binding setter that keeps
@@ -129,11 +140,25 @@ struct KeepAwakeSection: View {
         case .idle:
             EmptyView()
         case .armed(let deadline):
-            Text(KeepAwakeCopy.armedLine(deadline: deadline, now: now))
-                .font(.system(size: OMKeyValueRow.labelSize, weight: .semibold))
-                .monospacedDigit()
-                .foregroundStyle(.om(.text))
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: OMSpacing.xs) {
+                Text(KeepAwakeCopy.armedLine(deadline: deadline, now: now))
+                    .font(.system(size: OMKeyValueRow.labelSize, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.om(.text))
+                    .fixedSize(horizontal: false, vertical: true)
+                if let heat = KeepAwakeCopy.heatLine(status, level: model.thermal) {
+                    Text(heat)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.om(.warning))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if let pending = KeepAwakeCopy.guardPendingLine(status, helperGuard: model.helperThermalGuard, settingOn: thermalGuardSetting) {
+                    Text(pending)
+                        .font(.system(size: 11.5))
+                        .foregroundStyle(.om(.secondary))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         case .approval:
             VStack(alignment: .leading, spacing: OMSpacing.s) {
                 Text(KeepAwakeCopy.approvalText)

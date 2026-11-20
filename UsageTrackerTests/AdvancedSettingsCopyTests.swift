@@ -109,7 +109,7 @@ final class AdvancedSettingsCopyTests: XCTestCase {
         XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetButton, "Reset")
         XCTAssertEqual(
             AdvancedSettingsCopy.keepAwakeResetHelp,
-            "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
+            "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor, the heat guard and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
         )
     }
 
@@ -152,7 +152,7 @@ final class AdvancedSettingsCopyTests: XCTestCase {
         XCTAssertEqual(AdvancedSettingsCopy.keepAwakeResetConfirmButton, "Reset keep awake")
         XCTAssertEqual(
             AdvancedSettingsCopy.keepAwakeResetConfirmMessage,
-            "Keep awake ends now, the sleep flag is cleared and the helper is removed from Login Items, so the next Apply needs its approval again. The battery floor and the last duration go back to their defaults. An administrator password is asked for only if the helper cannot clear the flag."
+            "Keep awake ends now, the sleep flag is cleared and the helper is removed from Login Items, so the next Apply needs its approval again. The battery floor, the heat guard and the last duration go back to their defaults. An administrator password is asked for only if the helper cannot clear the flag."
         )
         XCTAssertEqual(AdvancedSettingsCopy.cancelButton, "Cancel")
     }

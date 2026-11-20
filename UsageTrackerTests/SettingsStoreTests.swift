@@ -60,6 +60,7 @@ final class SettingsStoreTests: XCTestCase {
         s.agentsHooksPromptDismissed = !SettingsStore.Defaults.agentsHooksPromptDismissed
         s.agentsHooksPromptNotified = !SettingsStore.Defaults.agentsHooksPromptNotified
         s.keepAwakeFloorEnabled = !SettingsStore.Defaults.keepAwakeFloorEnabled
+        s.keepAwakeThermalGuardEnabled = !SettingsStore.Defaults.keepAwakeThermalGuardEnabled
         s.keepAwakeDurationMinutes = 1_470
         s.showInMenuBar = true
         s.virtualNotchEnabled = !SettingsStore.Defaults.virtualNotchEnabled
@@ -117,6 +118,7 @@ final class SettingsStoreTests: XCTestCase {
         XCTAssertEqual(s.agentsHooksPromptDismissed, SettingsStore.Defaults.agentsHooksPromptDismissed, message)
         XCTAssertEqual(s.agentsHooksPromptNotified, SettingsStore.Defaults.agentsHooksPromptNotified, message)
         XCTAssertEqual(s.keepAwakeFloorEnabled, SettingsStore.Defaults.keepAwakeFloorEnabled, message)
+        XCTAssertEqual(s.keepAwakeThermalGuardEnabled, SettingsStore.Defaults.keepAwakeThermalGuardEnabled, message)
         XCTAssertEqual(s.keepAwakeDurationMinutes, SettingsStore.Defaults.keepAwakeDurationMinutes, message)
         XCTAssertNil(s.showInMenuBar, message)
         XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.showInMenuBarKey), message)

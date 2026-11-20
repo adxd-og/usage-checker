@@ -11,4 +11,8 @@ protocol KeepAwakeXPCProtocol {
     func disarm(withReply reply: @escaping @Sendable (Data) -> Void)
     func setFloor(enabled: Bool, withReply reply: @escaping @Sendable (Data) -> Void)
     func state(withReply reply: @escaping @Sendable (Data) -> Void)
+    /// The thermal guard's switch (spec 2026-11-19, § Settings), added after 4.3.0. A 4.3.0
+    /// daemon's interface does not have it, so the app sends it only to a daemon whose last reply
+    /// carried `thermalGuard` (`KeepAwakeReply`); the four above keep their selectors.
+    func setThermalGuard(enabled: Bool, withReply reply: @escaping @Sendable (Data) -> Void)
 }

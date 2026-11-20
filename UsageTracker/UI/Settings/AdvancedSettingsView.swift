@@ -59,10 +59,10 @@ enum AdvancedSettingsCopy {
 
     static let keepAwakeResetTitle = "Reset keep awake"
     static let keepAwakeResetButton = "Reset"
-    static let keepAwakeResetHelp = "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
+    static let keepAwakeResetHelp = "Ends keep awake, clears the sleep flag, removes the helper from Login Items and puts the battery floor, the heat guard and the last duration back. Asks for an administrator password only when the helper cannot clear the flag itself."
     static let keepAwakeResetConfirmTitle = "Reset keep awake?"
     static let keepAwakeResetConfirmButton = "Reset keep awake"
-    static let keepAwakeResetConfirmMessage = "Keep awake ends now, the sleep flag is cleared and the helper is removed from Login Items, so the next Apply needs its approval again. The battery floor and the last duration go back to their defaults. An administrator password is asked for only if the helper cannot clear the flag."
+    static let keepAwakeResetConfirmMessage = "Keep awake ends now, the sleep flag is cleared and the helper is removed from Login Items, so the next Apply needs its approval again. The battery floor, the heat guard and the last duration go back to their defaults. An administrator password is asked for only if the helper cannot clear the flag."
 
     /// The line under Reset keep awake: what `pmset -g` says about the sleep flag (keep-awake
     /// spec 2026-10-26, § UI), and after a reset that could not finish, that the Mac is not
@@ -371,9 +371,8 @@ struct AdvancedSettingsView: View {
 
     private func resetEverything() {
         settings.resetToDefaults()
-        // The floor switch just went back on; an armed helper hears it at once, as it would
-        // from the switch itself (keep-awake spec 2026-10-26, floor switch while armed).
-        Task { await KeepAwakeModel.shared.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled) }
+        // The floor and heat switches just went back on; an armed helper hears both at once.
+        Task { await KeepAwakeModel.shared.allSettingsWereReset() }
         // Launch at login is OS state, not a stored preference, so `resetToDefaults()`
         // deliberately can't reach it. General reads it again when it next opens.
         LaunchAtLogin.isEnabled = false
