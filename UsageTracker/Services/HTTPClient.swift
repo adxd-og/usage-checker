@@ -17,7 +17,9 @@ enum HTTPClientError: LocalizedError, Sendable {
             if let reason = Self.reason(for: code) { return "HTTP \(code) (\(reason))" }
             return "HTTP \(code)"
         case .rateLimited(let retryAfter):
-            if let s = retryAfter { return "Rate limited (retry after \(Int(s))s)" }
+            // Clamped before it is formatted: `Int(_:)` traps on a wait that is not finite or is
+            // past `Int.max` (spec 2026-11-20 small backlog 2 § E).
+            if let s = retryAfter, !s.isNaN { return "Rate limited (retry after \(Int(HTTPClient.clampedWait(s)))s)" }
             return "Rate limited"
         case .tooManyRetries:
             return "Too many retries"
@@ -143,19 +145,31 @@ struct HTTPClient: Sendable {
 
     /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds after `now`:
     /// the date form is measured against the clock the caller gives, the real one unless a
-    /// test pins it (spec 2026-11-20 small backlog 2 § E). Never negative: a date already past
-    /// or a negative number is no wait. nil for an absent, empty or unreadable header.
+    /// test pins it (spec 2026-11-20 small backlog 2 § E). Clamped (`clampedWait`): a date
+    /// already past or a negative number is no wait, and infinity or a date years ahead is a
+    /// day. nil for an absent, empty or unreadable header, and for `nan`.
     /// Internal: Mistral's billing fetch reads its 429 the same way (`MistralBillingFetcher`).
     static func retryAfterSeconds(_ resp: HTTPURLResponse, now: Date = Date()) -> TimeInterval? {
         guard let raw = resp.value(forHTTPHeaderField: "Retry-After")?
             .trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
-        if let secs = TimeInterval(raw) { return max(0, secs) }
+        if let secs = TimeInterval(raw) { return secs.isNaN ? nil : clampedWait(secs) }
         let fmt = DateFormatter()
         fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.timeZone = TimeZone(identifier: "GMT")
         fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
-        if let date = fmt.date(from: raw) { return max(0, date.timeIntervalSince(now)) }
+        if let date = fmt.date(from: raw) { return clampedWait(date.timeIntervalSince(now)) }
         return nil
+    }
+
+    /// The longest wait a `Retry-After` is read as: a day (spec 2026-11-20 small backlog 2 § E).
+    /// Finite and far under what an `Int` holds, so nothing that formats or schedules it can
+    /// trap; every caller holds a 429 for minutes at most, so a real header's wait is unchanged.
+    static let maximumRetryAfter: TimeInterval = 24 * 3600
+
+    /// A wait as `retryAfterSeconds` answers it: never negative, never more than
+    /// `maximumRetryAfter`.
+    static func clampedWait(_ seconds: TimeInterval) -> TimeInterval {
+        min(max(0, seconds), maximumRetryAfter)
     }
 }
 

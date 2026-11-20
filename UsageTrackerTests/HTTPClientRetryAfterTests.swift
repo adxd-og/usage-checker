@@ -40,4 +40,19 @@ final class HTTPClientRetryAfterTests: XCTestCase {
     func testANegativeNumberIsNoWait() {
         XCTAssertEqual(HTTPClient.retryAfterSeconds(response(retryAfter: "-5"), now: now), 0)
     }
+
+    func testTheLongestWaitIsADay() {
+        XCTAssertEqual(HTTPClient.maximumRetryAfter, 86_400)
+    }
+
+    /// `Double` reads "inf" and "1e19", and a date a year ahead is a wait too: each is clamped
+    /// to a day, finite and far under what an `Int` holds. "-inf" is no wait; "nan" no number.
+    /// 2027-09-06 is a Monday.
+    func testAWaitNoClockCanHoldIsClampedToADay() {
+        for value in ["inf", "infinity", "1e19", "Mon, 06 Sep 2027 12:00:00 GMT"] {
+            XCTAssertEqual(HTTPClient.retryAfterSeconds(response(retryAfter: value), now: now), 86_400, value)
+        }
+        XCTAssertEqual(HTTPClient.retryAfterSeconds(response(retryAfter: "-inf"), now: now), 0)
+        XCTAssertNil(HTTPClient.retryAfterSeconds(response(retryAfter: "nan"), now: now))
+    }
 }
