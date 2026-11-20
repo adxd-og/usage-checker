@@ -456,4 +456,80 @@ final class StatusLineInputTests: XCTestCase {
         XCTAssertEqual(parsed.sessionID, "0f3a\u{1B}5c1e")
         XCTAssertNil(parsed.sessionID.flatMap(StatusLineDrop.fileName(sessionID:)))
     }
+
+    // Spec 2026-11-20 small backlog 2 § B: format characters (Cf) but the two joiners, and the
+    // line and paragraph separators (Zl, Zp), go the way control characters do; everything a
+    // terminal shows stays.
+
+    func testBidiControlsCannotReorderTheModelName() {
+        // U+202E RIGHT-TO-LEFT OVERRIDE prints what follows it backwards; U+2066, U+2067 and
+        // U+2068 open an isolate and U+2069 closes it.
+        let parsed = input(#"{"model":{"display_name":"Fa\u202Eble \u2066x\u2069 \u2067y\u2069 \u2068z\u2069"}}"#)
+        XCTAssertEqual(parsed.model, "Fable x y z")
+    }
+
+    func testZeroWidthSpacesTheByteOrderMarkAndTheSoftHyphenNeverReachTheModelName() {
+        // U+200B ZERO WIDTH SPACE, U+2060 WORD JOINER, U+FEFF inside a string, U+00AD SOFT HYPHEN.
+        let parsed = input(#"{"model":{"display_name":"F\u200Ba\u2060b\uFEFFl\u00ADe"}}"#)
+        XCTAssertEqual(parsed.model, "Fable")
+    }
+
+    func testALineOrParagraphSeparatorCannotSplitTheLine() {
+        let parsed = input(#"{"model":{"display_name":"Fable\u20285.2\u2029beta"},"context_window":{"used_percentage":42}}"#)
+        XCTAssertEqual(parsed.model, "Fable5.2beta")
+        let line = StatusLineText.render(
+            snapshot: nil, now: Date(timeIntervalSince1970: 1_800_000_000), input: parsed, colour: false
+        )
+        XCTAssertEqual(line, "Fable5.2beta [####------] 42%")
+        XCTAssertFalse(line.unicodeScalars.contains {
+            [.format, .lineSeparator, .paragraphSeparator].contains($0.properties.generalCategory)
+        })
+    }
+
+    func testLettersMarksDigitsAndSymbolsOfEveryScriptStay() {
+        // Latin with a combining acute (U+0301, a mark), Greek, Han, Hebrew, an Arabic-Indic
+        // digit, a no-break space (U+00A0, a space), a fraction and a check mark.
+        let parsed = input(#"{"model":{"display_name":"Me\u0301dium Ελληνικά 日本語 עברית ٣\u00A0½ ✓"}}"#)
+        XCTAssertEqual(
+            parsed.model.map { Array($0.unicodeScalars) },
+            Array("Me\u{301}dium Ελληνικά 日本語 עברית ٣\u{A0}½ ✓".unicodeScalars),
+            "scalar by scalar: the mark and the no-break space are still there"
+        )
+    }
+
+    func testAnEmojiJoinedByAZeroWidthJoinerStaysOneEmoji() {
+        // The family emoji is man, woman and girl joined by U+200D: the joiners stay, so it
+        // prints as one emoji. The variation selector U+FE0F is a mark and stays with its heart.
+        let parsed = input(#"{"model":{"display_name":"Fable \ud83d\udc68\u200d\ud83d\udc69\u200d\ud83d\udc67 \u2764\ufe0f"}}"#)
+        XCTAssertEqual(
+            parsed.model.map { Array($0.unicodeScalars) },
+            Array("Fable \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} \u{2764}\u{FE0F}".unicodeScalars)
+        )
+    }
+
+    func testAPersianWordKeepsItsZeroWidthNonJoiner() {
+        // "mi-khaham", I want: U+200C keeps the prefix mi from joining the verb, as Persian
+        // spells it.
+        let parsed = input(#"{"model":{"display_name":"\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645"}}"#)
+        XCTAssertEqual(
+            parsed.model.map { Array($0.unicodeScalars) },
+            Array("\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645}".unicodeScalars)
+        )
+    }
+
+    func testASubdivisionFlagLosesItsTagsAndShowsAsABlackFlag() {
+        // Scotland's flag is U+1F3F4 followed by the tag characters g, b, s, c, t and the cancel
+        // tag (U+E0067, U+E0062, U+E0073, U+E0063, U+E0074, U+E007F), all of category Cf: they
+        // go, and the plain black flag stays.
+        let parsed = input(#"{"model":{"display_name":"Fable \ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc73\udb40\udc63\udb40\udc74\udb40\udc7f"}}"#)
+        XCTAssertEqual(
+            parsed.model.map { Array($0.unicodeScalars) },
+            Array("Fable \u{1F3F4}".unicodeScalars)
+        )
+    }
+
+    func testANameOfOnlyInvisibleCharactersIsNoName() {
+        XCTAssertNil(input(#"{"model":{"display_name":"\u200B\u202E\u2028\u00AD\u2029"}}"#).model)
+        XCTAssertNil(input(#"{"model":{"display_name":" \uFEFF \u2029 "}}"#).model)
+    }
 }

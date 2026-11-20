@@ -16,8 +16,9 @@ import Foundation
 /// looking at one would be worse than a session spent looking at nothing.
 struct StatusLineInput: Equatable, Sendable {
     /// `model.display_name` — "Fable", "Opus 4.5". Never the id: it is what Claude
-    /// Code itself prints, and an id in a status bar is noise. Without its control
-    /// characters (`printable`): it is the one string of the input that is printed.
+    /// Code itself prints, and an id in a status bar is noise. Without the characters a
+    /// terminal would not show (`printable`): it is the one string of the input that is
+    /// printed.
     let model: String?
 
     /// `context_window.used_percentage`, clamped to 0…100. **Used**, always: this is
@@ -191,18 +192,35 @@ struct StatusLineInput: Equatable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    /// A string on its way to a terminal: its control characters dropped, then
-    /// trimmed as `text` trims. Every scalar of category `Cc` goes (C0, DEL, C1) — an
-    /// escape would repaint the user's terminal and a line break would make the one
-    /// line two. Only the model name comes through here: the session id is a file
-    /// name that `StatusLineDrop` checks and never cleans (spec 2026-11-10 hook input
-    /// hardening § Design › Status line strings).
+    /// A string on its way to a terminal: what the terminal would not show dropped
+    /// (`isInvisible`), then trimmed as `text` trims. Only the model name comes through
+    /// here: the session id is a file name that `StatusLineDrop` checks and never cleans
+    /// (spec 2026-11-10 hook input hardening § Design › Status line strings; spec
+    /// 2026-11-20 small backlog 2 § B).
     private static func printable(_ value: Any?) -> String? {
         guard let raw = value as? String else { return nil }
-        return text(String(String.UnicodeScalarView(
-            raw.unicodeScalars.filter { $0.properties.generalCategory != .control }
-        )))
+        return text(String(String.UnicodeScalarView(raw.unicodeScalars.filter { !isInvisible($0) })))
     }
+
+    /// The scalars `printable` drops. `Cc` (C0, DEL, C1): an escape would repaint the
+    /// user's terminal and a line break would make the one line two. `Cf` but the two
+    /// `joiners`: a bidi override or isolate prints the line in another order; a zero-width
+    /// space, a byte-order mark or a soft hyphen hides inside the name; a subdivision flag's
+    /// tag characters go too and leave its black flag. `Zl` and `Zp`: the line and paragraph
+    /// separators break the line as a newline does. Letters, marks, digits, punctuation,
+    /// symbols and every space stay.
+    private static func isInvisible(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.properties.generalCategory {
+        case .control, .lineSeparator, .paragraphSeparator: return true
+        case .format: return !joiners.contains(scalar.value)
+        default: return false
+        }
+    }
+
+    /// The zero-width non-joiner and joiner (U+200C, U+200D), the format characters
+    /// `printable` keeps: they shape Persian and the Indic scripts and join emoji, and they
+    /// reorder nothing.
+    private static let joiners: Set<UInt32> = [0x200C, 0x200D]
 
     /// A finite number, written as a JSON number or as a numeric string.
     private static func number(_ value: Any?) -> Double? {
