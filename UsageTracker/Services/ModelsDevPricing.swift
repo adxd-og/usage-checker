@@ -18,6 +18,11 @@ enum ModelsDevPricing {
     /// nothing else could price a turn: a first launch offline, with no copy on disk,
     /// left every Codex turn at $0 until the next day's check.
     static let retryAfterFailure: TimeInterval = 15 * 60
+    /// The most a rate models.dev publishes may be, in dollars per million tokens (spec
+    /// 2026-11-20 small backlog 2 § C). Above it, or negative, or not a finite number, a
+    /// rate is a slip in the dataset rather than a price, and its row prices nothing, as a
+    /// row without a rate does. Zero is a price: a free model is free.
+    static let maximumRatePerM: Double = 10_000
     /// anthropic prices the Claude CLI accounting, openai the Codex CLI's, xai the Grok
     /// CLI's fallback path (the CLI normally logs its own dollars), google the Gemini /
     /// Antigravity model ids that turn up in shared logs. One table for all four, filled
@@ -149,16 +154,23 @@ enum ModelsDevPricing {
     /// One model's base rates: input and output as published, cache reads at a tenth of input
     /// when models.dev publishes none, cache writes as published or as `inferredCacheWrite5m`
     /// says, the 1-hour tier a stable 1.6× of the 5-minute one. nil when `cost` is missing, not
-    /// an object, or lacks input or output.
+    /// an object, or lacks input or output, and when a rate it publishes is not one anybody
+    /// would charge (`isBelievable`). The rates inferred from a believable input follow it.
+    /// Every family comes through here: the four of the shared table (`parse`) and Mistral's
+    /// (`parseFamily`).
     static func price(provider: String, id: String, model: [String: Any]) -> ModelPrice? {
         guard let cost = model["cost"] as? [String: Any],
               let input = doubleValue(cost["input"]),
               let output = doubleValue(cost["output"])
         else { return nil }
-        let cacheRead = doubleValue(cost["cache_read"]) ?? input * 0.1
+        let publishedCacheRead = doubleValue(cost["cache_read"])
+        let publishedCacheWrite = doubleValue(cost["cache_write"])
+        let published = [input, output] + [publishedCacheRead, publishedCacheWrite].compactMap { $0 }
+        guard published.allSatisfy(Self.isBelievable) else { return nil }
+        let cacheRead = publishedCacheRead ?? input * 0.1
         // models.dev reports the 5-minute cache-write rate; the 1-hour tier is a
         // stable 1.6× of it. A published rate always wins over the inference.
-        let cacheWrite5m = doubleValue(cost["cache_write"])
+        let cacheWrite5m = publishedCacheWrite
             ?? inferredCacheWrite5m(provider: provider, modelID: id, inputPerM: input)
         return ModelPrice(
             inputPerM: input,
@@ -167,6 +179,11 @@ enum ModelsDevPricing {
             cacheCreate5mPerM: cacheWrite5m,
             cacheCreate1hPerM: cacheWrite5m * 1.6
         )
+    }
+
+    /// A rate as somebody would charge it: a finite number from zero to `maximumRatePerM`.
+    static func isBelievable(_ ratePerM: Double) -> Bool {
+        ratePerM.isFinite && ratePerM >= 0 && ratePerM <= maximumRatePerM
     }
 
     /// The 5-minute cache-write rate to assume for a model models.dev publishes none for.
