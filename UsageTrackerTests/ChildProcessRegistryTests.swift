@@ -45,7 +45,8 @@ final class ChildProcessRegistryTests: XCTestCase {
             )
         }
         let started = await eventually(within: 5) {
-            registry.runningCount == 1 && FileManager.default.fileExists(atPath: pidFile.path)
+            // Written whole: `echo $$ >` creates the file before it writes the pid.
+            registry.runningCount == 1 && (try? String(contentsOf: pidFile, encoding: .utf8))?.hasSuffix("\n") == true
         }
         XCTAssertTrue(started, "a started child is registered")
 

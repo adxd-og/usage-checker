@@ -46,4 +46,13 @@ final class HTTPClientErrorTests: XCTestCase {
         XCTAssertEqual(HTTPClientError.tooManyRetries.errorDescription, "Too many retries")
         XCTAssertEqual(HTTPClientError.decoding("x").errorDescription, "Decoding failed: x")
     }
+
+    /// A provider shows a 429's description (the Admin provider does): a wait no `Int` can
+    /// hold is clamped to a day before it is formatted, never trapped on.
+    func testAWaitNoWholeNumberCanHoldReadsAsADay() {
+        XCTAssertEqual(HTTPClientError.rateLimited(retryAfter: 1e19).errorDescription, "Rate limited (retry after 86400s)")
+        XCTAssertEqual(HTTPClientError.rateLimited(retryAfter: .infinity).errorDescription, "Rate limited (retry after 86400s)")
+        XCTAssertEqual(HTTPClientError.rateLimited(retryAfter: .nan).errorDescription, "Rate limited")
+        XCTAssertEqual(HTTPClientError.rateLimited(retryAfter: 30.9).errorDescription, "Rate limited (retry after 30s)")
+    }
 }

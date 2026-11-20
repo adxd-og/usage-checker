@@ -18,6 +18,11 @@ enum ModelsDevPricing {
     /// nothing else could price a turn: a first launch offline, with no copy on disk,
     /// left every Codex turn at $0 until the next day's check.
     static let retryAfterFailure: TimeInterval = 15 * 60
+    /// The most a rate models.dev publishes may be, in dollars per million tokens (spec
+    /// 2026-11-20 small backlog 2 § C). Above it, or negative, or not a finite number, a
+    /// rate is a slip in the dataset rather than a price, and its row prices nothing, as a
+    /// row without a rate does. Zero is a price: a free model is free.
+    static let maximumRatePerM: Double = 10_000
     /// anthropic prices the Claude CLI accounting, openai the Codex CLI's, xai the Grok
     /// CLI's fallback path (the CLI normally logs its own dollars), google the Gemini /
     /// Antigravity model ids that turn up in shared logs. One table for all four, filled
@@ -131,7 +136,7 @@ enum ModelsDevPricing {
     }
 
     /// One family's models by normalised id, each with its base rates as `parse` reads them (nil
-    /// when models.dev gives none) and its display name. Empty when the answer has no such family.
+    /// when models.dev gives none, or one nobody would charge) and its display name. Empty when the answer has no such family.
     static func parseFamily(_ root: [String: Any], provider: String) -> [String: MistralModelPricing.Model] {
         guard let providerDict = root[provider] as? [String: Any],
               let models = providerDict["models"] as? [String: Any] else { return [:] }
@@ -149,16 +154,23 @@ enum ModelsDevPricing {
     /// One model's base rates: input and output as published, cache reads at a tenth of input
     /// when models.dev publishes none, cache writes as published or as `inferredCacheWrite5m`
     /// says, the 1-hour tier a stable 1.6× of the 5-minute one. nil when `cost` is missing, not
-    /// an object, or lacks input or output.
+    /// an object, or lacks input or output, and when a rate it publishes is not one anybody
+    /// would charge (`isBelievable`). The rates inferred from a believable input follow it.
+    /// Every family comes through here: the four of the shared table (`parse`) and Mistral's
+    /// (`parseFamily`).
     static func price(provider: String, id: String, model: [String: Any]) -> ModelPrice? {
         guard let cost = model["cost"] as? [String: Any],
               let input = doubleValue(cost["input"]),
               let output = doubleValue(cost["output"])
         else { return nil }
-        let cacheRead = doubleValue(cost["cache_read"]) ?? input * 0.1
+        let publishedCacheRead = doubleValue(cost["cache_read"])
+        let publishedCacheWrite = doubleValue(cost["cache_write"])
+        let published = [input, output] + [publishedCacheRead, publishedCacheWrite].compactMap { $0 }
+        guard published.allSatisfy(Self.isBelievable) else { return nil }
+        let cacheRead = publishedCacheRead ?? input * 0.1
         // models.dev reports the 5-minute cache-write rate; the 1-hour tier is a
         // stable 1.6× of it. A published rate always wins over the inference.
-        let cacheWrite5m = doubleValue(cost["cache_write"])
+        let cacheWrite5m = publishedCacheWrite
             ?? inferredCacheWrite5m(provider: provider, modelID: id, inputPerM: input)
         return ModelPrice(
             inputPerM: input,
@@ -167,6 +179,24 @@ enum ModelsDevPricing {
             cacheCreate5mPerM: cacheWrite5m,
             cacheCreate1hPerM: cacheWrite5m * 1.6
         )
+    }
+
+    /// A rate as somebody would charge it: a finite number from zero to `maximumRatePerM`.
+    static func isBelievable(_ ratePerM: Double) -> Bool {
+        ratePerM.isFinite && ratePerM >= 0 && ratePerM <= maximumRatePerM
+    }
+
+    /// A price read back from the copy on disk, where a published rate and one `price` derived
+    /// cannot be told apart, held to what `price` can produce from believable rates. Input and
+    /// output are always published, and a cache read is published or a tenth of the input: each
+    /// is `isBelievable`. A cache write is published or inferred at up to 1.25× the input, and
+    /// the 1-hour tier is 1.6× the 5-minute one, so both writes are held to twice
+    /// `maximumRatePerM` (1.25 × 1.6 = 2), finite and not negative.
+    static func isBelievable(cached price: ModelPrice) -> Bool {
+        [price.inputPerM, price.outputPerM, price.cacheReadPerM].allSatisfy(isBelievable)
+            && [price.cacheCreate5mPerM, price.cacheCreate1hPerM].allSatisfy {
+                $0.isFinite && $0 >= 0 && $0 <= 2 * maximumRatePerM
+            }
     }
 
     /// The 5-minute cache-write rate to assume for a model models.dev publishes none for.
@@ -198,11 +228,26 @@ enum ModelsDevPricing {
         return nil
     }
 
+    /// The copy on disk, with the guard a fetch applies run again (`isBelievable(cached:)`): a
+    /// copy written before the guard existed, or damaged on disk, can hold a finite rate large
+    /// enough to make a cost infinite, and then `status.json` cannot be encoded. A row of the
+    /// four families with such a rate is left out; a Mistral row keeps its name and loses its
+    /// price, as a fetched one does. Every other row, and `fetchedAt`, read as written. nil
+    /// when there is no file or it does not decode: `JSONDecoder` refuses a number no `Double`
+    /// holds (`1e999`) and JSON has no NaN, so a copy holding either does not open at all.
     static func readCache(at url: URL) -> Cache? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(Cache.self, from: data)
+        guard let cache = try? decoder.decode(Cache.self, from: data) else { return nil }
+        return Cache(
+            fetchedAt: cache.fetchedAt,
+            prices: cache.prices.filter { isBelievable(cached: $0.value) },
+            mistral: cache.mistral?.mapValues { model in
+                guard let price = model.price, !isBelievable(cached: price) else { return model }
+                return MistralModelPricing.Model(price: nil, name: model.name)
+            }
+        )
     }
 
     static func writeCache(_ cache: Cache, to url: URL) {

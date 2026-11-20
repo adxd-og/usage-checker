@@ -461,8 +461,8 @@ final class CodexUsageAggregatorTests: XCTestCase {
     // MARK: - breakdown()
 
     func testBreakdownFillsTheShapeTheDashboardRenders() async throws {
-        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
-        // into yesterday whenever the suite runs between 00:00 and 00:10.
+        // A second before `now`, which sits at least an hour into the day, and the breakdown
+        // asked as of that `now`: the turn and "today" fall on one day whenever the suite runs.
         try write([
             sessionMeta(cwd: alphaCwd, secondsAgo: 60),
             turnContext(model: model, cwd: alphaCwd, secondsAgo: 60),
@@ -474,7 +474,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
             tokenCount(secondsAgo: 2 * 24 * 3600, input: 500, cached: 0, output: 50, reasoning: 0),
         ], day: "2026/09/03", named: "rollout-old.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.todayCost, 0.0018, accuracy: 1e-12)
         XCTAssertEqual(breakdown.todayTokens, 1_100)
         XCTAssertEqual(breakdown.todayTurns, 1)
@@ -513,7 +513,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
             tokenCount(secondsAgo: old, input: 1_000, cached: 0, output: 100, reasoning: 0),
         ], day: "2026/07/27", named: "rollout-ancient.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.daily.count, 1)
         XCTAssertEqual(breakdown.daily[0].totalTokens, 1_100)
         XCTAssertEqual(breakdown.daily[0].tokens.input, 1_000)
@@ -553,7 +553,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
 
         let aggregator = await loaded()
         let costs = await aggregator.costs(now: now)
-        let breakdown = await aggregator.breakdown()
+        let breakdown = await aggregator.breakdown(now: now)
         XCTAssertEqual(costs.today, 0.0018, accuracy: 1e-12)
         XCTAssertEqual(costs.week, 0.002925, accuracy: 1e-12)
         XCTAssertEqual(costs.today, breakdown.todayCost, accuracy: 1e-12)
@@ -585,7 +585,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
         )
 
         let aggregator = await loaded()
-        let breakdown = await aggregator.breakdown()
+        let breakdown = await aggregator.breakdown(now: now)
         XCTAssertEqual(breakdown.todayCost, 0, "outside the year window, whatever its contents say")
         XCTAssertTrue(breakdown.daily.isEmpty)
 
@@ -593,7 +593,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
         // permanent blocklist.
         try FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: url.path)
         await aggregator.refresh()
-        let after = await aggregator.breakdown()
+        let after = await aggregator.breakdown(now: now)
         XCTAssertEqual(after.todayCost, 0.0018, accuracy: 1e-12)
         XCTAssertEqual(after.todayTurns, 1, "and it is read exactly once")
     }
@@ -613,7 +613,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
             [.modificationDate: now.addingTimeInterval(-old)], ofItemAtPath: url.path
         )
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         let expectedDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-old))
 
         XCTAssertEqual(breakdown.daily.map(\.day), [expectedDay])
@@ -636,7 +636,7 @@ final class CodexUsageAggregatorTests: XCTestCase {
             tokenCount(secondsAgo: dropped, input: 1_000, cached: 0, output: 100, reasoning: 0),
         ], day: "2025/08/13", named: "rollout-400d.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         let keptDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-kept))
 
         XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")

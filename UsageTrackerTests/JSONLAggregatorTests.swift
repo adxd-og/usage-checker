@@ -7,8 +7,15 @@ import XCTest
 /// network-dependent can move these numbers.
 final class JSONLAggregatorTests: XCTestCase {
     private var root: URL!
-    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
-    private lazy var now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the
+    /// run, and at least an hour into the local day: today's fixtures sit seconds before it, and
+    /// `JSONLAggregator.breakdown()` takes today from the real clock, so a test that ran just
+    /// after local midnight would file them under yesterday. Up to an hour ahead of the real
+    /// clock then, which the aggregator counts as it counts any turn of the day.
+    private lazy var now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
 
     private let alphaSlug = "-Users-tester-Projects-alpha"
     private let betaSlug = "-Users-tester-Projects-beta"

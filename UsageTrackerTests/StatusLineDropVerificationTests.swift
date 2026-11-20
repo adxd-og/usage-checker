@@ -236,6 +236,7 @@ final class StatusLineDropVerificationTests: XCTestCase {
         let target = dropURL.appendingPathComponent("sess-1.json")
         let stop = NSLock(); var done = false
         let torn = NSLock(); var bad: [String] = []; var reads = 0
+        let finished = DispatchSemaphore(value: 0)
         let reader = Thread {
             while true {
                 stop.lock(); let d = done; stop.unlock()
@@ -250,8 +251,18 @@ final class StatusLineDropVerificationTests: XCTestCase {
                     torn.lock(); bad.append("file vanished"); torn.unlock()
                 }
             }
+            finished.signal()
         }
+        // At the test thread's priority, so waiting for it below inverts no priorities.
+        reader.qualityOfService = .userInteractive
         reader.start()
+        // The writers start once the reader is reading, so the race has a reader in it.
+        let readerUp = Date().addingTimeInterval(5)
+        while Date() < readerUp {
+            torn.lock(); let reading = reads > 0; torn.unlock()
+            if reading { break }
+            usleep(1_000)
+        }
         DispatchQueue.concurrentPerform(iterations: 8) { worker in
             for i in 0..<60 {
                 let payload = #"{"session_id":"sess-1","cost":{"total_api_duration_ms":\#(worker * 1000 + i)},"rate_limits":{"five_hour":{"used_percentage":\#(i),"resets_at":2}}}"#
@@ -261,7 +272,7 @@ final class StatusLineDropVerificationTests: XCTestCase {
             }
         }
         stop.lock(); done = true; stop.unlock()
-        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertEqual(finished.wait(timeout: .now() + 5), .success, "the reader stopped")
 
         XCTAssertEqual(bad, [], "a reader saw a torn or missing file (\(reads) reads)")
         XCTAssertGreaterThan(reads, 0)

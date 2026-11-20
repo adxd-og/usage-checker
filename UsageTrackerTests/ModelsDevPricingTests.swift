@@ -220,4 +220,121 @@ final class ModelsDevPricingTests: XCTestCase {
         // Better to keep the previous cache than to publish an empty price table.
         XCTAssertThrowsError(try ModelsDevPricing.parse(root))
     }
+
+    // MARK: - A rate nobody would charge (spec 2026-11-20 small backlog 2 § C)
+
+    /// The four rates models.dev publishes.
+    private let rateKinds = ["input", "output", "cache_read", "cache_write"]
+
+    /// A model whose `cost` block publishes every rate, sane, and `rate` for `kind`.
+    private func model(_ kind: String, _ rate: Double) -> [String: Any] {
+        var cost: [String: Any] = ["input": 2.0, "output": 6.0, "cache_read": 0.5, "cache_write": 2.5]
+        cost[kind] = rate
+        return ["cost": cost]
+    }
+
+    func testTheBoundIsTenThousandDollarsPerMillionTokens() {
+        XCTAssertEqual(ModelsDevPricing.maximumRatePerM, 10_000)
+    }
+
+    func testARateAtTheBoundIsStillAPrice() throws {
+        for kind in rateKinds {
+            XCTAssertNotNil(ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: model(kind, 10_000)), kind)
+        }
+        let price = try XCTUnwrap(ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: [
+            "cost": ["input": 10_000.0, "output": 10_000.0, "cache_read": 10_000.0, "cache_write": 10_000.0],
+        ]))
+        XCTAssertEqual(price.inputPerM, 10_000)
+        XCTAssertEqual(price.outputPerM, 10_000)
+        XCTAssertEqual(price.cacheReadPerM, 10_000)
+        XCTAssertEqual(price.cacheCreate5mPerM, 10_000)
+    }
+
+    func testARateJustAboveTheBoundMakesTheRowPriceless() {
+        for kind in rateKinds {
+            let justAbove = model(kind, ModelsDevPricing.maximumRatePerM.nextUp)
+            XCTAssertNil(ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: justAbove), kind)
+            XCTAssertNil(ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: model(kind, 1_000_000)), kind)
+        }
+    }
+
+    func testANegativeRateMakesTheRowPriceless() {
+        for kind in rateKinds {
+            XCTAssertNil(ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: model(kind, -0.01)), kind)
+        }
+    }
+
+    func testARateThatIsNotAFiniteNumberMakesTheRowPriceless() {
+        for kind in rateKinds {
+            for rate in [Double.nan, .infinity, -.infinity] {
+                XCTAssertNil(
+                    ModelsDevPricing.price(provider: "xai", id: "grok-4.6", model: model(kind, rate)), "\(kind) \(rate)"
+                )
+            }
+        }
+    }
+
+    func testAZeroRateIsStillAPrice() throws {
+        let price = try XCTUnwrap(ModelsDevPricing.price(provider: "xai", id: "grok-free", model: [
+            "cost": ["input": 0.0, "output": 0.0, "cache_read": 0.0, "cache_write": 0.0],
+        ]))
+        XCTAssertEqual(
+            price,
+            ModelPrice(inputPerM: 0, outputPerM: 0, cacheReadPerM: 0, cacheCreate5mPerM: 0, cacheCreate1hPerM: 0)
+        )
+    }
+
+    /// Every family of the shared table goes through `price`: in each, the absurd row is
+    /// skipped and its neighbour keeps its price.
+    func testAnAbsurdRowIsSkippedInEveryFamilyAndItsNeighboursKeepTheirPrices() throws {
+        let json = """
+        {
+          "anthropic": {"models": {
+            "claude-opus-4-5": {"cost": {"input": 5, "output": 25}},
+            "claude-typo": {"cost": {"input": 5, "output": 25000}}
+          }},
+          "openai": {"models": {
+            "gpt-5.6": {"cost": {"input": 1.25, "output": 10}},
+            "gpt-typo": {"cost": {"input": -1.25, "output": 10}}
+          }},
+          "xai": {"models": {
+            "grok-4.6": {"cost": {"input": 2, "output": 6}},
+            "grok-typo": {"cost": {"input": 2, "output": 6, "cache_read": 50000}}
+          }},
+          "google": {"models": {
+            "gemini-3.1-pro-preview": {"cost": {"input": 2, "output": 12}},
+            "gemini-typo": {"cost": {"input": 2, "output": 12, "cache_write": 12000}}
+          }}
+        }
+        """
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let prices = try ModelsDevPricing.parse(root)
+        XCTAssertEqual(Set(prices.keys), ["claude-opus-4-5", "gpt-5.6", "grok-4.6", "gemini-3.1-pro-preview"])
+    }
+
+    /// The Mistral family keeps a priceless model with its name, as it keeps a speech model.
+    func testAnAbsurdMistralRowKeepsItsNameAndLosesItsPrice() throws {
+        let json = """
+        {"mistral": {"models": {
+          "mistral-large-3": {"name": "Mistral Large 3", "cost": {"input": 50000, "output": 6}},
+          "mistral-medium-3": {"name": "Mistral Medium 3", "cost": {"input": 0.4, "output": 2}}
+        }}}
+        """
+        let root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        let family = ModelsDevPricing.parseFamily(root, provider: ModelsDevPricing.vibeFamily)
+        XCTAssertEqual(family["mistral-large-3"], MistralModelPricing.Model(price: nil, name: "Mistral Large 3"))
+        XCTAssertEqual(family["mistral-medium-3"]?.price?.inputPerM, 0.4)
+    }
+
+    /// The bound reads what models.dev publishes. A rate inferred from a believable input —
+    /// cache reads at a tenth, Anthropic's cache writes at 1.25×, the 1-hour tier at 1.6× —
+    /// follows it, past the bound when the input sits at it.
+    func testOnlyPublishedRatesAreBoundedNotTheOnesInferredFromThem() throws {
+        let price = try XCTUnwrap(ModelsDevPricing.price(
+            provider: "anthropic", id: "claude-at-the-bound", model: ["cost": ["input": 10_000.0, "output": 10_000.0]]
+        ))
+        XCTAssertEqual(price.cacheReadPerM, 1_000, accuracy: 1e-9)
+        XCTAssertEqual(price.cacheCreate5mPerM, 12_500, accuracy: 1e-9)
+        XCTAssertEqual(price.cacheCreate1hPerM, 20_000, accuracy: 1e-9)
+    }
 }

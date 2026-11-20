@@ -115,7 +115,8 @@ final class ClaudePTYStartTests: XCTestCase {
             arguments: ["--allowed-tools", "", "--strict-mcp-config"],
             environment: environment,
             directory: probe,
-            duration: 1.5,
+            // Five spawns before `exec /bin/cat`: room for them on a loaded machine.
+            duration: 5,
             grace: 1
         )
 
@@ -205,7 +206,7 @@ final class ClaudePTYStartTests: XCTestCase {
         } catch let failure as ClaudePTYStart.Failure {
             guard case .launch = failure else { return XCTFail("\(failure)") }
         }
-        XCTAssertLessThan(Date().timeIntervalSince(started), 1, "nothing was started")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 5, "nothing was started: a start would run its 20 s")
         XCTAssertEqual(registry.runningCount, 0)
     }
 

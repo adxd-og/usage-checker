@@ -203,7 +203,8 @@ final class AgyCommandVerificationTests: XCTestCase {
                     arguments: ["-c", "echo $$ > child.pid; exec /bin/sleep 30"],
                     environment: ["PATH": "/usr/bin:/bin"],
                     directory: folder,
-                    deadline: 1,
+                    // Long enough that the registry check after the pid poll meets the child running.
+                    deadline: 5,
                     killGrace: 0.3
                 ))
             } catch {

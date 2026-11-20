@@ -513,7 +513,8 @@ final class OmeletteHookOversizedPayloadVerificationTests: XCTestCase {
             let before = listener.lines.count
             let input = AgentFixture.claude("Stop", cwd: String(repeating: "d", count: cwdLength), extra: #""last_assistant_message":"\#(bulk)""#)
             XCTAssertEqual(try runHelper(stdin: input), 0)
-            if let line = waitForNewLine(listener, after: before, timeout: 0.4) {
+            // A line read late is not an overshoot: wait as `waitForNewLine` does by default.
+            if let line = waitForNewLine(listener, after: before, timeout: 3) {
                 if line.count == 64 * 1024 { found = line; break }
                 cwdLength += 64 * 1024 - line.count
             } else {

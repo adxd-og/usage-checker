@@ -92,4 +92,34 @@ final class AgentResourceSamplerTests: XCTestCase {
         XCTAssertEqual(figures, [:])
         XCTAssertEqual(machine.tableReads, 0)
     }
+
+    /// Spec 2026-11-20 small backlog 2 § F: one sample indexes the table once, however many
+    /// terminals it reads, and each terminal's figures are what they were.
+    func testOneSampleOfThreeTerminalsIndexesTheTableOnce() async {
+        let machine = FakeMachine()
+        let builds = IndexBuilds()
+        let sampler = AgentResourceSampler(
+            table: { machine.readTable() },
+            usage: { machine.usage($0) },
+            cores: F.cores,
+            index: { rows in
+                builds.add()
+                return AgentResourceRules.ProcessIndex(rows)
+            }
+        )
+        let figures = await sampler.sample(ttys: [F.tab, F.otherTab, F.pane], now: F.t0)
+        XCTAssertEqual(builds.count, 1)
+        XCTAssertEqual(figures[F.tab]?.memoryBytes, 1899 * F.mb)
+        XCTAssertEqual(figures[F.otherTab]?.memoryBytes, 415 * F.mb)
+        XCTAssertEqual(figures[F.pane]?.memoryBytes, 525 * F.mb)
+    }
+}
+
+/// How often a sampler built its index; the sampler calls it from inside its actor.
+private final class IndexBuilds: @unchecked Sendable {
+    private let lock = NSLock()
+    private var builds = 0
+
+    func add() { lock.withLock { builds += 1 } }
+    var count: Int { lock.withLock { builds } }
 }

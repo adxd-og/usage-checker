@@ -9,8 +9,14 @@ import XCTest
 /// target, which is also why the un-ticked turn below must come out at $0.
 final class GrokUsageAggregatorTests: XCTestCase {
     private var root: URL!
-    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
-    private lazy var now = Date()
+    /// Taken when a test first asks, not when XCTest builds every test case at the start of the
+    /// run, and at least an hour into the local day: a "today" turn is stamped a second before
+    /// it, in whole seconds, and a test that ran in the first second after local midnight would
+    /// file it under yesterday.
+    private lazy var now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
 
     /// Deliberately outside the tester's home directory: `ProjectName` strips a home
     /// prefix, and a fixture whose display name moved with whoever ran the suite
@@ -331,8 +337,8 @@ final class GrokUsageAggregatorTests: XCTestCase {
     // MARK: - breakdown()
 
     func testBreakdownFillsTheShapeTheDashboardRenders() async throws {
-        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
-        // into yesterday whenever the suite runs between 00:00 and 00:10.
+        // A second before `now`, which sits at least an hour into the day, and the breakdown
+        // asked as of that `now`: the turn and "today" fall on one day whenever the suite runs.
         try write([turnLine(
             eventID: "a1",
             secondsAgo: 1,
@@ -346,7 +352,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
             models: [ModelFixture("grok-4.3", input: 100, output: 1, ticks: 100_000_000)]
         )], project: betaDir)
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.weekCost, 0.04, accuracy: 1e-9)
         XCTAssertEqual(breakdown.monthCost, 0.04, accuracy: 1e-9)
         XCTAssertEqual(breakdown.todayCost, 0.03, accuracy: 1e-9)
@@ -488,7 +494,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
             meta: #""eventId":"m1""#
         )], project: alphaDir)
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.weekCost, 0, "a turn with no time has no place in any window")
     }
 
@@ -601,8 +607,8 @@ final class GrokUsageAggregatorTests: XCTestCase {
     }
 
     func testTheDashboardShapeCarriesTheSplitPerModelAndPerDay() async throws {
-        // One second ago, not ten minutes: a "today" turn placed ten minutes back falls
-        // into yesterday whenever the suite runs between 00:00 and 00:10.
+        // A second before `now`, which sits at least an hour into the day, and the breakdown
+        // asked as of that `now`: the turn and "today" fall on one day whenever the suite runs.
         try write([turnLine(
             eventID: "a1",
             secondsAgo: 1,
@@ -613,7 +619,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
             )]
         )], project: alphaDir)
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.todayTokenBreakdown.input, 200)
         XCTAssertEqual(breakdown.todayTokenBreakdown.cacheRead, 100)
         XCTAssertEqual(breakdown.todayTokenBreakdown.cacheWrite, 50)
@@ -734,7 +740,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
             ofItemAtPath: updatesURL(project: alphaDir).path
         )
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         let expectedDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-old))
 
         XCTAssertEqual(breakdown.daily.map(\.day), [expectedDay])
@@ -761,7 +767,7 @@ final class GrokUsageAggregatorTests: XCTestCase {
             ),
         ], project: alphaDir)
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         let keptDay = Calendar.current.startOfDay(for: now.addingTimeInterval(-kept))
 
         XCTAssertEqual(breakdown.daily.map(\.day), [keptDay], "four hundred days is past the year")

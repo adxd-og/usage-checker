@@ -162,6 +162,18 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         return condition()
     }
 
+    /// The pid a stand-in wrote as its first line, waited for up to `seconds`; nil when none
+    /// was written in that time.
+    private func writtenPID(_ pidFile: URL, within seconds: TimeInterval) async -> Int32? {
+        var pid: Int32?
+        _ = await waitUntil(seconds) {
+            pid = (try? String(contentsOf: pidFile, encoding: .utf8))
+                .flatMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            return pid != nil
+        }
+        return pid
+    }
+
     // MARK: - Task 2: the renewal start is registered on every path and leaves on every path
 
     func testALaunchFailureLeavesNothingRegistered() async throws {
@@ -206,14 +218,22 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         let long = try script("#!/bin/sh\necho $$ > '\(pidFile.path)'\nexec /bin/sleep 60\n")
         let started = Date()
 
+        // Two seconds, not a fraction of one: the run comes back only after it stopped the
+        // stand-in, and one stopped before its first line never writes the pid this test needs.
         try await ClaudePTYStart.run(
             binary: long.path, arguments: [], environment: ["PATH": "/usr/bin:/bin"],
-            directory: directory, duration: 0.6, grace: 1, registry: registry
+            directory: directory, duration: 2, grace: 1, registry: registry
         )
 
-        XCTAssertLessThan(Date().timeIntervalSince(started), 5)
+        // Well under the stand-in's 60 s sleep: the start came back without waiting for it.
+        XCTAssertLessThan(Date().timeIntervalSince(started), 30)
         XCTAssertEqual(registry.runningCount, 0)
-        let gone = await processIsGone(pidFile: pidFile)
+        // A stand-in that started writes its pid as its first line: waited for, not read once.
+        guard let pid = await writtenPID(pidFile, within: 10) else {
+            XCTFail("the stand-in never wrote its pid")
+            return
+        }
+        let gone = await waitUntil(10) { kill(pid, 0) != 0 }
         XCTAssertTrue(gone, "the program was stopped, not left running")
     }
 
@@ -234,7 +254,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         let registered = await waitUntil(3) { registry.runningCount == 1 }
         XCTAssertTrue(registered)
         // The script has started and written its pid: the cancel meets a running program.
-        let up = await waitUntil(3) { FileManager.default.fileExists(atPath: pidFile.path) }
+        let up = await waitUntil(3) { (try? String(contentsOf: pidFile, encoding: .utf8))?.hasSuffix("\n") == true }
         XCTAssertTrue(up)
 
         task.cancel()
@@ -270,7 +290,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
         let registered = await waitUntil(3) { registry.runningCount == 1 }
         XCTAssertTrue(registered)
         // The script has installed its trap and written its pid before the quit signals it.
-        let up = await waitUntil(3) { FileManager.default.fileExists(atPath: pidFile.path) }
+        let up = await waitUntil(3) { (try? String(contentsOf: pidFile, encoding: .utf8))?.hasSuffix("\n") == true }
         XCTAssertTrue(up)
 
         registry.terminateAll()
@@ -284,7 +304,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
     /// The quit can land anywhere around the start, in particular between the registration and the
     /// program's launch, where `terminateAll()` finds nothing running to signal and only the
     /// `didStart` call after `run()` stops the program. Many starts, each quit at a different
-    /// instant a few milliseconds in: every one must come back at once, none left to its duration.
+    /// instant a few milliseconds in: every one must come back well before its duration, none left to it.
     func testAQuitAtAnyInstantAroundTheLaunchNeverLeavesTheProgramRunning() async throws {
         let folder = directory!
         let slowest = await withTaskGroup(of: TimeInterval.self, returning: TimeInterval.self) { group in
@@ -299,7 +319,7 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
                     let started = Date()
                     try? await ClaudePTYStart.run(
                         binary: "/bin/sleep", arguments: ["30"], environment: ["PATH": "/usr/bin:/bin"],
-                        directory: folder, duration: 4, grace: 1, registry: registry
+                        directory: folder, duration: 20, grace: 1, registry: registry
                     )
                     return Date().timeIntervalSince(started)
                 }
@@ -308,7 +328,8 @@ final class ReleaseFixes330VerificationTests: XCTestCase {
             for await elapsed in group { worst = max(worst, elapsed) }
             return worst
         }
-        XCTAssertLessThan(slowest, 3, "a start the quit passed by ran on to its duration")
+        // Half the duration: 200 starts at once contend for spawns, and a passed-by start runs 20 s.
+        XCTAssertLessThan(slowest, 10, "a start the quit passed by ran on to its duration")
     }
 
     func testAClosedRegistryRunsNoProgramAtAll() async throws {

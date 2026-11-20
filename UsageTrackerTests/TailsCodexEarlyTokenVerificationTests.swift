@@ -9,8 +9,18 @@ import XCTest
 /// assertions.
 final class TailsCodexEarlyTokenVerificationTests: XCTestCase {
     private var root: URL!
-    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
-    private lazy var now = Date()
+    /// Every day boundary here is UTC's, as the fixtures' stamps are written.
+    private let utc: Calendar = {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }()
+    /// Noon UTC of the day before the run, taken when a test first asks (spec 2026-11-20 small
+    /// backlog 2 § A1). Twelve hours from either midnight, so a fixture stamped minutes before
+    /// it and "today" fall on one day whenever the suite runs; and at most a day and a half
+    /// old, well inside the 31 days the aggregator keeps turns for, which it measures against
+    /// the real clock.
+    private lazy var now = utc.startOfDay(for: Date()).addingTimeInterval(-12 * 3600)
 
     private let alphaCwd = "/tmp/Tails Fixtures/alpha app"
     private let betaCwd = "/tmp/Tails Fixtures/beta"
@@ -99,7 +109,7 @@ final class TailsCodexEarlyTokenVerificationTests: XCTestCase {
     }
 
     private func loaded() async -> CodexUsageAggregator {
-        let aggregator = CodexUsageAggregator(rootURL: root)
+        let aggregator = CodexUsageAggregator(rootURL: root, calendar: utc)
         await aggregator.refresh()
         return aggregator
     }
@@ -263,7 +273,7 @@ final class TailsCodexEarlyTokenVerificationTests: XCTestCase {
             turnContext(model: priced, cwd: alphaCwd, secondsAgo: 40),
         ], named: "rollout-today.jsonl")
 
-        let breakdown = await loaded().breakdown()
+        let breakdown = await loaded().breakdown(now: now)
         XCTAssertEqual(breakdown.todayTurns, 1)
         XCTAssertEqual(breakdown.todayTokens, 1_050)
         XCTAssertGreaterThan(breakdown.todayCost, 0)

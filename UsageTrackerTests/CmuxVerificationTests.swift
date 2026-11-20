@@ -51,15 +51,16 @@ final class CmuxVerificationTests: XCTestCase {
 
     // MARK: - CmuxSocket: timing, not just the boolean
 
-    func testAMissingSocketPathFailsInUnderASecond() {
+    /// A 5 s timeout, so riding it out is told apart from a loaded machine's slow syscall.
+    func testAMissingSocketPathFailsWithoutWaitingOutTheTimeout() {
         let start = Date()
-        let sent = CmuxSocket.send(lines: ["{}"], to: "/tmp/omelette-verify-no-cmux-\(UUID().uuidString).sock")
+        let sent = CmuxSocket.send(lines: ["{}"], to: "/tmp/omelette-verify-no-cmux-\(UUID().uuidString).sock", timeout: 5)
         let elapsed = Date().timeIntervalSince(start)
         XCTAssertFalse(sent)
-        XCTAssertLessThan(elapsed, 1.0, "a socket that isn't there must fail fast, not ride out the 0.5s timeout")
+        XCTAssertLessThan(elapsed, 4, "a socket that isn't there must fail at once, not ride out the timeout")
     }
 
-    func testALoopbackConnectionRefusedFailsInUnderASecond() throws {
+    func testALoopbackConnectionRefusedFailsWithoutWaitingOutTheTimeout() throws {
         // A stale socket file with nothing listening behind it: connect() itself
         // returns ECONNREFUSED synchronously — this must not be confused with the
         // EINPROGRESS/poll path that a full backlog would take.
@@ -85,26 +86,26 @@ final class CmuxVerificationTests: XCTestCase {
         defer { unlink(path) }
 
         let start = Date()
-        let sent = CmuxSocket.send(lines: ["{}"], to: path)
+        let sent = CmuxSocket.send(lines: ["{}"], to: path, timeout: 5)
         let elapsed = Date().timeIntervalSince(start)
         XCTAssertFalse(sent)
-        XCTAssertLessThan(elapsed, 1.0, "a refused connection must not wait out the timeout: \(elapsed)s")
+        XCTAssertLessThan(elapsed, 4, "a refused connection must not wait out the timeout: \(elapsed)s")
     }
 
-    func testALoopbackListenerThatNeverReadsStillSeesTheWriteSucceedQuickly() throws {
+    func testALoopbackListenerThatNeverReadsStillSeesTheWriteSucceedWithoutWaitingOutTheTimeout() throws {
         // "The listener that never reads" from the spec's attack list: a small
         // newline-delimited payload fits in the kernel's socket send buffer, so
-        // `send` must complete well before the 0.5s timeout even though nothing on
+        // `send` must complete well before the timeout even though nothing on
         // the other end ever calls read().
         let listener = try NonReadingUnixListener()
         defer { listener.close() }
 
         let start = Date()
-        let sent = CmuxSocket.send(lines: CmuxRPC.requests(workspace: "ws-7", surface: "sf-3"), to: listener.path)
+        let sent = CmuxSocket.send(lines: CmuxRPC.requests(workspace: "ws-7", surface: "sf-3"), to: listener.path, timeout: 5)
         let elapsed = Date().timeIntervalSince(start)
 
         XCTAssertTrue(sent)
-        XCTAssertLessThan(elapsed, 0.5, "a two-line payload must fit in the send buffer without blocking on a reader: \(elapsed)s")
+        XCTAssertLessThan(elapsed, 4, "a two-line payload must fit in the send buffer without blocking on a reader: \(elapsed)s")
     }
 }
 

@@ -10,8 +10,13 @@ import XCTest
 /// and the cache's v1 rejection / v2 round trip / foreign-root rejection.
 final class JSONLAggregatorVerificationTests: XCTestCase {
     private var root: URL!
-    /// Taken when a test first asks, not when XCTest builds every test case at the start of the run.
-    private lazy var now = Date()
+    /// Taken when a test first asks, and at least an hour into the local day, for the reason
+    /// `JSONLAggregatorTests` gives: today's fixtures sit seconds before `now`, and
+    /// `breakdown()` reads the real clock.
+    private lazy var now: Date = {
+        let real = Date()
+        return max(real, Calendar.current.startOfDay(for: real).addingTimeInterval(3600))
+    }()
     private let slug = "-Users-verifier-Projects-checked"
 
     override func setUpWithError() throws {

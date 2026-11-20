@@ -11,7 +11,7 @@ enum MistralModelPricing {
     /// One model of the family.
     struct Model: Codable, Equatable, Sendable {
         /// Base rates as `ModelsDevPricing.price(provider:id:model:)` reads them; nil when
-        /// models.dev lists none (a speech model).
+        /// models.dev lists none (a speech model) or a rate nobody would charge.
         var price: ModelPrice?
         /// models.dev's display name ("Mistral Medium 3.5"): what vibe's aliases are matched
         /// against when they are no key, and, once cleaned (`usableName`), the name the model is

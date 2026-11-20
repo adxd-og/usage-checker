@@ -164,9 +164,10 @@ final class HookInputHardeningVerificationTests: XCTestCase {
         XCTAssertEqual(input(#"{"model":{"display_name":"¡Fable!"}}"#).model, "\u{A1}Fable!")
     }
 
-    func testOnlyCategoryCcGoesNotTheFormatCharactersAUnicodeNameNeeds() {
-        // Spec: "every Unicode scalar of general category `Cc`". A joiner (Cf) holds an
-        // emoji sequence together; dropping it would change the name's letters.
+    func testCcZlZpAndTheFormatCharactersGoButTheJoinersAUnicodeNameNeedsStay() {
+        // Spec 2026-11-20 small backlog 2 § B: Cc, Zl, Zp and every Cf but the two joiners
+        // (U+200C, U+200D) go. A joiner holds an emoji sequence together; dropping it would
+        // change the name's letters.
         let family = "\u{1F468}\u{200D}\u{1F469}"
         XCTAssertEqual(input("{\"model\":{\"display_name\":\"Fable \(family)\"}}").model, "Fable " + family)
     }

@@ -34,8 +34,12 @@ struct AgentHostInfo: Codable, Equatable, Sendable {
     /// launchd — so `pid` and `bundleID` are nil and `tty` is the *pane's* tty, which
     /// belongs to the shell inside tmux and matches no tab in any terminal. These
     /// three are the way back: the server's socket, the pane, and the tmux binary that
-    /// runs the server (Homebrew's path is not on a GUI app's `PATH`). Defaulted, so
-    /// every existing call site of the memberwise initialiser keeps working.
+    /// runs the server (Homebrew's path is not on a GUI app's `PATH`). The binary is the
+    /// helper's report, and a click runs it only once `SessionActivator.isTmuxBinary` has
+    /// accepted it: an absolute path to an executable file named `tmux`; otherwise the
+    /// usual install paths are tried (spec 2026-11-10 hook input hardening § Design ›
+    /// Tmux address). Defaulted, so every existing call site of the memberwise
+    /// initialiser keeps working.
     var tmuxSocket: String? = nil
     var tmuxPane: String? = nil
     var tmuxBinary: String? = nil

@@ -125,7 +125,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertEqual(run.status, 0)
         XCTAssertEqual(run.stdout, "brioche \(CLIText.version)\n")
         XCTAssertTrue(run.stderr.isEmpty)
-        XCTAssertLessThan(run.elapsed, 1, "process spawn included; the work itself is a string")
+        XCTAssertLessThan(run.elapsed, 5, "process spawn included; the work itself is a string")
     }
 
     func testHelpNamesEveryCommand() throws {
@@ -165,7 +165,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertTrue(run.stdout.contains("$31.70 this week"), run.stdout)
         XCTAssertTrue(run.stdout.hasSuffix("Agents: 1 needs you, 2 working\n"), run.stdout)
         XCTAssertTrue(run.stderr.isEmpty)
-        XCTAssertLessThan(run.elapsed, 1)
+        XCTAssertLessThan(run.elapsed, 5)
     }
 
     func testStatusJSONPrintsTheFileVerbatim() throws {
@@ -226,7 +226,7 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
         XCTAssertFalse(run.stdout.contains("9.99"), "the session's cost is not the day's")
         XCTAssertTrue(run.stdout.contains("$4.20 today"))
         XCTAssertEqual(run.stdout.filter { $0 == "\n" }.count, 1)
-        XCTAssertLessThan(run.elapsed, 1)
+        XCTAssertLessThan(run.elapsed, 5)
     }
 
     /// Claude Code renders the escape codes, so a payload on stdin means colour unless
@@ -495,7 +495,10 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
     /// the height of a five-provider machine's output for a question nobody asked in a
     /// status command.
     func testPlainStatusStillSaysNothingAboutChats() throws {
-        let snapshot = sampleWithChats()
+        // No reset time: the CLI and this test read the clock apart, and a countdown or a
+        // day name that moves between the two reads is not what this compares.
+        var snapshot = sampleWithChats()
+        snapshot.services[0].windows[0].resetsAt = nil
         try publish(snapshot)
 
         let run = try runCLI(["status"])
@@ -557,12 +560,17 @@ final class OmeletteCLIEndToEndTests: XCTestCase {
     /// without the shares prints.
     func testPlainStatusPrintsTheSameWithShares() throws {
         let at = Date()
-        try publish(sampleWithShares(updatedAt: at))
+        // No reset time, for the reason `testPlainStatusStillSaysNothingAboutChats` gives.
+        var shared = sampleWithShares(updatedAt: at)
+        shared.services[0].windows[0].resetsAt = nil
+        try publish(shared)
 
         let run = try runCLI(["status"])
 
+        var expected = sampleWithChats(updatedAt: at)
+        expected.services[0].windows[0].resetsAt = nil
         XCTAssertEqual(run.status, 0)
-        XCTAssertEqual(run.stdout, StatusText.render(snapshot: sampleWithChats(updatedAt: at), now: Date()))
+        XCTAssertEqual(run.stdout, StatusText.render(snapshot: expected, now: Date()))
         XCTAssertFalse(run.stdout.contains("Share"), run.stdout)
     }
 

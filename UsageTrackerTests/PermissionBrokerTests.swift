@@ -391,7 +391,7 @@ final class PermissionBrokerTests: XCTestCase {
         XCTAssertEqual(broker.pending.count, 1, "still hidden: the recheck leaves the hold alone")
 
         hostVisible = true
-        for _ in 0..<40 where !broker.pending.isEmpty {
+        for _ in 0..<500 where !broker.pending.isEmpty {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
 
@@ -424,7 +424,10 @@ final class PermissionBrokerTests: XCTestCase {
         broker.register(event: event(), reply: reply, session: nil, now: t0)
         store.apply(event(), now: t0)
 
-        try await Task.sleep(nanoseconds: 500_000_000)
+        // Until the 0.2 s hold window has run out, polled rather than one fixed wait.
+        for _ in 0..<500 where !broker.pending.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
 
         XCTAssertTrue(broker.pending.isEmpty)
         XCTAssertEqual(broker.expiredCount, 1)
@@ -460,7 +463,7 @@ final class PermissionBrokerTests: XCTestCase {
 
         reply.peerClosed()   // what the server calls when it reads EOF from the helper
         // One main-actor hop away; poll instead of trusting a fixed sleep.
-        for _ in 0..<100 where !broker.pending.isEmpty {
+        for _ in 0..<500 where !broker.pending.isEmpty {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
 
