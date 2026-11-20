@@ -136,7 +136,7 @@ enum ModelsDevPricing {
     }
 
     /// One family's models by normalised id, each with its base rates as `parse` reads them (nil
-    /// when models.dev gives none) and its display name. Empty when the answer has no such family.
+    /// when models.dev gives none, or one nobody would charge) and its display name. Empty when the answer has no such family.
     static func parseFamily(_ root: [String: Any], provider: String) -> [String: MistralModelPricing.Model] {
         guard let providerDict = root[provider] as? [String: Any],
               let models = providerDict["models"] as? [String: Any] else { return [:] }
@@ -186,6 +186,19 @@ enum ModelsDevPricing {
         ratePerM.isFinite && ratePerM >= 0 && ratePerM <= maximumRatePerM
     }
 
+    /// A price read back from the copy on disk, where a published rate and one `price` derived
+    /// cannot be told apart, held to what `price` can produce from believable rates. Input and
+    /// output are always published, and a cache read is published or a tenth of the input: each
+    /// is `isBelievable`. A cache write is published or inferred at up to 1.25× the input, and
+    /// the 1-hour tier is 1.6× the 5-minute one, so both writes are held to twice
+    /// `maximumRatePerM` (1.25 × 1.6 = 2), finite and not negative.
+    static func isBelievable(cached price: ModelPrice) -> Bool {
+        [price.inputPerM, price.outputPerM, price.cacheReadPerM].allSatisfy(isBelievable)
+            && [price.cacheCreate5mPerM, price.cacheCreate1hPerM].allSatisfy {
+                $0.isFinite && $0 >= 0 && $0 <= 2 * maximumRatePerM
+            }
+    }
+
     /// The 5-minute cache-write rate to assume for a model models.dev publishes none for.
     ///
     /// Anthropic bills every cache write, at 1.25× the input rate. OpenAI began billing
@@ -215,11 +228,26 @@ enum ModelsDevPricing {
         return nil
     }
 
+    /// The copy on disk, with the guard a fetch applies run again (`isBelievable(cached:)`): a
+    /// copy written before the guard existed, or damaged on disk, can hold a finite rate large
+    /// enough to make a cost infinite, and then `status.json` cannot be encoded. A row of the
+    /// four families with such a rate is left out; a Mistral row keeps its name and loses its
+    /// price, as a fetched one does. Every other row, and `fetchedAt`, read as written. nil
+    /// when there is no file or it does not decode: `JSONDecoder` refuses a number no `Double`
+    /// holds (`1e999`) and JSON has no NaN, so a copy holding either does not open at all.
     static func readCache(at url: URL) -> Cache? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        return try? decoder.decode(Cache.self, from: data)
+        guard let cache = try? decoder.decode(Cache.self, from: data) else { return nil }
+        return Cache(
+            fetchedAt: cache.fetchedAt,
+            prices: cache.prices.filter { isBelievable(cached: $0.value) },
+            mistral: cache.mistral?.mapValues { model in
+                guard let price = model.price, !isBelievable(cached: price) else { return model }
+                return MistralModelPricing.Model(price: nil, name: model.name)
+            }
+        )
     }
 
     static func writeCache(_ cache: Cache, to url: URL) {
