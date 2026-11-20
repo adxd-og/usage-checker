@@ -5,6 +5,13 @@ All notable changes to Brioche (formerly Omelette, before that Usage Checker) wi
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Dashboard
+- Limits: a provider without limit analytics says the tab is available for
+  Claude and Codex only; it said analytics needs a chat-level cost log, which
+  Mistral has.
+
 ## [4.3.0] — 2026-11-11
 
 ### Providers
