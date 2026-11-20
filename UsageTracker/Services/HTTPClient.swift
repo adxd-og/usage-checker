@@ -141,9 +141,12 @@ struct HTTPClient: Sendable {
         }
     }
 
-    /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds from now.
+    /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds after `now`:
+    /// the date form is measured against the clock the caller gives, the real one unless a
+    /// test pins it (spec 2026-11-20 small backlog 2 § E). Never negative: a date already past
+    /// or a negative number is no wait. nil for an absent, empty or unreadable header.
     /// Internal: Mistral's billing fetch reads its 429 the same way (`MistralBillingFetcher`).
-    static func retryAfterSeconds(_ resp: HTTPURLResponse) -> TimeInterval? {
+    static func retryAfterSeconds(_ resp: HTTPURLResponse, now: Date = Date()) -> TimeInterval? {
         guard let raw = resp.value(forHTTPHeaderField: "Retry-After")?
             .trimmingCharacters(in: .whitespaces), !raw.isEmpty else { return nil }
         if let secs = TimeInterval(raw) { return max(0, secs) }
@@ -151,7 +154,7 @@ struct HTTPClient: Sendable {
         fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.timeZone = TimeZone(identifier: "GMT")
         fmt.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
-        if let date = fmt.date(from: raw) { return max(0, date.timeIntervalSinceNow) }
+        if let date = fmt.date(from: raw) { return max(0, date.timeIntervalSince(now)) }
         return nil
     }
 }
