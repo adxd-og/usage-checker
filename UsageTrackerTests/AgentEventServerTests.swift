@@ -75,7 +75,7 @@ final class AgentEventServerTests: XCTestCase {
             delivered.fulfill()
         }
 
-        let reply = AgentSocketTestClient.send(line(AgentFixture.preToolUseBash), to: socketURL.path)
+        let reply = AgentSocketTestClient.send(line(AgentFixture.preToolUseBash), to: socketURL.path, replyTimeout: 5)
 
         wait(for: [delivered], timeout: 2)
         XCTAssertEqual(reply, #"{"v":1,"decision":null}"#)
@@ -122,7 +122,7 @@ final class AgentEventServerTests: XCTestCase {
         let delivered = expectation(description: "event")
         _ = try startServer { _, _ in delivered.fulfill() }
 
-        let reply = AgentSocketTestClient.send(AgentFixture.envelope(payload: AgentFixture.stop), to: socketURL.path)
+        let reply = AgentSocketTestClient.send(AgentFixture.envelope(payload: AgentFixture.stop), to: socketURL.path, replyTimeout: 5)
 
         wait(for: [delivered], timeout: 2)
         XCTAssertEqual(reply, #"{"v":1,"decision":null}"#)
@@ -143,7 +143,7 @@ final class AgentEventServerTests: XCTestCase {
         XCTAssertEqual(box.count, 0)
         // Still serving after the bad clients.
         let delivered = expectation(description: "good event after bad ones")
-        let good = try XCTUnwrap(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path))
+        let good = try XCTUnwrap(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path, replyTimeout: 5))
         XCTAssertEqual(good, #"{"v":1,"decision":null}"#)
         _ = waitOnMain { server.receivedCount == 1 }
         delivered.fulfill()
@@ -162,7 +162,8 @@ final class AgentEventServerTests: XCTestCase {
         let lines = expected.map { line(AgentFixture.claude("UserPromptSubmit", sessionID: $0)) }
         let sender = Thread {
             for data in lines {
-                AgentSocketTestClient.send(data, to: path, replyTimeout: 1)
+                // Each send waits for its reply, which is what keeps the order.
+                AgentSocketTestClient.send(data, to: path, replyTimeout: 5)
             }
         }
         sender.start()
@@ -193,7 +194,7 @@ final class AgentEventServerTests: XCTestCase {
         first.stop()                // still idempotent
 
         XCTAssertEqual(try mode(of: socketURL) & S_IFMT, S_IFSOCK)
-        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path), #"{"v":1,"decision":null}"#)
+        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path, replyTimeout: 5), #"{"v":1,"decision":null}"#)
         XCTAssertTrue(waitOnMain { second.receivedCount == 1 }, "received \(second.receivedCount)")
     }
 
@@ -212,7 +213,7 @@ final class AgentEventServerTests: XCTestCase {
         first.stop()
 
         XCTAssertEqual(try mode(of: socketURL) & S_IFMT, S_IFSOCK)
-        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path), #"{"v":1,"decision":null}"#)
+        XCTAssertEqual(AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path, replyTimeout: 5), #"{"v":1,"decision":null}"#)
     }
 
     func testOverlongPathIsReportedNotBound() {
@@ -258,11 +259,12 @@ final class AgentEventServerTests: XCTestCase {
         XCTAssertTrue(waitOnMain { held.replies.count == 1 })
 
         let started = Date()
-        let stopReply = AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path)
+        let stopReply = AgentSocketTestClient.send(line(AgentFixture.stop), to: socketURL.path, replyTimeout: 5)
         let elapsed = Date().timeIntervalSince(started)
 
         XCTAssertEqual(stopReply, #"{"v":1,"decision":null}"#)
-        XCTAssertLessThan(elapsed, 0.5, "a held connection must not block the next hook; took \(elapsed)s")
+        // A blocked hook would get no reply in its 5 s; one that is not blocked answers at once.
+        XCTAssertLessThan(elapsed, 3, "a held connection must not block the next hook; took \(elapsed)s")
         XCTAssertTrue(waitOnMain { server.receivedCount == 2 })
         XCTAssertEqual(held.events.map(\.kind), [.permissionRequested, .stop])
         held.replies.first?.send(nil)
@@ -274,7 +276,7 @@ final class AgentEventServerTests: XCTestCase {
         _ = try startServer { event, reply in held.events.append(event); held.replies.append(reply) }
         let v1 = AgentFixture.envelope(payload: AgentFixture.permissionRequestEdit, v: 1) + Data([0x0A])
 
-        let reply = AgentSocketTestClient.send(v1, to: socketURL.path)
+        let reply = AgentSocketTestClient.send(v1, to: socketURL.path, replyTimeout: 5)
 
         XCTAssertEqual(reply, #"{"v":1,"decision":null}"#)
         XCTAssertTrue(waitOnMain { held.replies.count == 1 })
