@@ -309,6 +309,30 @@ final class SessionCopySummaryTests: XCTestCase {
         )
     }
 
+    func testAModelRowNamedByItsProvidersTableShowsThatNameAsSpelled() {
+        // Spec 2026-11-19 Mistral model names § Where it shows: a vibe row carries models.dev's
+        // name, and "GLM-5.3" must not come out "Glm 5.3".
+        let row = SessionModelSummary(
+            model: "glm-5-3", effort: nil, turns: 4,
+            tokens: SessionFixture.tokens(input: 1_000, output: 100), displayName: "GLM-5.3"
+        )
+
+        let columns = SessionCopy.modelColumns(row)
+
+        XCTAssertEqual(columns.model, "GLM-5.3")
+        XCTAssertEqual(columns.id, "glm-5-3|", "the row keeps the id it is keyed by")
+    }
+
+    func testClaudeCodexAndGrokModelRowsReadAsBefore() {
+        // Spec 2026-11-19 Mistral model names § What does not change: only a row that carries
+        // its provider's name reads differently.
+        let names = ["claude-opus-4-5-20251101", "gpt-5.6-terra", "grok-4.6-build"].map {
+            SessionCopy.modelColumns(SessionFixture.model(model: $0, effort: nil)).model
+        }
+
+        XCTAssertEqual(names, ["Opus 4.5", "GPT 5.6 Terra", "Grok 4.6"])
+    }
+
     func testTheByModelTitleAndColumnsAreTheSpecs() {
         XCTAssertEqual(SessionCopy.byModelTitle, "By model")
         XCTAssertEqual(SessionCopy.modelColumnTitles, ["Model", "Turns", "Tokens", "Cost"])

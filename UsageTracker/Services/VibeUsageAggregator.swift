@@ -179,7 +179,7 @@ actor VibeUsageAggregator: CostLogAggregating {
                 todayTokens = TokenBreakdown.saturating(todayTokens, slice.tokens.total)
                 todayBreakdown += slice.tokens
                 todayTurns = TokenBreakdown.saturating(todayTurns, slice.turns)
-                if let name = ModelPricing.displayName(for: slice.model) {
+                if let name = slice.name {
                     byModelToday[name, default: ModelAcc()].add(slice)
                 }
             }
@@ -230,7 +230,7 @@ actor VibeUsageAggregator: CostLogAggregating {
             windowBreakdown += slice.tokens
             turns = TokenBreakdown.saturating(turns, slice.turns)
             projects[slice.projectSlug, default: ProjectAcc(lastActivity: slice.at)].add(slice)
-            if let name = ModelPricing.displayName(for: slice.model) {
+            if let name = slice.name {
                 byModel[name, default: ModelAcc()].add(slice)
             }
         }
@@ -242,11 +242,13 @@ actor VibeUsageAggregator: CostLogAggregating {
 
     // MARK: - Steps as the figures read them
 
-    /// One step: when, where, on what model, its tokens priced now.
+    /// One step: when, where, on what model and under what name, its tokens priced now.
     private struct Slice {
         let at: Date
         let projectSlug: String
         let model: String
+        /// The by-model rows' name for it (`displayName(of:)`); nil keeps it out of them.
+        let name: String?
         let tokens: TokenBreakdown
         let turns: Int
 
@@ -258,10 +260,11 @@ actor VibeUsageAggregator: CostLogAggregating {
         for session in ledger.sessions.values {
             let rate = Self.price(for: session.meta)
             let modelID = Self.model(of: session.meta)
+            let name = Self.displayName(of: session.meta)
             let slug = Self.projectSlug(session.meta.workingDirectory)
             for step in session.steps {
                 out.append(Slice(
-                    at: step.at, projectSlug: slug, model: modelID,
+                    at: step.at, projectSlug: slug, model: modelID, name: name,
                     tokens: Self.tokens(of: step, price: rate), turns: step.turns
                 ))
             }
@@ -392,7 +395,10 @@ actor VibeUsageAggregator: CostLogAggregating {
             agents: [],
             days: days,
             models: [SessionModelSummary(
-                model: Self.model(of: session.meta), effort: nil, turns: wholeTurns, tokens: wholeTokens
+                model: Self.model(of: session.meta), effort: nil, turns: wholeTurns, tokens: wholeTokens,
+                displayName: MistralModelPricing.displayName(
+                    activeModel: session.meta.activeModel, modelName: session.meta.modelName
+                )
             )]
         )
     }
@@ -421,6 +427,14 @@ actor VibeUsageAggregator: CostLogAggregating {
     /// The session's model as every row names it: vibe's `active_model`, else the id it sent.
     nonisolated static func model(of meta: VibeSessionStore.Meta) -> String {
         meta.activeModel ?? meta.modelName ?? Self.unknownModel
+    }
+
+    /// The name the Overview's and History's by-model rows give the session's model (spec
+    /// 2026-11-19 Mistral model names § Rule): models.dev's, found as the price is; else the
+    /// name the app gives any id, as before. nil for a session with no model, which no row names.
+    nonisolated static func displayName(of meta: VibeSessionStore.Meta) -> String? {
+        MistralModelPricing.displayName(activeModel: meta.activeModel, modelName: meta.modelName)
+            ?? ModelPricing.displayName(for: model(of: meta))
     }
 
     /// The working directory percent-encoded as Codex's and Grok's slugs are, so

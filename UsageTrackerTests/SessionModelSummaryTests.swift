@@ -103,4 +103,36 @@ final class SessionModelSummaryTests: XCTestCase {
         XCTAssertEqual(restored, chat, "every field, model rows and their dollars included")
         XCTAssertEqual(restored.models.map(\.id), ["claude-opus-4-5|xhigh", "claude-haiku-4-5|"])
     }
+
+    // MARK: - The provider's own name (spec 2026-11-19 Mistral model names)
+
+    func testAModelRowEncodedBeforeItsDisplayNameDecodesWithNone() throws {
+        let json = """
+        {"model":"claude-opus-4-5","effort":"xhigh","turns":2,\
+        "tokens":{"input":900,"output":0,"cacheRead":0,"cacheWrite5m":0,\
+        "cacheWrite1h":0,"thinking":0}}
+        """
+
+        let row = try decoder.decode(SessionModelSummary.self, from: Data(json.utf8))
+
+        XCTAssertNil(row.displayName)
+        XCTAssertEqual(row.id, "claude-opus-4-5|xhigh")
+        XCTAssertEqual(row.turns, 2)
+    }
+
+    func testARowWithoutADisplayNameEncodesNoKeyForIt() throws {
+        let encoded = try encoder.encode(SessionFixture.model(model: "claude-opus-4-5", effort: "xhigh"))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+
+        XCTAssertEqual(Set(object.keys), ["model", "effort", "turns", "tokens"], "the shape every other provider wrote before")
+    }
+
+    func testARowsDisplayNameRoundTrips() throws {
+        let row = SessionModelSummary(
+            model: "glm-5-3", effort: nil, turns: 1,
+            tokens: SessionFixture.tokens(input: 911, output: 3), displayName: "GLM-5.3"
+        )
+
+        XCTAssertEqual(try decoder.decode(SessionModelSummary.self, from: encoder.encode(row)), row)
+    }
 }
