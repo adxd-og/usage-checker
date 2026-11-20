@@ -126,3 +126,75 @@ extension AgentResourceRules {
         return max(0, gained) / span * 100
     }
 }
+
+// MARK: - Sessions and cadence (spec § Which processes, § Sampling)
+
+extension AgentResourceRules {
+    /// Every 5 s while the island or the Agents tab is open …
+    static let watchedInterval: TimeInterval = 5
+    /// … every 30 s otherwise, for the wire format.
+    static let unwatchedInterval: TimeInterval = 30
+
+    /// The ttys worth reading: every live session's, once each. A session in an IDE panel or a
+    /// desktop app has none, nor has a row the passive scan guessed (Decision 3).
+    static func ttys(of sessions: [AgentSession]) -> Set<String> {
+        Set(sessions.compactMap { session -> String? in
+            guard let tty = session.host.tty, !tty.isEmpty else { return nil }
+            return tty
+        })
+    }
+
+    /// Which live session shows each tty's figures (§ Which processes), by session id: of the
+    /// sessions sharing a tty, the most recently active — the latest `lastEventAt`, the store's
+    /// clock at its last hook event (or the scan's, for a scanned row); on a tie the smaller id,
+    /// as the store's display order breaks it. A `claude` that ended without `SessionEnd` stays
+    /// live while its tab is open, and the new one in that tab must not count the same tree
+    /// twice. Read over the whole live list, never a filtered one, so a provider tab or a source
+    /// filter cannot hand the figures back to the old session. A session without a tty, or not
+    /// the most recent on its tty, is absent.
+    static func owners(of sessions: [AgentSession]) -> [String: String] {
+        var newest: [String: AgentSession] = [:]
+        for session in sessions {
+            guard let tty = session.host.tty, !tty.isEmpty else { continue }
+            if let held = newest[tty], !isMoreRecent(session, than: held) { continue }
+            newest[tty] = session
+        }
+        return Dictionary(newest.map { ($0.value.id, $0.key) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Whether a tty's tree is still the session's (§ Which processes, review F4): not when every
+    /// process on it started after the session's last event. The session's tab closed and a
+    /// newer tab got the same device name, which `AgentSessionStore.isStale` cannot tell from a
+    /// live tab. One process as old as the last event, or older, keeps the tree the session's; an
+    /// unknown start keeps it too.
+    static func isOwnTree(_ figures: Figures, lastEventAt: Date) -> Bool {
+        guard let oldest = figures.oldestStart else { return true }
+        return oldest <= lastEventAt
+    }
+
+    /// The figures each live session shows, by session id: its tty's, for the session `owners`
+    /// names, while the tree is still its own (`isOwnTree`). None without a tty, none for a tty
+    /// not read yet, none for an older session on a shared tty, none for a session whose tty a
+    /// newer tab reuses.
+    static func bySession(_ sessions: [AgentSession], byTTY: [String: Figures]) -> [String: Figures] {
+        let lastEvents = Dictionary(sessions.map { ($0.id, $0.lastEventAt) }, uniquingKeysWith: { first, _ in first })
+        var shown: [String: Figures] = [:]
+        for (id, tty) in owners(of: sessions) {
+            guard let figures = byTTY[tty], let lastEvent = lastEvents[id],
+                  isOwnTree(figures, lastEventAt: lastEvent) else { continue }
+            shown[id] = figures
+        }
+        return shown
+    }
+
+    private static func isMoreRecent(_ a: AgentSession, than b: AgentSession) -> Bool {
+        if a.lastEventAt != b.lastEventAt { return a.lastEventAt > b.lastEventAt }
+        return a.id < b.id
+    }
+
+    /// How often to sample; nil — not at all — while no live session has a tty.
+    static func interval(ttys: Int, watched: Bool) -> TimeInterval? {
+        guard ttys > 0 else { return nil }
+        return watched ? watchedInterval : unwatchedInterval
+    }
+}

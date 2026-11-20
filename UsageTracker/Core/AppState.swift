@@ -107,6 +107,9 @@ final class AppState: ObservableObject {
             AgentEventRouter.handle(event, reply: reply, store: AgentSessionStore.shared, broker: PermissionBroker.shared)
         }
         observeAgentSessions()
+        // CPU and memory per live session with a tty (spec 2026-11-19 agent resources
+        // § Sampling): the monitor follows the session list and samples off the main actor.
+        AgentResourceMonitor.shared.follow(AgentSessionStore.shared.$sessions)
         seedFromLastKnown()
         removeLegacyClaudeTokenCopy()
         refreshNow()
