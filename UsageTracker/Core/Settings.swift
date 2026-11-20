@@ -72,6 +72,9 @@ final class SettingsStore: ObservableObject {
         static let agentsHooksPromptNotified = false
         /// Keep awake ends by itself on battery below 25 % (spec 2026-10-26, Battery floor).
         static let keepAwakeFloorEnabled = true
+        /// Keep awake ends by itself when the Mac overheats with the lid closed (spec
+        /// 2026-11-19, thermal guard, § Settings).
+        static let keepAwakeThermalGuardEnabled = true
         /// The last duration Apply used, in minutes; one hour until the first Apply.
         static let keepAwakeDurationMinutes = 60
         /// Show in menu bar: nothing stored, so the default follows the displays
@@ -190,6 +193,13 @@ final class SettingsStore: ObservableObject {
     /// Read at every Apply, and sent to an armed helper the moment it changes
     /// (`KeepAwakeModel.floorChanged`).
     @AppStorage("keepAwakeFloorEnabled") var keepAwakeFloorEnabled: Bool = Defaults.keepAwakeFloorEnabled
+    /// Sent to an armed helper that knows the guard the moment it changes, and again whenever
+    /// one of its replies says otherwise (`KeepAwakeModel.thermalGuardChanged`,
+    /// `reconcileThermalGuard`).
+    @AppStorage("keepAwakeThermalGuardEnabled") var keepAwakeThermalGuardEnabled: Bool = Defaults.keepAwakeThermalGuardEnabled
+    /// The guard's key, spelled out for the keep-awake card's own `@AppStorage` (it redraws when
+    /// the switch moves) and for the tests.
+    nonisolated static let keepAwakeThermalGuardKey = "keepAwakeThermalGuardEnabled"
     /// The last duration Apply used, in minutes; the popover's fields start from
     /// `KeepAwakeRules.parts(totalMinutes:)` of it.
     @AppStorage("keepAwakeDurationMinutes") var keepAwakeDurationMinutes: Int = Defaults.keepAwakeDurationMinutes
@@ -361,9 +371,10 @@ final class SettingsStore: ObservableObject {
         UsageNotifier.shared.forgetFiredState()
     }
 
-    /// Settings › Advanced › Reset keep awake puts these two back, and nothing else.
+    /// Settings › Advanced › Reset keep awake puts these three back, and nothing else.
     func resetKeepAwake() {
         keepAwakeFloorEnabled = Defaults.keepAwakeFloorEnabled
+        keepAwakeThermalGuardEnabled = Defaults.keepAwakeThermalGuardEnabled
         keepAwakeDurationMinutes = Defaults.keepAwakeDurationMinutes
     }
 

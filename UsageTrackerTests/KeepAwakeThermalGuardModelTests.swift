@@ -170,7 +170,7 @@ final class KeepAwakeThermalGuardModelTests: XCTestCase {
         let model = makeModel(helper, setting)
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
         setting.enabled = true
-        await model.thermalGuardChanged(true, now: t0 + 60)
+        await model.thermalGuardChanged(now: t0 + 60)
         await model.pollIfNeeded(now: t0 + 120)
         await model.pollIfNeeded(now: t0 + 180)
         XCTAssertEqual(helper.requests, [.arm(seconds: 7_200, floorEnabled: true), .state, .state])
@@ -183,7 +183,7 @@ final class KeepAwakeThermalGuardModelTests: XCTestCase {
         let model = makeModel(helper, setting)
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 60)
+        await model.thermalGuardChanged(now: t0 + 60)
         XCTAssertEqual(helper.requests, [.arm(seconds: 7_200, floorEnabled: true), .setThermalGuard(enabled: false)])
         XCTAssertEqual(model.helperThermalGuard, false)
     }
@@ -218,10 +218,10 @@ final class KeepAwakeThermalGuardModelTests: XCTestCase {
         let model = makeModel(helper, setting)
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 60)
+        await model.thermalGuardChanged(now: t0 + 60)
         setting.enabled = true
         guardState.loseSets(1)
-        await model.thermalGuardChanged(true, now: t0 + 120)
+        await model.thermalGuardChanged(now: t0 + 120)
         XCTAssertFalse(guardState.value, "the switch-on was lost")
         await model.pollIfNeeded(now: t0 + 180)
         XCTAssertEqual(helper.requests, [
@@ -284,7 +284,7 @@ final class KeepAwakeThermalGuardModelTests: XCTestCase {
     @MainActor func testTheSwitchWhileIdleStaysInSettings() async {
         let helper = helper()
         let model = makeModel(helper, Setting())
-        await model.thermalGuardChanged(false, now: t0)
+        await model.thermalGuardChanged(now: t0)
         XCTAssertEqual(helper.requests, [])
     }
 
@@ -427,7 +427,7 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         await helper.untilArrived(2)
         XCTAssertFalse(model.isWorking, "a correction shows no spinner")
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 1)
+        await model.thermalGuardChanged(now: t0 + 1)
         var requests = await helper.requests
         XCTAssertEqual(requests, [.state, .setThermalGuard(enabled: true)], "one call at a time")
         await helper.release(1)
@@ -451,9 +451,9 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         let refresh = Task { await model.refresh(now: t0) }
         await helper.untilArrived(2)
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 1)
+        await model.thermalGuardChanged(now: t0 + 1)
         setting.enabled = true
-        await model.thermalGuardChanged(true, now: t0 + 2)
+        await model.thermalGuardChanged(now: t0 + 2)
         await helper.release(1)
         await refresh.value
         let requests = await helper.requests
@@ -476,7 +476,7 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         let applying = Task { await model.arm(days: 0, hours: 2, minutes: 0, now: t0) }
         await helper.untilArrived(1)
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 1)
+        await model.thermalGuardChanged(now: t0 + 1)
         var requests = await helper.requests
         XCTAssertEqual(requests, [.arm(seconds: 7_200, floorEnabled: true)])
         await helper.release(0)
@@ -504,7 +504,7 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         let applying = Task { await model.arm(days: 0, hours: 4, minutes: 0, now: t0 + 10) }
         await helper.untilArrived(2)
         setting.enabled = false
-        let flipping = Task { await model.thermalGuardChanged(false, now: t0 + 11) }
+        let flipping = Task { await model.thermalGuardChanged(now: t0 + 11) }
         await helper.untilArrived(3)
         await helper.release(2)
         await flipping.value
@@ -606,10 +606,10 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         await helper.end(ended)
         await helper.holdAnswer(to: 1)
         setting.enabled = false
-        let flipping = Task { await model.thermalGuardChanged(false, now: t0 + 40) }
+        let flipping = Task { await model.thermalGuardChanged(now: t0 + 40) }
         await helper.untilArrived(2)
         setting.enabled = true
-        await model.thermalGuardChanged(true, now: t0 + 41)
+        await model.thermalGuardChanged(now: t0 + 41)
         await helper.release(1)
         await flipping.value
         await model.pollIfNeeded(now: t0 + 60)
@@ -633,7 +633,7 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
         let polling = Task { await model.pollIfNeeded(now: t0 + 10) }
         await helper.untilArrived(2)
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 11)
+        await model.thermalGuardChanged(now: t0 + 11)
         await helper.release(1)
         await polling.value
         let requests = await helper.requests
@@ -711,12 +711,12 @@ final class KeepAwakeThermalGuardOrderTests: XCTestCase {
             }
         }
         setting.enabled = false
-        await model.thermalGuardChanged(false, now: t0 + 10)
+        await model.thermalGuardChanged(now: t0 + 10)
         XCTAssertEqual(helper.requests, [.state, .setThermalGuard(enabled: false)])
         await model.pollIfNeeded(now: t0 + 60)
         XCTAssertNil(model.helperThermalGuard)
         setting.enabled = true
-        await model.thermalGuardChanged(true, now: t0 + 70)
+        await model.thermalGuardChanged(now: t0 + 70)
         await model.pollIfNeeded(now: t0 + 120)
         XCTAssertEqual(helper.requests, [.state, .setThermalGuard(enabled: false), .state, .state])
         XCTAssertEqual(model.state, armed)

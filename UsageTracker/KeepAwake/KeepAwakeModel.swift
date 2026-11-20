@@ -18,7 +18,8 @@ final class KeepAwakeModel: ObservableObject {
         client: KeepAwakeClient(dependencies: .live),
         floorEnabled: { SettingsStore.shared.keepAwakeFloorEnabled },
         rememberDuration: { SettingsStore.shared.keepAwakeDurationMinutes = $0 },
-        resetSettings: { SettingsStore.shared.resetKeepAwake() }
+        resetSettings: { SettingsStore.shared.resetKeepAwake() },
+        thermalGuardEnabled: { SettingsStore.shared.keepAwakeThermalGuardEnabled }
     )
 
     @Published private(set) var registration: KeepAwakeRegistration = .notRegistered
@@ -141,11 +142,10 @@ final class KeepAwakeModel: ObservableObject {
     /// reply; otherwise the next reply that disagrees brings it (`reconcileThermalGuard`). A
     /// helper that predates the guard (`helperThermalGuard` nil) is asked nothing new.
     ///
-    /// `enabled` is the switch as the caller saw it move. What goes out is the setting as it
-    /// reads when the call does (`sendThermalGuard`), so a switch that has moved again since is
-    /// never sent stale. While a `setThermalGuard` is out this adds none: that call sends the
-    /// setting on when it returns.
-    func thermalGuardChanged(_ enabled: Bool, now: Date = Date()) async {
+    /// The caller passes no value: what goes out is the setting as it reads when the call does
+    /// (`sendThermalGuard`), so a switch that has moved again since is never sent stale. While a
+    /// `setThermalGuard` is out this adds none: that call sends the setting on when it returns.
+    func thermalGuardChanged(now: Date = Date()) async {
         guard helperTakesThermalGuard, !thermalGuardSendOut else { return }
         isWorking = true
         defer { isWorking = false }

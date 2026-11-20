@@ -371,9 +371,14 @@ struct AdvancedSettingsView: View {
 
     private func resetEverything() {
         settings.resetToDefaults()
-        // The floor switch just went back on; an armed helper hears it at once, as it would
-        // from the switch itself (keep-awake spec 2026-10-26, floor switch while armed).
-        Task { await KeepAwakeModel.shared.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled) }
+        // The floor and heat switches just went back on; an armed helper hears both at once,
+        // one after the other, as it would from the switches themselves (keep-awake spec
+        // 2026-10-26, floor switch while armed; thermal guard spec 2026-11-19, § Settings). The
+        // guard's call sends the setting as it reads then, which the reset above put back on.
+        Task {
+            await KeepAwakeModel.shared.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled)
+            await KeepAwakeModel.shared.thermalGuardChanged()
+        }
         // Launch at login is OS state, not a stored preference, so `resetToDefaults()`
         // deliberately can't reach it. General reads it again when it next opens.
         LaunchAtLogin.isEnabled = false
