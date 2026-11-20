@@ -18,6 +18,37 @@ enum AgentResourceRules {
         let startedAt: Date
     }
 
+    /// The process table indexed once per sample (spec 2026-11-20 small backlog 2 § F): the
+    /// pids on each tty, each pid's children, and when each pid started. `members` and
+    /// `reading` walk it, so every tty of one sample shares one pass over the table.
+    /// launchd and the kernel (pid 1 and 0) are on no tty list and nobody's child; a pid
+    /// listed twice keeps its first start, as the table's first row says.
+    struct ProcessIndex: Sendable {
+        let onTTY: [String: [pid_t]]
+        let children: [pid_t: [pid_t]]
+        let started: [pid_t: Date]
+
+        init(_ table: [ProcessRow]) {
+            var onTTY: [String: [pid_t]] = [:]
+            var children: [pid_t: [pid_t]] = [:]
+            var started: [pid_t: Date] = [:]
+            for row in table {
+                if started[row.pid] == nil { started[row.pid] = row.startedAt }
+                guard row.pid > 1 else { continue }
+                children[row.parent, default: []].append(row.pid)
+                if let tty = row.tty { onTTY[tty, default: []].append(row.pid) }
+            }
+            self.onTTY = onTTY
+            self.children = children
+            self.started = started
+        }
+    }
+
+    /// `members(of:in:)` over a table indexed for this one question.
+    static func members(of tty: String, in table: [ProcessRow]) -> [pid_t] {
+        members(of: tty, in: ProcessIndex(table))
+    }
+
     /// A session's processes (§ Which processes): every process whose controlling terminal is
     /// `tty`, and every descendant of those by parent pid. A `claude` and its MCP servers keep
     /// the tab's tty; the shells its Bash tool starts have none, and builds and tests hang below
@@ -25,17 +56,13 @@ enum AgentResourceRules {
     /// detached and was re-parented to launchd is no descendant any more and is not counted.
     /// launchd and the kernel (pid 1 and 0) are never members nor links, whatever the table
     /// says, and a parent cycle ends the walk. Sorted, so equal tables give equal answers.
-    static func members(of tty: String, in table: [ProcessRow]) -> [pid_t] {
+    static func members(of tty: String, in index: ProcessIndex) -> [pid_t] {
         guard !tty.isEmpty else { return [] }
-        var children: [pid_t: [pid_t]] = [:]
-        for row in table where row.pid > 1 {
-            children[row.parent, default: []].append(row.pid)
-        }
         var found = Set<pid_t>()
-        var queue = table.filter { $0.pid > 1 && $0.tty == tty }.map(\.pid)
+        var queue = index.onTTY[tty] ?? []
         while let pid = queue.popLast() {
             guard found.insert(pid).inserted else { continue }
-            queue.append(contentsOf: children[pid] ?? [])
+            queue.append(contentsOf: index.children[pid] ?? [])
         }
         return found.sorted()
     }
@@ -85,8 +112,14 @@ extension AgentResourceRules {
     static func reading(
         of tty: String, in table: [ProcessRow], usage: (pid_t) -> Usage?, at now: Date
     ) -> Reading? {
-        let started = Dictionary(table.map { ($0.pid, $0.startedAt) }, uniquingKeysWith: { first, _ in first })
-        let pids = members(of: tty, in: table)
+        reading(of: tty, in: ProcessIndex(table), usage: usage, at: now)
+    }
+
+    /// `reading(of:in:usage:at:)` over the sample's one index.
+    static func reading(
+        of tty: String, in index: ProcessIndex, usage: (pid_t) -> Usage?, at now: Date
+    ) -> Reading? {
+        let pids = members(of: tty, in: index)
         var cpu: [pid_t: Double] = [:]
         var footprint = 0
         for pid in pids {
@@ -98,7 +131,7 @@ extension AgentResourceRules {
         guard !cpu.isEmpty else { return nil }
         return Reading(
             at: now, cpuSeconds: cpu, footprintBytes: footprint,
-            oldestStart: pids.compactMap { started[$0] }.min()
+            oldestStart: pids.compactMap { index.started[$0] }.min()
         )
     }
 
