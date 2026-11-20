@@ -352,6 +352,8 @@ final class SettingsStore: ObservableObject {
         // The Limits tab's window switch, and its Chats / Projects choice per provider.
         UserDefaults.standard.removeObject(forKey: LimitsRules.windowKey)
         UserDefaults.standard.removeObject(forKey: LimitsRules.groupingKey)
+        // The Agents tab's Live card order, State or CPU.
+        UserDefaults.standard.removeObject(forKey: AgentsLiveCard.sortKey)
         // What 3.x kept of the popover's heights per tab; 4.0 writes nothing there.
         UserDefaults.standard.removeObject(forKey: PopoverHeightRules.fixedHeightsKey)
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
