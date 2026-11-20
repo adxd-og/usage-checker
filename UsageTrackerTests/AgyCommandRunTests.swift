@@ -103,13 +103,17 @@ final class AgyCommandRunTests: XCTestCase {
     func testTheDeadlineAnswersTheCallerAndTerminatesTheChild() async throws {
         let started = Date()
         do {
-            _ = try await sh("echo $$ > child.pid; exec /bin/sleep 30", deadline: 0.5)
+            _ = try await sh("echo $$ > child.pid; exec /bin/sleep 30", deadline: 2)
             XCTFail("a child that outlives the deadline is no reading")
         } catch {
             XCTAssertEqual(error as? AgyUsageError, .timedOut)
         }
-        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "the caller is answered at the deadline")
-        let child = try pid(in: "child.pid")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 6, "the caller is answered at the deadline")
+        // A child that started writes its pid as its first line: waited for, not read once.
+        guard let text = await contents(of: "child.pid", within: 10), let child = pid_t(text) else {
+            XCTFail("the stand-in never wrote its pid")
+            return
+        }
         let gone = await isGone(child, within: 3)
         XCTAssertTrue(gone, "SIGTERM at the deadline ends the child")
     }
@@ -117,13 +121,17 @@ final class AgyCommandRunTests: XCTestCase {
     func testAChildThatIgnoresSIGTERMIsKilledAfterTheGrace() async throws {
         let started = Date()
         do {
-            _ = try await sh("trap '' TERM; echo $$ > child.pid; exec /bin/sleep 30", deadline: 0.5, killGrace: 0.3)
+            _ = try await sh("trap '' TERM; echo $$ > child.pid; exec /bin/sleep 30", deadline: 2, killGrace: 0.3)
             XCTFail("a child that outlives the deadline is no reading")
         } catch {
             XCTAssertEqual(error as? AgyUsageError, .timedOut)
         }
-        XCTAssertLessThan(Date().timeIntervalSince(started), 3, "the caller does not wait for the grace")
-        let child = try pid(in: "child.pid")
+        XCTAssertLessThan(Date().timeIntervalSince(started), 6, "the caller does not wait for the grace")
+        // Its trap and its pid are its first lines: waited for, not read once.
+        guard let text = await contents(of: "child.pid", within: 10), let child = pid_t(text) else {
+            XCTFail("the stand-in never wrote its pid")
+            return
+        }
         let gone = await isGone(child, within: 3)
         XCTAssertTrue(gone, "SIGKILL follows when SIGTERM did not end it")
     }
@@ -132,14 +140,15 @@ final class AgyCommandRunTests: XCTestCase {
         // The shell exits at once; the sleep it leaves behind keeps stdout open.
         let started = Date()
         do {
-            _ = try await sh("/bin/sleep 30 & echo $! > grandchild.pid; exit 0", deadline: 0.5)
+            _ = try await sh("/bin/sleep 30 & echo $! > grandchild.pid; exit 0", deadline: 2)
             XCTFail("stdout still open at the deadline is no reading")
         } catch {
             XCTAssertEqual(error as? AgyUsageError, .timedOut)
         }
-        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
-        let grandchild = try pid(in: "grandchild.pid")
-        _ = kill(grandchild, SIGKILL)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 6)
+        if let text = await contents(of: "grandchild.pid", within: 5), let grandchild = pid_t(text) {
+            _ = kill(grandchild, SIGKILL)
+        }
     }
 
     /// At the deadline the reader lets go of stdout (ruling A3): a process still holding

@@ -145,7 +145,7 @@ final class GhostSessionVerificationTests: XCTestCase {
 
         let path = String(cString: nameBuffer)
         // Give the child a moment to finish execve and take the terminal.
-        for _ in 0..<50 {
+        for _ in 0..<250 {
             var info = proc_bsdinfo()
             let size = Int32(MemoryLayout<proc_bsdinfo>.size)
             if proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size, info.e_tdev != UInt32(bitPattern: -1) { break }

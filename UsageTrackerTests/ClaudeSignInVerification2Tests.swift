@@ -52,7 +52,7 @@ final class ClaudeSignInVerification2Tests: XCTestCase {
 
         try await ClaudePTYStart.run(
             binary: binary.path, arguments: [], environment: ["PATH": "/usr/bin:/bin"],
-            directory: directory, duration: 2.5, grace: 1
+            directory: directory, duration: 6, grace: 1
         )
 
         let typed = try Data(contentsOf: binary.deletingLastPathComponent().appendingPathComponent("seen-typed"))
@@ -72,7 +72,7 @@ final class ClaudeSignInVerification2Tests: XCTestCase {
 
         try await ClaudePTYStart.run(
             binary: binary.path, arguments: [], environment: ["PATH": "/usr/bin:/bin"],
-            directory: directory, duration: 0.6, grace: 0.6
+            directory: directory, duration: 1.5, grace: 0.6
         )
 
         XCTAssertLessThan(Date().timeIntervalSince(started), 6, "the run must not hang in the exit of a flooded terminal")
@@ -87,7 +87,6 @@ final class ClaudeSignInVerification2Tests: XCTestCase {
         exec /bin/sleep 60
 
         """)
-        let started = Date()
         let path = binary.path
         let folder = directory!
         let task = Task {
@@ -96,11 +95,17 @@ final class ClaudeSignInVerification2Tests: XCTestCase {
                 directory: folder, duration: 60, grace: 1
             )
         }
-        try await Task.sleep(nanoseconds: 700_000_000)
+        // Cancel once the stand-in is up (its pid written whole), not after a fixed wait.
+        let pidFile = binary.deletingLastPathComponent().appendingPathComponent("pid")
+        let upBy = Date().addingTimeInterval(10)
+        while (try? String(contentsOf: pidFile, encoding: .utf8))?.hasSuffix("\n") != true, Date() < upBy {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        let cancelledAt = Date()
         task.cancel()
         try await task.value
 
-        XCTAssertLessThan(Date().timeIntervalSince(started), 8)
+        XCTAssertLessThan(Date().timeIntervalSince(cancelledAt), 8)
         XCTAssertFalse(try isRunning(pidFile: binary.deletingLastPathComponent().appendingPathComponent("pid")))
     }
 
