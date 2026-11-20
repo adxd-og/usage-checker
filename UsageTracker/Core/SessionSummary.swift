@@ -99,6 +99,12 @@ struct SessionModelSummary: Codable, Equatable, Sendable, Identifiable {
     let effort: String?
     let turns: Int
     let tokens: TokenBreakdown
+    /// The name the provider's own table gives the model, as that table spells it: vibe's
+    /// rows carry models.dev's ("GLM-5.3"; spec 2026-11-19 Mistral model names). nil on every
+    /// other provider's row and on a model the table does not name: the row is then named
+    /// from `model` by `ModelPricing.displayName`, as before. Optional and last, so a row
+    /// encoded without it decodes as it did, and a row without it encodes no key for it.
+    var displayName: String? = nil
 
     /// The string both aggregators bucket a turn by, and the row's own id. One
     /// function rather than the same interpolation in four files.

@@ -195,13 +195,14 @@ extension SessionCopy {
         )
     }
 
-    /// One row of the by-model table. The name is `ModelPricing`'s short one — "Opus
-    /// 4.5", "GPT 5.6 Terra" — falling back to the id the log wrote, which is what a
-    /// synthetic or unknown id has instead of a name.
+    /// One row of the by-model table. The name is the one the row carries from its
+    /// provider's table, as spelled there ("GLM-5.3", vibe's), else `ModelPricing`'s short
+    /// one — "Opus 4.5", "GPT 5.6 Terra" — falling back to the id the log wrote, which is
+    /// what a synthetic or unknown id has instead of a name.
     static func modelColumns(_ model: SessionModelSummary) -> SessionModelColumns {
         SessionModelColumns(
             id: model.id,
-            model: ModelPricing.displayName(for: model.model) ?? model.model,
+            model: model.displayName ?? ModelPricing.displayName(for: model.model) ?? model.model,
             effort: model.effort,
             turns: "\(model.turns)",
             tokens: TokenFormat.formatTokens(model.tokens.total),

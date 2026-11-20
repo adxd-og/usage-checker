@@ -143,7 +143,7 @@ final class VibeUsageAggregatorTests: XCTestCase {
         await vibe.refresh(now: now)
         let b = await vibe.breakdown(now: now)
         XCTAssertEqual(b.todayCost, 0.002_121_88, accuracy: 1e-12, "911 × 1.40 + 5 952 × 0.14 + 3 × 4.40 = 2 121.88 per million")
-        XCTAssertEqual(b.byModelToday.map { $0.model }, ["Glm 5 3"], "named by vibe's alias, priced by the id it sent")
+        XCTAssertEqual(b.byModelToday.map { $0.model }, ["GLM-5.3"], "named and priced by the id vibe sent")
     }
 
     func testAModelModelsDevDoesNotPriceCountsItsTokensWithoutDollars() async throws {
@@ -165,11 +165,52 @@ final class VibeUsageAggregatorTests: XCTestCase {
         let vibe = aggregator(calendar: utc)
         await vibe.refresh(now: now)
         let b = await vibe.breakdown(now: now)
-        XCTAssertEqual(b.byModelToday.map { $0.model }, ["Mistral Large 4 0 3", "Mistral Medium 3.5", "Glm 5 3"])
+        XCTAssertEqual(b.byModelToday.map { $0.model }, ["Mistral Large 4", "Mistral Medium 3.5", "GLM-5.3"])
         XCTAssertEqual(b.byModelToday.map { $0.tokens }, [871_126, 7_065, 6_866], "66 132 + 797 997 + 6 997 for Large")
         XCTAssertEqual(b.projectsWeek.map(\.displayName), ["Vibe Fixtures / movie app", "Vibe Fixtures / probe"])
         XCTAssertEqual(b.projectsWeek.map(\.totalTokens), [797_997, 87_060], "66 132 + 6 997 + 6 866 + 7 065 in probe")
         XCTAssertEqual(b.projectsWeek.map(\.turns), [2, 9])
+    }
+
+    /// Spec 2026-11-19 Mistral model names § Where it shows: History's models for a window.
+    func testAWindowsModelRowsAreNamedAsModelsDevNamesThem() async throws {
+        try writeAll()
+        MistralModelPricing.update(family)
+        let vibe = aggregator(calendar: utc)
+        await vibe.refresh(now: now)
+        let window = await vibe.usage(from: nov6, to: now)
+        XCTAssertEqual(window.models.map(\.model), ["Mistral Large 4", "Mistral Medium 3.5", "GLM-5.3"])
+        XCTAssertEqual(window.models.map(\.tokens), [871_126, 7_065, 6_866])
+    }
+
+    /// Spec 2026-11-19 Mistral model names § Rule: rows group by the shown name, and a patch id
+    /// models.dev lists on its own stays its own row.
+    func testTwoIdsModelsDevNamesAlikeAreOneRowAndAListedPatchIsItsOwn() async throws {
+        var line = VibeFixture.repeated()
+        line.activeModel = "mistral-large-4"
+        line.modelName = nil
+        var patch = VibeFixture.pruned()
+        patch.activeModel = "mistral-large-4-0-8"
+        patch.modelName = nil
+        for session in [VibeFixture.whole(), line, patch] { try VibeFixture.write(session, under: root) }
+        MistralModelPricing.update(family)
+        let vibe = aggregator(calendar: utc)
+        await vibe.refresh(now: now)
+        let b = await vibe.breakdown(now: now)
+        XCTAssertEqual(b.byModelToday.map { $0.model }, ["Mistral Large 4.0.8", "Mistral Large 4"])
+        XCTAssertEqual(b.byModelToday.map { $0.tokens }, [797_997, 73_129], "66 132 under mistral-large-4-0-3 + 6 997 under mistral-large-4")
+    }
+
+    /// Spec 2026-11-19 Mistral model names § Rule: an empty table (offline first launch) changes
+    /// nothing.
+    func testWithNoFamilyLoadedTheRowsReadAsTheyDidBefore() async throws {
+        try writeAll()
+        let vibe = aggregator(calendar: utc)
+        await vibe.refresh(now: now)
+        let b = await vibe.breakdown(now: now)
+        XCTAssertEqual(b.byModelToday.map { $0.model }, ["Glm 5 3", "Mistral Large 4 0 3", "Mistral Medium 3.5"], "unpriced, so by name")
+        let window = await vibe.usage(from: nov6, to: now)
+        XCTAssertEqual(window.models.map(\.model), ["Glm 5 3", "Mistral Large 4 0 3", "Mistral Medium 3.5"])
     }
 
     func testASessionCrossingMidnightSplitsBetweenTheTwoDays() async throws {

@@ -104,6 +104,25 @@ final class VibeSessionsTests: XCTestCase {
         XCTAssertNil(chat.models.first?.effort)
     }
 
+    /// Spec 2026-11-19 Mistral model names § Where it shows: the chat's by-model table.
+    func testAChatsModelRowKeepsTheLogsIdAndCarriesModelsDevsName() async throws {
+        MistralModelPricing.update(ModelsDevPricing.parseFamily(ModelsDevMistralFixture.root, provider: ModelsDevPricing.vibeFamily))
+        let list = try await chats([VibeFixture.glm()], calendar: utc, from: nov6)
+        let row = try XCTUnwrap(list.first?.models.first)
+        XCTAssertEqual(row.model, "glm-5-3", "the row is keyed by the id vibe's log wrote")
+        XCTAssertEqual(row.id, "glm-5-3|")
+        XCTAssertEqual(row.displayName, "GLM-5.3", "found through the id vibe sent, zai-glm-5-3")
+        XCTAssertEqual(SessionCopy.modelColumns(row).model, "GLM-5.3", "as models.dev spells it, not prettified again")
+    }
+
+    /// Spec 2026-11-19 Mistral model names § Rule: an empty table changes nothing.
+    func testWithNoFamilyLoadedAChatsModelRowReadsAsItDidBefore() async throws {
+        let list = try await chats([VibeFixture.glm()], calendar: utc, from: nov6)
+        let row = try XCTUnwrap(list.first?.models.first)
+        XCTAssertNil(row.displayName)
+        XCTAssertEqual(SessionCopy.modelColumns(row).model, "Glm 5 3")
+    }
+
     func testAChatsProjectReadsAsTheFolderItRanIn() async throws {
         var untitled = VibeFixture.whole()
         untitled.title = nil
