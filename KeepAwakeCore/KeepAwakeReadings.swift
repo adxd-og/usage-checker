@@ -109,4 +109,10 @@ extension KeepAwakeReadings {
             return state.rawValue > ProcessInfo.ThermalState.critical.rawValue ? .critical : .nominal
         }
     }
+
+    /// The level as `info` reports it now: the one reading the helper's guard and the app's card
+    /// both take.
+    static func liveThermal(_ info: ProcessInfo = .processInfo) -> KeepAwakeThermalLevel {
+        thermal(from: info.thermalState)
+    }
 }

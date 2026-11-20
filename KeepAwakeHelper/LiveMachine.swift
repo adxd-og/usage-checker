@@ -19,7 +19,7 @@ enum LiveMachine {
             sleepNow: { KeepAwakeCommand.run(KeepAwakeCommand.pmset, ["sleepnow"], timeout: 10) },
             lid: { LiveMachine.lid() },
             power: { LiveMachine.power() },
-            thermal: { KeepAwakeReadings.thermal(from: ProcessInfo.processInfo.thermalState) },
+            thermal: { KeepAwakeReadings.liveThermal() },
             schedule: { scheduler.schedule($0) },
             scheduleExit: { exitScheduler.schedule($0) },
             // Never returns: the idle exit and the stop path decide and exit in one step on
