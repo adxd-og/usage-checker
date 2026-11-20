@@ -64,7 +64,7 @@ final class LimitsPageTests: XCTestCase {
         )
     }
 
-    func testGrokAndAntigravityGetTheEmptyStateThatSaysWhy() {
+    func testGrokAndAntigravityGetTheEmptyStateThatNamesWhoHasAnalytics() {
         let grok = Fixture.snapshot(id: "grok", buckets: [
             Fixture.bucket(id: "grok_weekly", percent: 3, resetsAt: now.addingTimeInterval(day), kind: .weekly),
         ])
@@ -72,7 +72,7 @@ final class LimitsPageTests: XCTestCase {
         XCTAssertEqual(page(nil, serviceID: "antigravity"), .unsupported)
         XCTAssertEqual(
             LimitsCopy.message(for: .unsupported, providerName: "Grok"),
-            "Limit analytics needs a chat-level cost log. Claude and Codex have one."
+            "Limit analytics is available for Claude and Codex only."
         )
     }
 

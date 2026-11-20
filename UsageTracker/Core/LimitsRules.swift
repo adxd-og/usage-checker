@@ -134,7 +134,7 @@ enum LimitsSpan: Equatable, Sendable {
 
 /// What the Limits tab shows for the selected provider and window.
 enum LimitsPage: Equatable, Sendable {
-    /// Grok and Antigravity: no cost log that names a chat.
+    /// Grok, Antigravity and Mistral: providers the tab does not measure.
     case unsupported
     /// Claude or Codex reporting no window, budget or spend limit: signed out, or not
     /// polled yet.

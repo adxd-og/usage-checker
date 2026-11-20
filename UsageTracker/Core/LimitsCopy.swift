@@ -62,7 +62,9 @@ extension LimitsCopy {
 // MARK: - A page without cards
 
 extension LimitsCopy {
-    static let unsupported = "Limit analytics needs a chat-level cost log. Claude and Codex have one."
+    /// Names who has the tab instead of why the others lack it: Mistral has a chat-level cost
+    /// log since 4.3.0 and still no analytics, so "needs a cost log" stopped being the reason.
+    static let unsupported = "Limit analytics is available for Claude and Codex only."
     static let loading = "Loading…"
     static let noSpend = "Nothing spent in the last 7 days."
 
