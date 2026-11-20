@@ -64,6 +64,18 @@ final class AgentResourceStatusFileTests: XCTestCase {
         XCTAssertEqual(AgentResourceRules.wirePercent(.nan), 0)
     }
 
+    /// § Wire format: JSON has no infinity, so no Double may scale out of range on its way to
+    /// the file. A figure too large for tenths goes out as it is.
+    func testTheWireFigureIsFiniteForEveryDouble() {
+        let largest = AgentResourceRules.wirePercent(.greatestFiniteMagnitude)
+        XCTAssertTrue(largest.isFinite, "got \(largest)")
+        XCTAssertEqual(largest, .greatestFiniteMagnitude)
+        XCTAssertTrue(AgentResourceRules.wirePercent(.infinity).isFinite)
+        XCTAssertTrue(AgentResourceRules.wirePercent(-.infinity).isFinite)
+        XCTAssertTrue(AgentResourceRules.wirePercent(.nan).isFinite)
+        XCTAssertEqual(AgentResourceRules.wirePercent(1e307), 1e307, "×10 overflows: as it is")
+    }
+
     func testUnmeasuredFieldsAreAbsentKeysNotNull() throws {
         let text = String(decoding: try StatusFile.encoder.encode(file()), as: UTF8.self)
         XCTAssertTrue(text.contains("\"cpuPercent\" : 212.3"), text)

@@ -101,6 +101,71 @@ final class AgentResourceFiguresTests: XCTestCase {
         XCTAssertEqual(read.cpuSeconds[503], 0)
     }
 
+    // MARK: The ceiling: never above every core, never non-finite
+
+    /// Two hand-built readings of one tty, `span` seconds apart, whose members gained `seconds`.
+    private func pair(
+        from before: [pid_t: Double], gaining seconds: Double, over span: TimeInterval
+    ) -> (AgentResourceRules.Reading, AgentResourceRules.Reading) {
+        var after = before
+        after[501, default: 0] += seconds
+        return (
+            AgentResourceRules.Reading(at: F.t0, cpuSeconds: before, footprintBytes: F.mb, oldestStart: nil),
+            AgentResourceRules.Reading(
+                at: F.t0.addingTimeInterval(span), cpuSeconds: after, footprintBytes: F.mb, oldestStart: nil
+            )
+        )
+    }
+
+    private func cpu(gaining seconds: Double, over span: TimeInterval, cores: Int) -> Double? {
+        let (before, after) = pair(from: [501: 100, 502: 40], gaining: seconds, over: span)
+        return AgentResourceRules.cpuPercent(previous: before, current: after, cores: cores)
+    }
+
+    /// A child the app cannot read (root's, under `sudo`) that a readable parent reaps moves its
+    /// whole lifetime into one span: more than every core for the whole span is that, and the
+    /// figure stops at cores × 100.
+    func testAFigureAboveEveryCoreStopsAtTheCoresTimes100() throws {
+        XCTAssertEqual(cpu(gaining: 60, over: 5, cores: 10), 1000, "60 s in 5 s on 10 cores: 1000, not 1200")
+        XCTAssertEqual(cpu(gaining: 600, over: 5, cores: 10), 1000, "a reaped child's lifetime in one span")
+        XCTAssertEqual(cpu(gaining: 50, over: 5, cores: 10), 1000, "every core for the whole span stays")
+        let below = try XCTUnwrap(cpu(gaining: 49, over: 5, cores: 10))
+        XCTAssertEqual(below, 980, accuracy: 0.001, "below the ceiling: as measured")
+        let wider = try XCTUnwrap(cpu(gaining: 60, over: 5, cores: 18))
+        XCTAssertEqual(wider, 1200, accuracy: 0.001, "18 cores can run 1200 %")
+    }
+
+    func testACoreCountBelowOneCountsAsOneCore() throws {
+        XCTAssertEqual(cpu(gaining: 60, over: 5, cores: 0), 100)
+        XCTAssertEqual(cpu(gaining: 60, over: 5, cores: -4), 100)
+        let below = try XCTUnwrap(cpu(gaining: 2, over: 5, cores: 0))
+        XCTAssertEqual(below, 40, accuracy: 0.001, "below one core: as measured")
+    }
+
+    /// Finite counters can add up to infinity, and two infinite totals subtract to NaN: neither
+    /// is a figure.
+    func testCounterSumsThatOverflowGiveNoCPUFigure() {
+        let huge = Double.greatestFiniteMagnitude
+        func reading(at seconds: TimeInterval, _ counters: [pid_t: Double]) -> AgentResourceRules.Reading {
+            AgentResourceRules.Reading(
+                at: F.t0.addingTimeInterval(seconds), cpuSeconds: counters, footprintBytes: F.mb, oldestStart: nil
+            )
+        }
+        func cpu(_ before: [pid_t: Double], _ after: [pid_t: Double]) -> Double? {
+            AgentResourceRules.cpuPercent(previous: reading(at: 0, before), current: reading(at: 5, after), cores: 10)
+        }
+        XCTAssertNil(cpu([501: 0, 502: 0], [501: huge, 502: huge]), "the newer sum overflows")
+        XCTAssertNil(cpu([501: huge, 502: huge], [501: huge, 502: huge]), "both overflow: infinity minus infinity")
+        XCTAssertNil(cpu([501: huge, 502: huge], [501: 0, 502: 0]), "the older sum overflows")
+    }
+
+    /// A finite gain over a span short enough that the quotient overflows is no figure either.
+    func testAGainWhoseQuotientOverflowsGivesNoCPUFigure() {
+        let (before, after) = pair(from: [501: 0], gaining: 1e306, over: 0.001)
+        XCTAssertGreaterThan(after.at.timeIntervalSince(before.at), 0, "a real span, not the same moment")
+        XCTAssertNil(AgentResourceRules.cpuPercent(previous: before, current: after, cores: 10))
+    }
+
     // MARK: Outcome A (Task 1: a reaped child's time shows in its parent)
     // Each input has a process leave the tree, so outcome B's per-process body gives another
     // figure (170 % and 304 %) and fails these tests (review F5).

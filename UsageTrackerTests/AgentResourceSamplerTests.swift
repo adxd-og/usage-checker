@@ -37,6 +37,23 @@ final class AgentResourceSamplerTests: XCTestCase {
         XCTAssertEqual(tab.memoryBytes, 2099 * F.mb)
     }
 
+    /// § Figures: a CPU figure is never above the Mac's cores × 100, and the sampler is told how
+    /// many cores the Mac has: 11.6 s in 5 s is 232 % on ten cores and stops at 200 % on two.
+    func testTheSamplerCapsItsFiguresAtTheCoreCountItWasGiven() async throws {
+        func secondFigure(cores: Int) async throws -> Double {
+            let machine = FakeMachine()
+            let sampler = machine.sampler(cores: cores)
+            _ = await sampler.sample(ttys: [F.tab], now: F.t0)
+            machine.set(usage: F.usageAt1)
+            let figures = await sampler.sample(ttys: [F.tab], now: F.t0.addingTimeInterval(5))
+            return try XCTUnwrap(figures[F.tab]?.cpuPercent)
+        }
+        let onTen = try await secondFigure(cores: 10)
+        XCTAssertEqual(onTen, 232, accuracy: 0.001)
+        let onTwo = try await secondFigure(cores: 2)
+        XCTAssertEqual(onTwo, 200)
+    }
+
     func testASampleTooSoonAfterTheLastReadsNothingAndKeepsTheFigures() async {
         let machine = FakeMachine()
         let sampler = machine.sampler()

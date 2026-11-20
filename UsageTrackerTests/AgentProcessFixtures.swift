@@ -62,6 +62,9 @@ extension AgentProcessFixture {
     /// Activity Monitor's megabyte.
     static let mb = 1_048_576
 
+    /// The fixture Mac's active processors: a CPU figure is never above 1000 %.
+    static let cores = 10
+
     /// What `proc_pid_rusage` answers at `t0`: CPU seconds and footprint in MB. Root's `login`
     /// (500, 600) is refused, as pid 1 was on the probe of 2026-11-19, so it has no entry.
     static let usageAt0: [pid_t: AgentResourceRules.Usage] = [
@@ -143,7 +146,8 @@ final class FakeMachine: @unchecked Sendable {
         lock.withLock { usages[pid] }
     }
 
-    func sampler() -> AgentResourceSampler {
-        AgentResourceSampler(table: { self.readTable() }, usage: { self.usage($0) })
+    /// A sampler reading this machine, on a Mac with `cores` active processors.
+    func sampler(cores: Int = AgentProcessFixture.cores) -> AgentResourceSampler {
+        AgentResourceSampler(table: { self.readTable() }, usage: { self.usage($0) }, cores: cores)
     }
 }

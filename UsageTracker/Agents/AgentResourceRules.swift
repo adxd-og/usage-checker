@@ -14,7 +14,7 @@ enum AgentResourceRules {
         /// is; nil for a process without one (`??` in `ps`).
         let tty: String?
         /// When the process started (`kp_proc.p_starttime`, wall clock): a tty whose every
-        /// process started after a session's last event is a newer tab's (Task 4, review F4).
+        /// process started after a session's last event is a newer tab's.
         let startedAt: Date
     }
 
@@ -47,7 +47,7 @@ extension AgentResourceRules {
     /// One process's cumulative CPU time and physical footprint, as `proc_pid_rusage` answers
     /// for the user's own processes (`AgentProcessTable.usage`).
     struct Usage: Equatable, Sendable {
-        /// User and system seconds, as Task 1's ruling counts them (R2).
+        /// User and system seconds: the process's own and its reaped children's.
         let cpuSeconds: Double
         /// `ri_phys_footprint`: what Activity Monitor's Memory column shows.
         let footprintBytes: Int
@@ -65,7 +65,7 @@ extension AgentResourceRules {
 
     /// What a session shows and the wire carries. `cpuPercent` is per core, 100 being one core
     /// as Activity Monitor counts it, and nil until a second reading. `oldestStart` is never
-    /// shown: it decides whether the tty's tree is still the session's (Task 4); nil in a figure
+    /// shown: it decides whether the tty's tree is still the session's; nil in a figure
     /// built by hand.
     struct Figures: Equatable, Sendable {
         let cpuPercent: Double?
@@ -103,27 +103,39 @@ extension AgentResourceRules {
     }
 
     /// What `current` shows after `previous` (§ Figures): memory as it is now; CPU from a second
-    /// reading on; the tty's oldest start, for the reused-tty rule.
-    static func figures(previous: Reading?, current: Reading) -> Figures {
+    /// reading on, at most `cores` × 100; the tty's oldest start, for the reused-tty rule.
+    static func figures(
+        previous: Reading?, current: Reading, cores: Int = ProcessInfo.processInfo.activeProcessorCount
+    ) -> Figures {
         Figures(
-            cpuPercent: cpuPercent(previous: previous, current: current),
+            cpuPercent: cpuPercent(previous: previous, current: current, cores: cores),
             memoryBytes: current.footprintBytes,
             oldestStart: current.oldestStart
         )
     }
 
     /// CPU per core between two readings: the seconds gained over the seconds between, × 100.
-    /// nil without a previous reading, or when the span is not positive or longer than
-    /// `maximumSpan`. Never negative.
-    static func cpuPercent(previous: Reading?, current: Reading) -> Double? {
+    /// nil without a previous reading, when the span is not positive or longer than
+    /// `maximumSpan`, or when the figure is not finite. Never negative, and never above `cores`
+    /// × 100, the most the Mac's active processors can run (`cores` below 1 counts as 1).
+    static func cpuPercent(
+        previous: Reading?, current: Reading, cores: Int = ProcessInfo.processInfo.activeProcessorCount
+    ) -> Double? {
         guard let previous else { return nil }
         let span = current.at.timeIntervalSince(previous.at)
         guard span > 0, span <= maximumSpan else { return nil }
-        // Outcome A (Task 1): a process's total holds its reaped children's time, so a child that
+        // A process's total holds its reaped children's time, so a child that
         // exits moves its time into its parent's and the session's total runs on. A total that
         // went down (a process left the tree) gives 0 %.
-        let gained = current.cpuSeconds.values.reduce(0, +) - previous.cpuSeconds.values.reduce(0, +)
-        return max(0, gained) / span * 100
+        let before = previous.cpuSeconds.values.reduce(0, +)
+        let after = current.cpuSeconds.values.reduce(0, +)
+        let percent = max(0, after - before) / span * 100
+        // Finite counters can still add up to infinity: nothing was measured.
+        guard before.isFinite, after.isFinite, percent.isFinite else { return nil }
+        // A child the app cannot read (root's, under `sudo`) adds nothing while it runs; once a
+        // readable parent reaps it, its whole lifetime lands in one span. More than every core
+        // for the whole span is that, never a real figure.
+        return min(percent, Double(max(1, cores)) * 100)
     }
 }
 
@@ -162,7 +174,7 @@ extension AgentResourceRules {
         return Dictionary(newest.map { ($0.value.id, $0.key) }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// Whether a tty's tree is still the session's (§ Which processes, review F4): not when every
+    /// Whether a tty's tree is still the session's (§ Which processes): not when every
     /// process on it started after the session's last event. The session's tab closed and a
     /// newer tab got the same device name, which `AgentSessionStore.isStale` cannot tell from a
     /// live tab. One process as old as the last event, or older, keeps the tree the session's; an
@@ -203,17 +215,20 @@ extension AgentResourceRules {
 
 extension AgentResourceRules {
     /// `cpuPercent` as `status.json` carries it: per core, to one decimal. A negative or
-    /// non-finite figure is 0.
+    /// non-finite figure is 0. A figure too large to scale by ten has no tenths to round and
+    /// goes out as it is, so the answer is finite for every input.
     static func wirePercent(_ percent: Double) -> Double {
         guard percent.isFinite else { return 0 }
-        return (max(0, percent) * 10).rounded() / 10
+        let figure = max(0, percent)
+        let rounded = (figure * 10).rounded() / 10
+        return rounded.isFinite ? rounded : figure
     }
 
     /// The file takes new figures at most this often: the 5 s readings feed the views only.
     static let fileInterval: TimeInterval = 30
 
     /// Whether `next` (figures by session id) goes into `status.json` now, after the file took
-    /// `last` at `lastAt` (§ Sampling, review question 1): when 30 s have passed, when nothing
+    /// `last` at `lastAt` (§ Sampling): when 30 s have passed, when nothing
     /// was taken yet or the clock went back, and at once when a session gained or lost its
     /// figures — its first reading, its end, a newer session or a newer tab taking its tty — so
     /// the file never shows one tree on two sessions for half a minute.
