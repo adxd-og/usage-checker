@@ -21,7 +21,7 @@ final class AgentResourceFiguresTests: XCTestCase {
     func testTheFirstReadingShowsMemoryAndNoCPUYet() throws {
         let first = try XCTUnwrap(reading(F.usageAt0, at: 0))
         XCTAssertEqual(
-            AgentResourceRules.figures(previous: nil, current: first),
+            AgentResourceRules.figures(previous: nil, current: first, cores: AgentProcessFixture.cores),
             AgentResourceRules.Figures(cpuPercent: nil, memoryBytes: 1899 * F.mb, oldestStart: F.tabOpened),
             "2 + 634 + 90 + 20 + 3 + 300 + 150 + 700 MB"
         )
@@ -39,7 +39,7 @@ final class AgentResourceFiguresTests: XCTestCase {
     func testCPUIsTheTimeGainedOverTheTimeBetweenWithOneCoreAt100() throws {
         let first = try XCTUnwrap(reading(F.usageAt0, at: 0))
         let second = try XCTUnwrap(reading(F.usageAt1, at: 5))
-        let figures = AgentResourceRules.figures(previous: first, current: second)
+        let figures = AgentResourceRules.figures(previous: first, current: second, cores: AgentProcessFixture.cores)
         let cpu = try XCTUnwrap(figures.cpuPercent)
         XCTAssertEqual(cpu, 232, accuracy: 0.001, "11.6 s in 5 s")
         XCTAssertEqual(figures.memoryBytes, 2099 * F.mb)
@@ -68,25 +68,25 @@ final class AgentResourceFiguresTests: XCTestCase {
         // claude (502) quit: its MCP servers keep the tty, its Bash tool's shell and the build
         // no longer hang below a member.
         let after = try XCTUnwrap(reading(F.usageAt1, table: F.table.filter { $0.pid != 502 }, at: 5))
-        XCTAssertEqual(AgentResourceRules.figures(previous: before, current: after).cpuPercent, 0)
+        XCTAssertEqual(AgentResourceRules.figures(previous: before, current: after, cores: AgentProcessFixture.cores).cpuPercent, 0)
     }
 
     func testReadingsTooFarApartGiveNoCPU() throws {
         let first = try XCTUnwrap(reading(F.usageAt0, at: 0))
         let late = try XCTUnwrap(reading(F.usageAt1, at: AgentResourceRules.maximumSpan + 1))
-        let figures = AgentResourceRules.figures(previous: first, current: late)
+        let figures = AgentResourceRules.figures(previous: first, current: late, cores: AgentProcessFixture.cores)
         XCTAssertNil(figures.cpuPercent, "the Mac slept, or no session had a tty: start again")
         XCTAssertEqual(figures.memoryBytes, 2099 * F.mb)
         let atTheLimit = try XCTUnwrap(reading(F.usageAt1, at: AgentResourceRules.maximumSpan))
-        XCTAssertNotNil(AgentResourceRules.figures(previous: first, current: atTheLimit).cpuPercent)
+        XCTAssertNotNil(AgentResourceRules.figures(previous: first, current: atTheLimit, cores: AgentProcessFixture.cores).cpuPercent)
     }
 
     func testReadingsAtTheSameMomentOrOutOfOrderGiveNoCPU() throws {
         let first = try XCTUnwrap(reading(F.usageAt0, at: 5))
         let same = try XCTUnwrap(reading(F.usageAt1, at: 5))
         let earlier = try XCTUnwrap(reading(F.usageAt1, at: 0))
-        XCTAssertNil(AgentResourceRules.figures(previous: first, current: same).cpuPercent)
-        XCTAssertNil(AgentResourceRules.figures(previous: first, current: earlier).cpuPercent)
+        XCTAssertNil(AgentResourceRules.figures(previous: first, current: same, cores: AgentProcessFixture.cores).cpuPercent)
+        XCTAssertNil(AgentResourceRules.figures(previous: first, current: earlier, cores: AgentProcessFixture.cores).cpuPercent)
     }
 
     func testAnExtremeCounterNeverTraps() throws {
@@ -173,7 +173,7 @@ final class AgentResourceFiguresTests: XCTestCase {
     func testAProcessThatExitedBetweenTwoReadingsCountsThroughItsParent() throws {
         let before = try XCTUnwrap(reading(F.usageAt1, at: 0))
         let after = try XCTUnwrap(reading(F.usageAt2Reaped, table: F.tableAfterClang, at: 5))
-        let cpu = try XCTUnwrap(AgentResourceRules.figures(previous: before, current: after).cpuPercent)
+        let cpu = try XCTUnwrap(AgentResourceRules.figures(previous: before, current: after, cores: AgentProcessFixture.cores).cpuPercent)
         // Totals 4512.7 → 4516.7: 4.0 s in 5 s, clang's last 0.5 s through xcodebuild. Per process
         // it would be 1.0 + 5.5 + 2.0 = 8.5 s, 170 %: clang's earlier 4.5 s counted twice.
         XCTAssertEqual(cpu, 80, accuracy: 0.001)
@@ -182,7 +182,7 @@ final class AgentResourceFiguresTests: XCTestCase {
     func testAShortProcessBornAndReapedBetweenReadingsCountsOnce() throws {
         let before = try XCTUnwrap(reading(F.usageAt2Reaped, table: F.tableAfterClang, at: 0))
         let after = try XCTUnwrap(reading(F.usageAt3Reaped, table: F.tableAfterSwiftFrontend, at: 5))
-        let cpu = try XCTUnwrap(AgentResourceRules.figures(previous: before, current: after).cpuPercent)
+        let cpu = try XCTUnwrap(AgentResourceRules.figures(previous: before, current: after, cores: AgentProcessFixture.cores).cpuPercent)
         // Totals 4516.7 → 4518.3: the compiler's 1.2 s and swift-frontend's last 0.4 s, 1.6 s in
         // 5 s. Per process it would be xcodebuild's 15.2 s, 304 %.
         XCTAssertEqual(cpu, 32, accuracy: 0.001)

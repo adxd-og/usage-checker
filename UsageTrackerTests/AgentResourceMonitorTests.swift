@@ -158,7 +158,7 @@ final class AgentResourceMonitorTests: XCTestCase {
             let read = try XCTUnwrap(AgentResourceRules.reading(
                 of: tty, in: table, usage: { _ in F.usage(1, 100) }, at: F.t0
             ))
-            let figures = AgentResourceRules.figures(previous: nil, current: read)
+            let figures = AgentResourceRules.figures(previous: nil, current: read, cores: AgentProcessFixture.cores)
             return AgentResourceRules.bySession([ghost], byTTY: [tty: figures])[ghost.id]
         }
         XCTAssertNil(try shown(startingAt: [60, 61, 90]), "every process newer than the last event: a newer tab's")
