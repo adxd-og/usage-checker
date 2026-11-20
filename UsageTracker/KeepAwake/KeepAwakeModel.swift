@@ -19,7 +19,8 @@ final class KeepAwakeModel: ObservableObject {
         floorEnabled: { SettingsStore.shared.keepAwakeFloorEnabled },
         rememberDuration: { SettingsStore.shared.keepAwakeDurationMinutes = $0 },
         resetSettings: { SettingsStore.shared.resetKeepAwake() },
-        thermalGuardEnabled: { SettingsStore.shared.keepAwakeThermalGuardEnabled }
+        thermalGuardEnabled: { SettingsStore.shared.keepAwakeThermalGuardEnabled },
+        thermalLevel: { KeepAwakeReadings.thermal(from: ProcessInfo.processInfo.thermalState) }
     )
 
     @Published private(set) var registration: KeepAwakeRegistration = .notRegistered
@@ -34,6 +35,10 @@ final class KeepAwakeModel: ObservableObject {
     /// that stopped with the flag still set (P1b).
     @Published private(set) var resetIncomplete = false
     @Published private(set) var isWorking = false
+    /// This Mac's thermal level as the app reads it (spec 2026-11-19, § What the user sees): the
+    /// card's "running hot" line. The helper decides the guard on its own reading; this one is
+    /// read when the card appears and when macOS says the level changed (`readThermal`).
+    @Published private(set) var thermal: KeepAwakeThermalLevel = .nominal
     /// A reply was lost: the helper's state is unknown until it answers (review C7).
     private(set) var needsReconcile = false
     /// The thermal guard as the helper last said it holds it (spec 2026-11-19, § Daemon): taken
@@ -58,6 +63,7 @@ final class KeepAwakeModel: ObservableObject {
     private let rememberDuration: @MainActor (Int) -> Void
     private let resetSettings: @MainActor () -> Void
     private let thermalGuardEnabled: @MainActor () -> Bool
+    private let thermalLevel: @MainActor () -> KeepAwakeThermalLevel
     private var countdown: Task<Void, Never>?
 
     init(
@@ -65,13 +71,15 @@ final class KeepAwakeModel: ObservableObject {
         floorEnabled: @escaping @MainActor () -> Bool,
         rememberDuration: @escaping @MainActor (Int) -> Void,
         resetSettings: @escaping @MainActor () -> Void,
-        thermalGuardEnabled: @escaping @MainActor () -> Bool = { true }
+        thermalGuardEnabled: @escaping @MainActor () -> Bool = { true },
+        thermalLevel: @escaping @MainActor () -> KeepAwakeThermalLevel = { .nominal }
     ) {
         self.client = client
         self.floorEnabled = floorEnabled
         self.rememberDuration = rememberDuration
         self.resetSettings = resetSettings
         self.thermalGuardEnabled = thermalGuardEnabled
+        self.thermalLevel = thermalLevel
     }
 
     /// Failures after which the request may or may not have reached the helper.
@@ -189,6 +197,11 @@ final class KeepAwakeModel: ObservableObject {
 
     func openLoginItems() {
         SMAppService.openSystemSettingsLoginItems()
+    }
+
+    /// Reads the thermal level now, for the card's "running hot" line.
+    func readThermal() {
+        thermal = thermalLevel()
     }
 
     // MARK: - Private
