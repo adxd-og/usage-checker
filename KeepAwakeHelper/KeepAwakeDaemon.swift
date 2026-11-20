@@ -33,6 +33,14 @@ final class KeepAwakeXPCHandler: NSObject, KeepAwakeXPCProtocol {
         }
     }
 
+    func setThermalGuard(enabled: Bool, withReply reply: @escaping @Sendable (Data) -> Void) {
+        let service = self.service
+        Task {
+            let result = await service.setThermalGuard(enabled: enabled, now: Date())
+            reply(KeepAwakeCoding.encode(result))
+        }
+    }
+
     func state(withReply reply: @escaping @Sendable (Data) -> Void) {
         let service = self.service
         Task {

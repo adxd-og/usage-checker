@@ -108,6 +108,13 @@ struct KeepAwakeMachine: Sendable {
 ///    notification, within a minute of the lid closing, `serious` within two. A notification
 ///    while nothing is armed feeds the engine nothing and reaches no apply step, so
 ///    it never moves the idle exit (rule 9).
+/// 14. The guard's switch (thermal guard spec 2026-11-19, § Settings). `setThermalGuard` sets
+///    the engine's guard in any state and feeds it no reading: turning it on ends nothing by
+///    itself (the next tick or notification decides, within a minute), turning it off forgets
+///    a hot minute being counted. It forces no flag: armed, idle or ended, with the flag as
+///    last applied, it runs no pmset and writes no file, and a flag another tool set stays
+///    theirs (rule 2). For the rest it is an input like the others at the apply step: a mode
+///    past its deadline ends there, and a flag or a sleep still owed is retried (rules 2, 5).
 actor KeepAwakeService {
     private let machine: KeepAwakeMachine
     private let stateFile: KeepAwakeStateFile
@@ -205,6 +212,15 @@ actor KeepAwakeService {
         readPower(now: now, lidSleeps: lidSleeps)
         var output = engine.setFloor(enabled: enabled, now: now, lidClosed: lidSleeps)
         output.sleepNow = endedDuringInput(wasArmed: before.isArmed, lidSleeps: lidSleeps)
+        return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
+    }
+
+    /// The thermal guard's switch (rule 14). Neither the battery nor the level is read for the
+    /// engine: the one engine call settles the deadline, and its output is applied unforced.
+    func setThermalGuard(enabled: Bool, now: Date) -> KeepAwakeReply {
+        let lidSleeps = machine.lid().sleepsWhenClosed
+        let before = engine.state
+        let output = engine.setThermalGuard(enabled: enabled, now: now, lidClosed: lidSleeps)
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
     }
 
