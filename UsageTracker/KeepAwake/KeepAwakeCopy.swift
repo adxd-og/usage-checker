@@ -109,6 +109,7 @@ enum KeepAwakeCopy {
         case .cancelled: return "cancelled"
         case .restarted: return "the Mac or the helper restarted"
         case .stopped: return "the helper was stopped"
+        case .overheated: return "the Mac was overheating"
         }
     }
 

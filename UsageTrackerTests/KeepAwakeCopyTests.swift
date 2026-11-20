@@ -101,7 +101,8 @@ final class KeepAwakeCopyTests: XCTestCase {
         XCTAssertEqual(line(.cancelled), "Ended 14:02 · cancelled")
         XCTAssertEqual(line(.restarted), "Ended 14:02 · the Mac or the helper restarted")
         XCTAssertEqual(line(.stopped), "Ended 14:02 · the helper was stopped")
-        XCTAssertEqual(KeepAwakeEndReason.allCases.count, 5, "a new reason needs its words here")
+        XCTAssertEqual(line(.overheated), "Ended 14:02 · the Mac was overheating")
+        XCTAssertEqual(KeepAwakeEndReason.allCases.count, 6, "a new reason needs its words here")
     }
 
     func testAnEndOnAnEarlierDayNamesTheDate() {
