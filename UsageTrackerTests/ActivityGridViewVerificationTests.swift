@@ -34,7 +34,11 @@ final class ActivityGridViewVerificationTests: XCTestCase {
         // The same calendar date's midnight at UTC-5.
         let minus5Midnight = minus5.startOfDay(for: utcMidnight)
 
-        let cache = GridCache.build(from: [row(utcMidnight, cost: 12)], weeks: 12, calendar: minus5)
+        // 2026-09-06 12:00 UTC. Without it the grid counts its twelve weeks back from the real
+        // clock, and the row left the grid on 2026-11-19.
+        let now = Date(timeIntervalSince1970: 1_788_696_000)
+
+        let cache = GridCache.build(from: [row(utcMidnight, cost: 12)], weeks: 12, now: now, calendar: minus5)
 
         XCTAssertEqual(cache.value(on: minus5Midnight), 12)
         XCTAssertNil(cache.value(on: utcMidnight), "the raw UTC midnight is not a date this calendar draws a square for")
