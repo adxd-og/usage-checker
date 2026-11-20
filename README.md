@@ -204,7 +204,7 @@ sessions you already have running.
   Idle*, with the project and what it's doing
 - **CPU and memory per session**: what each session running in a terminal
   costs the Mac, its tools' builds and tests included. The island adds
-  "212% · 3.4 GB" to a row from 50% CPU or 4 GB up, but not to a row that
+  "212% · 3.4 GB" to a row from 50% of one core or 4 GB up, but not to a row that
   needs you; the Agents tab shows both for every such session and sorts by
   CPU. 100% is one core, as in Activity Monitor, or the whole Mac
   (Settings → Menu bar → Agents). A session in an IDE panel shows nothing
