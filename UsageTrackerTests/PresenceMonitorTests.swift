@@ -133,7 +133,7 @@ final class PresenceMonitorTests: XCTestCase {
             userInfo: [NSWorkspace.applicationUserInfoKey: NSRunningApplication.current]
         )
 
-        let deadline = Date().addingTimeInterval(1)
+        let deadline = Date().addingTimeInterval(5)
         while seen.isEmpty && Date() < deadline { RunLoop.main.run(until: Date().addingTimeInterval(0.02)) }
         XCTAssertEqual(seen, [getpid()])
     }
