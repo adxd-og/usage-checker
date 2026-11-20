@@ -106,14 +106,18 @@ enum AgentRowText {
     }
 
     /// One sentence carrying everything the row shows visually: project,
-    /// provider, state, activity, and how long it has been that way.
-    static func accessibilityLabel(for session: AgentSession, now: Date = Date()) -> String {
+    /// provider, state, activity, how long it has been that way, and the session's CPU and
+    /// memory when the row shows them.
+    static func accessibilityLabel(for session: AgentSession, now: Date = Date(), resources: String? = nil) -> String {
         var parts = [session.projectName, sourceName(session.source), statePhrase(session.state)]
         let activity = session.activity?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         if !activity.isEmpty {
             parts.append(session.isApproximate ? "approximately \(activity)" : activity)
         }
         parts.append(spokenElapsed(since: session.stateSince, now: now, state: session.state))
+        if let resources, !resources.isEmpty {
+            parts.append(resources)
+        }
         return parts.joined(separator: ", ")
     }
 
@@ -138,6 +142,25 @@ enum AgentRowText {
     /// 2026-11-02).
     static func needsYouOnTitle(_ metrics: OMAgentRowMetrics) -> Bool {
         metrics == .dashboard
+    }
+
+    /// Where a session's CPU and memory go (spec 2026-11-19 agent resources § Where it shows):
+    /// in a column beside the elapsed time in the dashboard's wide row; at the end of the second
+    /// line in the island's half column, where the activity gives way to them and the title
+    /// keeps the project.
+    static func resourcesInTrailingColumn(_ metrics: OMAgentRowMetrics) -> Bool {
+        metrics == .dashboard
+    }
+
+    /// Whether the row carries an action for the user, from the row's own two predicates: it
+    /// needs them (`state == .needsYou`, what `titleBadge` and `AgentsSection.flat` key on: a
+    /// permission request, a question, a plan) or it holds Allow / Deny
+    /// (`permissionButtonsVisible`). Such a row shows no resource suffix in the island, so its
+    /// badge and question keep the width, and keeps its place in the Agents tab's CPU order, so
+    /// a button never moves under the pointer (spec 2026-11-19 agent resources § Where it shows).
+    static func carriesAction(_ session: AgentSession) -> Bool {
+        session.state == .needsYou
+            || permissionButtonsVisible(pendingPermissionID: session.pendingPermissionID, source: session.source)
     }
 
     /// The accent word that opens the second line where the title has no room for it.
@@ -237,6 +260,9 @@ struct OMAgentRow: View {
     var showsProviderIcon: Bool = true
     /// The popover's size unless the host opts into the dashboard's (`OMAgentRowMetrics`).
     var metrics: OMAgentRowMetrics = OMAgentRow.defaultMetrics
+    /// The session's CPU and memory as the host's rule wrote them (`AgentResourceCopy`); nil
+    /// shows nothing. Where they go is `AgentRowText.resourcesInTrailingColumn(metrics)`.
+    var resources: String? = nil
     /// Called by the row's **Allow** / **Deny**. Defaults do nothing so previews and
     /// any host that does not deal in permissions can ignore them. They precede
     /// `action`, which is why every call site passes `action:` by name: an unlabeled
@@ -309,7 +335,7 @@ struct OMAgentRow: View {
                 .focusEffectDisabled()
                 .help(AgentRowText.jumpHelp(for: session))
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(AgentRowText.accessibilityLabel(for: session))
+                .accessibilityLabel(AgentRowText.accessibilityLabel(for: session, resources: resources))
                 .accessibilityHint("Brings the window running this session to the front")
                 .accessibilityAddTraits(.isButton)
 
@@ -381,12 +407,17 @@ struct OMAgentRow: View {
             leading
             VStack(alignment: .leading, spacing: 1) {
                 titleLine
-                subtitleText
-                    .font(.system(size: metrics.subtitleSize))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                secondLine
             }
             Spacer(minLength: OMSpacing.xs)
+            // The dashboard's figures: a column of their own beside the elapsed time.
+            if let resources, AgentRowText.resourcesInTrailingColumn(metrics) {
+                Text(resources)
+                    .font(.system(size: metrics.subtitleSize))
+                    .monospacedDigit()
+                    .foregroundStyle(.om(.secondary))
+                    .fixedSize()
+            }
             // Only the elapsed time is on a clock, so only it re-renders.
             TimelineView(.periodic(from: .now, by: 30)) { context in
                 Text(AgentRowText.elapsed(since: session.stateSince, now: context.date, state: session.state))
@@ -397,6 +428,24 @@ struct OMAgentRow: View {
             .fixedSize()
         }
         .contentShape(Rectangle())
+    }
+
+    /// The second line. In the island a busy session's figures end it: the activity truncates
+    /// before them, never the figures before the activity.
+    private var secondLine: some View {
+        HStack(spacing: 0) {
+            subtitleText
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if let resources, !AgentRowText.resourcesInTrailingColumn(metrics) {
+                Text(AgentRowText.subtitleTail(resources))
+                    .monospacedDigit()
+                    .foregroundStyle(.om(.secondary))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+        }
+        .font(.system(size: metrics.subtitleSize))
     }
 
     /// The second line: "Needs you · Which option…" with the badge in the accent where

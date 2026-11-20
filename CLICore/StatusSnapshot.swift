@@ -184,6 +184,17 @@ struct StatusSnapshot: Codable, Equatable, Sendable {
         /// `AgentState.rawValue`: "needsYou", "working", "done", "idle".
         let state: String
         var activity: String?
+        /// The CPU of the session's processes, per core (100 is one core, as Activity Monitor
+        /// counts it), to one decimal, from the second reading on (spec 2026-11-19 agent
+        /// resources § Wire format). The island and the Agents tab may print it on the Whole
+        /// Mac scale; this key never is, so it has one meaning.
+        var cpuPercent: Double? = nil
+        /// The physical footprint of the session's processes, in bytes, from the first reading.
+        ///
+        /// Both are absent for a session with no tty (an IDE panel, a desktop app) and for one
+        /// not measured yet. Optional and last: a file written before them decodes as it did, a
+        /// reader that does not know them ignores them, and neither is a new `currentVersion`.
+        var memoryBytes: Int? = nil
     }
 
     /// Whether these numbers are recent enough to speak for. See `freshness`.

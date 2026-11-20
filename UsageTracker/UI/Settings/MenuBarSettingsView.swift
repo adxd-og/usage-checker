@@ -11,6 +11,9 @@ enum MenuBarSettingsCopy {
     static let providersEmpty = "Providers appear here once they report usage."
     static let agentsHeader = "Agents"
     static let agentsTitle = "Show agents in the menu bar"
+    /// The agents' CPU scale (spec 2026-11-19 agent resources, Decision 2).
+    static let cpuScaleTitle = "CPU figures"
+    static let cpuScaleCaption = "In the island and the Agents tab. Per core: one busy core is 100%, as in Activity Monitor. Whole Mac: all cores together are 100%."
     /// The mockup's 20 pt logo box.
     static let logoBox: CGFloat = 20
     static let logoGlyph: CGFloat = 15
@@ -108,6 +111,18 @@ struct MenuBarSettingsView: View {
     private var agents: some View {
         SettingsSection(header: MenuBarSettingsCopy.agentsHeader) {
             SettingsSwitchRow(title: MenuBarSettingsCopy.agentsTitle, isOn: $settings.agentsShowInMenuBar)
+            // What the island and the Agents tab print a session's CPU on; status.json stays per
+            // core (spec 2026-11-19 agent resources, Decision 2).
+            SettingsRow(title: MenuBarSettingsCopy.cpuScaleTitle, caption: MenuBarSettingsCopy.cpuScaleCaption) {
+                Picker(MenuBarSettingsCopy.cpuScaleTitle, selection: $settings.agentsCPUScale) {
+                    ForEach(AgentCPUScale.allCases) { scale in
+                        Text(scale.displayName).tag(scale)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .fixedSize()
+            }
         }
     }
 }

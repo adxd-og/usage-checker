@@ -71,6 +71,10 @@ struct AgentsSection: View {
     /// Each row's height as last laid out, by session id, so the first two are known
     /// whichever sessions lead the list.
     @State private var rowHeights: [String: CGFloat] = [:]
+    /// Each session's CPU and memory and the scale to print them on: a busy row's suffix (spec
+    /// 2026-11-19 agent resources § Where it shows).
+    @ObservedObject private var monitor = AgentResourceMonitor.shared
+    @ObservedObject private var settings = SettingsStore.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: OMSpacing.s) {
@@ -171,6 +175,10 @@ struct AgentsSection: View {
         OMAgentRow(
             session: session,
             showsProviderIcon: grouped,
+            resources: Self.resourceSuffix(
+                for: session, figures: monitor.bySession, scale: settings.agentsCPUScale,
+                cores: ProcessInfo.processInfo.activeProcessorCount
+            ),
             onAllow: { Self.answer(session, .allow) },
             onDeny: { Self.answer(session, .deny) },
             action: { Self.jump(to: session, onLanded: onJumpStarted?()) }
@@ -286,6 +294,19 @@ extension AgentsSection {
     /// Finished work stays readable but stops competing with live rows.
     nonisolated static func rowOpacity(_ state: AgentState) -> Double {
         (state == .done || state == .idle) ? 0.7 : 1
+    }
+
+    /// A row's suffix: the figures the session shows, by session id
+    /// (`AgentResourceMonitor.bySession`), from 50% CPU per core or 4 GB up
+    /// (`AgentResourceCopy.islandSuffix`). Nothing for a row that needs the user
+    /// (`AgentRowText.carriesAction`), whose badge and question keep the half column's width;
+    /// nothing for a session without a tty (Decision 3), an older session on a shared tty or a
+    /// session whose tty a newer tab reuses.
+    nonisolated static func resourceSuffix(
+        for session: AgentSession, figures: [String: AgentResourceRules.Figures], scale: AgentCPUScale, cores: Int
+    ) -> String? {
+        guard !AgentRowText.carriesAction(session) else { return nil }
+        return AgentResourceCopy.islandSuffix(figures[session.id], scale: scale, cores: cores)
     }
 
     /// The least the popover may cap the list to (popover height budget spec

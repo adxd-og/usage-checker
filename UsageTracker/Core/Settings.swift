@@ -83,6 +83,9 @@ final class SettingsStore: ObservableObject {
         static let petEnabled = true
         static let earsEnabled = true
         static let petChoice = PetChoice.standard
+        /// The agents' CPU scale (spec 2026-11-19 agent resources, Decision 2): per core, as
+        /// Activity Monitor counts.
+        static let agentsCPUScale = AgentCPUScale.perCore
 
         // Provider toggles are auto-detection, not fixed values: a reset should
         // re-detect what's installed now rather than pin what was found at first
@@ -263,6 +266,24 @@ final class SettingsStore: ObservableObject {
         return PetChoice(animal: animal, palette: palette ?? "")
     }
 
+    /// Defaults key for the agents' CPU scale. Spelled out because the tests read it by name.
+    static let agentsCPUScaleKey = "agentsCPUScale"
+
+    /// What the island and the Agents tab print a session's CPU on (spec 2026-11-19 agent
+    /// resources, Decision 2); `status.json` stays per core. A plain `@Published` over an
+    /// explicit key for the reason `showsRemaining` gives: both repaint the moment it moves.
+    @Published var agentsCPUScale: AgentCPUScale = Defaults.agentsCPUScale {
+        didSet {
+            guard oldValue != agentsCPUScale else { return }
+            UserDefaults.standard.set(agentsCPUScale.rawValue, forKey: Self.agentsCPUScaleKey)
+        }
+    }
+
+    /// What the defaults hold as a scale: Whole Mac only when they hold its raw value.
+    nonisolated static func storedCPUScale(_ raw: String?) -> AgentCPUScale {
+        raw.flatMap(AgentCPUScale.init(rawValue:)) ?? .perCore
+    }
+
     /// Puts every stored setting back to its default. Lives here rather than in the
     /// Settings button so adding a setting means touching one file, not two — the
     /// old button reset ten of them and quietly left providers, budget, menu bar
@@ -318,6 +339,8 @@ final class SettingsStore: ObservableObject {
         for key in [Self.petEnabledKey, Self.earsEnabledKey, Self.petAnimalKey, Self.petPaletteKey] {
             UserDefaults.standard.removeObject(forKey: key)
         }
+        agentsCPUScale = Defaults.agentsCPUScale
+        UserDefaults.standard.removeObject(forKey: Self.agentsCPUScaleKey)
         resetKeepAwake()
 
         // Choices that live in the views and state objects rather than in a property
@@ -329,6 +352,8 @@ final class SettingsStore: ObservableObject {
         // The Limits tab's window switch, and its Chats / Projects choice per provider.
         UserDefaults.standard.removeObject(forKey: LimitsRules.windowKey)
         UserDefaults.standard.removeObject(forKey: LimitsRules.groupingKey)
+        // The Agents tab's Live card order, State or CPU.
+        UserDefaults.standard.removeObject(forKey: AgentsLiveCard.sortKey)
         // What 3.x kept of the popover's heights per tab; 4.0 writes nothing there.
         UserDefaults.standard.removeObject(forKey: PopoverHeightRules.fixedHeightsKey)
         // "Already alerted at 80%" is state the old thresholds produced; after a reset
@@ -375,6 +400,7 @@ final class SettingsStore: ObservableObject {
             animal: UserDefaults.standard.string(forKey: Self.petAnimalKey),
             palette: UserDefaults.standard.string(forKey: Self.petPaletteKey)
         )
+        agentsCPUScale = Self.storedCPUScale(UserDefaults.standard.string(forKey: Self.agentsCPUScaleKey))
     }
 
     var interval: TimeInterval {

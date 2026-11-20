@@ -87,6 +87,13 @@ final class AppState: ObservableObject {
     /// `onNeedsYou` / `onDone` hooks: those two belong to `UsageNotifier`, and a
     /// session moving from working to idle still changes what the file says.
     private var agentObserver: AnyCancellable?
+    /// The figures each agent session shows, by session id, as `status.json` last took them from
+    /// the monitor (spec 2026-11-19 agent resources § Wire format): every write in between
+    /// carries them.
+    private var lastResources: [String: AgentResourceRules.Figures] = [:]
+    /// When the file last took new figures: at most every 30 s (`AgentResourceRules.publishesToFile`).
+    private var lastResourcesAt: Date?
+    private var resourceObserver: AnyCancellable?
     /// One trailing write is pending, so the throttle can never swallow the last change.
     private var statusWriteScheduled = false
     /// Bumped by every `publishStatusFileAfterPoll()`. Each poll's gather remembers the
@@ -107,6 +114,10 @@ final class AppState: ObservableObject {
             AgentEventRouter.handle(event, reply: reply, store: AgentSessionStore.shared, broker: PermissionBroker.shared)
         }
         observeAgentSessions()
+        // CPU and memory per live session with a tty (spec 2026-11-19 agent resources
+        // § Sampling): the monitor follows the session list and samples off the main actor.
+        AgentResourceMonitor.shared.follow(AgentSessionStore.shared.$sessions)
+        observeAgentResources()
         seedFromLastKnown()
         removeLegacyClaudeTokenCopy()
         refreshNow()
@@ -672,6 +683,49 @@ final class AppState: ObservableObject {
             }
     }
 
+    /// New figures go into `status.json` with the costs, chats and shares the last poll left, at
+    /// most every 30 s, and at once when a session gains or loses its figures
+    /// (`AgentResourceRules.publishesToFile`): the 5 s readings while the island or the Agents tab
+    /// is open feed the views only (spec 2026-11-19 agent resources § Sampling). `@Published`
+    /// sends before the value lands, so the sent figures are the ones kept.
+    private func observeAgentResources() {
+        resourceObserver = Self.resourceWrites(of: AgentResourceMonitor.shared)
+            .sink { write in
+                MainActor.assumeIsolated {
+                    let app = AppState.shared
+                    let now = Date()
+                    guard AgentResourceRules.publishesToFile(
+                        write.figures, over: app.lastResources, lastAt: app.lastResourcesAt, now: now
+                    ) else { return }
+                    app.lastResources = write.figures
+                    app.lastResourcesAt = now
+                    app.publishStatusFile(
+                        costs: app.lastCosts, sessions: app.lastSessions, shares: app.lastShares,
+                        agents: write.agents
+                    )
+                }
+            }
+    }
+
+    /// What a write for a change of the monitor's figures carries: the figures it sent, and the
+    /// agents from the list the monitor was handed. A session
+    /// that ends changes `bySession` inside the session store's own `willSet` (the monitor's
+    /// `follow` sink recomputes it synchronously), when `AgentSessionStore.shared.sessions` still
+    /// holds the list from before the change; the monitor stores the new list before it
+    /// recomputes, so the session that ended does not come back in the file.
+    static func resourceWrites(
+        of monitor: AgentResourceMonitor
+    ) -> AnyPublisher<(figures: [String: AgentResourceRules.Figures], agents: StatusFileWriter.AgentSummary), Never> {
+        monitor.$bySession
+            .dropFirst()
+            .map { figures in
+                MainActor.assumeIsolated {
+                    (figures: figures, agents: StatusFileWriter.AgentSummary(sessions: monitor.sessions))
+                }
+            }
+            .eraseToAnyPublisher()
+    }
+
     /// What the file should say about the agents, from the list the store's publisher
     /// hands its subscribers. `@Published` delivers in `willSet`: while a subscriber runs,
     /// the store's own `sessions` still holds the list from before the change, so a
@@ -705,6 +759,7 @@ final class AppState: ObservableObject {
             // Read at every write: a cleared budget drops its share at once.
             weeklyBudgetUSD: SettingsStore.shared.claudeWeeklyBudgetUSD,
             agents: agents ?? StatusFileWriter.AgentSummary(sessions: AgentSessionStore.shared.sessions),
+            resources: lastResources,
             now: Date(),
             mode: SettingsStore.shared.percentMode
         )

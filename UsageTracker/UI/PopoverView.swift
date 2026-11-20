@@ -134,10 +134,25 @@ struct PopoverView: View {
         // copied straight out of the island.
         .textSelection(.enabled)
         .task { await refreshHookStatus() }
+        .modifier(ResourceWatch(monitor: .shared))
         // A page whose provider left falls back to All; with one provider left, its page is
         // home (§ 3.4).
         .onChange(of: providerIDs, initial: true) { _, ids in
             navigation.request(.providersChanged, providers: ids)
+        }
+    }
+
+    /// The agents' CPU and memory every 5 s while the island is open (spec 2026-11-19 agent
+    /// resources § Sampling): each open is an appearance, each close a disappearance. The token
+    /// is this view instance's own: the monitor counts the island open per instance.
+    struct ResourceWatch: ViewModifier {
+        let monitor: AgentResourceMonitor
+        @State private var token = UUID()
+
+        func body(content: Content) -> some View {
+            content
+                .onAppear { monitor.setWatching(.island, by: token, true) }
+                .onDisappear { monitor.setWatching(.island, by: token, false) }
         }
     }
 

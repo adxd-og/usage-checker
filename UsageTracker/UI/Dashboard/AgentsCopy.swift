@@ -29,4 +29,11 @@ enum AgentsCopy {
 
     /// The link at the Live card's trailing edge. The chevron is `OMLinkButtonStyle`'s.
     static let historyLink = "All sessions in History"
+
+    // MARK: Sort (spec 2026-11-19 agent resources § Where it shows)
+
+    /// What VoiceOver calls the Live card's State / CPU switch.
+    static let sortPickerName = "Sort"
+    static let sortByState = "State"
+    static let sortByCPU = "CPU"
 }

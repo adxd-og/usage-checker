@@ -7,12 +7,18 @@ import SwiftUI
 struct AgentsHistoryView: View {
     @ObservedObject var dashboard: DashboardState
     @ObservedObject private var agents = AgentSessionStore.shared
+    /// Each live session's CPU and memory, and the scale to print them on (spec 2026-11-19 agent
+    /// resources § Where it shows).
+    @ObservedObject private var monitor = AgentResourceMonitor.shared
+    @ObservedObject private var settings = SettingsStore.shared
 
     nonisolated static let sourceKey = "agentsHistorySource"
 
     @AppStorage(AgentsHistoryView.sourceKey) private var storedSource: String = "all"
     /// The window's tab. Writing it is how any view switches tabs; the window follows.
     @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
+    /// The Live card's order, State or CPU (`AgentsLiveCard.selectedSort`).
+    @AppStorage(AgentsLiveCard.sortKey) private var storedSort: String = AgentsLiveSort.state.rawValue
 
     /// nil = every source. An unknown stored value (a provider that never shipped, a
     /// hand-edited plist) reads as All rather than filtering everything away.
@@ -50,7 +56,14 @@ struct AgentsHistoryView: View {
                 VStack(alignment: .leading, spacing: AgentsLayout.cardSpacing) {
                     AgentsStatsCard(tiles: AgentsStatsRules.tiles(summary))
 
-                    AgentsLiveCard(sessions: liveSessions, onShowHistory: { showHistory() })
+                    AgentsLiveCard(
+                        sessions: liveSessions,
+                        figures: monitor.bySession,
+                        scale: settings.agentsCPUScale,
+                        cores: ProcessInfo.processInfo.activeProcessorCount,
+                        sort: $storedSort,
+                        onShowHistory: { showHistory() }
+                    )
                 }
                 // The mockup's column, whose side gutters the header already sits on.
                 .padding(.top, AgentsLayout.headerGap)
@@ -63,6 +76,25 @@ struct AgentsHistoryView: View {
         // the cheapest signal that the count is stale. Also runs on first appearance.
         .task(id: Self.historyReloadKey(sessions: agents.sessions.count, lastEventAt: agents.lastEventAt)) {
             await dashboard.refreshAgentHistory()
+        }
+        .modifier(ResourceWatch(monitor: monitor))
+    }
+
+    /// CPU and memory every 5 s while this tab is on screen (spec 2026-11-19 agent resources
+    /// § Sampling). A closed dashboard is hidden, not gone, so the window's own visibility says
+    /// when; leaving the tab removes the view. The token is this view instance's own: the
+    /// dashboard rebuilds the view when its window shows again, and the old instance's late
+    /// "gone" must not switch off the new one.
+    struct ResourceWatch: ViewModifier {
+        let monitor: AgentResourceMonitor
+        @State private var token = UUID()
+
+        func body(content: Content) -> some View {
+            content
+                .background(WindowVisibilityReader { visible in
+                    monitor.setWatching(.agentsTab, by: token, visible)
+                })
+                .onDisappear { monitor.setWatching(.agentsTab, by: token, false) }
         }
     }
 
