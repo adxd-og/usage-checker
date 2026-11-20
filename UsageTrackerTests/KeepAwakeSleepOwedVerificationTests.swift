@@ -318,7 +318,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
             case .arm: return await arm.reply()
             case .setFloor: return .failure(.helperTimedOut)
             case .state: return .success(KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
-            case .disarm: return .success(KeepAwakeReply(state: .idle, failure: nil))
+            case .disarm, .setThermalGuard: return .success(KeepAwakeReply(state: .idle, failure: nil))
             }
         }
         await applyWithTheFloorFlipped(model: model, floor: floor, arm: arm, release: answer(.armed(deadline: t0 + 7_200, floorEnabled: false)))
@@ -349,7 +349,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
             switch request {
             case .arm: return await arm.reply()
             case .disarm, .setFloor: return answer(cancelled)
-            case .state: return answer(cancelled)
+            case .state, .setThermalGuard: return answer(cancelled)
             }
         }
         let applying = Task { await model.arm(days: 0, hours: 2, minutes: 0, now: t0) }
@@ -376,7 +376,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
             switch request {
             case .arm: return await arm.reply()
             case .setFloor(let enabled): return answer(.armed(deadline: t0 + 7_200, floorEnabled: enabled))
-            case .state, .disarm: return answer(.idle)
+            case .state, .disarm, .setThermalGuard: return answer(.idle)
             }
         }
         await applyWithTheFloorFlipped(model: model, floor: floor, arm: arm, release: answer(.armed(deadline: t0 + 7_200, floorEnabled: false)))
@@ -401,7 +401,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
             case .arm: return await arm.reply()
             case .setFloor: return await correction.reply()
             case .state: return await poll.reply()
-            case .disarm: return answer(.idle)
+            case .disarm, .setThermalGuard: return answer(.idle)
             }
         }
         let applying = Task { await model.arm(days: 0, hours: 2, minutes: 0, now: t0) }
@@ -432,7 +432,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
             switch request {
             case .arm: return await arm.reply()
             case .setFloor(let enabled): return answer(.armed(deadline: t0 + 7_200, floorEnabled: enabled))
-            case .state, .disarm: return answer(.idle)
+            case .state, .disarm, .setThermalGuard: return answer(.idle)
             }
         }
         await applyWithTheFloorFlipped(model: model, floor: floor, arm: arm, release: answer(.armed(deadline: t0 + 7_200, floorEnabled: true)))

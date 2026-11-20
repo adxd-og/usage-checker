@@ -251,6 +251,7 @@ final class KeepAwakeP2ModelVerificationTests: XCTestCase {
             case .arm(let seconds, _): return .success(KeepAwakeReply(state: .armed(deadline: t0 + seconds, floorEnabled: true), failure: nil))
             case .disarm: return await command.wait()
             case .setFloor, .state: return await state.wait()
+            case .setThermalGuard: return .success(KeepAwakeReply(state: .idle, failure: nil))
             }
         }
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
@@ -276,6 +277,7 @@ final class KeepAwakeP2ModelVerificationTests: XCTestCase {
             case .arm(let seconds, _): return .success(KeepAwakeReply(state: .armed(deadline: t0 + seconds, floorEnabled: false), failure: nil))
             case .setFloor: return await command.wait()
             case .disarm, .state: return await state.wait()
+            case .setThermalGuard: return .success(KeepAwakeReply(state: .idle, failure: nil))
             }
         }
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)
@@ -301,6 +303,7 @@ final class KeepAwakeP2ModelVerificationTests: XCTestCase {
             case .arm(let seconds, _): return .success(KeepAwakeReply(state: .armed(deadline: t0 + seconds, floorEnabled: true), failure: nil))
             case .disarm: return await command.wait()
             case .setFloor, .state: return await state.wait()
+            case .setThermalGuard: return .success(KeepAwakeReply(state: .idle, failure: nil))
             }
         }
         await model.arm(days: 0, hours: 2, minutes: 0, now: t0)

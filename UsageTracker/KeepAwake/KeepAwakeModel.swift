@@ -35,28 +35,42 @@ final class KeepAwakeModel: ObservableObject {
     @Published private(set) var isWorking = false
     /// A reply was lost: the helper's state is unknown until it answers (review C7).
     private(set) var needsReconcile = false
-    /// Bumped by every command (Apply, Cancel, the floor switch, Reset) before its call and
-    /// again when its outcome returns. A state request remembers the value it started with
-    /// and is dropped when it moved: each XPC call has its own connection, so an older
-    /// state reply can land after a newer command's (plan review P1b, plan D13).
+    /// The thermal guard as the helper last said it holds it (spec 2026-11-19, § Daemon): taken
+    /// from every reply that lands, so nil until one does, and nil again after a reply from a
+    /// helper that predates the guard, which is never asked about it. A call that brought no
+    /// reply (lost, timed out, a helper that is not ready) leaves it as it was: only the
+    /// switch's path reads it, to know whether the helper has the selector, and the
+    /// reconciliation decides from the reply in hand, never from this. Published: the card says
+    /// "The heat guard starts with the next Apply." while it is nil and a mode is armed.
+    @Published private(set) var helperThermalGuard: Bool?
+    /// A `setThermalGuard` is out. At most one ever is (`sendThermalGuard`).
+    private var thermalGuardSendOut = false
+    /// Bumped by every command (Apply, Cancel, the floor switch, the thermal guard's switch,
+    /// Reset) before its call and again when its outcome returns. A state request remembers
+    /// the value it started with and is dropped when it moved: each XPC call has its own
+    /// connection, so an older state reply can land after a newer command's (plan review P1b,
+    /// plan D13).
     private var commandGeneration = 0
 
     private let client: KeepAwakeClient
     private let floorEnabled: @MainActor () -> Bool
     private let rememberDuration: @MainActor (Int) -> Void
     private let resetSettings: @MainActor () -> Void
+    private let thermalGuardEnabled: @MainActor () -> Bool
     private var countdown: Task<Void, Never>?
 
     init(
         client: KeepAwakeClient,
         floorEnabled: @escaping @MainActor () -> Bool,
         rememberDuration: @escaping @MainActor (Int) -> Void,
-        resetSettings: @escaping @MainActor () -> Void
+        resetSettings: @escaping @MainActor () -> Void,
+        thermalGuardEnabled: @escaping @MainActor () -> Bool = { true }
     ) {
         self.client = client
         self.floorEnabled = floorEnabled
         self.rememberDuration = rememberDuration
         self.resetSettings = resetSettings
+        self.thermalGuardEnabled = thermalGuardEnabled
     }
 
     /// Failures after which the request may or may not have reached the helper.
@@ -75,7 +89,9 @@ final class KeepAwakeModel: ObservableObject {
     /// Apply: validates and remembers the duration (approved or not), then arms the helper,
     /// registering it first when needed. A floor switch that moved while the call was out
     /// found no armed mode (`floorChanged`), so an armed helper is sent the setting as it is
-    /// now when it differs from the one Apply sent (whole-branch review W3).
+    /// now when it differs from the one Apply sent (whole-branch review W3). The helper's thermal
+    /// guard needs no step here: every `arm` turns it on, and the arm's reply, like every reply,
+    /// is reconciled with the setting (`reconcileThermalGuard`, step 6 of `apply`).
     func arm(days: Int, hours: Int, minutes: Int, now: Date = Date()) async {
         guard let seconds = KeepAwakeRules.duration(days: days, hours: hours, minutes: minutes) else {
             failure = .invalidDuration
@@ -118,6 +134,22 @@ final class KeepAwakeModel: ObservableObject {
         let outcome = await client.setFloor(enabled: enabled)
         commandGeneration &+= 1
         await apply(outcome, now: now)
+    }
+
+    /// The thermal guard's switch moved (spec 2026-11-19, § Settings): an armed helper that
+    /// knows the guard hears it at once, and so does one whose state is unknown after a lost
+    /// reply; otherwise the next reply that disagrees brings it (`reconcileThermalGuard`). A
+    /// helper that predates the guard (`helperThermalGuard` nil) is asked nothing new.
+    ///
+    /// `enabled` is the switch as the caller saw it move. What goes out is the setting as it
+    /// reads when the call does (`sendThermalGuard`), so a switch that has moved again since is
+    /// never sent stale. While a `setThermalGuard` is out this adds none: that call sends the
+    /// setting on when it returns.
+    func thermalGuardChanged(_ enabled: Bool, now: Date = Date()) async {
+        guard helperTakesThermalGuard, !thermalGuardSendOut else { return }
+        isWorking = true
+        defer { isWorking = false }
+        await sendThermalGuard(now: now)
     }
 
     /// The poll loop's call: asks the helper only while armed or unreconciled.
@@ -169,6 +201,58 @@ final class KeepAwakeModel: ObservableObject {
         await apply(outcome, now: now, generation: generation)
     }
 
+    /// The switch reaches the helper: a mode is armed, or may be (a lost reply), and the
+    /// helper's last reply carried the guard, so it has the selector.
+    private var helperTakesThermalGuard: Bool {
+        (state.isArmed || needsReconcile) && helperThermalGuard != nil
+    }
+
+    /// Spec 2026-11-19, § Plan decisions accepted by the session, item 6: after every reply
+    /// that landed, an armed helper whose reply says its guard differs from the setting is sent
+    /// the setting. Every `arm` turns the helper's guard on, so an "off" setting goes out after
+    /// Apply; a correction lost to the transport, a switch-on lost while armed, and an Apply
+    /// whose own reply was lost are all set right by the next reply that disagrees, the poll's
+    /// included. One send per disagreeing reply; none while a send is out (its own reply,
+    /// applied inside it, sends nothing, so a helper that keeps answering otherwise is not
+    /// answered in a loop); none to a helper whose reply has no `thermalGuard` (item 5).
+    private func reconcileThermalGuard(_ outcome: KeepAwakeOutcome, now: Date) async {
+        guard !thermalGuardSendOut,
+              outcome.state?.isArmed == true,
+              let held = outcome.thermalGuard, held != thermalGuardEnabled()
+        else { return }
+        await sendThermalGuard(now: now)
+    }
+
+    /// The one path a `setThermalGuard` takes, from the switch and from the reconciliation,
+    /// both of which check that none is out. One call at a time: each XPC call has its own
+    /// connection, so two out together could reach the helper in either order and leave it
+    /// with the older value. The value is the setting as it reads when the call goes out. A
+    /// switch that moved while the call was out is sent when it returns, as long as the helper
+    /// still takes it; nothing else is repeated here, so a call that is lost, or a helper that
+    /// answers otherwise, gets no more until another reply disagrees.
+    ///
+    /// A command under `commandGeneration`, as the floor's: a state reply it overtook is
+    /// dropped. Its own reply is dropped the same way when another command (Apply, Cancel, the
+    /// floor switch, Reset) started or returned while it was out: a correction goes out with no
+    /// spinner holding the card's buttons, so its reply can be older than that command's and
+    /// would bring back the mode as it was before.
+    private func sendThermalGuard(now: Date) async {
+        thermalGuardSendOut = true
+        defer { thermalGuardSendOut = false }
+        var sent: Bool
+        repeat {
+            sent = thermalGuardEnabled()
+            commandGeneration &+= 1
+            let generation = commandGeneration
+            let outcome = await client.setThermalGuard(enabled: sent)
+            let overtaken = generation != commandGeneration
+            commandGeneration &+= 1
+            if !overtaken {
+                await apply(outcome, now: now)
+            }
+        } while thermalGuardEnabled() != sent && helperTakesThermalGuard
+    }
+
     private func apply(_ outcome: KeepAwakeOutcome, now: Date, generation: Int? = nil) async {
         // 1. Reconcile bookkeeping (C7): clears only when the helper's state lands or there is
         // no helper to ask.
@@ -180,6 +264,11 @@ final class KeepAwakeModel: ObservableObject {
         // 2.
         registration = outcome.registration
         failure = outcome.failure
+        // What the helper holds of the thermal guard, from every reply that landed: nil from a
+        // helper that predates the guard.
+        if outcome.state != nil {
+            helperThermalGuard = outcome.thermalGuard
+        }
         if outcome.state == nil && outcome.registration != .ready && state.isArmed {
             // 3. A helper that is not registered or not approved is not running: launchd
             // stopped it. It cleared the flag on its way out, unless it could not (P1b).
@@ -203,6 +292,8 @@ final class KeepAwakeModel: ObservableObject {
         }
         // 5.
         scheduleCountdown(now: now)
+        // 6. The helper's thermal guard against the setting, from this reply.
+        await reconcileThermalGuard(outcome, now: now)
     }
 
     /// One poll a second after the deadline, so the marker leaves on time even between ticks.

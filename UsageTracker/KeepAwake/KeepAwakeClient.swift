@@ -13,6 +13,9 @@ enum KeepAwakeRequest: Equatable, Sendable {
     case arm(seconds: TimeInterval, floorEnabled: Bool)
     case disarm
     case setFloor(enabled: Bool)
+    /// The thermal guard's switch (spec 2026-11-19, § Settings). A selector 4.3.0's helper does
+    /// not have: the model sends it only to a helper whose last reply carried `thermalGuard`.
+    case setThermalGuard(enabled: Bool)
     case state
 }
 
@@ -22,6 +25,9 @@ struct KeepAwakeOutcome: Equatable, Sendable {
     /// nil: the helper was not asked, or did not answer.
     var state: KeepAwakeState?
     var failure: KeepAwakeFailure?
+    /// The thermal guard as the helper holds it; nil when it was not asked, did not answer, or
+    /// predates the guard.
+    var thermalGuard: Bool? = nil
 }
 
 /// What a reset came back with (plan D13).
@@ -132,6 +138,11 @@ actor KeepAwakeClient {
         await callIfReady(.setFloor(enabled: enabled))
     }
 
+    /// The thermal guard's switch, for an armed helper that knows it (the model decides).
+    func setThermalGuard(enabled: Bool) async -> KeepAwakeOutcome {
+        await callIfReady(.setThermalGuard(enabled: enabled))
+    }
+
     /// What the helper says; never contacts one that is not ready.
     func state() async -> KeepAwakeOutcome {
         await callIfReady(.state)
@@ -205,7 +216,7 @@ actor KeepAwakeClient {
     private func call(_ request: KeepAwakeRequest) async -> KeepAwakeOutcome {
         switch await dependencies.send(request) {
         case .success(let reply):
-            return KeepAwakeOutcome(registration: .ready, state: reply.state, failure: reply.failure)
+            return KeepAwakeOutcome(registration: .ready, state: reply.state, failure: reply.failure, thermalGuard: reply.thermalGuard)
         case .failure(let failure):
             return KeepAwakeOutcome(registration: .ready, state: nil, failure: failure)
         }

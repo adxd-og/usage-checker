@@ -37,7 +37,7 @@ final class KeepAwakeModelTests: XCTestCase {
                 return .success(KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil))
             case .setFloor(let enabled):
                 return .success(KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: enabled), failure: nil))
-            case .state:
+            case .state, .setThermalGuard:
                 return .success(KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
             }
         }
@@ -283,7 +283,7 @@ final class KeepAwakeModelTests: XCTestCase {
                 return .failure(.helperTimedOut)
             case .setFloor(let enabled):
                 return .success(KeepAwakeReply(state: .armed(deadline: start + 7_200, floorEnabled: enabled), failure: nil))
-            case .disarm, .state:
+            case .disarm, .state, .setThermalGuard:
                 return .success(KeepAwakeReply(state: .idle, failure: nil))
             }
         }

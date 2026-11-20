@@ -159,7 +159,7 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         let model = makeModel { request in
             switch request {
             case .arm(let seconds, _): return answer(.armed(deadline: t0 + seconds, floorEnabled: true))
-            case .disarm: return answer(.ended(at: t0 + 60, reason: .cancelled))
+            case .disarm, .setThermalGuard: return answer(.ended(at: t0 + 60, reason: .cancelled))
             case .setFloor, .state: return await state.reply()
             }
         }
@@ -179,7 +179,7 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         let model = makeModel { request in
             switch request {
             case .arm(let seconds, _): return answer(.armed(deadline: t0 + seconds, floorEnabled: false))
-            case .setFloor: return answer(.ended(at: t0 + 60, reason: .batteryFloor))
+            case .setFloor, .setThermalGuard: return answer(.ended(at: t0 + 60, reason: .batteryFloor))
             case .disarm, .state: return await state.reply()
             }
         }
@@ -198,7 +198,7 @@ final class KeepAwakeModelOrderTests: XCTestCase {
         let model = makeModel { request in
             switch request {
             case .arm(let seconds, _): return answer(.armed(deadline: t0 + seconds, floorEnabled: true))
-            case .disarm: return answer(.ended(at: t0 + 60, reason: .cancelled))
+            case .disarm, .setThermalGuard: return answer(.ended(at: t0 + 60, reason: .cancelled))
             case .setFloor, .state: return await state.reply()
             }
         }
@@ -260,7 +260,7 @@ final class KeepAwakeModelOrderTests: XCTestCase {
             switch request {
             case .arm: return await arm.reply()
             case .setFloor(let enabled): return answer(.armed(deadline: t0 + 7_200, floorEnabled: enabled))
-            case .disarm, .state: return answer(.idle)
+            case .disarm, .state, .setThermalGuard: return answer(.idle)
             }
         }
     }
