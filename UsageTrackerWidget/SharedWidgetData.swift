@@ -287,12 +287,17 @@ enum WidgetEntryRules {
 
     /// A provider's rows there: its session window first when it has one, then its fullest other
     /// windows, `limit` in all. The worst windows tell the story; details live in the app.
+    /// A single row is the window nearest its limit, whichever kind it is (owner, 2026-11-19):
+    /// a session at 10 % must not hide a week at 92 %. The session keeps the row on a tie.
     static func windowRows(of service: WidgetService, limit: Int) -> [WidgetBucket] {
+        let session = service.sessionBuckets.first
+        let others = service.nonSessionBuckets.sorted { $0.percent > $1.percent }
+        if limit == 1, let session, let fullest = others.first, fullest.percent > session.percent {
+            return [fullest]
+        }
         var rows: [WidgetBucket] = []
-        if let session = service.sessionBuckets.first { rows.append(session) }
-        rows.append(contentsOf: service.nonSessionBuckets
-            .sorted { $0.percent > $1.percent }
-            .prefix(max(0, limit - rows.count)))
+        if let session { rows.append(session) }
+        rows.append(contentsOf: others.prefix(max(0, limit - rows.count)))
         return Array(rows.prefix(limit))
     }
 }

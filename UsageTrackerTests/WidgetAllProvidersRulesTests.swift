@@ -5,7 +5,8 @@ import XCTest
 /// providers and the one window row each at five are the plan's decision (plan R14), not the
 /// spec's words. Past five listed, the Admin API organisation waits first. Up to four listed,
 /// each shows its session and its fullest other window; at five, each shows its one most
-/// telling window, so the large widget's height holds them.
+/// telling window, so the large widget's height holds them. That one window is the one nearest
+/// its limit, session or not (owner, 2026-11-19).
 final class WidgetAllProvidersRulesTests: XCTestCase {
     private func service(_ id: String, buckets: [WidgetBucket] = []) -> WidgetService {
         WidgetService(id: id, name: id.capitalized, icon: "circle", plan: nil, buckets: buckets)
@@ -52,6 +53,23 @@ final class WidgetAllProvidersRulesTests: XCTestCase {
         ])
         XCTAssertEqual(WidgetEntryRules.windowRows(of: claude, limit: 2).map(\.id), ["five_hour", "seven_day_fable"])
         XCTAssertEqual(WidgetEntryRules.windowRows(of: claude, limit: 1).map(\.id), ["five_hour"])
+    }
+
+    func testOneRowIsTheWindowNearestItsLimitAndTheSessionKeepsATie() {
+        let codex = service("codex", buckets: [
+            WidgetBucket(id: "codex_session", label: "Session", percent: 10, kind: "session"),
+            WidgetBucket(id: "codex_weekly", label: "Weekly", percent: 92, kind: "weekly"),
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: codex, limit: 1).map(\.id), ["codex_weekly"])
+        XCTAssertEqual(
+            WidgetEntryRules.windowRows(of: codex, limit: 2).map(\.id), ["codex_session", "codex_weekly"],
+            "two rows still open with the session"
+        )
+        let level = service("codex", buckets: [
+            WidgetBucket(id: "codex_weekly", label: "Weekly", percent: 50, kind: "weekly"),
+            WidgetBucket(id: "codex_session", label: "Session", percent: 50, kind: "session"),
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: level, limit: 1).map(\.id), ["codex_session"])
     }
 
     func testOneRowWithoutASessionIsTheFullestWindow() {
