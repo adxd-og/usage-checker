@@ -57,3 +57,49 @@ enum AgentProcessFixture {
         AgentResourceRules.ProcessRow(pid: pid, parent: parent, tty: tty, startedAt: started)
     }
 }
+
+extension AgentProcessFixture {
+    /// Activity Monitor's megabyte.
+    static let mb = 1_048_576
+
+    /// What `proc_pid_rusage` answers at `t0`: CPU seconds and footprint in MB. Root's `login`
+    /// (500, 600) is refused, as pid 1 was on the probe of 2026-11-19, so it has no entry.
+    static let usageAt0: [pid_t: AgentResourceRules.Usage] = [
+        501: usage(1.5, 2), 502: usage(4469.2, 634), 503: usage(12.0, 90), 504: usage(3.0, 20),
+        510: usage(0.4, 3), 511: usage(8.0, 300), 512: usage(2.0, 150), 513: usage(5.0, 700),
+        601: usage(0.9, 2), 602: usage(120.0, 410), 610: usage(0.1, 3),
+        701: usage(0.7, 2), 702: usage(300.0, 520), 710: usage(0.2, 3), 711: usage(0.3, 2),
+    ]
+
+    /// Five seconds later, nobody gone: claude +1.0, node +0.5, xcodebuild +1.0, clang +2.5,
+    /// swift-frontend +6.6 = 11.6 s; swift-frontend's footprint 700 → 900 MB.
+    static let usageAt1: [pid_t: AgentResourceRules.Usage] = usageAt0.merging([
+        502: usage(4470.2, 634), 503: usage(12.5, 90), 511: usage(9.0, 300),
+        512: usage(4.5, 150), 513: usage(11.6, 900),
+    ]) { _, new in new }
+
+    /// clang (512) has exited and xcodebuild (511) has reaped it.
+    static let tableAfterClang = table.filter { $0.pid != 512 }
+    /// Later, swift-frontend (513) has exited too.
+    static let tableAfterSwiftFrontend = tableAfterClang.filter { $0.pid != 513 }
+
+    static func usage(_ seconds: Double, _ megabytes: Int) -> AgentResourceRules.Usage {
+        AgentResourceRules.Usage(cpuSeconds: seconds, footprintBytes: megabytes * mb)
+    }
+}
+
+extension AgentProcessFixture {
+    /// Outcome A, five seconds after `usageAt1`: clang ran 0.5 s more and exited; xcodebuild ran
+    /// 0.5 s itself and holds clang's whole 5.0 s as reaped time: 9.0 + 0.5 + 5.0 = 14.5. claude
+    /// +1.0, swift-frontend +2.0. What the session gained: 1.0 + 0.5 + 0.5 + 2.0 = 4.0 s.
+    static let usageAt2Reaped: [pid_t: AgentResourceRules.Usage] = usageAt1.merging([
+        502: usage(4471.2, 634), 511: usage(14.5, 300), 513: usage(13.6, 900),
+    ]) { _, new in new }
+
+    /// Outcome A, five seconds later still (table `tableAfterSwiftFrontend`): xcodebuild started
+    /// and reaped a compiler that ran 1.2 s between the two readings, and reaped swift-frontend,
+    /// which ran 0.4 s more and exited: 14.5 + 1.2 + (13.6 + 0.4) = 29.7. Gained: 1.2 + 0.4 = 1.6 s.
+    static let usageAt3Reaped: [pid_t: AgentResourceRules.Usage] = usageAt2Reaped.merging([
+        511: usage(29.7, 300),
+    ]) { _, new in new }
+}
