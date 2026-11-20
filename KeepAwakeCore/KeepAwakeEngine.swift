@@ -8,6 +8,9 @@ import Foundation
 /// The one output rule: `sleepNow` is true when an armed mode ended during this input and the
 /// lid is closed (plan D5); clearing the flag with the lid closed leaves the Mac awake (spike
 /// step 5), so the end of a mode in a bag has to ask for sleep itself.
+///
+/// The thermal guard (spec 2026-11-19, § Rule) is one more input, `thermal`, and one more
+/// switch, `setThermalGuard`; heat ends an armed mode as `overheated` through the same output.
 struct KeepAwakeEngine: Equatable, Sendable {
     struct Output: Equatable, Sendable {
         /// The flag value to apply; nil leaves the flag as it is (a start that finds a flag the
@@ -24,16 +27,27 @@ struct KeepAwakeEngine: Equatable, Sendable {
     private(set) var state: KeepAwakeState = .idle
     /// The last battery reading; nil until the first.
     private(set) var power: KeepAwakePower?
+    /// The thermal guard's switch: every accepted `arm` turns it on, whatever an earlier mode
+    /// left (spec 2026-11-19, § Plan decisions accepted by the session, item 6), so a mode an app
+    /// that predates the guard arms has it on, and a mode whose app wants it off gets
+    /// `setThermalGuard(false)` after Apply.
+    private(set) var thermalGuard = true
+    /// Where the current hot run began (`KeepAwakeRules.hotSince`); nil while there is none.
+    private(set) var hotSince: Date?
 
     init() {}
 
     /// Apply: sets the flag until `now + duration`; while armed it replaces the deadline. A
-    /// duration outside one minute to 7 d 23 h 59 min is refused and changes nothing.
+    /// duration outside one minute to 7 d 23 h 59 min is refused and changes nothing. Every
+    /// accepted Apply turns the thermal guard on. A new mode starts without the last mode's hot
+    /// run; Apply while armed keeps the one counting.
     mutating func arm(duration: TimeInterval, floorEnabled: Bool, now: Date, lidClosed: Bool) -> Output {
         guard KeepAwakeRules.accepts(duration: duration) else {
             return output(wasArmed: state.isArmed, lidClosed: false, failure: .invalidDuration)
         }
         let wasArmed = state.isArmed
+        thermalGuard = true
+        if !wasArmed { hotSince = nil }
         state = .armed(deadline: now + duration, floorEnabled: floorEnabled)
         settle(now: now)
         return output(wasArmed: wasArmed, lidClosed: lidClosed)
@@ -77,6 +91,37 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return output(wasArmed: wasArmed, lidClosed: lidClosed)
     }
 
+    /// A thermal reading (spec 2026-11-19, § Rule). It settles the deadline and the battery
+    /// first, so a mode past its deadline ends for the deadline. Then, with the lid closed and
+    /// the guard on, `critical` ends an armed mode at this reading and `serious` held for a
+    /// minute ends it, as `overheated` at `now` (`KeepAwakeRules.endsForHeat`). Idle and ended
+    /// forget any hot run.
+    mutating func thermal(level: KeepAwakeThermalLevel, now: Date, lidClosed: Bool) -> Output {
+        let wasArmed = state.isArmed
+        settle(now: now)
+        guard state.isArmed else {
+            hotSince = nil
+            return output(wasArmed: wasArmed, lidClosed: lidClosed)
+        }
+        hotSince = KeepAwakeRules.hotSince(level: level, previous: hotSince, now: now, lidClosed: lidClosed, guardEnabled: thermalGuard)
+        if KeepAwakeRules.endsForHeat(level: level, hotSince: hotSince, now: now, lidClosed: lidClosed, guardEnabled: thermalGuard) {
+            state = .ended(at: now, reason: .overheated)
+            hotSince = nil
+        }
+        return output(wasArmed: wasArmed, lidClosed: lidClosed)
+    }
+
+    /// The guard's switch moved (spec 2026-11-19, § Settings). Turning it off forgets the hot
+    /// run; turning it on ends nothing by itself: the next reading decides. Any state takes it;
+    /// an armed mode keeps its deadline.
+    mutating func setThermalGuard(enabled: Bool, now: Date, lidClosed: Bool) -> Output {
+        thermalGuard = enabled
+        if !enabled { hotSince = nil }
+        let wasArmed = state.isArmed
+        settle(now: now)
+        return output(wasArmed: wasArmed, lidClosed: lidClosed)
+    }
+
     /// Daemon launch (spec § Helper; reviewer V3, which supersedes review C5's "always clear").
     /// The flag is the helper's when the file says so: an armed mode (Apply writes it before
     /// the flag goes on), or `ownsFlag`, a clear that never read back or a sleep still owed.
@@ -113,10 +158,13 @@ struct KeepAwakeEngine: Equatable, Sendable {
         return output(wasArmed: wasArmed, lidClosed: false)
     }
 
-    /// The next tick while armed: a minute from now, or the deadline if that comes first.
+    /// The next tick while armed: a minute from now, or the deadline if that comes first, or the
+    /// moment a counting hot run reaches its minute if that comes first (spec 2026-11-19).
     func nextTick(now: Date) -> Date? {
         guard case .armed(let deadline, _) = state else { return nil }
-        return min(now + KeepAwakeRules.tickInterval, deadline)
+        let next = min(now + KeepAwakeRules.tickInterval, deadline)
+        guard let hotSince else { return next }
+        return min(next, hotSince + KeepAwakeRules.heatHoldInterval)
     }
 
     /// Ends an armed mode whose deadline has passed, at the deadline (the moment the app's
