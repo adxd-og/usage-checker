@@ -86,7 +86,7 @@ final class KeepAwakeListener: NSObject, NSXPCListenerDelegate {
 
 /// omelette-keepawake's life, in order: the service and its timers; the stop path (SIGTERM,
 /// SIGINT) before anything else, so a signal during the start is not lost; the start, which
-/// clears the helper's own flag, before listening; power notifications; the listener; then the run loop.
+/// clears the helper's own flag, before listening; power and thermal notifications; the listener; then the run loop.
 /// The ways out are the idle exit and the stop path (status 0 from inside the actor, not
 /// restarted; status 1 when a stop could not clear, so launchd restarts it) and a crash
 /// (restarted by `KeepAlive`, whose start clears the flag the file claims).
@@ -126,6 +126,14 @@ enum KeepAwakeDaemon {
         let power = PowerObserver { Task { _ = await service.powerChanged(now: Date()) } }
         power.install()
 
+        // 4b. Thermal changes (thermal guard spec 2026-11-19, § Daemon). The tick reads the
+        // level too, so a notification that never comes delays an end by a minute at most.
+        let thermal = NotificationCenter.default.addObserver(
+            forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: nil
+        ) { _ in
+            Task { _ = await service.thermalChanged(now: Date()) }
+        }
+
         // 5. The listener. Without a team nothing can connect, and the daemon exits idle a
         // minute after its start.
         let listener = KeepAwakeListener(service: service)
@@ -137,7 +145,7 @@ enum KeepAwakeDaemon {
         let keepAlive = Timer.scheduledTimer(withTimeInterval: 86_400, repeats: true) { _ in }
 
         // 7. Run.
-        withExtendedLifetime((scheduler, exitScheduler, signalSources, power, listener, keepAlive)) {
+        withExtendedLifetime((scheduler, exitScheduler, signalSources, power, thermal, listener, keepAlive)) {
             RunLoop.main.run()
         }
         exit(0)

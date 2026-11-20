@@ -98,6 +98,16 @@ struct KeepAwakeMachine: Sendable {
 ///    state before it sets the flag, so a crash between the two leaves "armed" on file and
 ///    rule 11 clears the flag; a set that fails rolls back (rule 4) and the file is written
 ///    again.
+/// 13. Heat (thermal guard spec 2026-11-19, § Daemon). The tick reads the thermal level after
+///    the battery, and `ProcessInfo`'s change notification reads it between ticks while a mode
+///    is armed; both feed the engine's `thermal` input, which ends an armed mode as
+///    `overheated` with the lid closed and causing sleep and the guard on. The end goes the
+///    way every end goes (rules 2, 3, 5): the flag cleared and read back, then
+///    `pmset sleepnow`. While a hot minute counts, the next tick comes when it is up (rule
+///    7). Closing the lid is no reading: `critical` ends the mode at the next tick or
+///    notification, within a minute of the lid closing, `serious` within two. A notification
+///    while nothing is armed feeds the engine nothing and reaches no apply step, so
+///    it never moves the idle exit (rule 9).
 actor KeepAwakeService {
     private let machine: KeepAwakeMachine
     private let stateFile: KeepAwakeStateFile
@@ -217,16 +227,18 @@ actor KeepAwakeService {
         tick(now: now)
     }
 
-    /// The wall-clock tick. It also re-reads the battery, for notifications that were missed.
+    /// The wall-clock tick. It also re-reads the battery, for notifications that were missed,
+    /// and then the thermal level (rule 13): the battery's end comes first.
     func tick(now: Date) -> KeepAwakeReply {
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
-        let output: KeepAwakeEngine.Output
         if let power = machine.power() {
-            output = engine.power(onBattery: power.onBattery, percent: power.percent, now: now, lidClosed: lidSleeps)
+            _ = engine.power(onBattery: power.onBattery, percent: power.percent, now: now, lidClosed: lidSleeps)
         } else {
-            output = engine.tick(now: now, lidClosed: lidSleeps)
+            _ = engine.tick(now: now, lidClosed: lidSleeps)
         }
+        var output = engine.thermal(level: machine.thermal(), now: now, lidClosed: lidSleeps)
+        output.sleepNow = endedDuringInput(wasArmed: before.isArmed, lidSleeps: lidSleeps)
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
     }
 
@@ -238,6 +250,17 @@ actor KeepAwakeService {
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
         let output = engine.power(onBattery: power.onBattery, percent: power.percent, now: now, lidClosed: lidSleeps)
+        return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
+    }
+
+    /// `ProcessInfo.thermalStateDidChangeNotification` (rule 13): a reading between ticks.
+    /// While nothing is armed it feeds the engine nothing and applies nothing; the reply still
+    /// carries the level (rule 8).
+    func thermalChanged(now: Date) -> KeepAwakeReply {
+        guard engine.state.isArmed else { return answer(nil) }
+        let lidSleeps = machine.lid().sleepsWhenClosed
+        let before = engine.state
+        let output = engine.thermal(level: machine.thermal(), now: now, lidClosed: lidSleeps)
         return apply(output, stateBefore: before, now: now, lidSleeps: lidSleeps, force: false)
     }
 
