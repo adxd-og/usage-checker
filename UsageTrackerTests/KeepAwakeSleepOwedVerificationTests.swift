@@ -80,7 +80,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
         fake.with { $0.flag = .cleared; $0.lid = lidClosed }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0 + 150)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 150, reason: .restarted), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 150, reason: .restarted), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
         XCTAssertFalse(stateFile.loadSleepOwed())
         XCTAssertEqual(stateFile.load(), .ended(at: t0 + 150, reason: .restarted))
@@ -105,7 +105,7 @@ final class KeepAwakeSleepOwedVerificationTests: XCTestCase {
         fake.with { $0.lid = lidClosed; $0.sleepStatus = 1 }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0 + 150)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .deadline), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
         XCTAssertTrue(stateFile.loadSleepOwed(), "still owed on disk")
         XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 210], "the retry tick")

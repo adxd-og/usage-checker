@@ -15,6 +15,8 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
         /// This Mac's reading: lid open, closing it would sleep.
         var lid = KeepAwakeLid(closed: false, causesSleep: true)
         var power: KeepAwakePower?
+        /// What `ProcessInfo.thermalState` reads; never recorded in `calls`.
+        var thermal: KeepAwakeThermalLevel = .nominal
         var exits: [Date?] = []
         var terminations: [Int32] = []
         var pauses: [TimeInterval] = []
@@ -40,6 +42,7 @@ final class FakeKeepAwakeMachine: @unchecked Sendable {
             sleepNow: { self.with { s in s.calls.append("sleepnow"); return KeepAwakeCommandResult(status: s.sleepStatus, output: "") } },
             lid: { self.with { $0.lid } },
             power: { self.with { $0.power } },
+            thermal: { self.with { $0.thermal } },
             schedule: { date in self.with { $0.scheduled.append(date) } },
             scheduleExit: { date in self.with { $0.exits.append(date) } },
             terminate: { status in self.with { $0.terminations.append(status) } },
@@ -83,7 +86,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let fake = FakeKeepAwakeMachine()
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"], "the flag is read before the clear (C5)")
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
     }
@@ -97,7 +100,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.flag = .set; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read"], "no set 0, no sleepnow")
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
@@ -120,7 +123,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.flag = .set }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(stateFile.load(), .ended(at: t0, reason: .restarted))
         XCTAssertEqual(fake.with { $0.flag }, .cleared)
     }
@@ -129,7 +132,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1", "read"])
         XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60])
         XCTAssertEqual(stateFile.load(), .armed(deadline: t0 + 7_200, floorEnabled: true))
@@ -140,7 +143,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let service = await started(fake)
         fake.with { $0.setTakes = false }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .readBack(expected: true)))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .readBack(expected: true), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1", "read", "set 0", "read"])
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
     }
@@ -150,7 +153,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let service = await started(fake)
         fake.with { $0.setStatus = 1 }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1"], "F2: the helper held nothing, the rollback writes nothing")
         XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60], "the flag is unknown: clear it in a minute")
     }
@@ -159,7 +162,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
         let reply = await service.arm(seconds: 30, floorEnabled: true, now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .invalidDuration))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .invalidDuration, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, [])
         XCTAssertEqual(fake.with { $0.scheduled }, [])
     }
@@ -181,7 +184,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.scheduled = []; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let reply = await service.tick(now: t0 + 120)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
         XCTAssertEqual(stateFile.load(), .ended(at: t0 + 120, reason: .deadline))
@@ -214,7 +217,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.scheduled = []; $0.setTakes = false; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let reply = await service.tick(now: t0 + 120)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: .readBack(expected: false)))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: .readBack(expected: false), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
         XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 180])
     }
@@ -225,7 +228,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.power = KeepAwakePower(onBattery: true, percent: 24) }
         let reply = await service.powerChanged(now: t0 + 600)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 600, reason: .batteryFloor), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 600, reason: .batteryFloor), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
     }
 
@@ -257,7 +260,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let fake = FakeKeepAwakeMachine()
         let service = await started(fake)
         let reply = await service.disarm(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, [])
     }
 
@@ -269,12 +272,12 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.scheduled = []; $0.setStatus = 1; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let failed = await service.tick(now: t0 + 120)
-        XCTAssertEqual(failed, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(failed, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: .commandFailed(command: "pmset", status: 1), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0"], "no sleepnow while the flag is still on")
         XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 180])
         fake.with { $0.calls = []; $0.scheduled = []; $0.setStatus = 0 }
         let retried = await service.tick(now: t0 + 180)
-        XCTAssertEqual(retried, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(retried, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
     }
@@ -503,7 +506,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.powerChanged(now: t0)
         fake.with { $0.power = KeepAwakePower(onBattery: false, percent: 10); $0.calls = [] }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 60)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_260, floorEnabled: true), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_260, floorEnabled: true), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1", "read"])
     }
 
@@ -515,7 +518,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.powerChanged(now: t0 + 60)
         fake.with { $0.power = KeepAwakePower(onBattery: false, percent: 10); $0.calls = [] }
         let reply = await service.setFloor(enabled: true, now: t0 + 120)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, [], "the flag is already on")
     }
 
@@ -526,7 +529,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 7_200, floorEnabled: false, now: t0)
         fake.with { $0.calls = []; $0.lid = KeepAwakeLid(closed: true, causesSleep: true); $0.power = KeepAwakePower(onBattery: true, percent: 10) }
         let reply = await service.arm(seconds: 3_600, floorEnabled: true, now: t0 + 60)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .batteryFloor), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .batteryFloor), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
     }
 
@@ -586,7 +589,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 120, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.sleepStatus = 1; $0.lid = KeepAwakeLid(closed: true, causesSleep: true) }
         let reply = await service.tick(now: t0 + 120)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
         XCTAssertTrue(stateFile.loadSleepOwed(), "the debt is on disk")
         fake.with { $0.calls = []; $0.scheduled = []; $0.exits = []; $0.sleepStatus = 0 }
@@ -600,7 +603,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await owingASleep(fake)
         let restarted = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await restarted.start(now: t0 + 150)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 120, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
         XCTAssertFalse(stateFile.loadSleepOwed(), "paid")
         XCTAssertEqual(fake.with { $0.scheduled }, [nil])
@@ -649,7 +652,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.flag = .set; $0.lid = closedLid }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 - 60, reason: .deadline), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 - 60, reason: .deadline), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read"])
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertEqual(stateFile.load(), .ended(at: t0 - 60, reason: .deadline))
@@ -662,7 +665,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.flag = .set; $0.lid = closedLid }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
     }
 
@@ -771,7 +774,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         fake.with { $0.flag = .set }
         let service = await started(fake)
         let reply = await service.disarm(now: t0 + 10)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, [])
         XCTAssertEqual(fake.with { $0.flag }, .set)
     }
@@ -784,7 +787,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         let service = await started(fake)
         fake.with { $0.setStatus = 1 }
         let reply = await service.arm(seconds: 7_200, floorEnabled: true, now: t0 + 10)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: .commandFailed(command: "pmset", status: 1), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1"])
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertEqual(fake.with { $0.scheduled }, [nil], "no retry clear")
@@ -799,7 +802,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         fake.with { $0.calls = [] }
         let reply = await service.disarm(now: t0 + 60)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0 + 60, reason: .cancelled), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read"])
         XCTAssertEqual(fake.with { $0.flag }, .cleared)
     }
@@ -812,7 +815,7 @@ final class KeepAwakeServiceTests: XCTestCase {
         _ = await service.arm(seconds: 7_200, floorEnabled: true, now: t0)
         fake.with { $0.calls = []; $0.failSetsRemaining = 1 }
         let reply = await service.arm(seconds: 1_800, floorEnabled: false, now: t0 + 60)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: .commandFailed(command: "pmset", status: 1)))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .armed(deadline: t0 + 7_200, floorEnabled: true), failure: .commandFailed(command: "pmset", status: 1), thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["set 1", "set 1", "read"])
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertEqual(stateFile.load(), .armed(deadline: t0 + 7_200, floorEnabled: true))

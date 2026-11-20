@@ -19,6 +19,9 @@ struct KeepAwakeMachine: Sendable {
     var lid: @Sendable () -> KeepAwakeLid
     /// The internal battery; nil on a Mac without one.
     var power: @Sendable () -> KeepAwakePower?
+    /// This Mac's thermal level, `ProcessInfo.thermalState` (thermal guard spec 2026-11-19,
+    /// Facts): no root, private framework or prompt needed.
+    var thermal: @Sendable () -> KeepAwakeThermalLevel
     /// The next tick; nil cancels it.
     var schedule: @Sendable (Date?) -> Void
     /// When the idle exit is due; nil cancels it.
@@ -61,7 +64,10 @@ struct KeepAwakeMachine: Sendable {
 ///    during the input (always on start, and again after rule 12's early save); a save error
 ///    is logged and otherwise ignored.
 /// 7. The next tick is the engine's, or a minute from now while a clear or a sleep is owed.
-/// 8. The reply is the engine's state and the first failure.
+/// 8. The reply is the engine's state and the first failure, with the thermal level as read
+///    when answering and whether the engine's guard is on (thermal guard spec, § Daemon). Every
+///    reply is built by `answer`, the ones that leave early (rule 1, a power notification on a
+///    Mac without a battery) included.
 /// 9. Idle exit (plan D7; review C2). After every input that reaches the apply step, and when a
 ///    connection opens or closes: not armed, the flag read back clear, no sleep owed and no open
 ///    connection is idle, and the exit is scheduled a minute later; anything else cancels it.
@@ -227,7 +233,7 @@ actor KeepAwakeService {
     /// An IOKit power notification. Without a reading nothing changes.
     func powerChanged(now: Date) -> KeepAwakeReply {
         guard let power = machine.power() else {
-            return KeepAwakeReply(state: engine.state, failure: nil)
+            return answer(nil)
         }
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
@@ -318,7 +324,7 @@ actor KeepAwakeService {
     ) -> KeepAwakeReply {
         // Rule 1.
         if let failure = output.failure {
-            return KeepAwakeReply(state: engine.state, failure: failure)
+            return answer(failure)
         }
         let owedBefore = sleepOwed
         let ownedBefore = ownsFlag
@@ -371,7 +377,13 @@ actor KeepAwakeService {
         // Rule 9.
         scheduleIdleExit(now: now)
         // Rule 8.
-        return KeepAwakeReply(state: engine.state, failure: firstFailure)
+        return answer(firstFailure)
+    }
+
+    /// Rule 8: the engine's state and `failure`, with the level as read now and the guard. The
+    /// only place a reply is built.
+    private func answer(_ failure: KeepAwakeFailure?) -> KeepAwakeReply {
+        KeepAwakeReply(state: engine.state, failure: failure, thermal: machine.thermal(), thermalGuard: engine.thermalGuard)
     }
 
     /// Rule 3: applies `value` and reads it back; nil when it took.

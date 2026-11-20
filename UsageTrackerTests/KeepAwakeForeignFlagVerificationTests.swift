@@ -35,7 +35,7 @@ final class KeepAwakeForeignFlagVerificationTests: XCTestCase {
         fake.with { $0.flag = .set; $0.lid = lidClosed }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .idle, failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertFalse(stateFile.loadOwnsFlag(), "nothing of its own on disk")
         fake.with { $0.power = KeepAwakePower(onBattery: true, percent: 3) }
         _ = await service.tick(now: t0 + 60)
@@ -120,7 +120,7 @@ final class KeepAwakeForeignFlagVerificationTests: XCTestCase {
         fake.with { $0.flag = .cleared; $0.lid = lidClosed }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read"])
         XCTAssertEqual(stateFile.load(), .ended(at: t0, reason: .restarted))
         XCTAssertFalse(stateFile.loadOwnsFlag())
@@ -134,7 +134,7 @@ final class KeepAwakeForeignFlagVerificationTests: XCTestCase {
         fake.with { $0.flag = .set; $0.lid = lidClosed }
         let service = KeepAwakeService(machine: fake.machine(), stateFile: stateFile)
         let reply = await service.start(now: t0)
-        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil))
+        XCTAssertEqual(reply, KeepAwakeReply(state: .ended(at: t0, reason: .restarted), failure: nil, thermal: .nominal, thermalGuard: true))
         XCTAssertEqual(fake.with { $0.calls }, ["read", "set 0", "read", "sleepnow"])
         XCTAssertFalse(stateFile.loadOwnsFlag(), "let go once it reads clear")
     }

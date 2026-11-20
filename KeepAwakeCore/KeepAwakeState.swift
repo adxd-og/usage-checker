@@ -143,10 +143,37 @@ enum KeepAwakeFailure: Error, Codable, Equatable, Sendable {
     case flagStillSet
 }
 
-/// One XPC reply: the daemon's state after the call, and what it could not do.
+/// One XPC reply: the daemon's state after the call, and what it could not do. Since the
+/// thermal guard (spec 2026-11-19, § Daemon) it also carries the thermal level as the daemon
+/// read it when it answered, and whether its guard is on. Both are absent from a daemon that
+/// predates the guard, which is how the app knows not to ask it `setThermalGuard`; both are
+/// encoded only when present, so a reply without them has 4.3.0's bytes, and a build that
+/// predates them skips the two keys. A value of either that this build cannot read (a level it
+/// does not know, anything that is not a string there or not a JSON boolean for the guard,
+/// `null`) reads as absent, never as an unreadable reply.
 struct KeepAwakeReply: Codable, Equatable, Sendable {
     var state: KeepAwakeState
     var failure: KeepAwakeFailure?
+    var thermal: KeepAwakeThermalLevel? = nil
+    var thermalGuard: Bool? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case state, failure, thermal, thermalGuard
+    }
+}
+
+extension KeepAwakeReply {
+    /// In an extension, so the memberwise initialiser stays (`KeepAwakeReply(state:failure:)`
+    /// everywhere); `encode(to:)` stays synthesized and writes the optionals only when present.
+    /// `state` and `failure` read as they always have: a state or a failure this build cannot
+    /// read still fails the reply.
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        state = try container.decode(KeepAwakeState.self, forKey: .state)
+        failure = try container.decodeIfPresent(KeepAwakeFailure.self, forKey: .failure)
+        thermal = try? container.decodeIfPresent(KeepAwakeThermalLevel.self, forKey: .thermal)
+        thermalGuard = try? container.decodeIfPresent(Bool.self, forKey: .thermalGuard)
+    }
 }
 
 /// The JSON both sides of XPC and the state file speak: dates as seconds since 1970, keys
