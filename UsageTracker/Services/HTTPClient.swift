@@ -143,7 +143,7 @@ struct HTTPClient: Sendable {
         }
     }
 
-    /// Parses a `Retry-After` header (delta-seconds or HTTP-date) into seconds after `now`:
+    /// Parses a `Retry-After` header (delta-seconds, or an HTTP date in its IMF-fixdate form, the one in use) into seconds after `now`:
     /// the date form is measured against the clock the caller gives, the real one unless a
     /// test pins it (spec 2026-11-20 small backlog 2 § E). Clamped (`clampedWait`): a date
     /// already past or a negative number is no wait, and infinity or a date years ahead is a
@@ -163,7 +163,7 @@ struct HTTPClient: Sendable {
 
     /// The longest wait a `Retry-After` is read as: a day (spec 2026-11-20 small backlog 2 § E).
     /// Finite and far under what an `Int` holds, so nothing that formats or schedules it can
-    /// trap; every caller holds a 429 for minutes at most, so a real header's wait is unchanged.
+    /// trap; every caller holds a 429 for minutes at most, so a real header's wait reads as before.
     static let maximumRetryAfter: TimeInterval = 24 * 3600
 
     /// A wait as `retryAfterSeconds` answers it: never negative, never more than
