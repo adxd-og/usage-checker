@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 @testable import Omelette
 
@@ -22,6 +24,22 @@ private final class Sleeps: @unchecked Sendable {
         }
         reached?.fulfill()
         _ = try? await Task.sleep(nanoseconds: 3_600_000_000_000)
+    }
+}
+
+
+/// A view that redraws on demand and applies a view's resource watch fresh on every redraw, as
+/// SwiftUI builds a view's modifiers anew each time its body runs.
+private final class Redraw: ObservableObject {
+    @Published var count = 0
+}
+
+private struct Redrawing<Watch: ViewModifier>: View {
+    @ObservedObject var redraw: Redraw
+    let watch: () -> Watch
+
+    var body: some View {
+        Color.clear.overlay(Text("\(redraw.count)")).modifier(watch())
     }
 }
 
@@ -347,6 +365,70 @@ final class AgentResourcesVerificationTests: XCTestCase {
         let thirty = try XCTUnwrap(try figures(secondsApart: AgentResourceRules.unwatchedInterval).cpuPercent)
         XCTAssertEqual(thirty, 11.6 / 30 * 100, accuracy: 0.001)
         XCTAssertNil(try figures(secondsApart: 3600).cpuPercent)
+    }
+
+    // MARK: The views' watch survives a redraw
+
+    /// A view's token has to outlive the redraws of its body, or the disappearance releases a token
+    /// the appearance never held and the 5 s cadence stays for good. Hosted as SwiftUI hosts it,
+    /// in a window that is never shown: appear, redraw, disappear.
+    @MainActor
+    private func assertTheWatchSurvivesARedraw<Watch: ViewModifier>(
+        _ watch: @escaping (AgentResourceMonitor) -> Watch, reader: Bool,
+        file: StaticString = #filePath, line: UInt = #line
+    ) async throws {
+        let sleeps = Sleeps()
+        let monitor = AgentResourceMonitor(sampler: FakeMachine().sampler(), now: { F.t0 }, sleep: { await sleeps.sleep($0) })
+        defer { monitor.update(sessions: []) }
+        let first = expectation(description: "the 30 s loop sleeps")
+        sleeps.expect(first, atSleep: 1)
+        monitor.update(sessions: [session("a", tty: F.tab)])
+        await fulfillment(of: [first], timeout: 5)
+
+        let redraw = Redraw()
+        let drawn = expectation(description: "the body ran a second time")
+        var evaluations = 0
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let held = expectation(description: "the cadence went to 5 s")
+        sleeps.expect(held, atSleep: 2)
+        let hosting = NSHostingView(rootView: Redrawing(redraw: redraw, watch: {
+            evaluations += 1
+            if evaluations == 2 { drawn.fulfill() }
+            return watch(monitor)
+        }))
+        window.contentView = hosting
+        hosting.layoutSubtreeIfNeeded()
+        if reader {
+            func find(_ view: NSView) -> WindowVisibilityReader.ObserverView? {
+                if let found = view as? WindowVisibilityReader.ObserverView { return found }
+                return view.subviews.lazy.compactMap(find).first
+            }
+            let observer = try XCTUnwrap(find(hosting), file: file, line: line)
+            observer.onChange?(true)
+        }
+        await fulfillment(of: [held], timeout: 5)
+        XCTAssertEqual(monitor.cadence, 5, file: file, line: line)
+
+        redraw.count += 1
+        await fulfillment(of: [drawn], timeout: 5)
+
+        let released = expectation(description: "the cadence went back to 30 s")
+        sleeps.expect(released, atSleep: 3)
+        window.contentView = NSView()
+        await fulfillment(of: [released], timeout: 5)
+        XCTAssertEqual(monitor.cadence, 30, "the view left after a redraw: its token is released", file: file, line: line)
+    }
+
+    @MainActor
+    func testTheIslandsHoldIsStillItsOwnAfterTheViewRedraws() async throws {
+        try await assertTheWatchSurvivesARedraw({ PopoverView.ResourceWatch(monitor: $0) }, reader: false)
+    }
+
+    @MainActor
+    func testTheAgentsTabsHoldIsStillItsOwnAfterTheViewRedraws() async throws {
+        try await assertTheWatchSurvivesARedraw({ AgentsHistoryView.ResourceWatch(monitor: $0) }, reader: true)
     }
 
     // MARK: Wire format
