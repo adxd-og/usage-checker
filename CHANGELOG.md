@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Mistral: a model models.dev lists is named as it names it ("Mistral Large 4",
   "GLM-5.3") in the Overview and History; it was spelled from the id ("Mistral
   Large 4 0 3"). A model it does not list keeps the id's spelling.
+- A price models.dev lists that nobody would charge (a rate that is negative,
+  not a number or above $10,000 per million tokens) is ignored, when fetched
+  and when read from the copy on disk: the model shows tokens without dollars,
+  and a Claude model is priced from the built-in table.
+- A rate-limit wait (`Retry-After`) counts as at most a day, and its date form
+  is measured against the clock; an infinite or oversized one no longer crashes
+  the app where a provider's 429 is put into words.
 
 ### Dashboard
 - Limits: a provider without limit analytics says the tab is available for
@@ -41,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `status.json`, `brioche status --json` and MCP `get_agents` give each live
   session's `cpuPercent` (per core, to one decimal) and `memoryBytes`, absent
   until measured.
+- `brioche statusline`: the model name Claude Code sends loses every character
+  a terminal would not show, besides control characters: bidi overrides,
+  zero-width spaces, the byte-order mark, the soft hyphen, line and paragraph
+  separators. The joiners that shape Persian, the Indic scripts and emoji
+  stay. The name is cut to 64 characters, and one with nothing to show reads
+  "Claude".
 
 ### Keep awake
 - Ends by itself when the Mac overheats with the lid closed: within a minute
