@@ -70,4 +70,15 @@ final class MenuBarSettingsCopyTests: XCTestCase {
         XCTAssertEqual(MenuBarSettingsCopy.agentsHeader, "Agents")
         XCTAssertEqual(MenuBarSettingsCopy.agentsTitle, "Show agents in the menu bar")
     }
+
+    /// Spec 2026-11-19 agent resources, Decision 2: the switch sits with the agents' options and
+    /// names both scales; its words are the plan's (R11).
+    func testTheCPUScaleRowNamesBothScales() {
+        XCTAssertEqual(MenuBarSettingsCopy.cpuScaleTitle, "CPU figures")
+        XCTAssertEqual(
+            MenuBarSettingsCopy.cpuScaleCaption,
+            "In the island and the Agents tab. Per core: one busy core is 100%, as in Activity Monitor. Whole Mac: all cores together are 100%."
+        )
+        XCTAssertEqual(AgentCPUScale.allCases.map(\.displayName), ["Per core", "Whole Mac"])
+    }
 }
