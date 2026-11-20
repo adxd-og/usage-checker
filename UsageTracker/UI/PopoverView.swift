@@ -50,6 +50,9 @@ struct PopoverView: View {
     /// The navigation's destination when the reveal was asked for (All after the click's own
     /// Back): a newer move drops the reveal (`PetActionRules.revealStillWanted`).
     @State private var revealAskedOn: IslandNavigation.Page = .all
+    /// This view's own token for the agents' 5 s cadence (spec 2026-11-19 agent resources
+    /// § Sampling): the monitor counts the island open per view instance.
+    @State private var resourceWatch = UUID()
 
     @Environment(\.openSettings) private var openSettings
     @Environment(\.openWindow) private var openWindow
@@ -134,6 +137,10 @@ struct PopoverView: View {
         // copied straight out of the island.
         .textSelection(.enabled)
         .task { await refreshHookStatus() }
+        // The agents' CPU and memory every 5 s while the island is open (spec 2026-11-19 agent
+        // resources § Sampling): each open is an appearance, each close a disappearance.
+        .onAppear { AgentResourceMonitor.shared.setWatching(.island, by: resourceWatch, true) }
+        .onDisappear { AgentResourceMonitor.shared.setWatching(.island, by: resourceWatch, false) }
         // A page whose provider left falls back to All; with one provider left, its page is
         // home (§ 3.4).
         .onChange(of: providerIDs, initial: true) { _, ids in
