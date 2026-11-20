@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Claude and Codex only; it said analytics needs a chat-level cost log, which
   Mistral has.
 
+### Widgets
+- All providers with five listed: a provider's one row is its window nearest the
+  limit; it was always the session window when there was one.
+
 ## [4.3.0] — 2026-11-11
 
 ### Providers

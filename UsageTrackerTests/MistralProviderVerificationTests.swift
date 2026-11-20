@@ -677,7 +677,9 @@ final class MistralProviderVerificationTests: XCTestCase {
             XCTAssertEqual(rows, count <= 4 ? 2 : 1, "\(count) providers")
             XCTAssertEqual(
                 WidgetEntryRules.windowRows(of: shown[0], limit: rows).map(\.id),
-                count <= 4 ? ["five_hour", "seven_day_fable"] : ["five_hour"],
+                // One row is the fullest window since 2026-11-19 (owner): Fable at 80 %, not the
+                // session at 30 %.
+                count <= 4 ? ["five_hour", "seven_day_fable"] : ["seven_day_fable"],
                 "\(count) providers"
             )
         }
