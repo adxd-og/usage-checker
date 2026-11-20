@@ -103,3 +103,47 @@ extension AgentProcessFixture {
         511: usage(29.7, 300),
     ]) { _, new in new }
 }
+
+/// The machine as the sampler sees it, set by a test: the table and every process's usage,
+/// changed between samples, and how often the table was read and on which thread.
+final class FakeMachine: @unchecked Sendable {
+    private let lock = NSLock()
+    private var rows: [AgentResourceRules.ProcessRow]
+    private var usages: [pid_t: AgentResourceRules.Usage]
+    private var reads = 0
+    private var readsOnMain = 0
+
+    init(
+        table: [AgentResourceRules.ProcessRow] = AgentProcessFixture.table,
+        usage: [pid_t: AgentResourceRules.Usage] = AgentProcessFixture.usageAt0
+    ) {
+        rows = table
+        usages = usage
+    }
+
+    func set(table: [AgentResourceRules.ProcessRow]? = nil, usage: [pid_t: AgentResourceRules.Usage]? = nil) {
+        lock.withLock {
+            if let table { rows = table }
+            if let usage { usages = usage }
+        }
+    }
+
+    var tableReads: Int { lock.withLock { reads } }
+    var tableReadsOnMain: Int { lock.withLock { readsOnMain } }
+
+    func readTable() -> [AgentResourceRules.ProcessRow] {
+        lock.withLock {
+            reads += 1
+            if Thread.isMainThread { readsOnMain += 1 }
+            return rows
+        }
+    }
+
+    func usage(_ pid: pid_t) -> AgentResourceRules.Usage? {
+        lock.withLock { usages[pid] }
+    }
+
+    func sampler() -> AgentResourceSampler {
+        AgentResourceSampler(table: { self.readTable() }, usage: { self.usage($0) })
+    }
+}
