@@ -11,7 +11,7 @@ enum MenuBarSettingsCopy {
     static let providersEmpty = "Providers appear here once they report usage."
     static let agentsHeader = "Agents"
     static let agentsTitle = "Show agents in the menu bar"
-    /// The agents' CPU scale (spec 2026-11-19 agent resources, Decision 2; plan R11).
+    /// The agents' CPU scale (spec 2026-11-19 agent resources, Decision 2).
     static let cpuScaleTitle = "CPU figures"
     static let cpuScaleCaption = "In the island and the Agents tab. Per core: one busy core is 100%, as in Activity Monitor. Whole Mac: all cores together are 100%."
     /// The mockup's 20 pt logo box.

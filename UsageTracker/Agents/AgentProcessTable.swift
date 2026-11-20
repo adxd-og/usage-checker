@@ -10,9 +10,9 @@ enum AgentProcessTable {
     /// Every process as (pid, parent, tty, start time), in one `KERN_PROC_ALL` read: `sysctl`
     /// answers for other users' processes too, which the member walk needs to cross root's
     /// `login`. The start time is `kp_proc.p_starttime`, a C macro for
-    /// `kp_proc.p_un.__p_starttime`, which is what Swift sees. Empty when the kernel refuses. The table can grow between asking its size and reading it, so
-    /// the buffer has room to spare and a short one (`ENOMEM`) is asked again, three times at
-    /// most.
+    /// `kp_proc.p_un.__p_starttime`, which is what Swift sees. Empty when the kernel refuses.
+    /// The table can grow between asking its size and reading it, so the buffer has room to
+    /// spare and a short one (`ENOMEM`) is asked again, three times at most.
     static func read() -> [AgentResourceRules.ProcessRow] {
         var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL, 0]
         let stride = MemoryLayout<kinfo_proc>.stride
@@ -57,7 +57,8 @@ enum AgentProcessTable {
             }
         }
         guard status == 0 else { return nil }
-        // Outcome A (Task 1): a process's own time and its reaped children's.
+        // A process's own time and its reaped children's: a reaped child's time, and its
+        // children's, shows in the parent's (measured on macOS 27.2).
         let ticks = info.ri_user_time &+ info.ri_system_time &+ info.ri_child_user_time &+ info.ri_child_system_time
         return AgentResourceRules.Usage(
             cpuSeconds: Double(ticks) * secondsPerTick,

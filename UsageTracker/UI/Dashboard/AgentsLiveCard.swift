@@ -57,7 +57,7 @@ struct AgentsLiveCard: View {
         sessions.count > 1 && sessions.contains { figures[$0.id] != nil }
     }
 
-    /// The whole percent the CPU order compares (review F1): the per-core figure rounded, so
+    /// The whole percent the CPU order compares: the per-core figure rounded, so
     /// jitter within a percent between two samples never swaps two rows. nil without a CPU figure.
     nonisolated static func wholePercent(_ cpu: Double?) -> Int? {
         guard let cpu, cpu.isFinite else { return nil }
@@ -65,7 +65,7 @@ struct AgentsLiveCard: View {
     }
 
     /// State order (needs you, working, done, idle), most recent first inside each
-    /// state: the popover's All tab, whichever source the filter shows. By CPU (review F1): the
+    /// state: the popover's All tab, whichever source the filter shows. By CPU: the
     /// rows that carry an action (`AgentRowText.carriesAction`: a permission request, a question,
     /// Allow / Deny) keep the top in their state order and are never reordered by CPU, so a
     /// button does not move under the pointer; the others follow by whole percent, the busiest

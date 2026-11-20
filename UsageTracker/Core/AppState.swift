@@ -708,7 +708,7 @@ final class AppState: ObservableObject {
     }
 
     /// What a write for a change of the monitor's figures carries: the figures it sent, and the
-    /// agents from the list the monitor was handed (session amendment, 2026-11-19). A session
+    /// agents from the list the monitor was handed. A session
     /// that ends changes `bySession` inside the session store's own `willSet` (the monitor's
     /// `follow` sink recomputes it synchronously), when `AgentSessionStore.shared.sessions` still
     /// holds the list from before the change; the monitor stores the new list before it
