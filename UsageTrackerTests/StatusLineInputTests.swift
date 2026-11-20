@@ -532,4 +532,49 @@ final class StatusLineInputTests: XCTestCase {
         XCTAssertNil(input(#"{"model":{"display_name":"\u200B\u202E\u2028\u00AD\u2029"}}"#).model)
         XCTAssertNil(input(#"{"model":{"display_name":" \uFEFF \u2029 "}}"#).model)
     }
+
+    // The joiners stay only beside something they join: a name of joiners alone, or of
+    // joiners and spaces, is no name, and the line prints its generic one.
+
+    /// The line for a payload naming the model `json` (a JSON string's body, escapes
+    /// included) with 42 % of the context used.
+    private func line(displayName json: String) -> String {
+        StatusLineText.render(
+            snapshot: nil, now: Date(timeIntervalSince1970: 1_800_000_000),
+            input: input(#"{"model":{"display_name":""# + json + #""},"context_window":{"used_percentage":42}}"#),
+            colour: false
+        )
+    }
+
+    func testANameOfOnlyJoinersAndSpacesShowsTheGenericName() {
+        // The joiner alone, the joiner between spaces, the non-joiner and the joiner together.
+        for json in [#"\u200D"#, #" \u200D "#, #"\u200C\u200D"#] {
+            XCTAssertNil(input(#"{"model":{"display_name":""# + json + #""}}"#).model, json)
+            XCTAssertEqual(line(displayName: json), "Claude [####------] 42%", json)
+        }
+        // A no-break space and an ideographic space are spaces too.
+        XCTAssertEqual(line(displayName: #"\u200C\u00A0\u200D\u3000"#), "Claude [####------] 42%")
+    }
+
+    func testAPersianWordAndAJoinedEmojiAloneAreStillNames() {
+        XCTAssertEqual(
+            line(displayName: #"\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645"#),
+            "\u{645}\u{6CC}\u{200C}\u{62E}\u{648}\u{627}\u{647}\u{645} [####------] 42%"
+        )
+        XCTAssertEqual(
+            line(displayName: #"\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67"#),
+            "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} [####------] 42%"
+        )
+    }
+
+    func testAJoinerBeforeALetterStaysWithIt() {
+        XCTAssertEqual(
+            input(#"{"model":{"display_name":"\u200Da"}}"#).model.map { Array($0.unicodeScalars) },
+            Array("\u{200D}a".unicodeScalars)
+        )
+        XCTAssertEqual(
+            input(#"{"model":{"display_name":" \u200Ca "}}"#).model.map { Array($0.unicodeScalars) },
+            Array("\u{200C}a".unicodeScalars)
+        )
+    }
 }

@@ -17,8 +17,8 @@ import Foundation
 struct StatusLineInput: Equatable, Sendable {
     /// `model.display_name` — "Fable", "Opus 4.5". Never the id: it is what Claude
     /// Code itself prints, and an id in a status bar is noise. Without the characters a
-    /// terminal would not show (`printable`): it is the one string of the input that is
-    /// printed.
+    /// terminal would not show, and at most `maximumModelNameLength` characters
+    /// (`printable`): it is the one string of the input that is printed.
     let model: String?
 
     /// `context_window.used_percentage`, clamped to 0…100. **Used**, always: this is
@@ -192,14 +192,42 @@ struct StatusLineInput: Equatable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    /// The most characters of a model name the line prints, counted as a reader counts them
+    /// (`Character`, a grapheme cluster): a longer name is cut to it.
+    static let maximumModelNameLength = 64
+
+    /// The most scalars of a model name the line prints. A character has no size of its own:
+    /// one letter can carry any number of combining marks and joiners chain emoji without end,
+    /// so a count of characters alone bounds nothing. Four scalars a character on average is
+    /// more than any real name needs.
+    static let maximumModelNameScalars = 256
+
     /// A string on its way to a terminal: what the terminal would not show dropped
-    /// (`isInvisible`), then trimmed as `text` trims. Only the model name comes through
-    /// here: the session id is a file name that `StatusLineDrop` checks and never cleans
-    /// (spec 2026-11-10 hook input hardening § Design › Status line strings; spec
-    /// 2026-11-20 small backlog 2 § B).
+    /// (`isInvisible`), trimmed as `text` trims, cut to its first `maximumModelNameLength`
+    /// characters (whole clusters, so an emoji sequence or a letter with its marks is never
+    /// split), then to `maximumModelNameScalars` scalars by dropping whole characters from the
+    /// end, and trimmed again, since a cut can end on a space. nil when what is left holds
+    /// nothing but the `joiners` and whitespace: a name nobody can see is no name, and the
+    /// line's own fallback applies. Dropped before the cut, so invisible padding cannot push
+    /// the visible name out; checked after it, so the name printed is the one checked. Only
+    /// the model name comes through here: the session id is a file name that
+    /// `StatusLineDrop` checks and never cleans (spec 2026-11-10 hook input hardening
+    /// § Design › Status line strings; spec 2026-11-20 small backlog 2 § B).
     private static func printable(_ value: Any?) -> String? {
-        guard let raw = value as? String else { return nil }
-        return text(String(String.UnicodeScalarView(raw.unicodeScalars.filter { !isInvisible($0) })))
+        guard let raw = value as? String,
+              let shown = text(String(String.UnicodeScalarView(raw.unicodeScalars.filter { !isInvisible($0) }))),
+              let name = text(String(withinScalarLimit(shown.prefix(maximumModelNameLength))))
+        else { return nil }
+        return name.unicodeScalars.contains(where: isVisibleOnItsOwn) ? name : nil
+    }
+
+    /// `name` without its last characters until it holds at most `maximumModelNameScalars`
+    /// scalars. Whole characters go, so nothing is split; a single character that is too
+    /// large by itself leaves nothing, and the name is then no name.
+    private static func withinScalarLimit(_ name: Substring) -> Substring {
+        var kept = name
+        while kept.unicodeScalars.count > maximumModelNameScalars { kept = kept.dropLast() }
+        return kept
     }
 
     /// The scalars `printable` drops. `Cc` (C0, DEL, C1): an escape would repaint the
@@ -208,7 +236,8 @@ struct StatusLineInput: Equatable, Sendable {
     /// space, a byte-order mark or a soft hyphen hides inside the name; a subdivision flag's
     /// tag characters go too and leave its black flag. `Zl` and `Zp`: the line and paragraph
     /// separators break the line as a newline does. Letters, marks, digits, punctuation,
-    /// symbols and every space stay.
+    /// symbols and the space separators (Zs) inside the name stay; the joiners stay too, but cannot make a name alone
+    /// (`isVisibleOnItsOwn`).
     private static func isInvisible(_ scalar: Unicode.Scalar) -> Bool {
         switch scalar.properties.generalCategory {
         case .control, .lineSeparator, .paragraphSeparator: return true
@@ -219,8 +248,15 @@ struct StatusLineInput: Equatable, Sendable {
 
     /// The zero-width non-joiner and joiner (U+200C, U+200D), the format characters
     /// `printable` keeps: they shape Persian and the Indic scripts and join emoji, and they
-    /// reorder nothing.
+    /// reorder nothing. They stay where they are in a name that has something else to show,
+    /// and a name of them alone, or of them and spaces, is no name.
     private static let joiners: Set<UInt32> = [0x200C, 0x200D]
+
+    /// A scalar that shows something by itself: neither one of the `joiners` nor the
+    /// whitespace `text` trims.
+    private static func isVisibleOnItsOwn(_ scalar: Unicode.Scalar) -> Bool {
+        !joiners.contains(scalar.value) && !CharacterSet.whitespacesAndNewlines.contains(scalar)
+    }
 
     /// A finite number, written as a JSON number or as a numeric string.
     private static func number(_ value: Any?) -> Double? {
