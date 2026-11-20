@@ -108,14 +108,15 @@ struct KeepAwakeMachine: Sendable {
 ///    state before it sets the flag, so a crash between the two leaves "armed" on file and
 ///    rule 11 clears the flag; a set that fails rolls back (rule 4) and the file is written
 ///    again.
-/// 13. Heat (thermal guard spec 2026-11-19, § Daemon). The tick reads the thermal level after
-///    the battery, and `ProcessInfo`'s change notification reads it between ticks while a mode
-///    is armed; both feed the engine's `thermal` input, which ends an armed mode as
-///    `overheated` with the lid closed and causing sleep and the guard on. The end goes the
+/// 13. Heat (thermal guard spec 2026-11-19, § Daemon). The tick and the app's `state` poll read
+///    the thermal level after the battery (`readAll`), and `ProcessInfo`'s change notification
+///    reads it between ticks while a mode is armed. All three feed the engine's `thermal`
+///    input, which ends an armed mode as `overheated` with the lid closed and causing sleep and
+///    the guard on, so any of them can end the mode for heat. The end goes the
 ///    way every end goes (rules 2, 3, 5): the flag cleared and read back, then
 ///    `pmset sleepnow`. While a hot minute counts, a tick comes when it is up, after the one
 ///    already pending (rule 7). Closing the lid is no reading: `critical` ends the mode at the
-///    next tick or notification, within a minute of the lid closing, `serious` within two. A
+///    next reading, within a minute of the lid closing, `serious` within two. A
 ///    notification while nothing is armed feeds the engine nothing and reaches no apply step,
 ///    so it never moves the idle exit (rule 9).
 /// 14. The guard's switch (thermal guard spec 2026-11-19, § Settings). `setThermalGuard` sets
