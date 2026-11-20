@@ -114,7 +114,8 @@ final class KeepAwakeThermalGuardXPCTests: XCTestCase {
     }
 
     /// While a mode is armed the switch is the guard's and nothing else's: no pmset, the flag as
-    /// it was, nothing written, and the next tick a minute on.
+    /// it was, nothing written, and the tick pending since the Apply where it was (§ Plan
+    /// decisions accepted by the session, item 2a).
     func testTheSwitchWhileArmedRunsNoPmsetAndWritesNoFile() async throws {
         let fake = FakeKeepAwakeMachine()
         let service = await armed(fake)
@@ -126,7 +127,7 @@ final class KeepAwakeThermalGuardXPCTests: XCTestCase {
         XCTAssertEqual(fake.with { $0.calls }, [])
         XCTAssertEqual(fake.with { $0.flag }, .set)
         XCTAssertFalse(fileWasWritten)
-        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 120, t0 + 150])
+        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60, t0 + 60])
     }
 
     /// With nothing armed the helper still takes the switch (its reply says so) and touches
@@ -169,7 +170,8 @@ final class KeepAwakeThermalGuardXPCTests: XCTestCase {
     }
 
     /// Off while a hot minute is being counted forgets it: back on, the minute starts at the
-    /// next reading, and the tick is no longer brought forward to the old minute's end.
+    /// next reading. The tick pending stays where it was (§ Plan decisions accepted by the
+    /// session, item 2a); it no longer finds a minute that is up.
     func testTurningTheGuardOffForgetsTheHotMinuteBeingCounted() async {
         let fake = FakeKeepAwakeMachine()
         let service = await armed(fake)
@@ -180,8 +182,8 @@ final class KeepAwakeThermalGuardXPCTests: XCTestCase {
         _ = await service.setThermalGuard(enabled: true, now: t0 + 80)
         XCTAssertEqual(
             fake.with { $0.scheduled },
-            [t0 + 120, t0 + 120, t0 + 130, t0 + 140],
-            "the minute that began at 60 no longer sets the tick"
+            [t0 + 120, t0 + 120, t0 + 120, t0 + 120],
+            "neither the poll nor the switch moves the tick the reading at 60 set"
         )
         let first = await service.tick(now: t0 + 120)
         XCTAssertEqual(first.state, stillArmed, "a minute from 60 would have ended it here")

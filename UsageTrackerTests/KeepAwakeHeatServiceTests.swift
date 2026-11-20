@@ -58,15 +58,19 @@ final class KeepAwakeHeatServiceTests: XCTestCase {
         XCTAssertEqual(fake.with { $0.calls }, ["set 0", "read", "sleepnow"])
     }
 
-    /// The change notification is a reading too, and the minute it starts sets the next tick,
-    /// whatever input comes in between.
+    /// The change notification is a reading too. The tick pending since the Apply stays where
+    /// it was, whatever input comes in between (§ Plan decisions accepted by the session, item
+    /// 2a), and the tick it sets is the end of the minute the notification started.
     func testAThermalNotificationIsAReadingAndBringsTheTickForward() async {
         let fake = FakeKeepAwakeMachine()
         let service = await armed(fake)
         fake.with { $0.lid = KeepAwakeLid(closed: true, causesSleep: true); $0.thermal = .serious }
         _ = await service.thermalChanged(now: t0 + 30)
         _ = await service.state(now: t0 + 50)
-        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 90, t0 + 90], "the minute is up at 90, not a minute after the poll")
+        XCTAssertEqual(fake.with { $0.scheduled }, [t0 + 60, t0 + 60], "the Apply's tick, not a minute after the notification or the poll")
+        let pending = await service.tick(now: t0 + 60)
+        XCTAssertEqual(pending.state, stillArmed, "thirty seconds into the minute")
+        XCTAssertEqual(fake.with { $0.scheduled.last ?? nil }, t0 + 90, "the minute is up at 90, not a minute after the tick")
         let reply = await service.tick(now: t0 + 90)
         XCTAssertEqual(reply.state, .ended(at: t0 + 90, reason: .overheated))
     }

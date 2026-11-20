@@ -63,7 +63,17 @@ struct KeepAwakeMachine: Sendable {
 /// 6. The state is saved when it, the owed sleep or whether the helper owns the flag changed
 ///    during the input (always on start, and again after rule 12's early save); a save error
 ///    is logged and otherwise ignored.
-/// 7. The next tick is the engine's, or a minute from now while a clear or a sleep is owed.
+/// 7. The tick an input calls for is the engine's, or a minute from now while a clear or a
+///    sleep is owed; with neither there is none, and the pending tick is cancelled. The helper
+///    never moves a pending tick later (thermal guard spec 2026-11-19, § Plan decisions
+///    accepted by the session, item 2a): the tick scheduled is the earlier of the one pending
+///    and the one the input calls for, so inputs that arrive more often than once a minute
+///    (power notifications, the app's poll, the switches, Apply) cannot postpone the next
+///    reading. A tick stops being pending only when the timer fires (`tick`), which sets the
+///    next from its own reading, or when it is cancelled. An overdue one, whose `tick` has not
+///    run yet, is scheduled again at its own time, which the wall-clock timer fires at once. A
+///    tick is only ever a reading: one kept from before an Apply with a later deadline ends
+///    nothing.
 /// 8. The reply is the engine's state and the first failure, with the thermal level as read
 ///    when answering and whether the engine's guard is on (thermal guard spec, § Daemon). Every
 ///    reply is built by `answer`, the ones that leave early (rule 1, a power notification on a
@@ -103,11 +113,11 @@ struct KeepAwakeMachine: Sendable {
 ///    is armed; both feed the engine's `thermal` input, which ends an armed mode as
 ///    `overheated` with the lid closed and causing sleep and the guard on. The end goes the
 ///    way every end goes (rules 2, 3, 5): the flag cleared and read back, then
-///    `pmset sleepnow`. While a hot minute counts, the next tick comes when it is up (rule
-///    7). Closing the lid is no reading: `critical` ends the mode at the next tick or
-///    notification, within a minute of the lid closing, `serious` within two. A notification
-///    while nothing is armed feeds the engine nothing and reaches no apply step, so
-///    it never moves the idle exit (rule 9).
+///    `pmset sleepnow`. While a hot minute counts, a tick comes when it is up, after the one
+///    already pending (rule 7). Closing the lid is no reading: `critical` ends the mode at the
+///    next tick or notification, within a minute of the lid closing, `serious` within two. A
+///    notification while nothing is armed feeds the engine nothing and reaches no apply step,
+///    so it never moves the idle exit (rule 9).
 /// 14. The guard's switch (thermal guard spec 2026-11-19, § Settings). `setThermalGuard` sets
 ///    the engine's guard in any state and feeds it no reading: turning it on ends nothing by
 ///    itself (the next tick or notification decides, within a minute), turning it off forgets
@@ -136,6 +146,9 @@ actor KeepAwakeService {
     private var closedBeforeOpen: Set<Int> = []
     /// When the idle exit is due; nil while the daemon is needed.
     private var idleExitAt: Date?
+    /// The tick the machine was last asked for and that has not fired; nil while there is none
+    /// (rule 7).
+    private var pendingTick: Date?
 
     /// How long the daemon stays idle before it exits (plan D7).
     static let idleExitDelay: TimeInterval = 60
@@ -238,14 +251,22 @@ actor KeepAwakeService {
         wasArmed && !engine.state.isArmed && lidSleeps
     }
 
-    /// What the app asks for; it settles the deadline and the battery like a tick.
+    /// What the app asks for; it reads what a tick reads, and leaves the pending tick to the
+    /// timer (rule 7).
     func state(now: Date) -> KeepAwakeReply {
-        tick(now: now)
+        readAll(now: now)
     }
 
-    /// The wall-clock tick. It also re-reads the battery, for notifications that were missed,
-    /// and then the thermal level (rule 13): the battery's end comes first.
+    /// The wall-clock tick: the timer fired, so no tick is pending any more, and the next one
+    /// comes from this reading (rule 7).
     func tick(now: Date) -> KeepAwakeReply {
+        pendingTick = nil
+        return readAll(now: now)
+    }
+
+    /// A tick's reading, the app's poll too: the deadline, the battery again, for notifications
+    /// that were missed, and then the thermal level (rule 13): the battery's end comes first.
+    private func readAll(now: Date) -> KeepAwakeReply {
         let lidSleeps = machine.lid().sleepsWhenClosed
         let before = engine.state
         if let power = machine.power() {
@@ -344,7 +365,7 @@ actor KeepAwakeService {
         } else if engine.state != before || owedBefore || ownedBefore {
             save(engine.state)
         }
-        machine.schedule(nil)
+        scheduleTick(nil)
         machine.scheduleExit(nil)
         NSLog("[keepawake] stopped by launchd; flag clear: %@", cleared ? "yes" : "no")
         machine.terminate(cleared ? 0 : 1)
@@ -412,11 +433,18 @@ actor KeepAwakeService {
         }
         // Rule 7.
         let owed = lastApplied == nil || sleepOwed
-        machine.schedule(engine.nextTick(now: now) ?? (owed ? now + KeepAwakeRules.tickInterval : nil))
+        scheduleTick(engine.nextTick(now: now) ?? (owed ? now + KeepAwakeRules.tickInterval : nil))
         // Rule 9.
         scheduleIdleExit(now: now)
         // Rule 8.
         return answer(firstFailure)
+    }
+
+    /// Rule 7: asks the machine for the earlier of the pending tick and `wanted`; nil cancels
+    /// the pending one.
+    private func scheduleTick(_ wanted: Date?) {
+        pendingTick = wanted.map { min($0, pendingTick ?? $0) }
+        machine.schedule(pendingTick)
     }
 
     /// Rule 8: the engine's state and `failure`, with the level as read now and the guard. The
