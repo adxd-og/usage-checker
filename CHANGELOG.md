@@ -21,6 +21,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All providers with five listed: a provider's one row is its window nearest the
   limit; it was always the session window when there was one.
 
+### Agents
+- What each live session in a terminal costs the Mac: CPU (100% is one core,
+  as in Activity Monitor) and memory of its processes, its tools' builds and
+  tests included. The island's row ends with "212% · 3.4 GB" from 50% CPU or
+  4 GB up, except on a row that needs you; the Agents tab shows both for every
+  such session and sorts by CPU, rows that need you staying on top. A session
+  in an IDE panel shows nothing; of two sessions in one tab, only the newer one
+  does, and a closed tab's session shows nothing once a new tab reuses its
+  terminal.
+
+### Settings
+- Settings → Menu bar → Agents: **CPU figures** per core or for the whole Mac
+  (100% is every core busy).
+
+### Command line and MCP
+- `status.json`, `brioche status --json` and MCP `get_agents` give each live
+  session's `cpuPercent` (per core, to one decimal) and `memoryBytes`, absent
+  until measured.
+
 ## [4.3.0] — 2026-11-11
 
 ### Providers

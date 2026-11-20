@@ -202,6 +202,12 @@ sessions you already have running.
 
 - **Live sessions**: every session, grouped *Needs you / Working / Done /
   Idle*, with the project and what it's doing
+- **CPU and memory per session**: what each session running in a terminal
+  costs the Mac, its tools' builds and tests included. The island adds
+  "212% · 3.4 GB" to a row from 50% CPU or 4 GB up, but not to a row that
+  needs you; the Agents tab shows both for every such session and sorts by
+  CPU. 100% is one core, as in Activity Monitor, or the whole Mac
+  (Settings → Menu bar → Agents). A session in an IDE panel shows nothing
 - **Needs you** covers three things: a permission request, a question
   (`AskUserQuestion`), or a plan waiting for approval. Each shows the real
   text (the question's options, the plan's opening lines), one click away
@@ -281,7 +287,7 @@ Mac.
 | Tool | Arguments | Returns |
 |---|---|---|
 | `get_usage` | none | every provider's windows, resets and costs |
-| `get_agents` | none | which sessions are working or waiting on you |
+| `get_agents` | none | which sessions are working or waiting on you, and each terminal session's CPU (`cpuPercent`, per core) and memory (`memoryBytes`) |
 | `get_sessions` | `provider` (`claude`, `codex` or `mistral`, optional), `limit` (1-15, default 10) | the recent chats: title, project, last active, turns, tokens, cost, sub-agent count, and each chat's share of the current limit windows (`sessionShare`, `weekShare`) or of the budget or spend limit (`budgetShare`) |
 
 - One-click install for Claude Code (adds `brioche` to `~/.claude.json`)
