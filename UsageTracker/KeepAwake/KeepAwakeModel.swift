@@ -14,14 +14,26 @@ import ServiceManagement
 /// command overtook is dropped (`commandGeneration`).
 @MainActor
 final class KeepAwakeModel: ObservableObject {
-    static let shared = KeepAwakeModel(
-        client: KeepAwakeClient(dependencies: .live),
-        floorEnabled: { SettingsStore.shared.keepAwakeFloorEnabled },
-        rememberDuration: { SettingsStore.shared.keepAwakeDurationMinutes = $0 },
-        resetSettings: { SettingsStore.shared.resetKeepAwake() },
-        thermalGuardEnabled: { SettingsStore.shared.keepAwakeThermalGuardEnabled },
-        thermalLevel: { KeepAwakeReadings.thermal(from: ProcessInfo.processInfo.thermalState) }
-    )
+    static let shared = live(client: KeepAwakeClient(dependencies: .live), settings: .shared)
+
+    /// The model as the app runs it, and the only way `shared` is built: both switches are read
+    /// from `settings` each time they are used, Apply and Reset keep awake write to it, and the
+    /// card's level is `processInfo`'s, through the reading the helper takes too
+    /// (`KeepAwakeReadings.liveThermal`).
+    static func live(
+        client: KeepAwakeClient,
+        settings: SettingsStore,
+        processInfo: ProcessInfo = .processInfo
+    ) -> KeepAwakeModel {
+        KeepAwakeModel(
+            client: client,
+            floorEnabled: { settings.keepAwakeFloorEnabled },
+            rememberDuration: { settings.keepAwakeDurationMinutes = $0 },
+            resetSettings: { settings.resetKeepAwake() },
+            thermalGuardEnabled: { settings.keepAwakeThermalGuardEnabled },
+            thermalLevel: { KeepAwakeReadings.liveThermal(processInfo) }
+        )
+    }
 
     @Published private(set) var registration: KeepAwakeRegistration = .notRegistered
     @Published private(set) var state: KeepAwakeState = .idle
@@ -44,10 +56,10 @@ final class KeepAwakeModel: ObservableObject {
     /// The thermal guard as the helper last said it holds it (spec 2026-11-19, § Daemon): taken
     /// from every reply that lands, so nil until one does, and nil again after a reply from a
     /// helper that predates the guard, which is never asked about it. A call that brought no
-    /// reply (lost, timed out, a helper that is not ready) leaves it as it was: only the
-    /// switch's path reads it, to know whether the helper has the selector, and the
-    /// reconciliation decides from the reply in hand, never from this. Published: the card says
-    /// "The heat guard starts with the next Apply." while it is nil and a mode is armed.
+    /// reply (lost, timed out, a helper that is not ready) leaves it as it was. Two readers: the
+    /// switch's path, to know whether the helper has the selector, and the card, which says
+    /// "The heat guard starts with the next Apply." while it is nil and a mode is armed (hence
+    /// published). The reconciliation decides from the reply in hand, never from this.
     @Published private(set) var helperThermalGuard: Bool?
     /// A `setThermalGuard` is out. At most one ever is (`sendThermalGuard`).
     private var thermalGuardSendOut = false
@@ -160,14 +172,26 @@ final class KeepAwakeModel: ObservableObject {
         await sendThermalGuard(now: now)
     }
 
+    /// Settings › Advanced › Reset all settings put the floor and heat switches back on: an
+    /// armed helper hears both at once, the floor first, as it would from the switches
+    /// themselves (keep-awake spec 2026-10-26, floor switch while armed; thermal guard spec
+    /// 2026-11-19, § Settings). The guard's call sends the setting as it reads then, which the
+    /// reset put back on. A floor answer that says the guard is off already brings the guard
+    /// (`reconcileThermalGuard`), and the guard's call then sends it again; it alone sends it
+    /// when the floor's answer is lost.
+    func allSettingsWereReset(now: Date = Date()) async {
+        await floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled, now: now)
+        await thermalGuardChanged(now: now)
+    }
+
     /// The poll loop's call: asks the helper only while armed or unreconciled.
     func pollIfNeeded(now: Date = Date()) async {
         guard state.isArmed || needsReconcile else { return }
         await ask(now: now)
     }
 
-    /// Settings › Advanced › Reset keep awake (spec § UI, plan D13). The two settings go back
-    /// either way.
+    /// Settings › Advanced › Reset keep awake (spec § UI, plan D13). The three settings (the
+    /// battery floor, the heat guard, the last duration) go back either way.
     func reset(now: Date = Date()) async {
         isWorking = true
         defer { isWorking = false }
