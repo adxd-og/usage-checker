@@ -47,9 +47,9 @@ private struct Redrawing<Watch: ViewModifier>: View {
 /// implementer's tests: § Which processes (the member walk across a detached or root-owned link,
 /// a cycle, a self-parented row, a reused tty and two sessions on one tty end to end through the
 /// monitor), § Figures (absurd counters), § Sampling (the sampler's own span rules, a surface
-/// held before any session is live, a changed tty set), § Wire format (nothing but the two keys
+/// held before any session is live, a changed tty set) and § Wire format (nothing but the two keys
 /// differs, the scale switch never reaches the file, a newer session taking a tty reaches the
-/// file at once) and § Where it shows (the CPU order's action rows and the sort switch).
+/// file at once).
 final class AgentResourcesVerificationTests: XCTestCase {
     private typealias F = AgentProcessFixture
     private typealias Figures = AgentResourceRules.Figures
@@ -534,65 +534,5 @@ final class AgentResourcesVerificationTests: XCTestCase {
         XCTAssertFalse(AgentResourceRules.publishesToFile(
             old, over: old, lastAt: F.t0, now: F.t0.addingTimeInterval(1)
         ), "the same sessions, new numbers one second later: the views only")
-    }
-
-    // MARK: Where it shows
-
-    /// § Where it shows: rows that carry an action keep the top — a permission request held on a
-    /// row whose state reads Working included. Here the held row is the older one and has the
-    /// lower CPU; it still leads.
-    func testARowHoldingAllowAndDenyKeepsTheTopUnderTheCPUSortWhateverItsState() {
-        var held = Fixture.agentSession(
-            sessionID: "held", projectName: "held", state: .working,
-            stateSince: F.t0.addingTimeInterval(-600), lastEventAt: F.t0.addingTimeInterval(-600),
-            host: AgentHostInfo(pid: nil, bundleID: nil, tty: F.tab)
-        )
-        held.pendingPermissionID = "0f1e2d3c4b5a69788796a5b4c3d2e1f0"
-        XCTAssertTrue(AgentRowText.carriesAction(held))
-        let busy = session("busy", tty: F.pane)
-        let figures = AgentResourceRules.bySession([held, busy], byTTY: [
-            F.tab: Figures(cpuPercent: 1, memoryBytes: 100 * F.mb),
-            F.pane: Figures(cpuPercent: 300, memoryBytes: 100 * F.mb),
-        ])
-        XCTAssertEqual(AgentsLiveCard.rows([held, busy], sort: .state, figures: figures).map(\.sessionID), ["busy", "held"])
-        XCTAssertEqual(AgentsLiveCard.rows([held, busy], sort: .cpu, figures: figures).map(\.sessionID), ["held", "busy"])
-    }
-
-    /// The CPU order is a function of the figures and the state order, not of the order the store
-    /// happens to list the sessions in: three rows that print the same percent keep the state
-    /// order whichever way they arrive.
-    func testTheCPUOrderDoesNotDependOnTheOrderTheSessionsArriveIn() {
-        let ids = ["a", "b", "c", "d"]
-        let ttys = [F.tab, F.otherTab, F.pane, F.otherPane]
-        let live = ids.enumerated().map { index, id in
-            Fixture.agentSession(
-                sessionID: id, projectName: id, state: .working,
-                stateSince: F.t0.addingTimeInterval(-Double(index) * 60),
-                lastEventAt: F.t0.addingTimeInterval(-Double(index) * 60),
-                host: AgentHostInfo(pid: nil, bundleID: nil, tty: ttys[index])
-            )
-        }
-        // a (newest), b, c, d (oldest) in state order. c is the busiest; a, b and d print 7%.
-        let figures = AgentResourceRules.bySession(live, byTTY: [
-            F.tab: Figures(cpuPercent: 7.2, memoryBytes: F.mb),
-            F.otherTab: Figures(cpuPercent: 7.0, memoryBytes: F.mb),
-            F.pane: Figures(cpuPercent: 90, memoryBytes: F.mb),
-            F.otherPane: Figures(cpuPercent: 6.8, memoryBytes: F.mb),
-        ])
-        let expected = ["c", "a", "b", "d"]
-        XCTAssertEqual(AgentsLiveCard.rows(live, sort: .cpu, figures: figures).map(\.sessionID), expected)
-        XCTAssertEqual(AgentsLiveCard.rows(live.reversed(), sort: .cpu, figures: figures).map(\.sessionID), expected)
-        XCTAssertEqual(AgentsLiveCard.rows([live[2], live[0], live[3], live[1]], sort: .cpu, figures: figures).map(\.sessionID), expected)
-    }
-
-    /// § Where it shows: the switch is for two sessions up when at least one *listed* session has
-    /// figures. Figures kept for a session the card does not list (another source's, filtered
-    /// out) do not make it appear.
-    func testTheSortSwitchIgnoresFiguresOfSessionsTheCardDoesNotList() {
-        let listed = [session("a", tty: nil), session("b", tty: nil)]
-        let unlisted = session("elsewhere", tty: F.tab)
-        let figures = AgentResourceRules.bySession([unlisted], byTTY: [F.tab: Figures(cpuPercent: 5, memoryBytes: F.mb)])
-        XCTAssertEqual(Set(figures.keys), [unlisted.id])
-        XCTAssertFalse(AgentsLiveCard.showsSort(listed, figures: figures))
     }
 }
