@@ -179,6 +179,14 @@ final class AgentNotificationCopyTests: XCTestCase {
             "Edit: MenuBarLabel.swift · 7 turns"
         )
     }
+
+    /// A session the app first met at the end of a turn has no turns counted: no "0 turns".
+    func testAFinishedBannerLeavesOutACountOfZero() {
+        let silent = agentSession(state: .done, activity: nil, turns: 0)
+        let editing = agentSession(state: .done, activity: "Edit: MenuBarLabel.swift", turns: 0)
+        XCTAssertEqual(AgentNotificationRules.doneBody(for: silent), "", "the title stands alone")
+        XCTAssertEqual(AgentNotificationRules.doneBody(for: editing), "Edit: MenuBarLabel.swift")
+    }
 }
 
 /// The leaving edge. The store announces a session *entering* `needsYou`; nothing
