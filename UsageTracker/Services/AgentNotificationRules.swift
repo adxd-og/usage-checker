@@ -220,11 +220,17 @@ enum AgentNotificationRules {
         truncate(session.activity ?? "Waiting for your approval.")
     }
 
-    /// What the turn did and how long it ran, in turns.
+    /// What the turn did and how many turns the app has seen the session take. A
+    /// session first met at the end of a turn (the app started while the agent worked)
+    /// has none: the zero is left out, and with no activity the title stands alone.
     static func doneBody(for session: AgentSession) -> String {
-        let turns = session.turns == 1 ? "1 turn" : "\(session.turns) turns"
-        guard let activity = session.activity else { return turns }
-        return truncate("\(activity) · \(turns)")
+        let turns: String? = session.turns < 1 ? nil : session.turns == 1 ? "1 turn" : "\(session.turns) turns"
+        switch (session.activity, turns) {
+        case let (activity?, turns?): return truncate("\(activity) · \(turns)")
+        case let (activity?, nil): return truncate(activity)
+        case let (nil, turns?): return turns
+        case (nil, nil): return ""
+        }
     }
 
     static func truncate(_ text: String, limit: Int = maxBodyLength) -> String {

@@ -37,6 +37,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI's log, shows nothing; of two sessions in one tab, only the newer one
   does, and a closed tab's session shows nothing once a new tab reuses its
   terminal. A figure never reads above every core busy.
+- The "finished" banner no longer says "0 turns" for a session that was
+  already at work when the app started.
 
 ### Settings
 - Settings → Menu bar → Agents: **CPU figures** per core or for the whole Mac
