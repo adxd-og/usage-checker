@@ -33,11 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as in Activity Monitor) and memory of its processes, its tools' builds and
   tests included. The island's row ends with "212% · 3.4 GB" from 50% of one
   core or 4 GB up, except on a row that needs you; the Agents tab shows both
-  for every such session and sorts by CPU, rows that need you staying on top.
-  A session in an IDE panel, or one read from its CLI's log, shows nothing; of
-  two sessions in one tab, only the newer one does, and a closed tab's session
-  shows nothing once a new tab reuses its terminal. A figure never reads above
-  every core busy.
+  for every such session. A session in an IDE panel, or one read from its
+  CLI's log, shows nothing; of two sessions in one tab, only the newer one
+  does, and a closed tab's session shows nothing once a new tab reuses its
+  terminal. A figure never reads above every core busy.
 
 ### Settings
 - Settings → Menu bar → Agents: **CPU figures** per core or for the whole Mac

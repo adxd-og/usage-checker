@@ -205,9 +205,9 @@ sessions you already have running.
 - **CPU and memory per session**: what each session running in a terminal
   costs the Mac, its tools' builds and tests included. The island adds
   "212% · 3.4 GB" to a row from 50% of one core or 4 GB up, but not to a row that
-  needs you; the Agents tab shows both for every such session and sorts by
-  CPU. 100% is one core, as in Activity Monitor, or the whole Mac
-  (Settings → Menu bar → Agents). A session in an IDE panel shows nothing
+  needs you; the Agents tab shows both for every such session. 100% is one
+  core, as in Activity Monitor, or the whole Mac (Settings → Menu bar →
+  Agents). A session in an IDE panel shows nothing
 - **Needs you** covers three things: a permission request, a question
   (`AskUserQuestion`), or a plan waiting for approval. Each shows the real
   text (the question's options, the plan's opening lines), one click away
