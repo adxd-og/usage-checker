@@ -17,8 +17,6 @@ struct AgentsHistoryView: View {
     @AppStorage(AgentsHistoryView.sourceKey) private var storedSource: String = "all"
     /// The window's tab. Writing it is how any view switches tabs; the window follows.
     @AppStorage(DashboardTab.storageKey) private var storedTab: String = DashboardTab.overview.rawValue
-    /// The Live card's order, State or CPU (`AgentsLiveCard.selectedSort`).
-    @AppStorage(AgentsLiveCard.sortKey) private var storedSort: String = AgentsLiveSort.state.rawValue
 
     /// nil = every source. An unknown stored value (a provider that never shipped, a
     /// hand-edited plist) reads as All rather than filtering everything away.
@@ -61,7 +59,6 @@ struct AgentsHistoryView: View {
                         figures: monitor.bySession,
                         scale: settings.agentsCPUScale,
                         cores: ProcessInfo.processInfo.activeProcessorCount,
-                        sort: $storedSort,
                         onShowHistory: { showHistory() }
                     )
                 }

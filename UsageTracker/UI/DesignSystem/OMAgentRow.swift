@@ -156,8 +156,7 @@ enum AgentRowText {
     /// needs them (`state == .needsYou`, what `titleBadge` and `AgentsSection.flat` key on: a
     /// permission request, a question, a plan) or it holds Allow / Deny
     /// (`permissionButtonsVisible`). Such a row shows no resource suffix in the island, so its
-    /// badge and question keep the width, and keeps its place in the Agents tab's CPU order, so
-    /// a button never moves under the pointer (spec 2026-11-19 agent resources § Where it shows).
+    /// badge and question keep the width (spec 2026-11-19 agent resources § Where it shows).
     static func carriesAction(_ session: AgentSession) -> Bool {
         session.state == .needsYou
             || permissionButtonsVisible(pendingPermissionID: session.pendingPermissionID, source: session.source)

@@ -52,7 +52,7 @@ final class AgentRowResourcesTests: XCTestCase {
         XCTAssertNil(AgentsSection.resourceSuffix(for: panel, figures: figures, scale: .perCore, cores: 10), "an IDE panel shows nothing")
     }
 
-    /// Review F1, F3: the predicate the CPU order and the suffix share — the row needs the user
+    /// Review F3: the predicate the suffix keys on — the row needs the user
     /// (`state == .needsYou`: a permission request, a question, a plan) or holds Allow / Deny.
     func testARowCarriesAnActionWhenItNeedsTheUserOrHoldsAllowAndDeny() {
         XCTAssertTrue(AgentRowText.carriesAction(Fixture.agentSession(state: .needsYou)))
