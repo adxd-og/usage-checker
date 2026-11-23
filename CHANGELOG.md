@@ -65,8 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   open nothing ends. macOS gives a level, not degrees.
 - While the mode is on and the Mac is that hot, the card says "The Mac is
   running hot" under the countdown, whichever way the switch is.
-- Brioche holds the helper's guard to the switch after every Apply. Reset keep
-  awake turns the switch back off. With the switch on, a mode already on when
+- Every Apply turns the helper's guard on and Brioche then sets it to the
+  switch at once. Reset keep awake turns the switch back off. With the switch on, a mode already on when
   Brioche updates runs under the previous helper, without the guard, until it
   ends; the card says "The heat guard starts with the next Apply."
 
