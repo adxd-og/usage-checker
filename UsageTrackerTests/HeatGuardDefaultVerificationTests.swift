@@ -154,7 +154,7 @@ final class HeatGuardDefaultVerificationTests: XCTestCase {
     }
 
     /// An update from 4.3.0 with a mode armed: the old helper's replies carry no `thermalGuard`.
-    /// With the switch at its default nothing is sent to it and the "starts with the next Apply"
+    /// With the switch at its default nothing is sent to it and the "starts after this mode ends"
     /// line is not owed; with the switch on the line is.
     @MainActor func testAHelperThatPredatesTheGuardIsSentNothingAndTheLineFollowsTheSwitch() async {
         let settings = storeAtItsDefaults()

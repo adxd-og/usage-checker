@@ -6,7 +6,8 @@ import XCTest
 /// spec's words. Past five listed, the Admin API organisation waits first. Up to four listed,
 /// each shows its session and its fullest other window; at five, each shows its one most
 /// telling window, so the large widget's height holds them. That one window is the one nearest
-/// its limit, session or not (owner, 2026-11-19).
+/// its limit, session or not (owner, 2026-11-19), and never a promotional pool while the
+/// provider has anything else (the 4.4.0 release review).
 final class WidgetAllProvidersRulesTests: XCTestCase {
     private func service(_ id: String, buckets: [WidgetBucket] = []) -> WidgetService {
         WidgetService(id: id, name: id.capitalized, icon: "circle", plan: nil, buckets: buckets)
@@ -70,6 +71,60 @@ final class WidgetAllProvidersRulesTests: XCTestCase {
             WidgetBucket(id: "codex_session", label: "Session", percent: 50, kind: "session"),
         ])
         XCTAssertEqual(WidgetEntryRules.windowRows(of: level, limit: 1).map(\.id), ["codex_session"])
+    }
+
+    private let promo = WidgetBucket(
+        id: "seven_day_omelette_promotional", label: "Promotion", percent: 100, kind: "modelSpecific"
+    )
+
+    func testAPromotionalPoolNeverTakesTheSingleRowFromTheSession() {
+        let claude = service("claude", buckets: [
+            WidgetBucket(id: "five_hour", label: "Session", percent: 10, kind: "session"),
+            promo,
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: claude, limit: 1).map(\.id), ["five_hour"])
+    }
+
+    func testTheFullestCountedWindowTakesTheSingleRowPastAPromotionalPool() {
+        let claude = service("claude", buckets: [
+            WidgetBucket(id: "five_hour", label: "Session", percent: 10, kind: "session"),
+            promo,
+            WidgetBucket(id: "seven_day", label: "All models", percent: 30, kind: "weekly"),
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: claude, limit: 1).map(\.id), ["seven_day"])
+        let calmWeek = service("claude", buckets: [
+            WidgetBucket(id: "five_hour", label: "Session", percent: 40, kind: "session"),
+            promo,
+            WidgetBucket(id: "seven_day", label: "All models", percent: 30, kind: "weekly"),
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: calmWeek, limit: 1).map(\.id), ["five_hour"])
+    }
+
+    func testWithoutASessionTheSingleRowIsTheFullestCountedWindow() {
+        let claude = service("claude", buckets: [
+            promo,
+            WidgetBucket(id: "seven_day", label: "All models", percent: 30, kind: "weekly"),
+        ])
+        XCTAssertEqual(WidgetEntryRules.windowRows(of: claude, limit: 1).map(\.id), ["seven_day"])
+    }
+
+    func testAPromotionalPoolTakesTheSingleRowWhenItIsAllThereIs() {
+        let claude = service("claude", buckets: [promo])
+        XCTAssertEqual(
+            WidgetEntryRules.windowRows(of: claude, limit: 1).map(\.id), ["seven_day_omelette_promotional"]
+        )
+    }
+
+    func testTwoRowsStillShowAPromotionalPoolWhenItIsTheFullest() {
+        let claude = service("claude", buckets: [
+            WidgetBucket(id: "five_hour", label: "Session", percent: 10, kind: "session"),
+            promo,
+            WidgetBucket(id: "seven_day", label: "All models", percent: 30, kind: "weekly"),
+        ])
+        XCTAssertEqual(
+            WidgetEntryRules.windowRows(of: claude, limit: 2).map(\.id),
+            ["five_hour", "seven_day_omelette_promotional"]
+        )
     }
 
     func testOneRowWithoutASessionIsTheFullestWindow() {

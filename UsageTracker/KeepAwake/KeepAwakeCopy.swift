@@ -209,8 +209,10 @@ extension KeepAwakeCopy {
     }
 
     /// Spec 2026-11-19, § Accepted risks: a mode armed before the app updated runs on the
-    /// previous helper, which has no guard.
-    static let guardPendingText = "The heat guard starts with the next Apply."
+    /// previous helper, which has no guard. It does not promise the next Apply: whether an Apply
+    /// while the old mode is still on reaches the new helper depends on launchd replacing a
+    /// running helper, which is not measured.
+    static let guardPendingText = "The heat guard starts after this mode ends."
 
     /// That line under the countdown while armed, the helper's replies carry no guard
     /// (`helperGuard` nil, `KeepAwakeModel.helperThermalGuard`) and the setting is on; nil

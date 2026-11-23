@@ -539,15 +539,24 @@ keep their tokens.
   or file contents. Every hook exits within 0.8 s except a permission
   request, which the helper holds open for up to 140 s so Brioche can
   answer Allow/Deny; a helper that gets no reply always fails safe
+- While a session runs in a terminal, reads the Mac's process table (every
+  process's id, parent, terminal and start time) and the CPU time and memory of
+  your own processes, to add up what that terminal's processes cost: every
+  30 s, every 5 s while the island or the Agents tab is open, never while no
+  session has a terminal. Two totals per session come out of it; no process
+  names or command lines are read for it
 - Keep awake's helper, `omelette-keepawake`, runs as root under launchd once
   you approve it in Login Items. It answers only Brioche signed by the same
-  developer team, runs nothing but `/usr/bin/pmset`, clears its own sleep flag
+  developer team, runs nothing but `/usr/bin/pmset`, reads the lid, the power
+  source and macOS's thermal level, clears its own sleep flag
   every time it starts (a flag set by another tool or by hand is left alone,
   until an Apply takes it over: the end of that mode clears it),
   and exits a minute after it has nothing to do
 - The `brioche` command-line tool and MCP server read
   `~/Library/Application Support/UsageTracker/status.json`, written after
-  every poll. They never start the app, open a socket, or touch the network,
+  every poll and when a session's CPU or memory figures change (every 30 s
+  at most while they only change, at once when a session gains or loses
+  them). They never start the app, open a socket, or touch the network,
   and write one thing only: when Claude Code hands `brioche statusline` its
   5-hour and weekly limits, the tool leaves them, with the session's id and
   the time, in `~/Library/Application Support/UsageTracker/statusline/`, a

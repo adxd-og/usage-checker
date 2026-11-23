@@ -58,7 +58,7 @@ final class KeepAwakeModel: ObservableObject {
     /// helper that predates the guard, which is never asked about it. A call that brought no
     /// reply (lost, timed out, a helper that is not ready) leaves it as it was. Two readers: the
     /// switch's path, to know whether the helper has the selector, and the card, which says
-    /// "The heat guard starts with the next Apply." while it is nil and a mode is armed (hence
+    /// "The heat guard starts after this mode ends." while it is nil and a mode is armed (hence
     /// published). The reconciliation decides from the reply in hand, never from this.
     @Published private(set) var helperThermalGuard: Bool?
     /// A `setThermalGuard` is out. At most one ever is (`sendThermalGuard`).
