@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   separators. The joiners that shape Persian, the Indic scripts and emoji
   stay. The name is cut to 64 characters, and one with nothing to show reads
   "Claude".
+- `brioche status`, `brioche status --json` and the MCP tools drop the same
+  characters from every string they read from the app before printing it, in
+  text and in JSON: a project's name, what a session is doing, a chat's title,
+  a plan, a window's label, an id. A line break or a tab between two words
+  leaves a space; a string with nothing left to show reads "?". A hook's
+  payload or a folder's name could put an escape sequence in a terminal
+  through these before.
 
 ### Keep awake
 - A heat guard, off until you turn it on: Settings → General → Keep awake →

@@ -556,7 +556,9 @@ keep their tokens.
   `~/Library/Application Support/UsageTracker/status.json`, written after
   every poll and when a session's CPU or memory figures change (every 30 s
   at most while they only change, at once when a session gains or loses
-  them). They never start the app, open a socket, or touch the network,
+  them). They print no string from it before dropping control, bidi and
+  other invisible characters. They never start the app, open a socket, or
+  touch the network,
   and write one thing only: when Claude Code hands `brioche statusline` its
   5-hour and weekly limits, the tool leaves them, with the session's id and
   the time, in `~/Library/Application Support/UsageTracker/statusline/`, a
