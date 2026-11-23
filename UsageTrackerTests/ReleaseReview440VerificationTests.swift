@@ -121,4 +121,59 @@ final class ReleaseReview440VerificationTests: XCTestCase {
         XCTAssertEqual(s.headlineBucket?.id, "seven_day", "the ring keeps the promo window out")
         XCTAssertEqual(oneRow(s), ["seven_day"])
     }
+
+    // MARK: - The session pick past a promotional session (second round)
+
+    private let promoSession = WidgetBucket(id: "five_hour_promotional", label: "Bonus", percent: 100, kind: "session")
+    private let countedSession = WidgetBucket(id: "five_hour", label: "Session", percent: 10, kind: "session")
+    private let countedWeek = WidgetBucket(id: "seven_day", label: "All models", percent: 30, kind: "weekly")
+    private let promoPool = WidgetBucket(id: "seven_day_x_promotional", label: "Bonus pool", percent: 95, kind: "modelSpecific")
+    private let lowPromoPool = WidgetBucket(id: "seven_day_y_promotional", label: "Bonus pool 2", percent: 40, kind: "modelSpecific")
+
+    /// A counted session is the session whichever side of a promotional session it sits on.
+    func testACountedSessionTakesTheRowOnEitherSideOfAPromotionalSession() {
+        XCTAssertEqual(oneRow(service([promoSession, countedSession])), ["five_hour"])
+        XCTAssertEqual(oneRow(service([countedSession, promoSession])), ["five_hour"])
+        XCTAssertEqual(oneRow(service([promoSession, countedSession, promoPool])), ["five_hour"])
+        XCTAssertEqual(oneRow(service([promoSession, countedSession, countedWeek])), ["seven_day"])
+    }
+
+    /// Two counted sessions: the first leads, as it does in the ring (`headlineBucket`).
+    func testTheFirstOfTwoCountedSessionsIsTheOneThatTakesTheRow() {
+        let second = WidgetBucket(id: "session_b", label: "Session B", percent: 20, kind: "session")
+        let s = service([promoSession, countedSession, second])
+        XCTAssertEqual(s.headlineBucket?.id, "five_hour")
+        XCTAssertEqual(oneRow(s), ["five_hour"])
+    }
+
+    /// No counted session: the fullest counted window, never a promotional session or pool.
+    func testWithOnlyAPromotionalSessionTheFullestCountedWindowTakesTheRow() {
+        XCTAssertEqual(oneRow(service([promoSession, countedWeek])), ["seven_day"])
+        XCTAssertEqual(oneRow(service([promoSession, countedWeek, promoPool])), ["seven_day"])
+    }
+
+    /// Nothing counted at all: the promotional session leads, then the fullest promotional pool.
+    func testWithNothingButPromotionalWindowsTheSessionLeadsThenTheFullestPool() {
+        XCTAssertEqual(oneRow(service([promoSession])), ["five_hour_promotional"])
+        XCTAssertEqual(oneRow(service([lowPromoPool, promoSession, promoPool])), ["five_hour_promotional"])
+        XCTAssertEqual(oneRow(service([lowPromoPool, promoPool])), ["seven_day_x_promotional"])
+    }
+
+    /// A counted session at 0 % against a promotional session and pool at 100 %.
+    func testPromotionalWindowsAtAnyPercentNeverTakeTheRowFromACountedSessionAtZero() {
+        let zero = WidgetBucket(id: "five_hour", label: "Session", percent: 0, kind: "session")
+        XCTAssertEqual(oneRow(service([promoSession, promoPool, zero])), ["five_hour"])
+    }
+
+    /// Two rows are as they were: the first session-kind bucket, promotional or not, then the fullest others.
+    func testTwoRowsStillOpenWithTheFirstSessionKindBucketAndTheFullestOthers() {
+        XCTAssertEqual(
+            WidgetEntryRules.windowRows(of: service([promoSession, countedSession, countedWeek]), limit: 2).map(\.id),
+            ["five_hour_promotional", "seven_day"]
+        )
+        XCTAssertEqual(
+            WidgetEntryRules.windowRows(of: service([promoSession, promoPool]), limit: 2).map(\.id),
+            ["five_hour_promotional", "seven_day_x_promotional"]
+        )
+    }
 }
