@@ -18,7 +18,8 @@ final class KeepAwakeThermalEngineTests: XCTestCase {
 
     private var armed: KeepAwakeState { .armed(deadline: t0 + 7_200, floorEnabled: true) }
 
-    /// § Settings: default on, so a mode an app that predates the guard arms has it.
+    /// The helper's guard is on until it is turned off, so a mode an app that predates the guard
+    /// arms has it. The Settings switch is another default: off since 2026-11-22 (§ Settings).
     func testTheGuardIsOnUntilItIsTurnedOff() {
         XCTAssertTrue(KeepAwakeEngine().thermalGuard)
         XCTAssertTrue(engineArmed().thermalGuard)

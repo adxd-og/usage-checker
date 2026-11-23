@@ -1,5 +1,6 @@
 import XCTest
 import ServiceManagement
+import SwiftUI
 @testable import Omelette
 
 // Verification of the keep-awake thermal guard, written from the spec
@@ -1024,24 +1025,25 @@ final class KeepAwakeThermalGuardLoopVerificationTests: XCTestCase {
         XCTAssertEqual(loop.sets, [false], "they agree now")
     }
 
-    /// Settings › Advanced › Reset all settings (item 12): the settings go back on, and an armed
-    /// helper that holds both switches off hears both, the floor's first.
-    @MainActor func testResetAllSettingsLeavesAnArmedHelperWithBothSwitchesOn() async {
+    /// Settings › Advanced › Reset all settings (item 12): the settings go back to their defaults
+    /// (the floor on, the guard off), and an armed helper that holds both away from them hears
+    /// both, the floor's first.
+    @MainActor func testResetAllSettingsLeavesAnArmedHelperWithTheFloorOnAndTheGuardOff() async {
         let loop = await makeLoop()
-        loop.setting.guardOn = false
+        loop.setting.guardOn = true
         loop.setting.floorOn = false
         await loop.model.arm(days: 0, hours: 2, minutes: 0, now: t0)
-        XCTAssertEqual(loop.sets, [false])
+        XCTAssertEqual(loop.sets, [])
         // `resetEverything`: the store goes back to its defaults, then the two switches are sent.
         loop.setting.guardOn = SettingsStore.Defaults.keepAwakeThermalGuardEnabled
         loop.setting.floorOn = SettingsStore.Defaults.keepAwakeFloorEnabled
         await loop.model.floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled, now: t0 + 30)
         await loop.model.thermalGuardChanged(now: t0 + 30)
         let reply = await loop.service.state(now: t0 + 40)
-        XCTAssertEqual(reply.thermalGuard, true)
+        XCTAssertEqual(reply.thermalGuard, false)
         XCTAssertEqual(reply.state, .armed(deadline: t0 + 7_200, floorEnabled: true))
-        XCTAssertEqual(loop.model.helperThermalGuard, true)
-        XCTAssertEqual(loop.sets.last, true)
+        XCTAssertEqual(loop.model.helperThermalGuard, false)
+        XCTAssertEqual(loop.sets.last, false)
     }
     /// "The app reconciles after EVERY reply while armed": a reply that says the mode is over is not
     /// answered, even when the helper's guard differs from the setting.
@@ -1130,8 +1132,8 @@ final class KeepAwakeThermalGuardEngineVerificationTests: XCTestCase {
 
 // MARK: - The setting
 
-/// Spec § Settings: "default on". A domain that has no value for the key, as every 4.3.0 install
-/// has, reads on.
+/// Spec § Settings: "default OFF (amended 2026-11-22)". A domain that has no value for the key, as
+/// every 4.3.0 install has, reads off.
 final class KeepAwakeThermalGuardDefaultVerificationTests: XCTestCase {
     private var savedDomain: [String: Any]?
     private var domainName: String { Bundle.main.bundleIdentifier ?? "com.usagetracker.app" }
@@ -1146,12 +1148,21 @@ final class KeepAwakeThermalGuardDefaultVerificationTests: XCTestCase {
         super.tearDown()
     }
 
-    @MainActor func testADomainWithoutTheKeyReadsTheGuardOnAndResetToDefaultsBringsItBack() {
+    /// The domain is read by a reader created over it, as the card's (`KeepAwakeSection`) and the
+    /// store's at launch are. `SettingsStore.shared` lives for the whole run, and its
+    /// `@AppStorage` keeps the value it last read or wrote: a key removed under it reads as that
+    /// value, not the default.
+    @MainActor func testADomainWithoutTheKeyReadsTheGuardOffAndResetToDefaultsBringsItBack() {
         UserDefaults.standard.removeObject(forKey: SettingsStore.keepAwakeThermalGuardKey)
+        XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.keepAwakeThermalGuardKey))
+        let readAtLaunch = AppStorage(
+            wrappedValue: SettingsStore.Defaults.keepAwakeThermalGuardEnabled,
+            SettingsStore.keepAwakeThermalGuardKey
+        )
+        XCTAssertFalse(readAtLaunch.wrappedValue)
+        SettingsStore.shared.keepAwakeThermalGuardEnabled = true
         XCTAssertTrue(SettingsStore.shared.keepAwakeThermalGuardEnabled)
-        SettingsStore.shared.keepAwakeThermalGuardEnabled = false
-        XCTAssertFalse(SettingsStore.shared.keepAwakeThermalGuardEnabled)
         SettingsStore.shared.resetToDefaults()
-        XCTAssertTrue(SettingsStore.shared.keepAwakeThermalGuardEnabled)
+        XCTAssertFalse(SettingsStore.shared.keepAwakeThermalGuardEnabled)
     }
 }

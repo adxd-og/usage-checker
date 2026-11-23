@@ -73,8 +73,9 @@ final class SettingsStore: ObservableObject {
         /// Keep awake ends by itself on battery below 25 % (spec 2026-10-26, Battery floor).
         static let keepAwakeFloorEnabled = true
         /// Keep awake ends by itself when the Mac overheats with the lid closed (spec
-        /// 2026-11-19, thermal guard, § Settings).
-        static let keepAwakeThermalGuardEnabled = true
+        /// 2026-11-19, thermal guard, § Settings): off until the user turns it on, since the
+        /// guard ships without its hand checks (amended 2026-11-22).
+        static let keepAwakeThermalGuardEnabled = false
         /// The last duration Apply used, in minutes; one hour until the first Apply.
         static let keepAwakeDurationMinutes = 60
         /// Show in menu bar: nothing stored, so the default follows the displays

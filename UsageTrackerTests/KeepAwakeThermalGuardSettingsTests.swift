@@ -2,8 +2,9 @@ import XCTest
 @testable import Omelette
 
 /// Spec 2026-11-19 keep-awake thermal guard, § Settings: "End when the Mac overheats with the lid
-/// closed", default on, beside the battery switch; "Reset keep awake" turns it back on. The
-/// app's preferences domain is snapshotted and handed back through `AppDomainRestore`.
+/// closed", default off (amended 2026-11-22), beside the battery switch; "Reset keep awake" turns
+/// it back off. The app's preferences domain is snapshotted and handed back through
+/// `AppDomainRestore`.
 final class KeepAwakeThermalGuardSettingsTests: XCTestCase {
     private var savedDomain: [String: Any]?
     private var domainName: String {
@@ -24,11 +25,11 @@ final class KeepAwakeThermalGuardSettingsTests: XCTestCase {
         XCTAssertEqual(GeneralSettingsCopy.keepAwakeThermalTitle, "End when the Mac overheats with the lid closed")
     }
 
-    @MainActor func testTheGuardStartsOn() {
+    @MainActor func testTheGuardStartsOff() {
         let settings = SettingsStore.shared
         settings.resetToDefaults()
-        XCTAssertTrue(SettingsStore.Defaults.keepAwakeThermalGuardEnabled)
-        XCTAssertTrue(settings.keepAwakeThermalGuardEnabled)
+        XCTAssertFalse(SettingsStore.Defaults.keepAwakeThermalGuardEnabled)
+        XCTAssertFalse(settings.keepAwakeThermalGuardEnabled)
     }
 
     @MainActor func testTheSwitchIsStoredUnderItsOwnKey() {
@@ -39,10 +40,10 @@ final class KeepAwakeThermalGuardSettingsTests: XCTestCase {
         XCTAssertEqual(UserDefaults.standard.object(forKey: SettingsStore.keepAwakeThermalGuardKey) as? Bool, false)
     }
 
-    @MainActor func testResetKeepAwakeTurnsTheGuardBackOn() {
+    @MainActor func testResetKeepAwakeTurnsTheGuardBackOff() {
         let settings = SettingsStore.shared
-        settings.keepAwakeThermalGuardEnabled = false
+        settings.keepAwakeThermalGuardEnabled = true
         settings.resetKeepAwake()
-        XCTAssertTrue(settings.keepAwakeThermalGuardEnabled)
+        XCTAssertFalse(settings.keepAwakeThermalGuardEnabled)
     }
 }
