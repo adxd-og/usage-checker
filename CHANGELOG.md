@@ -26,7 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Widgets
 - All providers with five listed: a provider's one row is its window nearest the
-  limit; it was always the session window when there was one.
+  limit; it was always the session window when there was one. A promotional
+  pool takes that row only when the provider has nothing else.
 
 ### Agents
 - What each live session in a terminal costs the Mac: CPU (100% is one core,
@@ -68,7 +69,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Every Apply turns the helper's guard on and Brioche then sets it to the
   switch at once. Reset keep awake turns the switch back off. With the switch on, a mode already on when
   Brioche updates runs under the previous helper, without the guard, until it
-  ends; the card says "The heat guard starts with the next Apply."
+  ends; the card says "The heat guard starts after this mode ends."
 
 ## [4.3.0] — 2026-11-11
 
