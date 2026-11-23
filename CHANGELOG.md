@@ -60,9 +60,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   characters from every string they read from the app before printing it, in
   text and in JSON: a project's name, what a session is doing, a chat's title,
   a plan, a window's label, an id. A line break or a tab between two words
-  leaves a space; a string with nothing left to show reads "?". A hook's
-  payload or a folder's name could put an escape sequence in a terminal
-  through these before.
+  leaves a space, spaces at a string's ends go, and a string with nothing
+  left to show reads "?". A hook's payload or a folder's name could put an
+  escape sequence in a terminal through these before. A `status.json` that
+  starts with a byte-order mark or is not UTF-8 now reads as "Brioche is not
+  running"; Brioche writes neither.
 
 ### Keep awake
 - A heat guard, off until you turn it on: Settings → General → Keep awake →
