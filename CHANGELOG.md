@@ -57,15 +57,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "Claude".
 
 ### Keep awake
-- Ends by itself when the Mac overheats with the lid closed: within a minute
-  of the lid closing when macOS rates its thermal state critical, within two
-  at serious. The Mac then goes to sleep and the island's card says "Ended
-  14:02 · the Mac was overheating". With the lid open nothing ends; while the
-  mode is on and the Mac is that hot, the card says "The Mac is running hot"
-  under the countdown. macOS gives a level, not degrees.
-- Settings → General → Keep awake → **End when the Mac overheats with the lid
-  closed**, on by default; every Apply turns the guard on and Brioche holds it
-  to the switch. Reset keep awake turns it back on. A mode already on when
+- A heat guard, off until you turn it on: Settings → General → Keep awake →
+  **End when the Mac overheats with the lid closed**. With it on, the mode ends
+  by itself within a minute of the lid closing when macOS rates its thermal
+  state critical, within two at serious. The Mac then goes to sleep and the
+  island's card says "Ended 14:02 · the Mac was overheating". With the lid
+  open nothing ends. macOS gives a level, not degrees.
+- While the mode is on and the Mac is that hot, the card says "The Mac is
+  running hot" under the countdown, whichever way the switch is.
+- Every Apply turns the helper's guard on and Brioche then sets it to the
+  switch at once. Reset keep awake turns the switch back off. With the switch on, a mode already on when
   Brioche updates runs under the previous helper, without the guard, until it
   ends; the card says "The heat guard starts with the next Apply."
 

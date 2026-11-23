@@ -118,11 +118,11 @@ final class KeepAwakeLiveModelTests: XCTestCase {
         let settings = SettingsStore.shared
         let model = makeModel(KeepAwakeHeldSwitches(floor: true, guardOn: true).helper(armedUntil: t0 + 7_200))
         settings.keepAwakeFloorEnabled = false
-        settings.keepAwakeThermalGuardEnabled = false
+        settings.keepAwakeThermalGuardEnabled = true
         settings.keepAwakeDurationMinutes = 5
         await model.reset(now: t0)
         XCTAssertTrue(settings.keepAwakeFloorEnabled)
-        XCTAssertTrue(settings.keepAwakeThermalGuardEnabled)
+        XCTAssertFalse(settings.keepAwakeThermalGuardEnabled)
         XCTAssertEqual(settings.keepAwakeDurationMinutes, 60)
     }
 

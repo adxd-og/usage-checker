@@ -172,13 +172,13 @@ final class KeepAwakeModel: ObservableObject {
         await sendThermalGuard(now: now)
     }
 
-    /// Settings › Advanced › Reset all settings put the floor and heat switches back on: an
-    /// armed helper hears both at once, the floor first, as it would from the switches
-    /// themselves (keep-awake spec 2026-10-26, floor switch while armed; thermal guard spec
-    /// 2026-11-19, § Settings). The guard's call sends the setting as it reads then, which the
-    /// reset put back on. A floor answer that says the guard is off already brings the guard
-    /// (`reconcileThermalGuard`), and the guard's call then sends it again; it alone sends it
-    /// when the floor's answer is lost.
+    /// Settings › Advanced › Reset all settings put the floor and heat switches back to their
+    /// defaults: an armed helper hears both at once, the floor first, as it would from the
+    /// switches themselves (keep-awake spec 2026-10-26, floor switch while armed; thermal guard
+    /// spec 2026-11-19, § Settings). The guard's call sends the setting as it reads then, which
+    /// the reset put back to its default. A floor answer whose guard differs from the setting
+    /// already brings the guard (`reconcileThermalGuard`), and the guard's call then sends it
+    /// again; it alone sends it when the floor's answer is lost.
     func allSettingsWereReset(now: Date = Date()) async {
         await floorChanged(SettingsStore.Defaults.keepAwakeFloorEnabled, now: now)
         await thermalGuardChanged(now: now)

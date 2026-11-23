@@ -371,7 +371,8 @@ struct AdvancedSettingsView: View {
 
     private func resetEverything() {
         settings.resetToDefaults()
-        // The floor and heat switches just went back on; an armed helper hears both at once.
+        // The floor and heat switches just went back to their defaults; an armed helper hears
+        // both at once.
         Task { await KeepAwakeModel.shared.allSettingsWereReset() }
         // Launch at login is OS state, not a stored preference, so `resetToDefaults()`
         // deliberately can't reach it. General reads it again when it next opens.
