@@ -395,8 +395,8 @@ island's block always says.
   battery**, on by default); when the Mac overheats with the lid closed,
   within a minute of the lid closing when macOS rates its thermal state
   critical and within two at serious (**End when the Mac overheats with the
-  lid closed**, on by default; macOS gives a level, not degrees); and at a
-  restart, after which nothing resumes. The block says when and why it ended
+  lid closed**, off until you turn it on; macOS gives a level, not degrees);
+  and at a restart, after which nothing resumes. The block says when and why it ended
   until you dismiss it or apply again, and "The Mac is running hot" under the
   countdown while it is that hot
 - **Sleep at the end**: when the mode ends at the deadline, at the battery
