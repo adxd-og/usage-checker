@@ -271,17 +271,27 @@ enum StatusFile {
     /// The decoded snapshot, or nil when the file is missing, unreadable, not JSON, or
     /// written by a version this build does not know. Every failure is the same answer
     /// to the user — "Omelette is not running" — so none of them is worth an error type.
+    ///
+    /// Decoded from `read`'s bytes, so no string of the snapshot, whichever field holds it,
+    /// reaches the CLI or the MCP server with a character a terminal would act on.
     static func load(from url: URL) -> StatusSnapshot? {
-        guard let data = try? Data(contentsOf: url),
+        guard let data = read(from: url),
               let snapshot = try? decoder.decode(StatusSnapshot.self, from: data),
               snapshot.version == StatusSnapshot.currentVersion
         else { return nil }
         return snapshot
     }
 
-    /// The raw bytes, for `omelette status --json`, which prints the file verbatim
-    /// rather than re-encoding it.
+    /// The file's bytes with every string in them cleaned for a terminal
+    /// (`TerminalString.cleaningStrings(inJSON:)`; spec 2026-11-23 terminal strings): the
+    /// one place the tool reads the snapshot, for `load` and for `brioche status --json`,
+    /// which prints these bytes rather than re-encoding them. A file with nothing to clean
+    /// comes back byte for byte. nil when the file is missing or unreadable, or when its
+    /// bytes are not UTF-8 JSON text the cleaning can vouch for.
+    ///
+    /// Only the reading side: the app writes through `encoder` and never calls this, so
+    /// the file on disk is what the app made it.
     static func read(from url: URL) -> Data? {
-        try? Data(contentsOf: url)
+        (try? Data(contentsOf: url)).flatMap(TerminalString.cleaningStrings(inJSON:))
     }
 }

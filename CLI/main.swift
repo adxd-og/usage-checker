@@ -46,8 +46,9 @@ enum CLIMain {
             return CLIText.noDataExitCode
         }
         if json {
-            // The file verbatim: re-encoding it would mean two spellings of the same
-            // bytes, and `brioche status --json | jq` should see what is on disk.
+            // The file's own bytes, each string in them cleaned for a terminal
+            // (`StatusFile.read`), not a re-encoding: that would mean two spellings of
+            // the same bytes, and `brioche status --json | jq` should see what is on disk.
             guard var data = StatusFile.read(from: url) else {
                 err(CLIText.notRunning + "\n")
                 return CLIText.noDataExitCode

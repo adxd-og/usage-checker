@@ -180,7 +180,9 @@ enum MCPServer {
         case "get_sessions":
             guard let snapshot else { return result(id: id, notRunningResult) }
             let arguments = params?["arguments"] as? [String: Any]
-            let provider = arguments?["provider"] as? String
+            // Matched against the snapshot's ids, which are cleaned where the file is
+            // read, and echoed when it names no chat: cleaned like them.
+            let provider = (arguments?["provider"] as? String).map(TerminalString.clean)
             let limit = MCPSummary.sessionLimit(arguments?["limit"])
             return result(id: id, toolResult(
                 text: MCPSummary.sessions(

@@ -64,7 +64,9 @@ enum CLICommand: Equatable, Sendable {
                 guard index < arguments.count, !arguments[index].hasPrefix("-") else {
                     return .usageError("`--provider` needs a provider id, for example `--provider codex`")
                 }
-                provider = arguments[index]
+                // Matched against the snapshot's ids, which are cleaned where the file
+                // is read: the same rule on this side of the comparison.
+                provider = TerminalString.clean(arguments[index])
             default:
                 return .usageError("Unknown option for `statusline`: \(argument)")
             }
