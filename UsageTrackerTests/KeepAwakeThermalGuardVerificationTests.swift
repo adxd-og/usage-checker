@@ -1148,10 +1148,12 @@ final class KeepAwakeThermalGuardDefaultVerificationTests: XCTestCase {
         super.tearDown()
     }
 
-    /// The domain is read by a reader created over it, as the card's (`KeepAwakeSection`) and the
-    /// store's at launch are. `SettingsStore.shared` lives for the whole run, and its
-    /// `@AppStorage` keeps the value it last read or wrote: a key removed under it reads as that
-    /// value, not the default.
+    /// The empty domain is read by a reader this test creates over the store's key with the
+    /// store's default constant. It is not the store's own declaration nor the card's: no test
+    /// reaches those (a second `SettingsStore` cannot be built, and `SettingsStore.shared` lives
+    /// for the whole run, its `@AppStorage` keeping the value it last read or wrote, so a key
+    /// removed under it reads as that value, not the default). What is pinned here is the
+    /// constant and the key; the two declarations are read in review.
     @MainActor func testADomainWithoutTheKeyReadsTheGuardOffAndResetToDefaultsBringsItBack() {
         UserDefaults.standard.removeObject(forKey: SettingsStore.keepAwakeThermalGuardKey)
         XCTAssertNil(UserDefaults.standard.object(forKey: SettingsStore.keepAwakeThermalGuardKey))
