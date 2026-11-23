@@ -544,7 +544,7 @@ keep their tokens.
   your own processes, to add up what that terminal's processes cost: every
   30 s, every 5 s while the island or the Agents tab is open, never while no
   session has a terminal. Two totals per session come out of it; no process
-  names or command lines are used
+  names or command lines are read for it
 - Keep awake's helper, `omelette-keepawake`, runs as root under launchd once
   you approve it in Login Items. It answers only Brioche signed by the same
   developer team, runs nothing but `/usr/bin/pmset`, reads the lid, the power
@@ -554,8 +554,9 @@ keep their tokens.
   and exits a minute after it has nothing to do
 - The `brioche` command-line tool and MCP server read
   `~/Library/Application Support/UsageTracker/status.json`, written after
-  every poll and when a session's CPU or memory figures change, at most every
-  30 s. They never start the app, open a socket, or touch the network,
+  every poll and when a session's CPU or memory figures change (every 30 s
+  at most while they only change, at once when a session gains or loses
+  them). They never start the app, open a socket, or touch the network,
   and write one thing only: when Claude Code hands `brioche statusline` its
   5-hour and weekly limits, the tool leaves them, with the session's id and
   the time, in `~/Library/Application Support/UsageTracker/statusline/`, a
