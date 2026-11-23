@@ -5,7 +5,7 @@ import XCTest
 /// level is `serious` or `critical` the card says so under the countdown ("The Mac is running
 /// hot"), lid open or closed. The app reads the level itself for this line." And § Accepted
 /// risks: "The card says so while an armed helper answers without `thermalGuard`: "The heat
-/// guard starts with the next Apply.""
+/// guard starts after this mode ends.""
 final class KeepAwakeRunningHotTests: XCTestCase {
     /// Monday 2026-10-26 13:48 UTC.
     private let now = Date(timeIntervalSince1970: 1_793_022_480)
@@ -68,14 +68,14 @@ final class KeepAwakeRunningHotTests: XCTestCase {
     // MARK: - The guard waits for Apply (a mode armed before the update)
 
     func testTheGuardPendingLineReadsAsTheSpec() {
-        XCTAssertEqual(KeepAwakeCopy.guardPendingText, "The heat guard starts with the next Apply.")
+        XCTAssertEqual(KeepAwakeCopy.guardPendingText, "The heat guard starts after this mode ends.")
     }
 
     /// Armed, the helper's replies carry no `thermalGuard` (a 4.3.0 helper), the setting on.
     func testAnArmedHelperWithoutTheGuardSaysSoWhileTheSettingIsOn() {
         XCTAssertEqual(
             KeepAwakeCopy.guardPendingLine(armed, helperGuard: nil, settingOn: true),
-            "The heat guard starts with the next Apply."
+            "The heat guard starts after this mode ends."
         )
     }
 

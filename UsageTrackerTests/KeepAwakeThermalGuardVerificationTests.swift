@@ -1005,7 +1005,7 @@ final class KeepAwakeThermalGuardLoopVerificationTests: XCTestCase {
         XCTAssertNil(loop.model.helperThermalGuard, "a reply without the field")
         XCTAssertEqual(
             KeepAwakeCopy.guardPendingLine(.armed(deadline: t0 + 7_200), helperGuard: loop.model.helperThermalGuard, settingOn: true),
-            "The heat guard starts with the next Apply."
+            "The heat guard starts after this mode ends."
         )
         loop.setting.guardOn = true
         await loop.model.thermalGuardChanged(now: t0 + 70)
