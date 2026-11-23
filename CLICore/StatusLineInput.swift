@@ -203,11 +203,12 @@ struct StatusLineInput: Equatable, Sendable {
     static let maximumModelNameScalars = 256
 
     /// A string on its way to a terminal: what the terminal would not show dropped
-    /// (`isInvisible`), trimmed as `text` trims, cut to its first `maximumModelNameLength`
+    /// (`TerminalString.isInvisible`, the one definition, shared with every string read
+    /// from the snapshot), trimmed as `text` trims, cut to its first `maximumModelNameLength`
     /// characters (whole clusters, so an emoji sequence or a letter with its marks is never
     /// split), then to `maximumModelNameScalars` scalars by dropping whole characters from the
     /// end, and trimmed again, since a cut can end on a space. nil when what is left holds
-    /// nothing but the `joiners` and whitespace: a name nobody can see is no name, and the
+    /// nothing but the joiners (`TerminalString.joiners`) and whitespace: a name nobody can see is no name, and the
     /// line's own fallback applies. Dropped before the cut, so invisible padding cannot push
     /// the visible name out; checked after it, so the name printed is the one checked. Only
     /// the model name comes through here: the session id is a file name that
@@ -215,7 +216,7 @@ struct StatusLineInput: Equatable, Sendable {
     /// § Design › Status line strings; spec 2026-11-20 small backlog 2 § B).
     private static func printable(_ value: Any?) -> String? {
         guard let raw = value as? String,
-              let shown = text(String(String.UnicodeScalarView(raw.unicodeScalars.filter { !isInvisible($0) }))),
+              let shown = text(String(String.UnicodeScalarView(raw.unicodeScalars.filter { !TerminalString.isInvisible($0) }))),
               let name = text(String(withinScalarLimit(shown.prefix(maximumModelNameLength))))
         else { return nil }
         return name.unicodeScalars.contains(where: isVisibleOnItsOwn) ? name : nil
@@ -230,32 +231,10 @@ struct StatusLineInput: Equatable, Sendable {
         return kept
     }
 
-    /// The scalars `printable` drops. `Cc` (C0, DEL, C1): an escape would repaint the
-    /// user's terminal and a line break would make the one line two. `Cf` but the two
-    /// `joiners`: a bidi override or isolate prints the line in another order; a zero-width
-    /// space, a byte-order mark or a soft hyphen hides inside the name; a subdivision flag's
-    /// tag characters go too and leave its black flag. `Zl` and `Zp`: the line and paragraph
-    /// separators break the line as a newline does. Letters, marks, digits, punctuation,
-    /// symbols and the space separators (Zs) inside the name stay; the joiners stay too, but cannot make a name alone
-    /// (`isVisibleOnItsOwn`).
-    private static func isInvisible(_ scalar: Unicode.Scalar) -> Bool {
-        switch scalar.properties.generalCategory {
-        case .control, .lineSeparator, .paragraphSeparator: return true
-        case .format: return !joiners.contains(scalar.value)
-        default: return false
-        }
-    }
-
-    /// The zero-width non-joiner and joiner (U+200C, U+200D), the format characters
-    /// `printable` keeps: they shape Persian and the Indic scripts and join emoji, and they
-    /// reorder nothing. They stay where they are in a name that has something else to show,
-    /// and a name of them alone, or of them and spaces, is no name.
-    private static let joiners: Set<UInt32> = [0x200C, 0x200D]
-
-    /// A scalar that shows something by itself: neither one of the `joiners` nor the
-    /// whitespace `text` trims.
+    /// A scalar that shows something by itself: neither one of the joiners
+    /// (`TerminalString.joiners`) nor the whitespace `text` trims.
     private static func isVisibleOnItsOwn(_ scalar: Unicode.Scalar) -> Bool {
-        !joiners.contains(scalar.value) && !CharacterSet.whitespacesAndNewlines.contains(scalar)
+        !TerminalString.joiners.contains(scalar.value) && !CharacterSet.whitespacesAndNewlines.contains(scalar)
     }
 
     /// A finite number, written as a JSON number or as a numeric string.
