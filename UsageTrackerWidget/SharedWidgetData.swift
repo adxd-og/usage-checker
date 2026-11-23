@@ -289,11 +289,17 @@ enum WidgetEntryRules {
     /// windows, `limit` in all. The worst windows tell the story; details live in the app.
     /// A single row is the window nearest its limit, whichever kind it is (owner, 2026-11-19):
     /// a session at 10 % must not hide a week at 92 %. The session keeps the row on a tie.
+    /// A promotional pool takes the single row only when the provider has nothing else.
     static func windowRows(of service: WidgetService, limit: Int) -> [WidgetBucket] {
         let session = service.sessionBuckets.first
         let others = service.nonSessionBuckets.sorted { $0.percent > $1.percent }
-        if limit == 1, let session, let fullest = others.first, fullest.percent > session.percent {
-            return [fullest]
+        if limit == 1 {
+            // A promotional pool running dry costs nothing, so it never takes the one row from
+            // a window that counts (`headlineBucket` keeps it out of the ring the same way).
+            let counted = others.filter { !$0.isPromo }
+            guard let session else { return Array((counted.isEmpty ? others : counted).prefix(1)) }
+            if let fullest = counted.first, fullest.percent > session.percent { return [fullest] }
+            return [session]
         }
         var rows: [WidgetBucket] = []
         if let session { rows.append(session) }
