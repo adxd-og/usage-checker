@@ -295,11 +295,16 @@ enum WidgetEntryRules {
         let others = service.nonSessionBuckets.sorted { $0.percent > $1.percent }
         if limit == 1 {
             // A promotional pool running dry costs nothing, so it never takes the one row from
-            // a window that counts (`headlineBucket` keeps it out of the ring the same way).
+            // a window that counts, whatever its kind: a promotional window of kind "session"
+            // is a promotional pool too (`headlineBucket` keeps both out of the ring the same
+            // way). With nothing but promotional pools, the session's leads, then the fullest.
             let counted = others.filter { !$0.isPromo }
-            guard let session else { return Array((counted.isEmpty ? others : counted).prefix(1)) }
-            if let fullest = counted.first, fullest.percent > session.percent { return [fullest] }
-            return [session]
+            guard let countedSession = service.sessionBuckets.first(where: { !$0.isPromo }) else {
+                if let fullest = counted.first { return [fullest] }
+                return Array(((session.map { [$0] } ?? []) + others).prefix(1))
+            }
+            if let fullest = counted.first, fullest.percent > countedSession.percent { return [fullest] }
+            return [countedSession]
         }
         var rows: [WidgetBucket] = []
         if let session { rows.append(session) }

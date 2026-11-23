@@ -6,7 +6,8 @@ import XCTest
 /// spec's words. Past five listed, the Admin API organisation waits first. Up to four listed,
 /// each shows its session and its fullest other window; at five, each shows its one most
 /// telling window, so the large widget's height holds them. That one window is the one nearest
-/// its limit, session or not (owner, 2026-11-19).
+/// its limit, session or not (owner, 2026-11-19), and never a promotional pool while the
+/// provider has anything else (the 4.4.0 release review).
 final class WidgetAllProvidersRulesTests: XCTestCase {
     private func service(_ id: String, buckets: [WidgetBucket] = []) -> WidgetService {
         WidgetService(id: id, name: id.capitalized, icon: "circle", plan: nil, buckets: buckets)
