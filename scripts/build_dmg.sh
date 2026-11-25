@@ -89,10 +89,17 @@ APP="$EXPORT_DIR/$PRODUCT_NAME.app"
 codesign --verify --deep --strict --verbose=2 "$APP" 2>&1 | tail -5
 
 echo "==> Building DMG"
+# Only the app goes into the image. The export folder also holds xcodebuild's
+# own by-products (DistributionSummary.plist, ExportOptions.plist,
+# Packaging.log), which describe the build and are no part of the product.
+DMG_ROOT="$BUILD_DIR/dmg-root"
+rm -rf "$DMG_ROOT"
+mkdir -p "$DMG_ROOT"
+ditto "$APP" "$DMG_ROOT/$PRODUCT_NAME.app"
 rm -f "$DMG_PATH"
 hdiutil create \
   -volname "$PRODUCT_NAME" \
-  -srcfolder "$EXPORT_DIR" \
+  -srcfolder "$DMG_ROOT" \
   -ov \
   -format UDZO \
   "$DMG_PATH"
